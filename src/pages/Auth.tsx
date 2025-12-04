@@ -1,20 +1,48 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { MessageCircle, Eye, EyeOff, Loader2 } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { MessageCircle, Eye, EyeOff, Loader2, Mail, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { useAppStore } from '@/stores/appStore';
-import { mockUser, mockCompany } from '@/data/mockData';
-import { toast } from '@/hooks/use-toast';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/integrations/supabase/client';
+import { toast } from 'sonner';
+import { z } from 'zod';
+
+// Validation schemas
+const loginSchema = z.object({
+  email: z.string().email('Email inválido'),
+  password: z.string().min(6, 'A senha deve ter pelo menos 6 caracteres'),
+});
+
+const registerSchema = z.object({
+  fullName: z.string().min(2, 'Nome deve ter pelo menos 2 caracteres').max(100, 'Nome muito longo'),
+  email: z.string().email('Email inválido'),
+  password: z.string().min(8, 'A senha deve ter pelo menos 8 caracteres'),
+  confirmPassword: z.string(),
+  companyName: z.string().min(2, 'Nome da empresa deve ter pelo menos 2 caracteres').max(100, 'Nome muito longo'),
+  acceptTerms: z.boolean().refine(val => val === true, 'Você deve aceitar os termos'),
+}).refine(data => data.password === data.confirmPassword, {
+  message: 'As senhas não coincidem',
+  path: ['confirmPassword'],
+});
 
 export default function Auth() {
   const navigate = useNavigate();
-  const { login } = useAppStore();
+  const location = useLocation();
+  const { user, signIn, resetPassword, loading: authLoading } = useAuth();
+  
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [forgotPasswordOpen, setForgotPasswordOpen] = useState(false);
+  const [forgotPasswordEmail, setForgotPasswordEmail] = useState('');
+  const [forgotPasswordLoading, setForgotPasswordLoading] = useState(false);
   
   // Login form state
   const [loginEmail, setLoginEmail] = useState('');
@@ -24,47 +52,157 @@ export default function Auth() {
   const [registerName, setRegisterName] = useState('');
   const [registerEmail, setRegisterEmail] = useState('');
   const [registerPassword, setRegisterPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [companyName, setCompanyName] = useState('');
+  const [acceptTerms, setAcceptTerms] = useState(false);
+
+  // Redirect if already authenticated
+  useEffect(() => {
+    if (user && !authLoading) {
+      const from = (location.state as { from?: { pathname: string } })?.from?.pathname || '/dashboard';
+      navigate(from, { replace: true });
+    }
+  }, [user, authLoading, navigate, location]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsLoading(true);
+    setError(null);
     
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
-    // Mock login - in production, this would call Supabase Auth
-    login(mockUser, mockCompany);
-    
-    toast({
-      title: 'Bem-vindo!',
-      description: `Olá, ${mockUser.fullName}! Você está conectado.`,
-    });
-    
-    navigate('/dashboard');
-    setIsLoading(false);
+    try {
+      // Validate input
+      const validated = loginSchema.parse({ email: loginEmail, password: loginPassword });
+      
+      setIsLoading(true);
+      const { error: signInError } = await signIn(validated.email, validated.password);
+      
+      if (signInError) {
+        if (signInError.message.includes('Invalid login credentials')) {
+          setError('Email ou senha incorretos');
+        } else if (signInError.message.includes('Email not confirmed')) {
+          setError('Confirme seu email antes de fazer login');
+        } else {
+          setError('Erro ao fazer login. Tente novamente.');
+        }
+        return;
+      }
+      
+      toast.success('Bem-vindo!', {
+        description: 'Login realizado com sucesso.',
+      });
+      
+    } catch (err) {
+      if (err instanceof z.ZodError) {
+        setError(err.errors[0].message);
+      } else {
+        setError('Erro ao fazer login. Tente novamente.');
+      }
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsLoading(true);
+    setError(null);
     
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    
-    // Mock registration
-    const newUser = { ...mockUser, fullName: registerName, email: registerEmail };
-    const newCompany = { ...mockCompany, name: companyName };
-    login(newUser, newCompany);
-    
-    toast({
-      title: 'Conta criada com sucesso!',
-      description: 'Bem-vindo ao Multiatendimento.',
-    });
-    
-    navigate('/dashboard');
-    setIsLoading(false);
+    try {
+      // Validate input
+      const validated = registerSchema.parse({
+        fullName: registerName,
+        email: registerEmail,
+        password: registerPassword,
+        confirmPassword,
+        companyName,
+        acceptTerms,
+      });
+      
+      setIsLoading(true);
+      
+      // Call edge function for registration
+      const { data, error: funcError } = await supabase.functions.invoke('register', {
+        body: {
+          email: validated.email,
+          password: validated.password,
+          fullName: validated.fullName,
+          companyName: validated.companyName,
+        }
+      });
+
+      if (funcError) {
+        throw new Error(funcError.message);
+      }
+
+      if (data?.error) {
+        setError(data.error);
+        return;
+      }
+
+      // Sign in after successful registration
+      const { error: signInError } = await signIn(validated.email, validated.password);
+      
+      if (signInError) {
+        toast.success('Conta criada com sucesso!', {
+          description: 'Faça login para continuar.',
+        });
+        setLoginEmail(validated.email);
+        return;
+      }
+      
+      toast.success('Conta criada com sucesso!', {
+        description: 'Bem-vindo ao Multiatendimento.',
+      });
+      
+    } catch (err) {
+      if (err instanceof z.ZodError) {
+        setError(err.errors[0].message);
+      } else if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError('Erro ao criar conta. Tente novamente.');
+      }
+    } finally {
+      setIsLoading(false);
+    }
   };
+
+  const handleForgotPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!forgotPasswordEmail) {
+      toast.error('Digite seu email');
+      return;
+    }
+
+    setForgotPasswordLoading(true);
+    
+    try {
+      const { error } = await resetPassword(forgotPasswordEmail);
+      
+      if (error) {
+        toast.error('Erro ao enviar email de recuperação');
+        return;
+      }
+
+      toast.success('Email enviado!', {
+        description: 'Verifique sua caixa de entrada para redefinir sua senha.',
+      });
+      setForgotPasswordOpen(false);
+      setForgotPasswordEmail('');
+      
+    } catch {
+      toast.error('Erro ao enviar email de recuperação');
+    } finally {
+      setForgotPasswordLoading(false);
+    }
+  };
+
+  if (authLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-background">
+        <Loader2 className="w-10 h-10 animate-spin text-primary" />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-info/5 flex flex-col">
@@ -91,7 +229,14 @@ export default function Auth() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <Tabs defaultValue="login" className="w-full">
+              {error && (
+                <Alert variant="destructive" className="mb-4">
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertDescription>{error}</AlertDescription>
+                </Alert>
+              )}
+              
+              <Tabs defaultValue="login" className="w-full" onValueChange={() => setError(null)}>
                 <TabsList className="grid w-full grid-cols-2 mb-6">
                   <TabsTrigger value="login">Entrar</TabsTrigger>
                   <TabsTrigger value="register">Criar conta</TabsTrigger>
@@ -109,6 +254,7 @@ export default function Auth() {
                         value={loginEmail}
                         onChange={(e) => setLoginEmail(e.target.value)}
                         required
+                        autoComplete="email"
                         className="input-focus"
                       />
                     </div>
@@ -122,6 +268,7 @@ export default function Auth() {
                           value={loginPassword}
                           onChange={(e) => setLoginPassword(e.target.value)}
                           required
+                          autoComplete="current-password"
                           className="input-focus pr-10"
                         />
                         <Button
@@ -140,9 +287,51 @@ export default function Auth() {
                       </div>
                     </div>
                     <div className="flex items-center justify-end">
-                      <Button variant="link" className="px-0 text-sm">
-                        Esqueceu a senha?
-                      </Button>
+                      <Dialog open={forgotPasswordOpen} onOpenChange={setForgotPasswordOpen}>
+                        <DialogTrigger asChild>
+                          <Button variant="link" className="px-0 text-sm">
+                            Esqueceu a senha?
+                          </Button>
+                        </DialogTrigger>
+                        <DialogContent>
+                          <DialogHeader>
+                            <DialogTitle>Recuperar senha</DialogTitle>
+                            <DialogDescription>
+                              Digite seu email e enviaremos um link para redefinir sua senha.
+                            </DialogDescription>
+                          </DialogHeader>
+                          <form onSubmit={handleForgotPassword} className="space-y-4">
+                            <div className="space-y-2">
+                              <Label htmlFor="forgot-email">E-mail</Label>
+                              <Input
+                                id="forgot-email"
+                                type="email"
+                                placeholder="seu@email.com"
+                                value={forgotPasswordEmail}
+                                onChange={(e) => setForgotPasswordEmail(e.target.value)}
+                                required
+                              />
+                            </div>
+                            <Button 
+                              type="submit" 
+                              className="w-full"
+                              disabled={forgotPasswordLoading}
+                            >
+                              {forgotPasswordLoading ? (
+                                <>
+                                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                  Enviando...
+                                </>
+                              ) : (
+                                <>
+                                  <Mail className="w-4 h-4 mr-2" />
+                                  Enviar email de recuperação
+                                </>
+                              )}
+                            </Button>
+                          </form>
+                        </DialogContent>
+                      </Dialog>
                     </div>
                     <Button 
                       type="submit" 
@@ -174,11 +363,12 @@ export default function Auth() {
                         value={companyName}
                         onChange={(e) => setCompanyName(e.target.value)}
                         required
+                        maxLength={100}
                         className="input-focus"
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="name">Seu nome</Label>
+                      <Label htmlFor="name">Seu nome completo</Label>
                       <Input
                         id="name"
                         type="text"
@@ -186,6 +376,7 @@ export default function Auth() {
                         value={registerName}
                         onChange={(e) => setRegisterName(e.target.value)}
                         required
+                        maxLength={100}
                         className="input-focus"
                       />
                     </div>
@@ -198,6 +389,7 @@ export default function Auth() {
                         value={registerEmail}
                         onChange={(e) => setRegisterEmail(e.target.value)}
                         required
+                        autoComplete="email"
                         className="input-focus"
                       />
                     </div>
@@ -212,6 +404,7 @@ export default function Auth() {
                           onChange={(e) => setRegisterPassword(e.target.value)}
                           required
                           minLength={8}
+                          autoComplete="new-password"
                           className="input-focus pr-10"
                         />
                         <Button
@@ -229,11 +422,45 @@ export default function Auth() {
                         </Button>
                       </div>
                     </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="confirm-password">Confirmar senha</Label>
+                      <Input
+                        id="confirm-password"
+                        type={showPassword ? 'text' : 'password'}
+                        placeholder="Repita a senha"
+                        value={confirmPassword}
+                        onChange={(e) => setConfirmPassword(e.target.value)}
+                        required
+                        minLength={8}
+                        autoComplete="new-password"
+                        className="input-focus"
+                      />
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <Checkbox 
+                        id="terms" 
+                        checked={acceptTerms}
+                        onCheckedChange={(checked) => setAcceptTerms(checked as boolean)}
+                      />
+                      <label
+                        htmlFor="terms"
+                        className="text-sm text-muted-foreground leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                      >
+                        Aceito os{' '}
+                        <Button variant="link" className="px-0 text-xs h-auto">
+                          Termos de Serviço
+                        </Button>{' '}
+                        e{' '}
+                        <Button variant="link" className="px-0 text-xs h-auto">
+                          Política de Privacidade
+                        </Button>
+                      </label>
+                    </div>
                     <Button 
                       type="submit" 
                       className="w-full" 
                       size="lg"
-                      disabled={isLoading}
+                      disabled={isLoading || !acceptTerms}
                     >
                       {isLoading ? (
                         <>
@@ -244,16 +471,6 @@ export default function Auth() {
                         'Criar conta grátis'
                       )}
                     </Button>
-                    <p className="text-xs text-center text-muted-foreground">
-                      Ao criar uma conta, você concorda com nossos{' '}
-                      <Button variant="link" className="px-0 text-xs h-auto">
-                        Termos de Serviço
-                      </Button>{' '}
-                      e{' '}
-                      <Button variant="link" className="px-0 text-xs h-auto">
-                        Política de Privacidade
-                      </Button>
-                    </p>
                   </form>
                 </TabsContent>
               </Tabs>
