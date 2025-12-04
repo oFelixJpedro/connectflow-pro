@@ -3,6 +3,8 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { AuthProvider } from "@/contexts/AuthContext";
+import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { AppLayout } from "@/components/layout/AppLayout";
 import Auth from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
@@ -23,26 +25,32 @@ const App = () => (
       <Toaster />
       <Sonner />
       <BrowserRouter>
-        <Routes>
-          {/* Auth Routes */}
-          <Route path="/auth" element={<Auth />} />
-          
-          {/* App Routes */}
-          <Route element={<AppLayout />}>
-            <Route path="/dashboard" element={<Dashboard />} />
-            <Route path="/inbox" element={<Inbox />} />
-            <Route path="/contacts" element={<Contacts />} />
-            <Route path="/tags" element={<Tags />} />
-            <Route path="/quick-replies" element={<QuickReplies />} />
-            <Route path="/reports" element={<Reports />} />
-            <Route path="/connections" element={<Connections />} />
-            <Route path="/settings" element={<Settings />} />
-          </Route>
-          
-          {/* Redirects */}
-          <Route path="/" element={<Navigate to="/auth" replace />} />
-          <Route path="*" element={<NotFound />} />
-        </Routes>
+        <AuthProvider>
+          <Routes>
+            {/* Public Routes */}
+            <Route path="/auth" element={<Auth />} />
+            
+            {/* Protected Routes */}
+            <Route element={
+              <ProtectedRoute>
+                <AppLayout />
+              </ProtectedRoute>
+            }>
+              <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/inbox" element={<Inbox />} />
+              <Route path="/contacts" element={<Contacts />} />
+              <Route path="/tags" element={<Tags />} />
+              <Route path="/quick-replies" element={<QuickReplies />} />
+              <Route path="/reports" element={<Reports />} />
+              <Route path="/connections" element={<Connections />} />
+              <Route path="/settings" element={<Settings />} />
+            </Route>
+            
+            {/* Redirects */}
+            <Route path="/" element={<Navigate to="/dashboard" replace />} />
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </AuthProvider>
       </BrowserRouter>
     </TooltipProvider>
   </QueryClientProvider>
