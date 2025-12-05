@@ -303,26 +303,26 @@ export default function Connections() {
     setIsProcessing(true);
 
     try {
-      // Re-init instance to get new QR
-      const { data: initData, error: initError } = await supabase.functions.invoke('whatsapp-instance', {
+      // Usar 'reconnect' para reutilizar instância existente
+      const { data: reconnectData, error: reconnectError } = await supabase.functions.invoke('whatsapp-instance', {
         body: {
-          action: 'init',
+          action: 'reconnect',
           instanceName: connection.session_id
         }
       });
 
-      if (initError) throw initError;
+      if (reconnectError) throw reconnectError;
 
-      if (initData.qrCode) {
+      if (reconnectData.qrCode) {
         await supabase
           .from('whatsapp_connections')
           .update({ 
-            qr_code: initData.qrCode,
+            qr_code: reconnectData.qrCode,
             status: 'qr_ready' 
           })
           .eq('id', connection.id);
 
-        setQrCode(initData.qrCode);
+        setQrCode(reconnectData.qrCode);
         startPolling(connection.id, connection.session_id);
       } else {
         throw new Error('QR code não recebido');
