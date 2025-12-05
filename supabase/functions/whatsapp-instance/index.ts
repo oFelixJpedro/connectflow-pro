@@ -278,12 +278,32 @@ Deno.serve(async (req) => {
       let status = 'disconnected'
       let phoneNumber = null
 
-      if (data.state === 'open' || data.connected === true || data.status === 'connected') {
+      console.log('Mapping status from response...')
+      console.log('instance.status:', data.instance?.status)
+      console.log('status.connected:', data.status?.connected)
+      console.log('status.loggedIn:', data.status?.loggedIn)
+
+      // Verificar conexão via múltiplos campos
+      const isConnected = 
+        data.status?.connected === true || 
+        data.instance?.status === 'connected' ||
+        data.instance?.status === 'open'
+
+      const isConnecting = 
+        data.instance?.status === 'connecting' ||
+        data.state === 'connecting'
+
+      if (isConnected) {
         status = 'connected'
-        phoneNumber = data.phone || data.number || data.instance?.owner
-      } else if (data.state === 'connecting' || data.status === 'connecting') {
+        phoneNumber = data.instance?.owner || data.phone || data.number
+      } else if (isConnecting) {
         status = 'connecting'
+      } else {
+        status = 'disconnected'
       }
+
+      console.log('Final mapped status:', status)
+      console.log('Final phone number:', phoneNumber)
 
       return new Response(
         JSON.stringify({
