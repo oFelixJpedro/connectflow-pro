@@ -34,7 +34,7 @@ Deno.serve(async (req) => {
       )
     }
 
-    const { action, instanceName, connectionId } = await req.json()
+    const { action, instanceName } = await req.json()
     const UAZAPI_API_KEY = Deno.env.get('UAZAPI_API_KEY')
 
     if (!UAZAPI_API_KEY) {
@@ -45,108 +45,117 @@ Deno.serve(async (req) => {
       )
     }
 
+    // Header padrão para autenticação na UAZAPI (Evolution API)
+    const apiHeaders = {
+      'apikey': UAZAPI_API_KEY,
+      'Content-Type': 'application/json'
+    }
+
+    console.log('UAZAPI Auth configured:', { 
+      hasApiKey: !!UAZAPI_API_KEY,
+      keyPrefix: UAZAPI_API_KEY?.substring(0, 8) 
+    })
     console.log(`Processing action: ${action} for instance: ${instanceName}`)
 
     if (action === 'init') {
       // Initialize WhatsApp instance and get QR code
       const webhookUrl = `${Deno.env.get('SUPABASE_URL')}/functions/v1/whatsapp-webhook`
       
-      const response = await fetch(`${UAZAPI_BASE_URL}/instance/init`, {
+      const response = await fetch(`${UAZAPI_BASE_URL}/instance/create`, {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${UAZAPI_API_KEY}`,
-          'Content-Type': 'application/json'
-        },
+        headers: apiHeaders,
         body: JSON.stringify({
           instanceName: instanceName,
-          number: "auto",
-          webhook: {
-            url: webhookUrl,
-            events: ['messages', 'connection.update'],
-            byEvents: false
-          }
+          token: instanceName,
+          qrcode: true,
+          integration: "WHATSAPP-BAILEYS",
+          webhook: webhookUrl,
+          events: [
+            "MESSAGES_UPSERT",
+            "MESSAGES_UPDATE",
+            "CONNECTION_UPDATE",
+            "QRCODE_UPDATED"
+          ]
         })
       })
 
-      const data = await response.json()
-      console.log('uazapi init response:', JSON.stringify(data))
+      // Se a instância já existe ou deu erro na criação, tenta buscar o status/connect
+      if (!response.ok && response.status !== 403) {
+         const errorText = await response.text();
+         console.log('Error creating instance:', errorText);
+      }
 
-      if (!response.ok) {
+      // Conectar para pegar o QR Code
+      const connectResponse = await fetch(`${UAZAPI_BASE_URL}/instance/connect/${instanceName}`, {
+        method: 'GET',
+        headers: apiHeaders
+      })
+
+      const data = await connectResponse.json()
+      console.log('uazapi connect response:', JSON.stringify(data))
+
+      if (!connectResponse.ok) {
         return new Response(
           JSON.stringify({ error: data.message || 'Failed to initialize instance' }),
-          { status: response.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          { status: connectResponse.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         )
       }
 
       return new Response(
         JSON.stringify({
           success: true,
-          qrCode: data.qrcode?.base64 || data.qrcode || data.base64,
-          status: data.status
+          qrCode: data.base64 || data.qrcode?.base64 || data.qrcode,
+          status: data.state || 'qr_ready'
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
 
     if (action === 'status') {
-      // Check instance status
       const response = await fetch(`${UAZAPI_BASE_URL}/instance/connectionState/${instanceName}`, {
         method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${UAZAPI_API_KEY}`,
-          'Content-Type': 'application/json'
-        }
+        headers: apiHeaders
       })
 
       const data = await response.json()
-      console.log('uazapi status response:', JSON.stringify(data))
+      
+      // Mapeamento de resposta da Evolution/UAZAPI
+      let status = 'disconnected';
+      if (data.instance?.state === 'open') status = 'connected';
+      if (data.instance?.state === 'connecting') status = 'connecting';
+      
+      // Tenta pegar o número se estiver conectado
+      let phoneNumber = null;
+      if (status === 'connected') {
+         phoneNumber = data.instance?.ownerJid?.split('@')[0]; 
+      }
 
       return new Response(
         JSON.stringify({
           success: true,
-          status: data.state || data.status,
-          phoneNumber: data.phoneNumber || data.number
+          status: status,
+          phoneNumber: phoneNumber
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
 
     if (action === 'logout') {
-      // Logout/disconnect instance
       const response = await fetch(`${UAZAPI_BASE_URL}/instance/logout/${instanceName}`, {
         method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${UAZAPI_API_KEY}`,
-          'Content-Type': 'application/json'
-        }
+        headers: apiHeaders
       })
-
       const data = await response.json()
-      console.log('uazapi logout response:', JSON.stringify(data))
-
-      return new Response(
-        JSON.stringify({ success: true }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
+      return new Response(JSON.stringify(data), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
     if (action === 'delete') {
-      // Delete instance completely
       const response = await fetch(`${UAZAPI_BASE_URL}/instance/delete/${instanceName}`, {
         method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${UAZAPI_API_KEY}`,
-          'Content-Type': 'application/json'
-        }
+        headers: apiHeaders
       })
-
       const data = await response.json()
-      console.log('uazapi delete response:', JSON.stringify(data))
-
-      return new Response(
-        JSON.stringify({ success: true }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
+      return new Response(JSON.stringify(data), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
     return new Response(
