@@ -171,10 +171,14 @@ Deno.serve(async (req) => {
 
       console.log('✅ Connected successfully! QR Code available.')
 
+      // Extrair QR Code - UAZAPI retorna em 'qrcode' (minúsculo) ou dentro de 'instance.qrcode'
+      const qrCode = connectData.qrcode || connectData.instance?.qrcode || connectData.qrCode || connectData.base64 || connectData.qr
+      console.log('QR Code found:', qrCode ? 'yes (length: ' + qrCode.length + ')' : 'no')
+
       return new Response(
         JSON.stringify({
           success: true,
-          qrCode: connectData.qrCode || connectData.base64 || connectData.qr,
+          qrCode: qrCode,
           instanceToken: instanceToken,
           status: 'qr_ready'
         }),
