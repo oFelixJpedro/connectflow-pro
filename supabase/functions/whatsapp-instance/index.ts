@@ -45,23 +45,27 @@ Deno.serve(async (req) => {
       )
     }
 
-    // Header padrão para autenticação na UAZAPI
-    const apiHeaders = {
-      'apikey': UAZAPI_API_KEY,
-      'Content-Type': 'application/json'
-    }
-
-    console.log('UAZAPI Auth configured:', { 
+    console.log('UAZAPI Config:', { 
+      baseUrl: UAZAPI_BASE_URL,
       hasApiKey: !!UAZAPI_API_KEY,
-      keyPrefix: UAZAPI_API_KEY?.substring(0, 8) 
+      keyPrefix: UAZAPI_API_KEY?.substring(0, 8)
     })
     console.log(`Processing action: ${action} for instance: ${instanceName}`)
 
     if (action === 'init') {
+      // Headers para operações ADMINISTRATIVAS
+      const adminHeaders = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'admintoken': UAZAPI_API_KEY
+      }
+
+      console.log('Creating instance with admintoken...')
+
       // Criar/Iniciar instância na UAZAPI
       const initResponse = await fetch(`${UAZAPI_BASE_URL}/instance/init`, {
         method: 'POST',
-        headers: apiHeaders,
+        headers: adminHeaders,
         body: JSON.stringify({
           name: instanceName,
           systemName: "multiatendimento",
@@ -70,6 +74,7 @@ Deno.serve(async (req) => {
         })
       })
 
+      console.log('Init status:', initResponse.status)
       const initData = await initResponse.json()
       console.log('Init response:', JSON.stringify(initData))
 
@@ -80,13 +85,23 @@ Deno.serve(async (req) => {
         )
       }
 
+      // Headers para operações da INSTÂNCIA
+      const instanceHeaders = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'token': UAZAPI_API_KEY
+      }
+
+      console.log('Connecting instance to generate QR...')
+
       // Conectar para gerar QR Code (sem phone = gera QR)
       const connectResponse = await fetch(`${UAZAPI_BASE_URL}/instance/connect`, {
         method: 'POST',
-        headers: apiHeaders,
+        headers: instanceHeaders,
         body: JSON.stringify({})
       })
 
+      console.log('Connect status:', connectResponse.status)
       const connectData = await connectResponse.json()
       console.log('Connect response:', JSON.stringify(connectData))
 
@@ -108,13 +123,19 @@ Deno.serve(async (req) => {
     }
 
     if (action === 'status') {
+      const instanceHeaders = {
+        'Accept': 'application/json',
+        'token': UAZAPI_API_KEY
+      }
+
       const response = await fetch(`${UAZAPI_BASE_URL}/instance/status`, {
         method: 'GET',
-        headers: apiHeaders
+        headers: instanceHeaders
       })
 
+      console.log('Status response code:', response.status)
       const data = await response.json()
-      console.log('Status response:', JSON.stringify(data))
+      console.log('Status data:', JSON.stringify(data))
       
       // Mapear resposta UAZAPI para nosso formato
       let status = 'disconnected'
@@ -138,11 +159,17 @@ Deno.serve(async (req) => {
     }
 
     if (action === 'logout') {
+      const instanceHeaders = {
+        'Accept': 'application/json',
+        'token': UAZAPI_API_KEY
+      }
+
       const response = await fetch(`${UAZAPI_BASE_URL}/instance/disconnect`, {
         method: 'POST',
-        headers: apiHeaders
+        headers: instanceHeaders
       })
 
+      console.log('Disconnect status:', response.status)
       const data = await response.json()
       console.log('Disconnect response:', JSON.stringify(data))
 
