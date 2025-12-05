@@ -1,1 +1,7 @@
 project_id = "stjtkvanmlidurmwpdpc"
+
+[functions.register]
+verify_jwt = false
+
+[functions.whatsapp-instance]
+verify_jwt = true
