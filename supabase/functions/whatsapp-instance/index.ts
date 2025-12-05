@@ -1,3 +1,4 @@
+// Updated: 2025-12-05 - Fixed UAZAPI token configuration
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const corsHeaders = {
