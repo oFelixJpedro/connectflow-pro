@@ -45,7 +45,7 @@ Deno.serve(async (req) => {
       )
     }
 
-    // Header padrão para autenticação na UAZAPI (Evolution API)
+    // Header padrão para autenticação na UAZAPI
     const apiHeaders = {
       'apikey': UAZAPI_API_KEY,
       'Content-Type': 'application/json'
@@ -58,45 +58,41 @@ Deno.serve(async (req) => {
     console.log(`Processing action: ${action} for instance: ${instanceName}`)
 
     if (action === 'init') {
-      // Initialize WhatsApp instance and get QR code
-      const webhookUrl = `${Deno.env.get('SUPABASE_URL')}/functions/v1/whatsapp-webhook`
-      
-      const response = await fetch(`${UAZAPI_BASE_URL}/instance/create`, {
+      // Criar/Iniciar instância na UAZAPI
+      const initResponse = await fetch(`${UAZAPI_BASE_URL}/instance/init`, {
         method: 'POST',
         headers: apiHeaders,
         body: JSON.stringify({
-          instanceName: instanceName,
-          token: instanceName,
-          qrcode: true,
-          integration: "WHATSAPP-BAILEYS",
-          webhook: webhookUrl,
-          events: [
-            "MESSAGES_UPSERT",
-            "MESSAGES_UPDATE",
-            "CONNECTION_UPDATE",
-            "QRCODE_UPDATED"
-          ]
+          name: instanceName,
+          systemName: "multiatendimento",
+          adminField01: user.id,
+          adminField02: new Date().toISOString()
         })
       })
 
-      // Se a instância já existe ou deu erro na criação, tenta buscar o status/connect
-      if (!response.ok && response.status !== 403) {
-         const errorText = await response.text();
-         console.log('Error creating instance:', errorText);
+      const initData = await initResponse.json()
+      console.log('Init response:', JSON.stringify(initData))
+
+      if (!initResponse.ok) {
+        return new Response(
+          JSON.stringify({ error: initData.message || 'Failed to init instance' }),
+          { status: initResponse.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
       }
 
-      // Conectar para pegar o QR Code
-      const connectResponse = await fetch(`${UAZAPI_BASE_URL}/instance/connect/${instanceName}`, {
-        method: 'GET',
-        headers: apiHeaders
+      // Conectar para gerar QR Code (sem phone = gera QR)
+      const connectResponse = await fetch(`${UAZAPI_BASE_URL}/instance/connect`, {
+        method: 'POST',
+        headers: apiHeaders,
+        body: JSON.stringify({})
       })
 
-      const data = await connectResponse.json()
-      console.log('uazapi connect response:', JSON.stringify(data))
+      const connectData = await connectResponse.json()
+      console.log('Connect response:', JSON.stringify(connectData))
 
       if (!connectResponse.ok) {
         return new Response(
-          JSON.stringify({ error: data.message || 'Failed to initialize instance' }),
+          JSON.stringify({ error: connectData.message || 'Failed to connect instance' }),
           { status: connectResponse.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         )
       }
@@ -104,30 +100,31 @@ Deno.serve(async (req) => {
       return new Response(
         JSON.stringify({
           success: true,
-          qrCode: data.base64 || data.qrcode?.base64 || data.qrcode,
-          status: data.state || 'qr_ready'
+          qrCode: connectData.qrCode || connectData.base64 || connectData.qr,
+          status: 'qr_ready'
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
 
     if (action === 'status') {
-      const response = await fetch(`${UAZAPI_BASE_URL}/instance/connectionState/${instanceName}`, {
+      const response = await fetch(`${UAZAPI_BASE_URL}/instance/status`, {
         method: 'GET',
         headers: apiHeaders
       })
 
       const data = await response.json()
+      console.log('Status response:', JSON.stringify(data))
       
-      // Mapeamento de resposta da Evolution/UAZAPI
-      let status = 'disconnected';
-      if (data.instance?.state === 'open') status = 'connected';
-      if (data.instance?.state === 'connecting') status = 'connecting';
-      
-      // Tenta pegar o número se estiver conectado
-      let phoneNumber = null;
-      if (status === 'connected') {
-         phoneNumber = data.instance?.ownerJid?.split('@')[0]; 
+      // Mapear resposta UAZAPI para nosso formato
+      let status = 'disconnected'
+      let phoneNumber = null
+
+      if (data.state === 'open' || data.connected === true) {
+        status = 'connected'
+        phoneNumber = data.phone || data.number
+      } else if (data.state === 'connecting') {
+        status = 'connecting'
       }
 
       return new Response(
@@ -141,21 +138,18 @@ Deno.serve(async (req) => {
     }
 
     if (action === 'logout') {
-      const response = await fetch(`${UAZAPI_BASE_URL}/instance/logout/${instanceName}`, {
-        method: 'DELETE',
+      const response = await fetch(`${UAZAPI_BASE_URL}/instance/disconnect`, {
+        method: 'POST',
         headers: apiHeaders
       })
-      const data = await response.json()
-      return new Response(JSON.stringify(data), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
-    }
 
-    if (action === 'delete') {
-      const response = await fetch(`${UAZAPI_BASE_URL}/instance/delete/${instanceName}`, {
-        method: 'DELETE',
-        headers: apiHeaders
-      })
       const data = await response.json()
-      return new Response(JSON.stringify(data), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+      console.log('Disconnect response:', JSON.stringify(data))
+
+      return new Response(
+        JSON.stringify({ success: true, data }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
     }
 
     return new Response(
