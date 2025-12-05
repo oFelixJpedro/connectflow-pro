@@ -35,7 +35,15 @@ Deno.serve(async (req) => {
       )
     }
 
-    const { action, instanceName } = await req.json()
+    const requestBody = await req.json()
+    console.log('=== REQUEST DEBUG ===')
+    console.log('Full request body:', JSON.stringify(requestBody))
+    console.log('Keys received:', Object.keys(requestBody))
+    console.log('====================')
+
+    const { action, instanceName } = requestBody
+    console.log('Parsed action:', action)
+    console.log('Parsed instanceName:', instanceName)
     
     // Ler e limpar token (remove espaços extras)
     const UAZAPI_API_KEY = Deno.env.get('UAZAPI_API_KEY')?.trim()
@@ -243,8 +251,15 @@ Deno.serve(async (req) => {
       )
     }
 
+    console.error('Invalid action received:', action)
+    console.error('Valid actions are: init, status, logout')
+
     return new Response(
-      JSON.stringify({ error: 'Invalid action' }),
+      JSON.stringify({ 
+        error: 'Invalid action',
+        received: action,
+        valid: ['init', 'status', 'logout']
+      }),
       { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )
 
