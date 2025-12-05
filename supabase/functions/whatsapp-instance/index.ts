@@ -315,6 +315,91 @@ Deno.serve(async (req) => {
       )
     }
 
+    // ========== ACTION: RECONNECT ==========
+    if (action === 'reconnect') {
+      console.log('Reconnecting instance:', instanceName)
+      
+      // Buscar instance token do banco
+      const { data: connection, error: fetchError } = await supabaseClient
+        .from('whatsapp_connections')
+        .select('instance_token, session_id')
+        .eq('session_id', instanceName)
+        .single()
+      
+      if (fetchError || !connection || !connection.instance_token) {
+        console.error('Connection not found or missing token:', fetchError)
+        return new Response(
+          JSON.stringify({ error: 'Connection not found. Please create a new connection.' }),
+          { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+      
+      console.log('Found existing instance, reconnecting...')
+      
+      const instanceHeaders = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'token': connection.instance_token
+      }
+      
+      // Conectar instância existente
+      const connectResponse = await fetch(`${UAZAPI_BASE_URL}/instance/connect`, {
+        method: 'POST',
+        headers: instanceHeaders,
+        body: JSON.stringify({})
+      })
+      
+      console.log('Reconnect status:', connectResponse.status)
+      
+      const connectText = await connectResponse.text()
+      console.log('Reconnect response (raw):', connectText)
+      
+      let connectData
+      try {
+        connectData = JSON.parse(connectText)
+        console.log('Reconnect response (parsed):', JSON.stringify(connectData))
+      } catch (e) {
+        console.error('Failed to parse reconnect response:', e)
+        return new Response(
+          JSON.stringify({ error: 'Invalid response from UAZAPI' }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+      
+      if (!connectResponse.ok) {
+        console.error('Reconnect failed:', connectData)
+        return new Response(
+          JSON.stringify({ 
+            error: connectData.message || connectData.error || 'Failed to reconnect'
+          }),
+          { status: connectResponse.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+      
+      // Atualizar status no banco
+      await supabaseClient
+        .from('whatsapp_connections')
+        .update({ 
+          status: 'connecting',
+          qr_code: connectData.qrcode || connectData.instance?.qrcode || connectData.qrCode || null,
+          updated_at: new Date().toISOString()
+        })
+        .eq('session_id', instanceName)
+      
+      console.log('✅ Reconnect successful!')
+      
+      const qrCode = connectData.qrcode || connectData.instance?.qrcode || connectData.qrCode || connectData.base64 || connectData.qr
+      
+      return new Response(
+        JSON.stringify({
+          success: true,
+          qrCode: qrCode,
+          status: 'qr_ready'
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
     // ========== ACTION: LOGOUT ==========
     if (action === 'logout') {
       console.log('Disconnecting instance:', instanceName)
@@ -362,28 +447,37 @@ Deno.serve(async (req) => {
     if (action === 'delete') {
       console.log('Deleting instance:', instanceName)
       
-      // Deletar na UAZAPI usando admin token
-      const adminHeaders = {
-        'Accept': 'application/json',
-        'Content-Type': 'application/json',
-        'admintoken': UAZAPI_API_KEY
+      // Buscar instance token do banco
+      const { data: connection } = await supabaseClient
+        .from('whatsapp_connections')
+        .select('instance_token')
+        .eq('session_id', instanceName)
+        .single()
+      
+      if (connection?.instance_token) {
+        console.log('Found instance token, deleting from UAZAPI...')
+        
+        // Deletar na UAZAPI usando instance token
+        const instanceHeaders = {
+          'Accept': 'application/json',
+          'token': connection.instance_token
+        }
+        
+        // URL correta: /instance sem query string
+        const deleteResponse = await fetch(`${UAZAPI_BASE_URL}/instance`, {
+          method: 'DELETE',
+          headers: instanceHeaders
+        })
+        
+        console.log('Delete response status:', deleteResponse.status)
+        
+        const deleteText = await deleteResponse.text()
+        console.log('Delete response:', deleteText)
+      } else {
+        console.log('No instance token found, skipping UAZAPI deletion')
       }
       
-      // DELETE com nome na query string
-      const deleteUrl = `${UAZAPI_BASE_URL}/instance?name=${encodeURIComponent(instanceName)}`
-      console.log('Delete URL:', deleteUrl)
-      
-      const deleteResponse = await fetch(deleteUrl, {
-        method: 'DELETE',
-        headers: adminHeaders
-      })
-      
-      console.log('Delete response status:', deleteResponse.status)
-      
-      const deleteText = await deleteResponse.text()
-      console.log('Delete response:', deleteText)
-      
-      // Deletar do banco independente do resultado da API
+      // Sempre deletar do banco (mesmo se falhar na UAZAPI)
       const { error: deleteError } = await supabaseClient
         .from('whatsapp_connections')
         .delete()
@@ -391,14 +485,18 @@ Deno.serve(async (req) => {
       
       if (deleteError) {
         console.error('Failed to delete from database:', deleteError)
-      } else {
-        console.log('✅ Deleted from database!')
+        return new Response(
+          JSON.stringify({ error: 'Failed to delete from database' }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
       }
+      
+      console.log('✅ Instance deleted successfully!')
       
       return new Response(
         JSON.stringify({ 
           success: true, 
-          message: 'Connection deleted'
+          message: 'Instance deleted'
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
