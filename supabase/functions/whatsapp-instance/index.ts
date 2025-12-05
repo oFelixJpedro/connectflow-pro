@@ -1,4 +1,4 @@
-// Updated: 2025-12-05 - Added detailed logging and .trim() for token
+// Updated: 2025-12-05 - Fixed status, logout, added delete action, save instance_token
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const corsHeaders = {
@@ -62,10 +62,10 @@ Deno.serve(async (req) => {
     console.log('Token length:', UAZAPI_API_KEY?.length)
     console.log('Token starts:', UAZAPI_API_KEY?.substring(0, 10))
     console.log('Token ends:', UAZAPI_API_KEY?.substring(UAZAPI_API_KEY.length - 10))
-    console.log('Expected: 92Nl4AKwuR...X1vzmS2UJ0 (50 chars)')
     console.log('====================')
     console.log(`Processing action: ${action} for instance: ${instanceName}`)
 
+    // ========== ACTION: INIT ==========
     if (action === 'init') {
       // Headers para operações ADMINISTRATIVAS
       const adminHeaders = {
@@ -127,6 +127,26 @@ Deno.serve(async (req) => {
 
       // Extrair o token da instância criada para usar nas próximas chamadas
       const instanceToken = initData.token || initData.instance?.token
+      const instanceId = initData.id || initData.instance?.id
+
+      console.log('Instance ID:', instanceId)
+      console.log('Instance token:', instanceToken ? instanceToken.substring(0, 8) + '...' : 'not found')
+
+      // SALVAR INSTANCE TOKEN NO BANCO
+      if (instanceToken) {
+        console.log('Saving instance token to database...')
+        
+        const { error: updateError } = await supabaseClient
+          .from('whatsapp_connections')
+          .update({ instance_token: instanceToken })
+          .eq('session_id', instanceName)
+        
+        if (updateError) {
+          console.error('Failed to save instance token:', updateError)
+        } else {
+          console.log('✅ Instance token saved!')
+        }
+      }
 
       // Headers para operações da INSTÂNCIA
       const instanceHeaders = {
@@ -194,29 +214,74 @@ Deno.serve(async (req) => {
       )
     }
 
+    // ========== ACTION: STATUS ==========
     if (action === 'status') {
+      // Primeiro buscar instance_token do banco
+      const { data: connection } = await supabaseClient
+        .from('whatsapp_connections')
+        .select('instance_token')
+        .eq('session_id', instanceName)
+        .maybeSingle()
+      
+      const tokenToUse = connection?.instance_token || UAZAPI_API_KEY
+      console.log('Using token:', connection?.instance_token ? 'instance_token from DB' : 'UAZAPI_API_KEY')
+
+      // Tentar com instance name na query string
+      const statusUrl = `${UAZAPI_BASE_URL}/instance/status?name=${encodeURIComponent(instanceName)}`
+      console.log('Checking status with URL:', statusUrl)
+
       const instanceHeaders = {
         'Accept': 'application/json',
-        'token': UAZAPI_API_KEY
+        'token': tokenToUse
       }
 
-      const response = await fetch(`${UAZAPI_BASE_URL}/instance/status`, {
+      const response = await fetch(statusUrl, {
         method: 'GET',
         headers: instanceHeaders
       })
 
       console.log('Status response code:', response.status)
-      const data = await response.json()
-      console.log('Status data:', JSON.stringify(data))
+      
+      const responseText = await response.text()
+      console.log('Status response (raw):', responseText)
+
+      let data
+      try {
+        data = JSON.parse(responseText)
+        console.log('Status data:', JSON.stringify(data))
+      } catch (e) {
+        console.error('Failed to parse status response:', e)
+        return new Response(
+          JSON.stringify({ 
+            success: true,
+            status: 'disconnected',
+            phoneNumber: null
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+
+      // Se retornou 401 e temos instance_token, já usamos. Se não, retornar disconnected
+      if (response.status === 401) {
+        console.log('Status returned 401, assuming disconnected')
+        return new Response(
+          JSON.stringify({
+            success: true,
+            status: 'disconnected',
+            phoneNumber: null
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
       
       // Mapear resposta UAZAPI para nosso formato
       let status = 'disconnected'
       let phoneNumber = null
 
-      if (data.state === 'open' || data.connected === true) {
+      if (data.state === 'open' || data.connected === true || data.status === 'connected') {
         status = 'connected'
-        phoneNumber = data.phone || data.number
-      } else if (data.state === 'connecting') {
+        phoneNumber = data.phone || data.number || data.instance?.owner
+      } else if (data.state === 'connecting' || data.status === 'connecting') {
         status = 'connecting'
       }
 
@@ -230,10 +295,24 @@ Deno.serve(async (req) => {
       )
     }
 
+    // ========== ACTION: LOGOUT ==========
     if (action === 'logout') {
+      console.log('Disconnecting instance:', instanceName)
+      
+      // Buscar instance_token do banco
+      const { data: connection } = await supabaseClient
+        .from('whatsapp_connections')
+        .select('instance_token')
+        .eq('session_id', instanceName)
+        .maybeSingle()
+      
+      const tokenToUse = connection?.instance_token || UAZAPI_API_KEY
+      console.log('Using token:', connection?.instance_token ? 'instance_token from DB' : 'UAZAPI_API_KEY')
+
       const instanceHeaders = {
         'Accept': 'application/json',
-        'token': UAZAPI_API_KEY
+        'Content-Type': 'application/json',
+        'token': tokenToUse
       }
 
       const response = await fetch(`${UAZAPI_BASE_URL}/instance/disconnect`, {
@@ -242,8 +321,16 @@ Deno.serve(async (req) => {
       })
 
       console.log('Disconnect status:', response.status)
-      const data = await response.json()
-      console.log('Disconnect response:', JSON.stringify(data))
+      
+      const responseText = await response.text()
+      console.log('Disconnect response:', responseText)
+
+      let data
+      try {
+        data = JSON.parse(responseText)
+      } catch (e) {
+        data = { message: responseText }
+      }
 
       return new Response(
         JSON.stringify({ success: true, data }),
@@ -251,14 +338,60 @@ Deno.serve(async (req) => {
       )
     }
 
+    // ========== ACTION: DELETE ==========
+    if (action === 'delete') {
+      console.log('Deleting instance:', instanceName)
+      
+      // Deletar na UAZAPI usando admin token
+      const adminHeaders = {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+        'admintoken': UAZAPI_API_KEY
+      }
+      
+      // DELETE com nome na query string
+      const deleteUrl = `${UAZAPI_BASE_URL}/instance?name=${encodeURIComponent(instanceName)}`
+      console.log('Delete URL:', deleteUrl)
+      
+      const deleteResponse = await fetch(deleteUrl, {
+        method: 'DELETE',
+        headers: adminHeaders
+      })
+      
+      console.log('Delete response status:', deleteResponse.status)
+      
+      const deleteText = await deleteResponse.text()
+      console.log('Delete response:', deleteText)
+      
+      // Deletar do banco independente do resultado da API
+      const { error: deleteError } = await supabaseClient
+        .from('whatsapp_connections')
+        .delete()
+        .eq('session_id', instanceName)
+      
+      if (deleteError) {
+        console.error('Failed to delete from database:', deleteError)
+      } else {
+        console.log('✅ Deleted from database!')
+      }
+      
+      return new Response(
+        JSON.stringify({ 
+          success: true, 
+          message: 'Connection deleted'
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
     console.error('Invalid action received:', action)
-    console.error('Valid actions are: init, status, logout')
+    console.error('Valid actions are: init, status, logout, delete')
 
     return new Response(
       JSON.stringify({ 
         error: 'Invalid action',
         received: action,
-        valid: ['init', 'status', 'logout']
+        valid: ['init', 'status', 'logout', 'delete']
       }),
       { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )

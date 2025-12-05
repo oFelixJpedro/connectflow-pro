@@ -500,6 +500,7 @@ export type Database = {
           created_at: string | null
           error_message: string | null
           id: string
+          instance_token: string | null
           last_connected_at: string | null
           name: string
           phone_number: string
@@ -516,6 +517,7 @@ export type Database = {
           created_at?: string | null
           error_message?: string | null
           id?: string
+          instance_token?: string | null
           last_connected_at?: string | null
           name: string
           phone_number: string
@@ -532,6 +534,7 @@ export type Database = {
           created_at?: string | null
           error_message?: string | null
           id?: string
+          instance_token?: string | null
           last_connected_at?: string | null
           name?: string
           phone_number?: string
