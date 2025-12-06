@@ -250,9 +250,39 @@ serve(async (req) => {
     console.log('   - message.senderName:', payload.message?.senderName)
     console.log('========================================\n')
 
-    // Extract phone number - prioritize chat.owner (always correct) over sender (can have @lid format)
-    const phoneNumber = payload.chat?.owner || extractPhoneNumber(sender)
+    // ======================================================================
+    // EXTRAÇÃO DO NÚMERO DO CONTATO DA CONVERSA
+    // ======================================================================
+    // IMPORTANTE: Extrair o número do CONTATO (pessoa do outro lado), 
+    // NÃO o número do remetente da mensagem específica
+    // ======================================================================
+
+    let phoneNumber: string
+    let source: string
+
+    // Prioridade 1: chat.wa_chatid (SEMPRE contém o número do contato)
+    if (payload.chat?.wa_chatid) {
+      phoneNumber = payload.chat.wa_chatid.split('@')[0]
+      source = 'chat.wa_chatid'
+    }
+    // Prioridade 2: message.chatid (backup confiável)
+    else if (payload.message?.chatid) {
+      phoneNumber = payload.message.chatid.split('@')[0]
+      source = 'message.chatid'
+    }
+    // Prioridade 3: chat.phone (remover formatação: +, espaços, hífens)
+    else if (payload.chat?.phone) {
+      phoneNumber = payload.chat.phone.replace(/[^\d]/g, '')
+      source = 'chat.phone (formatado)'
+    }
+    // Fallback: message.sender (pode estar errado para mensagens recebidas)
+    else {
+      phoneNumber = extractPhoneNumber(sender)
+      source = 'message.sender (FALLBACK - pode estar incorreto)'
+    }
+
     console.log(`📞 Phone number extraído: ${phoneNumber}`)
+    console.log(`   - Fonte: ${source}`)
     console.log(`   - Fonte: ${payload.chat?.owner ? 'chat.owner' : 'message.sender'}`)
     
     // Extract contact name
