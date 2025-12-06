@@ -232,9 +232,10 @@ serve(async (req) => {
     console.log('│ 5️⃣  ETAPA 2: PROCESSAR CONTATO                                  │')
     console.log('└─────────────────────────────────────────────────────────────────┘')
     
-    // Extract phone number (remove @s.whatsapp.net)
-    const phoneNumber = extractPhoneNumber(sender)
+    // Extract phone number - prioritize chat.owner (always correct) over sender (can have @lid format)
+    const phoneNumber = payload.chat?.owner || extractPhoneNumber(sender)
     console.log(`📞 Phone number extraído: ${phoneNumber}`)
+    console.log(`   - Fonte: ${payload.chat?.owner ? 'chat.owner' : 'message.sender'}`)
     
     // Extract contact name
     const contactName = payload.chat?.wa_name || payload.message?.senderName || phoneNumber
