@@ -232,6 +232,24 @@ serve(async (req) => {
     console.log('│ 5️⃣  ETAPA 2: PROCESSAR CONTATO                                  │')
     console.log('└─────────────────────────────────────────────────────────────────┘')
     
+    // ========== DEBUG: LOGS DO OBJETO CHAT ==========
+    console.log('\n🔍 DEBUG - OBJETO CHAT COMPLETO:')
+    console.log(JSON.stringify(payload.chat, null, 2))
+
+    console.log('\n📋 CAMPOS INDIVIDUAIS DO CHAT:')
+    console.log('   - chat.wa_chatid:', payload.chat?.wa_chatid)
+    console.log('   - chat.phone:', payload.chat?.phone)  
+    console.log('   - chat.owner:', payload.chat?.owner)
+    console.log('   - chat.wa_fastid:', payload.chat?.wa_fastid)
+    console.log('   - chat.wa_name:', payload.chat?.wa_name)
+    console.log('   - chat.wa_contactName:', payload.chat?.wa_contactName)
+
+    console.log('\n📋 CAMPOS INDIVIDUAIS DA MESSAGE:')
+    console.log('   - message.sender:', payload.message?.sender)
+    console.log('   - message.chatid:', payload.message?.chatid)
+    console.log('   - message.senderName:', payload.message?.senderName)
+    console.log('========================================\n')
+
     // Extract phone number - prioritize chat.owner (always correct) over sender (can have @lid format)
     const phoneNumber = payload.chat?.owner || extractPhoneNumber(sender)
     console.log(`📞 Phone number extraído: ${phoneNumber}`)
