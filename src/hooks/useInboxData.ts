@@ -1,8 +1,9 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from '@/hooks/use-toast';
 import type { Conversation, Message, Contact } from '@/types';
+import type { RealtimeChannel } from '@supabase/supabase-js';
 
 // Funções de transformação de snake_case para camelCase
 function transformConversation(db: any): Conversation {
@@ -356,11 +357,153 @@ export function useInboxData() {
   // EFEITOS
   // ============================================================
 
+  // Ref para a conversa selecionada (evita stale closures no realtime)
+  const selectedConversationRef = useRef<Conversation | null>(null);
+  useEffect(() => {
+    selectedConversationRef.current = selectedConversation;
+  }, [selectedConversation]);
+
   // Carregar conversas ao montar
   useEffect(() => {
     if (profile?.company_id) {
       loadConversations();
     }
+  }, [profile?.company_id, loadConversations]);
+
+  // ============================================================
+  // REALTIME: MENSAGENS
+  // ============================================================
+  useEffect(() => {
+    if (!profile?.company_id) return;
+
+    console.log('[Realtime] Iniciando subscription de mensagens');
+
+    const channel: RealtimeChannel = supabase
+      .channel('inbox-messages')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'messages',
+        },
+        (payload) => {
+          console.log('[Realtime] Nova mensagem recebida:', payload);
+          
+          const newMessage = transformMessage(payload.new);
+          const currentConversation = selectedConversationRef.current;
+          
+          // Se a mensagem é da conversa atualmente selecionada, adicionar ao array
+          if (currentConversation && newMessage.conversationId === currentConversation.id) {
+            setMessages((prev) => {
+              // Evitar duplicatas
+              if (prev.some((m) => m.id === newMessage.id)) {
+                console.log('[Realtime] Mensagem já existe, ignorando');
+                return prev;
+              }
+              console.log('[Realtime] Adicionando mensagem ao chat');
+              return [...prev, newMessage];
+            });
+          }
+        }
+      )
+      .subscribe((status) => {
+        console.log('[Realtime] Status subscription mensagens:', status);
+      });
+
+    return () => {
+      console.log('[Realtime] Cancelando subscription de mensagens');
+      supabase.removeChannel(channel);
+    };
+  }, [profile?.company_id]);
+
+  // ============================================================
+  // REALTIME: CONVERSAS
+  // ============================================================
+  useEffect(() => {
+    if (!profile?.company_id) return;
+
+    console.log('[Realtime] Iniciando subscription de conversas');
+
+    const channel: RealtimeChannel = supabase
+      .channel('inbox-conversations')
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'conversations',
+        },
+        (payload) => {
+          console.log('[Realtime] Conversa atualizada:', payload);
+          
+          const updatedData = payload.new as Record<string, unknown>;
+          const conversationId = updatedData.id as string;
+          
+          // Atualizar na lista de conversas
+          setConversations((prev) => {
+            const updated = prev.map((c) => {
+              if (c.id !== conversationId) return c;
+              
+              return {
+                ...c,
+                status: (updatedData.status as Conversation['status']) || c.status,
+                priority: (updatedData.priority as Conversation['priority']) || c.priority,
+                unreadCount: (updatedData.unread_count as number) ?? c.unreadCount,
+                lastMessageAt: (updatedData.last_message_at as string) || c.lastMessageAt,
+                assignedUserId: (updatedData.assigned_user_id as string) || c.assignedUserId,
+                closedAt: (updatedData.closed_at as string) || c.closedAt,
+              };
+            });
+            
+            // Reordenar por last_message_at
+            return updated.sort((a, b) => {
+              const dateA = a.lastMessageAt ? new Date(a.lastMessageAt).getTime() : 0;
+              const dateB = b.lastMessageAt ? new Date(b.lastMessageAt).getTime() : 0;
+              return dateB - dateA;
+            });
+          });
+          
+          // Se for a conversa selecionada, atualizar também
+          const currentConversation = selectedConversationRef.current;
+          if (currentConversation?.id === conversationId) {
+            setSelectedConversation((prev) => {
+              if (!prev) return null;
+              return {
+                ...prev,
+                status: (updatedData.status as Conversation['status']) || prev.status,
+                priority: (updatedData.priority as Conversation['priority']) || prev.priority,
+                unreadCount: (updatedData.unread_count as number) ?? prev.unreadCount,
+                lastMessageAt: (updatedData.last_message_at as string) || prev.lastMessageAt,
+                assignedUserId: (updatedData.assigned_user_id as string) || prev.assignedUserId,
+                closedAt: (updatedData.closed_at as string) || prev.closedAt,
+              };
+            });
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'conversations',
+        },
+        (payload) => {
+          console.log('[Realtime] Nova conversa criada:', payload);
+          
+          // Recarregar todas as conversas para pegar os dados relacionados (contact, etc)
+          loadConversations();
+        }
+      )
+      .subscribe((status) => {
+        console.log('[Realtime] Status subscription conversas:', status);
+      });
+
+    return () => {
+      console.log('[Realtime] Cancelando subscription de conversas');
+      supabase.removeChannel(channel);
+    };
   }, [profile?.company_id, loadConversations]);
 
   return {
