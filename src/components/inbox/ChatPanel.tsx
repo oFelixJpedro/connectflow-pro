@@ -13,7 +13,7 @@ import {
   Tag,
   UserPlus,
   ArrowRight,
-  X
+  Loader2
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -43,6 +43,8 @@ interface ChatPanelProps {
   onSendMessage: (content: string) => void;
   onAssign: () => void;
   onClose: () => void;
+  isLoadingMessages?: boolean;
+  isSendingMessage?: boolean;
 }
 
 const statusIcons = {
@@ -59,11 +61,14 @@ export function ChatPanel({
   onSendMessage,
   onAssign,
   onClose,
+  isLoadingMessages = false,
+  isSendingMessage = false,
 }: ChatPanelProps) {
   const [inputValue, setInputValue] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
+  // Auto-scroll para última mensagem
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
@@ -71,7 +76,7 @@ export function ChatPanel({
   }, [messages]);
 
   const handleSend = () => {
-    if (!inputValue.trim()) return;
+    if (!inputValue.trim() || isSendingMessage) return;
     onSendMessage(inputValue.trim());
     setInputValue('');
     textareaRef.current?.focus();
@@ -191,68 +196,80 @@ export function ChatPanel({
 
       {/* Messages Area */}
       <ScrollArea className="flex-1 px-4" ref={scrollRef}>
-        <div className="py-4 space-y-4">
-          {Object.entries(groupedMessages).map(([date, dateMessages]) => (
-            <div key={date}>
-              {/* Date separator */}
-              <div className="flex items-center justify-center my-4">
-                <Badge variant="secondary" className="text-xs font-normal">
-                  {formatMessageDate(dateMessages[0].createdAt)}
-                </Badge>
-              </div>
+        {isLoadingMessages ? (
+          <div className="flex items-center justify-center h-full">
+            <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+          </div>
+        ) : messages.length === 0 ? (
+          <div className="flex items-center justify-center h-full">
+            <p className="text-muted-foreground text-sm">
+              Nenhuma mensagem ainda
+            </p>
+          </div>
+        ) : (
+          <div className="py-4 space-y-4">
+            {Object.entries(groupedMessages).map(([date, dateMessages]) => (
+              <div key={date}>
+                {/* Date separator */}
+                <div className="flex items-center justify-center my-4">
+                  <Badge variant="secondary" className="text-xs font-normal">
+                    {formatMessageDate(dateMessages[0].createdAt)}
+                  </Badge>
+                </div>
 
-              {/* Messages */}
-              <div className="space-y-3">
-                {dateMessages.map((message) => {
-                  const isOutbound = message.direction === 'outbound';
-                  
-                  return (
-                    <div
-                      key={message.id}
-                      className={cn(
-                        'flex',
-                        isOutbound ? 'justify-end' : 'justify-start'
-                      )}
-                    >
+                {/* Messages */}
+                <div className="space-y-3">
+                  {dateMessages.map((message) => {
+                    const isOutbound = message.direction === 'outbound';
+                    
+                    return (
                       <div
+                        key={message.id}
                         className={cn(
-                          'max-w-[70%] group',
-                          isOutbound ? 'message-bubble-outgoing' : 'message-bubble-incoming'
+                          'flex',
+                          isOutbound ? 'justify-end' : 'justify-start'
                         )}
                       >
-                        {/* Message content */}
-                        <p className="text-sm whitespace-pre-wrap break-words">
-                          {message.content}
-                        </p>
-                        
-                        {/* Message footer */}
-                        <div className={cn(
-                          'flex items-center gap-1 mt-1',
-                          isOutbound ? 'justify-end' : 'justify-start'
-                        )}>
-                          <span className={cn(
-                            'text-xs',
-                            isOutbound ? 'text-primary-foreground/70' : 'text-muted-foreground'
-                          )}>
-                            {formatMessageTime(message.createdAt)}
-                          </span>
-                          {isOutbound && (
-                            <span className={cn(
-                              'text-primary-foreground/70',
-                              message.status === 'read' && 'text-primary-foreground'
-                            )}>
-                              {statusIcons[message.status]}
-                            </span>
+                        <div
+                          className={cn(
+                            'max-w-[70%] group',
+                            isOutbound ? 'message-bubble-outgoing' : 'message-bubble-incoming'
                           )}
+                        >
+                          {/* Message content */}
+                          <p className="text-sm whitespace-pre-wrap break-words">
+                            {message.content}
+                          </p>
+                          
+                          {/* Message footer */}
+                          <div className={cn(
+                            'flex items-center gap-1 mt-1',
+                            isOutbound ? 'justify-end' : 'justify-start'
+                          )}>
+                            <span className={cn(
+                              'text-xs',
+                              isOutbound ? 'text-primary-foreground/70' : 'text-muted-foreground'
+                            )}>
+                              {formatMessageTime(message.createdAt)}
+                            </span>
+                            {isOutbound && (
+                              <span className={cn(
+                                'text-primary-foreground/70',
+                                message.status === 'read' && 'text-primary-foreground'
+                              )}>
+                                {statusIcons[message.status]}
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </ScrollArea>
 
       {/* Input Area */}
@@ -276,6 +293,7 @@ export function ChatPanel({
               placeholder="Digite uma mensagem... (Enter para enviar, Shift+Enter para nova linha)"
               className="min-h-[44px] max-h-32 resize-none pr-12"
               rows={1}
+              disabled={isSendingMessage}
             />
             <Button
               variant="ghost"
@@ -288,10 +306,14 @@ export function ChatPanel({
           
           <Button 
             onClick={handleSend}
-            disabled={!inputValue.trim()}
+            disabled={!inputValue.trim() || isSendingMessage}
             className="flex-shrink-0"
           >
-            <Send className="w-4 h-4" />
+            {isSendingMessage ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Send className="w-4 h-4" />
+            )}
           </Button>
         </div>
       </div>

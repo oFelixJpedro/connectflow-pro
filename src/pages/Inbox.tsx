@@ -1,84 +1,46 @@
-import { useState, useEffect } from 'react';
 import { ConversationList } from '@/components/inbox/ConversationList';
 import { ChatPanel } from '@/components/inbox/ChatPanel';
 import { ContactPanel } from '@/components/inbox/ContactPanel';
 import { useAppStore } from '@/stores/appStore';
-import { mockConversations, mockMessages } from '@/data/mockData';
-import type { Conversation, Message, ConversationFilters } from '@/types';
+import { useInboxData } from '@/hooks/useInboxData';
+import { useAuth } from '@/contexts/AuthContext';
+import type { ConversationFilters } from '@/types';
 import { toast } from '@/hooks/use-toast';
+import { Loader2, MessageSquare } from 'lucide-react';
 
 export default function Inbox() {
+  const { user } = useAuth();
   const { 
-    conversations, 
-    setConversations, 
-    selectedConversation, 
-    selectConversation,
-    messages,
-    setMessages,
-    addMessage,
-    conversationFilters,
-    setConversationFilters,
     contactPanelOpen,
     toggleContactPanel,
-    updateConversation
+    conversationFilters,
+    setConversationFilters,
   } = useAppStore();
 
-  // Load mock data on mount
-  useEffect(() => {
-    setConversations(mockConversations);
-  }, [setConversations]);
+  const {
+    conversations,
+    selectedConversation,
+    messages,
+    isLoadingConversations,
+    isLoadingMessages,
+    isSendingMessage,
+    selectConversation,
+    sendMessage,
+    updateConversation,
+  } = useInboxData();
 
-  // Load messages when conversation is selected
-  useEffect(() => {
-    if (selectedConversation) {
-      const conversationMessages = mockMessages[selectedConversation.id] || [];
-      setMessages(conversationMessages);
-      
-      // Mark as read
-      if (selectedConversation.unreadCount > 0) {
-        updateConversation(selectedConversation.id, { unreadCount: 0 });
-      }
+  const handleSendMessage = async (content: string) => {
+    const success = await sendMessage(content);
+    if (!success) {
+      // Erro já tratado no hook
     }
-  }, [selectedConversation, setMessages, updateConversation]);
-
-  const handleSelectConversation = (conversation: Conversation) => {
-    selectConversation(conversation);
   };
 
-  const handleSendMessage = (content: string) => {
-    if (!selectedConversation) return;
-
-    const newMessage: Message = {
-      id: `m-${Date.now()}`,
-      conversationId: selectedConversation.id,
-      direction: 'outbound',
-      senderType: 'user',
-      senderId: '1',
-      messageType: 'text',
-      content,
-      status: 'sent',
-      metadata: {},
-      isInternalNote: false,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-
-    addMessage(newMessage);
-    updateConversation(selectedConversation.id, {
-      lastMessageAt: newMessage.createdAt,
-    });
-
-    // Simulate delivery after 1s
-    setTimeout(() => {
-      // In real app, this would update via websocket/realtime
-    }, 1000);
-  };
-
-  const handleAssign = () => {
-    if (!selectedConversation) return;
+  const handleAssign = async () => {
+    if (!selectedConversation || !user?.id) return;
     
-    updateConversation(selectedConversation.id, {
-      assignedUserId: '1',
+    await updateConversation(selectedConversation.id, {
+      assignedUserId: user.id,
       status: 'in_progress',
     });
 
@@ -88,10 +50,10 @@ export default function Inbox() {
     });
   };
 
-  const handleCloseConversation = () => {
+  const handleCloseConversation = async () => {
     if (!selectedConversation) return;
     
-    updateConversation(selectedConversation.id, {
+    await updateConversation(selectedConversation.id, {
       status: 'resolved',
       closedAt: new Date().toISOString(),
     });
@@ -108,13 +70,44 @@ export default function Inbox() {
     setConversationFilters(filters);
   };
 
+  // Estado de loading inicial
+  if (isLoadingConversations) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="w-10 h-10 animate-spin text-primary mx-auto mb-4" />
+          <p className="text-muted-foreground">Carregando conversas...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Estado vazio (sem conversas)
+  if (conversations.length === 0) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <div className="text-center">
+          <div className="w-20 h-20 bg-muted rounded-full flex items-center justify-center mx-auto mb-4">
+            <MessageSquare className="w-10 h-10 text-muted-foreground" />
+          </div>
+          <h3 className="text-lg font-medium text-foreground">
+            Nenhuma conversa ainda
+          </h3>
+          <p className="text-sm text-muted-foreground mt-2 max-w-sm">
+            Aguardando mensagens do WhatsApp. As conversas aparecerão aqui automaticamente quando chegarem novas mensagens.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-full">
       {/* Conversation List */}
       <ConversationList
         conversations={conversations}
         selectedId={selectedConversation?.id}
-        onSelect={handleSelectConversation}
+        onSelect={selectConversation}
         filters={conversationFilters}
         onFilterChange={handleFilterChange}
       />
@@ -126,6 +119,8 @@ export default function Inbox() {
         onSendMessage={handleSendMessage}
         onAssign={handleAssign}
         onClose={handleCloseConversation}
+        isLoadingMessages={isLoadingMessages}
+        isSendingMessage={isSendingMessage}
       />
 
       {/* Contact Panel */}
