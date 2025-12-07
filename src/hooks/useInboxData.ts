@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
+import { useAppStore } from '@/stores/appStore';
 import { toast } from '@/hooks/use-toast';
-import type { Conversation, Message, Contact } from '@/types';
+import type { Conversation, Message, Contact, ConversationFilters } from '@/types';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 
 // Funções de transformação de snake_case para camelCase
@@ -79,6 +80,7 @@ function transformMessage(db: any): Message {
 
 export function useInboxData() {
   const { user, profile } = useAuth();
+  const { selectedConnectionId, conversationFilters } = useAppStore();
   
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
@@ -89,7 +91,7 @@ export function useInboxData() {
   const [isSendingMessage, setIsSendingMessage] = useState(false);
 
   // ============================================================
-  // 1. CARREGAR CONVERSAS DO BANCO
+  // 1. CARREGAR CONVERSAS DO BANCO (FILTRADO POR CONEXÃO)
   // ============================================================
   const loadConversations = useCallback(async () => {
     if (!profile?.company_id) {
@@ -98,11 +100,18 @@ export function useInboxData() {
       return;
     }
 
-    console.log('[useInboxData] Carregando conversas para company_id:', profile.company_id);
+    if (!selectedConnectionId) {
+      console.log('[useInboxData] Sem conexão selecionada, não carregando conversas');
+      setConversations([]);
+      setIsLoadingConversations(false);
+      return;
+    }
+
+    console.log('[useInboxData] Carregando conversas para conexão:', selectedConnectionId);
     setIsLoadingConversations(true);
 
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from('conversations')
         .select(`
           *,
@@ -114,8 +123,32 @@ export function useInboxData() {
             avatar_url
           )
         `)
-        .eq('company_id', profile.company_id)
-        .order('last_message_at', { ascending: false, nullsFirst: false });
+        .eq('whatsapp_connection_id', selectedConnectionId);
+
+      // Aplicar filtros
+      // Filtro de status
+      if (conversationFilters.status && conversationFilters.status !== 'all') {
+        query = query.eq('status', conversationFilters.status);
+      }
+
+      // Filtro de atribuição
+      if (conversationFilters.assignedUserId === 'mine' && user?.id) {
+        query = query.eq('assigned_user_id', user.id);
+      } else if (conversationFilters.assignedUserId === 'unassigned') {
+        query = query.is('assigned_user_id', null);
+      } else if (conversationFilters.assignedUserId === 'others' && user?.id) {
+        query = query.neq('assigned_user_id', user.id).not('assigned_user_id', 'is', null);
+      }
+
+      // Filtro de departamento
+      if (conversationFilters.departmentId) {
+        query = query.eq('department_id', conversationFilters.departmentId);
+      }
+
+      // Ordenar por última mensagem
+      query = query.order('last_message_at', { ascending: false, nullsFirst: false });
+
+      const { data, error } = await query;
 
       if (error) {
         console.error('[useInboxData] Erro ao carregar conversas:', error);
@@ -141,7 +174,7 @@ export function useInboxData() {
     } finally {
       setIsLoadingConversations(false);
     }
-  }, [profile?.company_id]);
+  }, [profile?.company_id, selectedConnectionId, conversationFilters, user?.id]);
 
   // ============================================================
   // 2. CARREGAR MENSAGENS DE UMA CONVERSA
@@ -490,12 +523,18 @@ export function useInboxData() {
     selectedConversationRef.current = selectedConversation;
   }, [selectedConversation]);
 
-  // Carregar conversas ao montar
+  // Carregar conversas ao montar e quando conexão ou filtros mudam
   useEffect(() => {
-    if (profile?.company_id) {
+    if (profile?.company_id && selectedConnectionId) {
       loadConversations();
     }
-  }, [profile?.company_id, loadConversations]);
+  }, [profile?.company_id, selectedConnectionId, loadConversations]);
+
+  // Limpar conversa selecionada quando conexão muda
+  useEffect(() => {
+    setSelectedConversation(null);
+    setMessages([]);
+  }, [selectedConnectionId]);
 
   // ============================================================
   // REALTIME: MENSAGENS
@@ -566,21 +605,22 @@ export function useInboxData() {
   }, [profile?.company_id]);
 
   // ============================================================
-  // REALTIME: CONVERSAS
+  // REALTIME: CONVERSAS (FILTRADO POR CONEXÃO)
   // ============================================================
   useEffect(() => {
-    if (!profile?.company_id) return;
+    if (!profile?.company_id || !selectedConnectionId) return;
 
-    console.log('[Realtime] Iniciando subscription de conversas');
+    console.log('[Realtime] Iniciando subscription de conversas para conexão:', selectedConnectionId);
 
     const channel: RealtimeChannel = supabase
-      .channel('inbox-conversations')
+      .channel(`inbox-conversations-${selectedConnectionId}`)
       .on(
         'postgres_changes',
         {
           event: 'UPDATE',
           schema: 'public',
           table: 'conversations',
+          filter: `whatsapp_connection_id=eq.${selectedConnectionId}`,
         },
         (payload) => {
           console.log('[Realtime] Conversa atualizada:', payload);
@@ -636,6 +676,7 @@ export function useInboxData() {
           event: 'INSERT',
           schema: 'public',
           table: 'conversations',
+          filter: `whatsapp_connection_id=eq.${selectedConnectionId}`,
         },
         (payload) => {
           console.log('[Realtime] Nova conversa criada:', payload);
@@ -652,7 +693,7 @@ export function useInboxData() {
       console.log('[Realtime] Cancelando subscription de conversas');
       supabase.removeChannel(channel);
     };
-  }, [profile?.company_id, loadConversations]);
+  }, [profile?.company_id, selectedConnectionId, loadConversations]);
 
   return {
     // Estado

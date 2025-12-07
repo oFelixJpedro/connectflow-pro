@@ -1,6 +1,8 @@
+import { useState, useCallback } from 'react';
 import { ConversationList } from '@/components/inbox/ConversationList';
 import { ChatPanel } from '@/components/inbox/ChatPanel';
 import { ContactPanel } from '@/components/inbox/ContactPanel';
+import { NoConnectionsState } from '@/components/inbox/NoConnectionsState';
 import { useAppStore } from '@/stores/appStore';
 import { useInboxData } from '@/hooks/useInboxData';
 import { useAuth } from '@/contexts/AuthContext';
@@ -15,7 +17,11 @@ export default function Inbox() {
     toggleContactPanel,
     conversationFilters,
     setConversationFilters,
+    selectedConnectionId,
+    setSelectedConnectionId,
   } = useAppStore();
+
+  const [hasNoConnections, setHasNoConnections] = useState(false);
 
   const {
     conversations,
@@ -67,36 +73,31 @@ export default function Inbox() {
     selectConversation(null);
   };
 
-  const handleFilterChange = (filters: Partial<ConversationFilters>) => {
+  const handleFilterChange = (filters: ConversationFilters) => {
     setConversationFilters(filters);
   };
 
-  // Estado de loading inicial
-  if (isLoadingConversations) {
+  const handleConnectionChange = useCallback((connectionId: string) => {
+    setSelectedConnectionId(connectionId);
+    setHasNoConnections(false);
+  }, [setSelectedConnectionId]);
+
+  const handleNoConnections = useCallback(() => {
+    setHasNoConnections(true);
+  }, []);
+
+  // Estado sem conexões
+  if (hasNoConnections) {
+    return <NoConnectionsState />;
+  }
+
+  // Estado de loading inicial (apenas se não tiver conexão selecionada ainda)
+  if (!selectedConnectionId && isLoadingConversations) {
     return (
       <div className="flex h-full items-center justify-center">
         <div className="text-center">
           <Loader2 className="w-10 h-10 animate-spin text-primary mx-auto mb-4" />
-          <p className="text-muted-foreground">Carregando conversas...</p>
-        </div>
-      </div>
-    );
-  }
-
-  // Estado vazio (sem conversas)
-  if (conversations.length === 0) {
-    return (
-      <div className="flex h-full items-center justify-center">
-        <div className="text-center">
-          <div className="w-20 h-20 bg-muted rounded-full flex items-center justify-center mx-auto mb-4">
-            <MessageSquare className="w-10 h-10 text-muted-foreground" />
-          </div>
-          <h3 className="text-lg font-medium text-foreground">
-            Nenhuma conversa ainda
-          </h3>
-          <p className="text-sm text-muted-foreground mt-2 max-w-sm">
-            Aguardando mensagens do WhatsApp. As conversas aparecerão aqui automaticamente quando chegarem novas mensagens.
-          </p>
+          <p className="text-muted-foreground">Carregando...</p>
         </div>
       </div>
     );
@@ -111,22 +112,39 @@ export default function Inbox() {
         onSelect={selectConversation}
         filters={conversationFilters}
         onFilterChange={handleFilterChange}
+        selectedConnectionId={selectedConnectionId}
+        onConnectionChange={handleConnectionChange}
+        onNoConnections={handleNoConnections}
+        isLoading={isLoadingConversations}
       />
 
       {/* Chat Panel */}
-      <ChatPanel
-        conversation={selectedConversation}
-        messages={messages}
-        onSendMessage={handleSendMessage}
-        onResendMessage={resendMessage}
-        onAssign={handleAssign}
-        onClose={handleCloseConversation}
-        isLoadingMessages={isLoadingMessages}
-        isSendingMessage={isSendingMessage}
-      />
+      {selectedConnectionId ? (
+        <ChatPanel
+          conversation={selectedConversation}
+          messages={messages}
+          onSendMessage={handleSendMessage}
+          onResendMessage={resendMessage}
+          onAssign={handleAssign}
+          onClose={handleCloseConversation}
+          isLoadingMessages={isLoadingMessages}
+          isSendingMessage={isSendingMessage}
+        />
+      ) : (
+        <div className="flex-1 flex items-center justify-center bg-muted/30">
+          <div className="text-center">
+            <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center mx-auto mb-4">
+              <MessageSquare className="w-8 h-8 text-muted-foreground" />
+            </div>
+            <p className="text-muted-foreground">
+              Selecione uma conexão para ver as conversas
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Contact Panel */}
-      {contactPanelOpen && (
+      {contactPanelOpen && selectedConversation && (
         <ContactPanel
           conversation={selectedConversation}
           onClose={toggleContactPanel}
