@@ -121,7 +121,7 @@ export function ConnectionSelector({
     }
 
     loadConnections();
-  }, [profile?.company_id]);
+  }, [profile?.company_id, onConnectionChange, onNoConnections]);
 
   const selectedConnection = connections.find(c => c.id === selectedConnectionId);
 
