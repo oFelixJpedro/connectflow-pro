@@ -35,10 +35,11 @@ export interface User {
 // Department types
 export interface Department {
   id: string;
-  companyId: string;
+  whatsappConnectionId: string;
   name: string;
   description?: string;
   color: string;
+  isDefault: boolean;
   active: boolean;
   createdAt: string;
   updatedAt: string;

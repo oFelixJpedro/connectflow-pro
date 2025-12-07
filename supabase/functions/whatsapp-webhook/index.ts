@@ -194,6 +194,9 @@ serve(async (req) => {
       .eq('session_id', instanceName)
       .maybeSingle()
     
+    // Buscar departamento padrão desta conexão
+    let defaultDepartmentId: string | null = null
+    
     if (connectionError) {
       console.log(`❌ Erro ao buscar conexão: ${connectionError.message}`)
       console.log('📋 Payload completo:', JSON.stringify(payload, null, 2))
@@ -224,6 +227,24 @@ serve(async (req) => {
     console.log(`✅ Conexão encontrada!`)
     console.log(`   - whatsapp_connection_id: ${whatsappConnectionId}`)
     console.log(`   - company_id: ${companyId}`)
+    
+    // Buscar departamento padrão da conexão
+    const { data: defaultDepartment, error: deptError } = await supabase
+      .from('departments')
+      .select('id')
+      .eq('whatsapp_connection_id', whatsappConnectionId)
+      .eq('is_default', true)
+      .limit(1)
+      .maybeSingle()
+    
+    if (deptError) {
+      console.log(`⚠️ Erro ao buscar departamento padrão: ${deptError.message}`)
+    } else if (defaultDepartment) {
+      defaultDepartmentId = defaultDepartment.id
+      console.log(`✅ Departamento padrão encontrado: ${defaultDepartmentId}`)
+    } else {
+      console.log(`⚠️ Nenhum departamento padrão encontrado para esta conexão`)
+    }
     
     // ═══════════════════════════════════════════════════════════════════
     // 5️⃣ ETAPA 2: CRIAR/ATUALIZAR CONTATO
@@ -407,6 +428,7 @@ serve(async (req) => {
           company_id: companyId,
           contact_id: contactId,
           whatsapp_connection_id: whatsappConnectionId,
+          department_id: defaultDepartmentId, // Adicionar departamento padrão
           status: 'open',
           unread_count: isFromMe ? 0 : 1,
           last_message_at: messageTimestamp,
