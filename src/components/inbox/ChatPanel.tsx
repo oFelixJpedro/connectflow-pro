@@ -3,16 +3,11 @@ import {
   Send, 
   Paperclip, 
   Smile, 
-  MoreVertical,
   Check,
   CheckCheck,
   Clock,
   AlertCircle,
   Phone,
-  User,
-  Tag,
-  UserPlus,
-  ArrowRight,
   Loader2,
   RotateCcw
 } from 'lucide-react';
@@ -22,21 +17,18 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import { AssignButton } from './AssignButton';
+import { ConversationActions } from './ConversationActions';
+import { MessageInputBlocker, useMessageBlocker } from './MessageInputBlocker';
 import { cn } from '@/lib/utils';
 import type { Conversation, Message } from '@/types';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface ChatPanelProps {
   conversation: Conversation | null;
@@ -75,9 +67,17 @@ export function ChatPanel({
   isLoadingMessages = false,
   isSendingMessage = false,
 }: ChatPanelProps) {
+  const { user, userRole } = useAuth();
   const [inputValue, setInputValue] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const currentUserId = user?.id || '';
+  const currentUserRole = userRole?.role || 'agent';
+
+  // Verificar se pode responder
+  const blockInfo = useMessageBlocker(conversation, currentUserId);
+  const canReply = !blockInfo.blocked;
 
   // Auto-scroll para última mensagem
   useEffect(() => {
@@ -87,7 +87,7 @@ export function ChatPanel({
   }, [messages]);
 
   const handleSend = () => {
-    if (!inputValue.trim() || isSendingMessage) return;
+    if (!inputValue.trim() || isSendingMessage || !canReply) return;
     onSendMessage(inputValue.trim());
     setInputValue('');
     textareaRef.current?.focus();
@@ -149,59 +149,91 @@ export function ChatPanel({
   return (
     <div className="flex-1 flex flex-col bg-background h-full">
       {/* Chat Header */}
-      <div className="h-16 px-4 border-b border-border flex items-center justify-between bg-card">
-        <div className="flex items-center gap-3">
-          <Avatar className="w-10 h-10">
-            <AvatarImage src={conversation.contact?.avatarUrl} />
-            <AvatarFallback className="bg-primary/10 text-primary text-sm">
-              {getInitials(conversation.contact?.name)}
-            </AvatarFallback>
-          </Avatar>
-          <div>
-            <p className="font-medium text-sm text-foreground">
-              {conversation.contact?.name || conversation.contact?.phoneNumber}
-            </p>
-            <p className="text-xs text-muted-foreground">
-              {conversation.contact?.phoneNumber}
-            </p>
+      <div className="px-4 py-3 border-b border-border bg-card">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3 min-w-0">
+            <Avatar className="w-10 h-10 flex-shrink-0">
+              <AvatarImage src={conversation.contact?.avatarUrl} />
+              <AvatarFallback className="bg-primary/10 text-primary text-sm">
+                {getInitials(conversation.contact?.name)}
+              </AvatarFallback>
+            </Avatar>
+            <div className="min-w-0">
+              <p className="font-medium text-sm text-foreground truncate">
+                {conversation.contact?.name || conversation.contact?.phoneNumber}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {conversation.contact?.phoneNumber}
+              </p>
+            </div>
+          </div>
+          
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {/* Botão de atribuição */}
+            <AssignButton
+              conversation={conversation}
+              currentUserId={currentUserId}
+              onAssigned={onAssign}
+            />
+            
+            {/* Menu de ações */}
+            <ConversationActions
+              conversation={conversation}
+              currentUserId={currentUserId}
+              currentUserRole={currentUserRole}
+              onAction={onAssign}
+            />
           </div>
         </div>
-        
-        <div className="flex items-center gap-2">
-          {/* Action Buttons */}
-          {!conversation.assignedUserId && (
-            <Button size="sm" onClick={onAssign}>
-              <UserPlus className="w-4 h-4 mr-2" />
-              Atribuir para mim
-            </Button>
+
+        {/* Badges de status */}
+        <div className="flex items-center gap-2 mt-2">
+          {/* Badge de atribuição */}
+          {conversation.assignedUser ? (
+            <Badge 
+              variant="outline" 
+              className={cn(
+                "text-xs",
+                conversation.assignedUserId === currentUserId 
+                  ? "bg-success/10 text-success border-success/30"
+                  : "bg-muted text-muted-foreground"
+              )}
+            >
+              {conversation.assignedUserId === currentUserId 
+                ? 'Atribuída a você'
+                : `Atribuída a ${conversation.assignedUser.fullName?.split(' ')[0]}`
+              }
+            </Badge>
+          ) : (
+            <Badge variant="outline" className="text-xs bg-warning/10 text-warning border-warning/30">
+              Sem responsável
+            </Badge>
           )}
-          
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon">
-                <MoreVertical className="w-4 h-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem>
-                <User className="w-4 h-4 mr-2" />
-                Ver contato
-              </DropdownMenuItem>
-              <DropdownMenuItem>
-                <Tag className="w-4 h-4 mr-2" />
-                Adicionar tag
-              </DropdownMenuItem>
-              <DropdownMenuItem>
-                <ArrowRight className="w-4 h-4 mr-2" />
-                Transferir
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={onClose} className="text-success">
-                <Check className="w-4 h-4 mr-2" />
-                Resolver conversa
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+
+          {/* Badge de status */}
+          <Badge 
+            variant="outline" 
+            className={cn(
+              "text-xs",
+              conversation.status === 'closed' && "bg-muted text-muted-foreground",
+              conversation.status === 'open' && "bg-primary/10 text-primary border-primary/30",
+              conversation.status === 'in_progress' && "bg-success/10 text-success border-success/30"
+            )}
+          >
+            {conversation.status === 'open' && 'Aberta'}
+            {conversation.status === 'in_progress' && 'Em atendimento'}
+            {conversation.status === 'closed' && 'Fechada'}
+            {conversation.status === 'pending' && 'Pendente'}
+            {conversation.status === 'waiting' && 'Aguardando'}
+            {conversation.status === 'resolved' && 'Resolvida'}
+          </Badge>
+
+          {/* Badge de departamento */}
+          {conversation.department && (
+            <Badge variant="secondary" className="text-xs">
+              {conversation.department.name}
+            </Badge>
+          )}
         </div>
       </div>
 
@@ -310,10 +342,21 @@ export function ChatPanel({
 
       {/* Input Area */}
       <div className="p-4 border-t border-border bg-card">
+        {/* Blocker message */}
+        <MessageInputBlocker
+          conversation={conversation}
+          currentUserId={currentUserId}
+        />
+
         <div className="flex items-end gap-2">
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon" className="flex-shrink-0">
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                className="flex-shrink-0"
+                disabled={!canReply}
+              >
                 <Paperclip className="w-5 h-5" />
               </Button>
             </TooltipTrigger>
@@ -326,15 +369,23 @@ export function ChatPanel({
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="Digite uma mensagem... (Enter para enviar, Shift+Enter para nova linha)"
-              className="min-h-[44px] max-h-32 resize-none pr-12"
+              placeholder={
+                canReply 
+                  ? "Digite uma mensagem... (Enter para enviar)" 
+                  : blockInfo.message
+              }
+              className={cn(
+                "min-h-[44px] max-h-32 resize-none pr-12",
+                !canReply && "bg-muted/50 cursor-not-allowed"
+              )}
               rows={1}
-              disabled={isSendingMessage}
+              disabled={isSendingMessage || !canReply}
             />
             <Button
               variant="ghost"
               size="icon"
               className="absolute right-1 bottom-1"
+              disabled={!canReply}
             >
               <Smile className="w-5 h-5 text-muted-foreground" />
             </Button>
@@ -342,7 +393,7 @@ export function ChatPanel({
           
           <Button 
             onClick={handleSend}
-            disabled={!inputValue.trim() || isSendingMessage}
+            disabled={!inputValue.trim() || isSendingMessage || !canReply}
             className="flex-shrink-0"
           >
             {isSendingMessage ? (

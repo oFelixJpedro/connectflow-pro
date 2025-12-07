@@ -37,13 +37,23 @@ function transformConversation(db: any): Conversation {
       fullName: db.profiles.full_name,
       avatarUrl: db.profiles.avatar_url || undefined,
       role: 'agent',
-      status: 'online',
+      status: db.profiles.status || 'offline',
       maxConversations: 5,
       active: true,
       createdAt: '',
       updatedAt: '',
     } : undefined,
     departmentId: db.department_id || undefined,
+    department: db.departments ? {
+      id: db.departments.id,
+      whatsappConnectionId: db.whatsapp_connection_id,
+      name: db.departments.name,
+      color: db.departments.color || '#3B82F6',
+      isDefault: db.departments.is_default || false,
+      active: true,
+      createdAt: '',
+      updatedAt: '',
+    } : undefined,
     status: db.status as Conversation['status'],
     priority: db.priority as Conversation['priority'],
     channel: db.channel,
@@ -120,7 +130,14 @@ export function useInboxData() {
             id,
             full_name,
             email,
-            avatar_url
+            avatar_url,
+            status
+          ),
+          departments (
+            id,
+            name,
+            color,
+            is_default
           )
         `)
         .eq('whatsapp_connection_id', selectedConnectionId);
