@@ -176,14 +176,15 @@ serve(async (req) => {
     console.log('│ 4️⃣  ENVIAR PARA UAZAPI                                          │')
     console.log('└─────────────────────────────────────────────────────────────────┘')
 
-    const UAZAPI_API_KEY = Deno.env.get('UAZAPI_API_KEY')
+    // Usar instance_token da conexão WhatsApp (não API key global)
+    const instanceToken = conversation.whatsapp_connections?.instance_token
     
-    if (!UAZAPI_API_KEY) {
-      console.log('❌ UAZAPI_API_KEY não configurado')
-      await updateMessageStatus(supabase, messageId, 'failed', 'UAZAPI não configurado')
+    if (!instanceToken) {
+      console.log('❌ Instance token não encontrado na conexão')
+      await updateMessageStatus(supabase, messageId, 'failed', 'Conexão sem token válido')
       return new Response(
-        JSON.stringify({ success: false, error: 'UAZAPI não configurado', code: 'UAZAPI_NOT_CONFIGURED' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify({ success: false, error: 'Conexão WhatsApp sem token válido. Tente reconectar.', code: 'MISSING_INSTANCE_TOKEN' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
 
@@ -197,6 +198,7 @@ serve(async (req) => {
 
     console.log('📤 UAZAPI Request:')
     console.log('   - URL: https://whatsapi.uazapi.com/send/text')
+    console.log('   - token: ***' + instanceToken.slice(-8))
     console.log('   - number:', cleanPhoneNumber)
     console.log('   - text:', messageContent.substring(0, 100))
 
@@ -205,7 +207,7 @@ serve(async (req) => {
       headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
-        'token': UAZAPI_API_KEY
+        'token': instanceToken
       },
       body: JSON.stringify(uazapiPayload)
     })
