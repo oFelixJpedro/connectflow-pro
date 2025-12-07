@@ -72,26 +72,37 @@ export function ConnectionSelector({
           status: c.status as WhatsAppConnectionItem['status'],
         }));
 
+        console.log('[ConnectionSelector] Conexões encontradas:', transformed.length);
+        console.log('[ConnectionSelector] selectedConnectionId atual:', selectedConnectionId);
+
         setConnections(transformed);
 
         // Se não há conexões, notificar
         if (transformed.length === 0) {
+          console.log('[ConnectionSelector] Nenhuma conexão encontrada, notificando...');
           onNoConnections?.();
           return;
         }
 
         // Se não há conexão selecionada ou a selecionada não existe mais
-        if (!selectedConnectionId || !transformed.find(c => c.id === selectedConnectionId)) {
+        const currentConnectionExists = selectedConnectionId && transformed.find(c => c.id === selectedConnectionId);
+        
+        if (!currentConnectionExists) {
           // Tentar recuperar do localStorage
           const savedId = localStorage.getItem('selectedConnectionId');
           const savedConnection = savedId ? transformed.find(c => c.id === savedId) : null;
           
           if (savedConnection) {
+            console.log('[ConnectionSelector] Restaurando conexão do localStorage:', savedConnection.id);
             onConnectionChange(savedConnection.id);
           } else {
             // Selecionar primeira conexão disponível
-            onConnectionChange(transformed[0].id);
+            const firstConnection = transformed[0];
+            console.log('[ConnectionSelector] Setando primeira conexão automaticamente:', firstConnection.id);
+            onConnectionChange(firstConnection.id);
           }
+        } else {
+          console.log('[ConnectionSelector] Conexão atual válida:', selectedConnectionId);
         }
       } catch (err) {
         console.error('[ConnectionSelector] Erro inesperado:', err);
@@ -101,7 +112,7 @@ export function ConnectionSelector({
     }
 
     loadConnections();
-  }, [profile?.company_id, selectedConnectionId, onConnectionChange, onNoConnections]);
+  }, [profile?.company_id]);
 
   const selectedConnection = connections.find(c => c.id === selectedConnectionId);
 
