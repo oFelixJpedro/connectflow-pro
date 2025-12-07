@@ -525,7 +525,7 @@ export function useInboxData() {
 
   // Carregar conversas ao montar e quando conexão ou filtros mudam
   useEffect(() => {
-    if (profile?.company_id && selectedConnectionId) {
+    if (profile?.company_id) {
       loadConversations();
     }
   }, [profile?.company_id, selectedConnectionId, loadConversations]);
