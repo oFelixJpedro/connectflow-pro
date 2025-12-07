@@ -216,7 +216,7 @@ export function useInboxData() {
   }, [selectedConversation?.id]);
 
   // ============================================================
-  // 4. ENVIAR MENSAGEM (SALVAR NO BANCO)
+  // 4. ENVIAR MENSAGEM (SALVAR NO BANCO + ENVIAR VIA WHATSAPP)
   // ============================================================
   const sendMessage = useCallback(async (content: string): Promise<boolean> => {
     if (!selectedConversation || !user?.id) {
@@ -233,7 +233,7 @@ export function useInboxData() {
     try {
       const now = new Date().toISOString();
 
-      // Inserir mensagem no banco
+      // 1. Inserir mensagem no banco com status 'sending'
       const { data: newMessage, error: messageError } = await supabase
         .from('messages')
         .insert({
@@ -243,7 +243,7 @@ export function useInboxData() {
           sender_type: 'user' as const,
           sender_id: user.id,
           message_type: 'text' as const,
-          status: 'sent' as const,
+          status: 'pending' as const, // Status inicial enquanto envia
           metadata: {},
           is_internal_note: false,
         })
@@ -262,7 +262,11 @@ export function useInboxData() {
 
       console.log('[useInboxData] Mensagem salva:', newMessage.id);
 
-      // Atualizar last_message_at da conversa
+      // 2. Adicionar mensagem ao estado local imediatamente (optimistic update)
+      const transformedMessage = transformMessage(newMessage);
+      setMessages(prev => [...prev, transformedMessage]);
+
+      // 3. Atualizar last_message_at da conversa
       const { error: updateError } = await supabase
         .from('conversations')
         .update({ last_message_at: now })
@@ -272,15 +276,70 @@ export function useInboxData() {
         console.error('[useInboxData] Erro ao atualizar last_message_at:', updateError);
       }
 
-      // Adicionar mensagem ao estado local
-      const transformedMessage = transformMessage(newMessage);
-      setMessages(prev => [...prev, transformedMessage]);
-
-      // Atualizar last_message_at no estado local
+      // 4. Atualizar last_message_at no estado local
       setConversations(prev =>
         prev.map(c => c.id === selectedConversation.id ? { ...c, lastMessageAt: now } : c)
       );
       setSelectedConversation(prev => prev ? { ...prev, lastMessageAt: now } : null);
+
+      // 5. Chamar Edge Function para enviar via WhatsApp
+      console.log('[useInboxData] Chamando edge function send-whatsapp-message');
+      
+      const { data: session } = await supabase.auth.getSession();
+      const accessToken = session?.session?.access_token;
+
+      if (!accessToken) {
+        console.error('[useInboxData] Sem access token');
+        toast({
+          title: 'Erro de autenticação',
+          description: 'Faça login novamente.',
+          variant: 'destructive',
+        });
+        return false;
+      }
+
+      const response = await supabase.functions.invoke('send-whatsapp-message', {
+        body: {
+          messageId: newMessage.id,
+          conversationId: selectedConversation.id,
+        },
+      });
+
+      console.log('[useInboxData] Resposta da edge function:', response);
+
+      if (response.error) {
+        console.error('[useInboxData] Erro na edge function:', response.error);
+        
+        // Tratar erros específicos
+        const errorCode = response.data?.code;
+        let errorMessage = 'Erro ao enviar mensagem. Tente novamente.';
+        
+        if (errorCode === 'WHATSAPP_DISCONNECTED') {
+          errorMessage = 'WhatsApp desconectado. Reconecte em Conexões.';
+        } else if (errorCode === 'INVALID_NUMBER') {
+          errorMessage = 'Número do contato inválido.';
+        } else if (errorCode === 'CONNECTION_NOT_FOUND') {
+          errorMessage = 'Conexão WhatsApp não encontrada.';
+        } else if (response.data?.error) {
+          errorMessage = response.data.error;
+        }
+
+        toast({
+          title: 'Falha ao enviar',
+          description: errorMessage,
+          variant: 'destructive',
+        });
+        
+        // O status 'failed' já foi atualizado pela edge function
+        // O Realtime vai atualizar o estado local automaticamente
+        return false;
+      }
+
+      console.log('[useInboxData] Mensagem enviada com sucesso via WhatsApp');
+      toast({
+        title: 'Mensagem enviada!',
+        description: 'A mensagem foi entregue ao WhatsApp.',
+      });
 
       return true;
     } catch (err) {
@@ -295,6 +354,74 @@ export function useInboxData() {
       setIsSendingMessage(false);
     }
   }, [selectedConversation, user?.id]);
+
+  // ============================================================
+  // 4.1 REENVIAR MENSAGEM FALHADA
+  // ============================================================
+  const resendMessage = useCallback(async (messageId: string): Promise<boolean> => {
+    if (!selectedConversation) {
+      console.error('[useInboxData] Sem conversa selecionada');
+      return false;
+    }
+
+    console.log('[useInboxData] Reenviando mensagem:', messageId);
+
+    try {
+      // 1. Atualizar status para 'pending' no banco
+      const { error: updateError } = await supabase
+        .from('messages')
+        .update({ status: 'pending', error_message: null })
+        .eq('id', messageId);
+
+      if (updateError) {
+        console.error('[useInboxData] Erro ao atualizar status:', updateError);
+        toast({
+          title: 'Erro ao reenviar',
+          description: updateError.message,
+          variant: 'destructive',
+        });
+        return false;
+      }
+
+      // 2. Atualizar estado local
+      setMessages(prev =>
+        prev.map(m => m.id === messageId ? { ...m, status: 'pending' as const, errorMessage: undefined } : m)
+      );
+
+      // 3. Chamar Edge Function novamente
+      const response = await supabase.functions.invoke('send-whatsapp-message', {
+        body: {
+          messageId,
+          conversationId: selectedConversation.id,
+        },
+      });
+
+      if (response.error || !response.data?.success) {
+        const errorMessage = response.data?.error || 'Erro ao reenviar mensagem.';
+        toast({
+          title: 'Falha ao reenviar',
+          description: errorMessage,
+          variant: 'destructive',
+        });
+        return false;
+      }
+
+      toast({
+        title: 'Mensagem reenviada!',
+        description: 'A mensagem foi entregue ao WhatsApp.',
+      });
+
+      return true;
+    } catch (err) {
+      console.error('[useInboxData] Erro inesperado ao reenviar:', err);
+      toast({
+        title: 'Erro ao reenviar',
+        description: 'Ocorreu um erro inesperado.',
+        variant: 'destructive',
+      });
+      return false;
+    }
+  }, [selectedConversation]);
 
   // ============================================================
   // 5. SELECIONAR CONVERSA
@@ -404,6 +531,27 @@ export function useInboxData() {
               console.log('[Realtime] Adicionando mensagem ao chat');
               return [...prev, newMessage];
             });
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'messages',
+        },
+        (payload) => {
+          console.log('[Realtime] Mensagem atualizada:', payload);
+          
+          const updatedMessage = transformMessage(payload.new);
+          const currentConversation = selectedConversationRef.current;
+          
+          // Se a mensagem é da conversa atualmente selecionada, atualizar no array
+          if (currentConversation && updatedMessage.conversationId === currentConversation.id) {
+            setMessages((prev) => 
+              prev.map((m) => m.id === updatedMessage.id ? updatedMessage : m)
+            );
           }
         }
       )
@@ -521,6 +669,7 @@ export function useInboxData() {
     loadConversations,
     selectConversation,
     sendMessage,
+    resendMessage,
     updateConversation,
   };
 }

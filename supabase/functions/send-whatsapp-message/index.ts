@@ -1,0 +1,315 @@
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+}
+
+serve(async (req) => {
+  console.log('\n')
+  console.log('╔══════════════════════════════════════════════════════════════════╗')
+  console.log('║              📤 SEND WHATSAPP MESSAGE                            ║')
+  console.log('╚══════════════════════════════════════════════════════════════════╝')
+  console.log(`⏰ Timestamp: ${new Date().toISOString()}`)
+
+  // Handle CORS preflight
+  if (req.method === 'OPTIONS') {
+    console.log('ℹ️ CORS preflight request')
+    return new Response(null, { headers: corsHeaders })
+  }
+
+  if (req.method !== 'POST') {
+    return new Response(
+      JSON.stringify({ success: false, error: 'Method not allowed' }),
+      { status: 405, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    )
+  }
+
+  try {
+    // ═══════════════════════════════════════════════════════════════════
+    // 1️⃣ AUTENTICAÇÃO
+    // ═══════════════════════════════════════════════════════════════════
+    console.log('\n┌─────────────────────────────────────────────────────────────────┐')
+    console.log('│ 1️⃣  AUTENTICAÇÃO                                                │')
+    console.log('└─────────────────────────────────────────────────────────────────┘')
+
+    const authHeader = req.headers.get('Authorization')
+    if (!authHeader) {
+      console.log('❌ Missing Authorization header')
+      return new Response(
+        JSON.stringify({ success: false, error: 'Unauthorized', code: 'UNAUTHORIZED' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!
+    const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')!
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+
+    // Cliente com token do usuário para verificar auth
+    const supabaseUser = createClient(supabaseUrl, supabaseAnonKey, {
+      global: { headers: { Authorization: authHeader } }
+    })
+
+    const { data: { user }, error: authError } = await supabaseUser.auth.getUser()
+    if (authError || !user) {
+      console.log('❌ Auth error:', authError?.message)
+      return new Response(
+        JSON.stringify({ success: false, error: 'Unauthorized', code: 'UNAUTHORIZED' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    console.log('✅ Usuário autenticado:', user.id)
+
+    // Cliente service role para operações no banco
+    const supabase = createClient(supabaseUrl, supabaseServiceKey)
+
+    // ═══════════════════════════════════════════════════════════════════
+    // 2️⃣ PARSE REQUEST BODY
+    // ═══════════════════════════════════════════════════════════════════
+    console.log('\n┌─────────────────────────────────────────────────────────────────┐')
+    console.log('│ 2️⃣  PARSE REQUEST                                               │')
+    console.log('└─────────────────────────────────────────────────────────────────┘')
+
+    const body = await req.json()
+    const { messageId, conversationId } = body
+
+    console.log('📦 Request:', { messageId, conversationId })
+
+    if (!messageId || !conversationId) {
+      console.log('❌ Missing required fields')
+      return new Response(
+        JSON.stringify({ success: false, error: 'Missing messageId or conversationId', code: 'INVALID_REQUEST' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // 3️⃣ BUSCAR DADOS
+    // ═══════════════════════════════════════════════════════════════════
+    console.log('\n┌─────────────────────────────────────────────────────────────────┐')
+    console.log('│ 3️⃣  BUSCAR DADOS                                                │')
+    console.log('└─────────────────────────────────────────────────────────────────┘')
+
+    // Buscar mensagem
+    const { data: message, error: messageError } = await supabase
+      .from('messages')
+      .select('*')
+      .eq('id', messageId)
+      .single()
+
+    if (messageError || !message) {
+      console.log('❌ Mensagem não encontrada:', messageError?.message)
+      return new Response(
+        JSON.stringify({ success: false, error: 'Message not found', code: 'MESSAGE_NOT_FOUND' }),
+        { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    console.log('✅ Mensagem encontrada:', message.id)
+    console.log('   - content:', message.content?.substring(0, 50))
+
+    // Buscar conversa com contato e conexão
+    const { data: conversation, error: convError } = await supabase
+      .from('conversations')
+      .select(`
+        *,
+        contacts!inner (id, phone_number, name),
+        whatsapp_connections!inner (id, session_id, instance_token, status, company_id)
+      `)
+      .eq('id', conversationId)
+      .single()
+
+    if (convError || !conversation) {
+      console.log('❌ Conversa não encontrada:', convError?.message)
+      await updateMessageStatus(supabase, messageId, 'failed', 'Conversa não encontrada')
+      return new Response(
+        JSON.stringify({ success: false, error: 'Conversation not found', code: 'CONVERSATION_NOT_FOUND' }),
+        { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    console.log('✅ Conversa encontrada:', conversation.id)
+    console.log('   - contact:', conversation.contacts?.name, conversation.contacts?.phone_number)
+    console.log('   - connection status:', conversation.whatsapp_connections?.status)
+
+    // Verificar se WhatsApp está conectado
+    if (conversation.whatsapp_connections?.status !== 'connected') {
+      console.log('❌ WhatsApp não está conectado')
+      await updateMessageStatus(supabase, messageId, 'failed', 'WhatsApp desconectado')
+      return new Response(
+        JSON.stringify({ 
+          success: false, 
+          error: 'WhatsApp desconectado. Reconecte em Configurações.', 
+          code: 'WHATSAPP_DISCONNECTED' 
+        }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    const phoneNumber = conversation.contacts?.phone_number
+    if (!phoneNumber) {
+      console.log('❌ Número do contato não encontrado')
+      await updateMessageStatus(supabase, messageId, 'failed', 'Número do contato inválido')
+      return new Response(
+        JSON.stringify({ success: false, error: 'Número do contato inválido', code: 'INVALID_NUMBER' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    const messageContent = message.content
+    if (!messageContent || !messageContent.trim()) {
+      console.log('❌ Conteúdo da mensagem vazio')
+      await updateMessageStatus(supabase, messageId, 'failed', 'Mensagem vazia')
+      return new Response(
+        JSON.stringify({ success: false, error: 'Mensagem vazia', code: 'EMPTY_MESSAGE' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // 4️⃣ ENVIAR PARA UAZAPI
+    // ═══════════════════════════════════════════════════════════════════
+    console.log('\n┌─────────────────────────────────────────────────────────────────┐')
+    console.log('│ 4️⃣  ENVIAR PARA UAZAPI                                          │')
+    console.log('└─────────────────────────────────────────────────────────────────┘')
+
+    const instanceToken = conversation.whatsapp_connections?.instance_token
+    const sessionId = conversation.whatsapp_connections?.session_id
+
+    if (!instanceToken) {
+      console.log('❌ Instance token não encontrado')
+      await updateMessageStatus(supabase, messageId, 'failed', 'Token da instância não encontrado')
+      return new Response(
+        JSON.stringify({ success: false, error: 'Connection not configured properly', code: 'CONNECTION_NOT_FOUND' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    // Limpar número de telefone (remover caracteres especiais)
+    const cleanPhoneNumber = phoneNumber.replace(/[^\d]/g, '')
+
+    const uazapiPayload = {
+      number: cleanPhoneNumber,
+      text: messageContent
+    }
+
+    console.log('📤 UAZAPI Request:')
+    console.log('   - URL: https://whatsapi.uazapi.com/message/text?name=' + sessionId)
+    console.log('   - number:', cleanPhoneNumber)
+    console.log('   - text:', messageContent.substring(0, 100))
+
+    const uazapiResponse = await fetch(`https://whatsapi.uazapi.com/message/text?name=${sessionId}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'token': instanceToken
+      },
+      body: JSON.stringify(uazapiPayload)
+    })
+
+    const responseText = await uazapiResponse.text()
+    console.log('📥 UAZAPI Response status:', uazapiResponse.status)
+    console.log('📥 UAZAPI Response body:', responseText.substring(0, 500))
+
+    let uazapiData: any = null
+    try {
+      uazapiData = JSON.parse(responseText)
+    } catch (e) {
+      console.log('❌ Erro ao parsear resposta da UAZAPI')
+      await updateMessageStatus(supabase, messageId, 'failed', 'Erro na resposta da UAZAPI')
+      return new Response(
+        JSON.stringify({ success: false, error: 'Erro ao processar resposta do WhatsApp', code: 'UAZAPI_ERROR' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    if (!uazapiResponse.ok) {
+      console.log('❌ UAZAPI retornou erro:', uazapiResponse.status)
+      await updateMessageStatus(supabase, messageId, 'failed', uazapiData?.message || 'Erro da UAZAPI')
+      return new Response(
+        JSON.stringify({ 
+          success: false, 
+          error: uazapiData?.message || 'Erro ao enviar mensagem pelo WhatsApp', 
+          code: 'UAZAPI_ERROR' 
+        }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    // Extrair whatsapp_message_id da resposta
+    const whatsappMessageId = uazapiData?.key?.id || uazapiData?.id || null
+    console.log('✅ Mensagem enviada com sucesso!')
+    console.log('   - whatsapp_message_id:', whatsappMessageId)
+
+    // ═══════════════════════════════════════════════════════════════════
+    // 5️⃣ ATUALIZAR MENSAGEM NO BANCO
+    // ═══════════════════════════════════════════════════════════════════
+    console.log('\n┌─────────────────────────────────────────────────────────────────┐')
+    console.log('│ 5️⃣  ATUALIZAR MENSAGEM                                          │')
+    console.log('└─────────────────────────────────────────────────────────────────┘')
+
+    const { error: updateError } = await supabase
+      .from('messages')
+      .update({
+        status: 'sent',
+        whatsapp_message_id: whatsappMessageId,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', messageId)
+
+    if (updateError) {
+      console.log('⚠️ Erro ao atualizar mensagem (mas foi enviada):', updateError.message)
+    } else {
+      console.log('✅ Mensagem atualizada no banco')
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // ✅ SUCESSO
+    // ═══════════════════════════════════════════════════════════════════
+    console.log('\n╔══════════════════════════════════════════════════════════════════╗')
+    console.log('║              ✅ MENSAGEM ENVIADA COM SUCESSO!                    ║')
+    console.log('╚══════════════════════════════════════════════════════════════════╝')
+
+    return new Response(
+      JSON.stringify({ 
+        success: true, 
+        whatsappMessageId,
+        status: 'sent'
+      }),
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    )
+
+  } catch (error) {
+    console.error('❌ Erro inesperado:', error)
+    return new Response(
+      JSON.stringify({ success: false, error: 'Erro interno do servidor', code: 'INTERNAL_ERROR' }),
+      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    )
+  }
+})
+
+// Helper para atualizar status da mensagem
+async function updateMessageStatus(
+  supabase: any, 
+  messageId: string, 
+  status: 'failed' | 'sent' | 'pending',
+  errorMessage?: string
+) {
+  try {
+    await supabase
+      .from('messages')
+      .update({
+        status,
+        error_message: errorMessage || null,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', messageId)
+    console.log(`📝 Status da mensagem atualizado para: ${status}`)
+  } catch (e) {
+    console.error('⚠️ Erro ao atualizar status da mensagem:', e)
+  }
+}

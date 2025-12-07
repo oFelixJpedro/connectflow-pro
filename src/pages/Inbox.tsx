@@ -26,6 +26,7 @@ export default function Inbox() {
     isSendingMessage,
     selectConversation,
     sendMessage,
+    resendMessage,
     updateConversation,
   } = useInboxData();
 
@@ -117,6 +118,7 @@ export default function Inbox() {
         conversation={selectedConversation}
         messages={messages}
         onSendMessage={handleSendMessage}
+        onResendMessage={resendMessage}
         onAssign={handleAssign}
         onClose={handleCloseConversation}
         isLoadingMessages={isLoadingMessages}
