@@ -58,6 +58,7 @@ export function ConnectionSelector({
     async function loadConnections() {
       if (!profile?.company_id) {
         console.log('🔵 ConnectionSelector - Sem company_id, abortando');
+        setIsLoading(false);
         return;
       }
 
