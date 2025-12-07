@@ -13,7 +13,8 @@ import {
   Tag,
   UserPlus,
   ArrowRight,
-  Loader2
+  Loader2,
+  RotateCcw
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -41,6 +42,7 @@ interface ChatPanelProps {
   conversation: Conversation | null;
   messages: Message[];
   onSendMessage: (content: string) => void;
+  onResendMessage?: (messageId: string) => void;
   onAssign: () => void;
   onClose: () => void;
   isLoadingMessages?: boolean;
@@ -48,17 +50,26 @@ interface ChatPanelProps {
 }
 
 const statusIcons = {
-  pending: <Clock className="w-3 h-3" />,
+  pending: <Clock className="w-3 h-3 animate-pulse" />,
   sent: <Check className="w-3 h-3" />,
   delivered: <CheckCheck className="w-3 h-3" />,
   read: <CheckCheck className="w-3 h-3 text-primary" />,
   failed: <AlertCircle className="w-3 h-3 text-destructive" />,
 };
 
+const statusTooltips: Record<string, string> = {
+  pending: 'Enviando...',
+  sent: 'Enviada',
+  delivered: 'Entregue',
+  read: 'Lida',
+  failed: 'Falha ao enviar',
+};
+
 export function ChatPanel({
   conversation,
   messages,
   onSendMessage,
+  onResendMessage,
   onAssign,
   onClose,
   isLoadingMessages = false,
@@ -221,6 +232,7 @@ export function ChatPanel({
                 <div className="space-y-3">
                   {dateMessages.map((message) => {
                     const isOutbound = message.direction === 'outbound';
+                    const isFailed = message.status === 'failed';
                     
                     return (
                       <div
@@ -233,7 +245,8 @@ export function ChatPanel({
                         <div
                           className={cn(
                             'max-w-[70%] group',
-                            isOutbound ? 'message-bubble-outgoing' : 'message-bubble-incoming'
+                            isOutbound ? 'message-bubble-outgoing' : 'message-bubble-incoming',
+                            isFailed && 'opacity-80'
                           )}
                         >
                           {/* Message content */}
@@ -253,14 +266,37 @@ export function ChatPanel({
                               {formatMessageTime(message.createdAt)}
                             </span>
                             {isOutbound && (
-                              <span className={cn(
-                                'text-primary-foreground/70',
-                                message.status === 'read' && 'text-primary-foreground'
-                              )}>
-                                {statusIcons[message.status]}
-                              </span>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <span className={cn(
+                                    'text-primary-foreground/70 cursor-default',
+                                    message.status === 'read' && 'text-primary-foreground',
+                                    message.status === 'failed' && 'text-destructive'
+                                  )}>
+                                    {statusIcons[message.status]}
+                                  </span>
+                                </TooltipTrigger>
+                                <TooltipContent side="left">
+                                  {statusTooltips[message.status] || message.status}
+                                </TooltipContent>
+                              </Tooltip>
                             )}
                           </div>
+                          
+                          {/* Resend button for failed messages */}
+                          {isOutbound && isFailed && onResendMessage && (
+                            <div className="mt-2 pt-2 border-t border-destructive/20">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => onResendMessage(message.id)}
+                                className="h-6 px-2 text-xs text-destructive hover:text-destructive hover:bg-destructive/10"
+                              >
+                                <RotateCcw className="w-3 h-3 mr-1" />
+                                Reenviar
+                              </Button>
+                            </div>
+                          )}
                         </div>
                       </div>
                     );
