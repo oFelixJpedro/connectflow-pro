@@ -176,15 +176,14 @@ serve(async (req) => {
     console.log('│ 4️⃣  ENVIAR PARA UAZAPI                                          │')
     console.log('└─────────────────────────────────────────────────────────────────┘')
 
-    const instanceToken = conversation.whatsapp_connections?.instance_token
-    const sessionId = conversation.whatsapp_connections?.session_id
-
-    if (!instanceToken) {
-      console.log('❌ Instance token não encontrado')
-      await updateMessageStatus(supabase, messageId, 'failed', 'Token da instância não encontrado')
+    const UAZAPI_API_KEY = Deno.env.get('UAZAPI_API_KEY')
+    
+    if (!UAZAPI_API_KEY) {
+      console.log('❌ UAZAPI_API_KEY não configurado')
+      await updateMessageStatus(supabase, messageId, 'failed', 'UAZAPI não configurado')
       return new Response(
-        JSON.stringify({ success: false, error: 'Connection not configured properly', code: 'CONNECTION_NOT_FOUND' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify({ success: false, error: 'UAZAPI não configurado', code: 'UAZAPI_NOT_CONFIGURED' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
 
@@ -197,16 +196,16 @@ serve(async (req) => {
     }
 
     console.log('📤 UAZAPI Request:')
-    console.log('   - URL: https://whatsapi.uazapi.com/message/text?name=' + sessionId)
+    console.log('   - URL: https://whatsapi.uazapi.com/send/text')
     console.log('   - number:', cleanPhoneNumber)
     console.log('   - text:', messageContent.substring(0, 100))
 
-    const uazapiResponse = await fetch(`https://whatsapi.uazapi.com/message/text?name=${sessionId}`, {
+    const uazapiResponse = await fetch('https://whatsapi.uazapi.com/send/text', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
-        'token': instanceToken
+        'token': UAZAPI_API_KEY
       },
       body: JSON.stringify(uazapiPayload)
     })
