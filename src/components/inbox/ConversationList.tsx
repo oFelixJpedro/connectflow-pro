@@ -1,28 +1,27 @@
 import { useState } from 'react';
-import { Search, Filter, MoreHorizontal, Circle } from 'lucide-react';
+import { Search } from 'lucide-react';
 import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { ConnectionSelector } from '@/components/inbox/ConnectionSelector';
+import { ConversationFiltersComponent } from '@/components/inbox/ConversationFilters';
 import { cn } from '@/lib/utils';
 import type { Conversation, ConversationFilters } from '@/types';
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface ConversationListProps {
   conversations: Conversation[];
   selectedId?: string;
   onSelect: (conversation: Conversation) => void;
   filters: ConversationFilters;
-  onFilterChange: (filters: Partial<ConversationFilters>) => void;
+  onFilterChange: (filters: ConversationFilters) => void;
+  selectedConnectionId: string | null;
+  onConnectionChange: (connectionId: string) => void;
+  onNoConnections?: () => void;
+  isLoading?: boolean;
 }
 
 const priorityColors = {
@@ -32,46 +31,28 @@ const priorityColors = {
   low: 'bg-priority-low',
 };
 
-const statusLabels = {
-  all: 'Todas',
-  open: 'Abertas',
-  pending: 'Pendentes',
-  in_progress: 'Em Progresso',
-  waiting: 'Aguardando',
-  resolved: 'Resolvidas',
-  closed: 'Fechadas',
-};
-
 export function ConversationList({
   conversations,
   selectedId,
   onSelect,
   filters,
   onFilterChange,
+  selectedConnectionId,
+  onConnectionChange,
+  onNoConnections,
+  isLoading,
 }: ConversationListProps) {
+  const { user } = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
 
+  // Filtrar apenas por busca local (outros filtros são aplicados no backend)
   const filteredConversations = conversations.filter((conv) => {
-    // Search filter
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
       const matchesName = conv.contact?.name?.toLowerCase().includes(query);
       const matchesPhone = conv.contact?.phoneNumber?.includes(query);
       if (!matchesName && !matchesPhone) return false;
     }
-
-    // Status filter
-    if (filters.status && filters.status !== 'all') {
-      if (conv.status !== filters.status) return false;
-    }
-
-    // Assignment filter
-    if (filters.assignedUserId === 'mine') {
-      if (!conv.assignedUserId) return false;
-    } else if (filters.assignedUserId === 'unassigned') {
-      if (conv.assignedUserId) return false;
-    }
-
     return true;
   });
 
@@ -92,14 +73,14 @@ export function ConversationList({
 
   return (
     <div className="w-80 border-r border-border bg-card flex flex-col h-full">
-      {/* Header */}
+      {/* Header com seletor de conexão */}
       <div className="p-4 border-b border-border space-y-3">
-        <div className="flex items-center justify-between">
-          <h2 className="font-semibold text-foreground">Conversas</h2>
-          <Badge variant="secondary" className="text-xs">
-            {filteredConversations.length}
-          </Badge>
-        </div>
+        {/* Seletor de conexão */}
+        <ConnectionSelector
+          selectedConnectionId={selectedConnectionId}
+          onConnectionChange={onConnectionChange}
+          onNoConnections={onNoConnections}
+        />
         
         {/* Search */}
         <div className="relative">
@@ -112,41 +93,30 @@ export function ConversationList({
           />
         </div>
 
-        {/* Tabs */}
-        <Tabs 
-          value={filters.assignedUserId || 'all'} 
-          onValueChange={(value) => onFilterChange({ assignedUserId: value as any })}
-          className="w-full"
-        >
-          <TabsList className="grid w-full grid-cols-3 h-9">
-            <TabsTrigger value="all" className="text-xs">Todas</TabsTrigger>
-            <TabsTrigger value="mine" className="text-xs">Minhas</TabsTrigger>
-            <TabsTrigger value="unassigned" className="text-xs">Sem Atend.</TabsTrigger>
-          </TabsList>
-        </Tabs>
-      </div>
-
-      {/* Status Filter */}
-      <div className="px-4 py-2 border-b border-border flex items-center gap-2 overflow-x-auto scrollbar-hide">
-        {['all', 'open', 'pending', 'in_progress'].map((status) => (
-          <Button
-            key={status}
-            variant={filters.status === status ? 'default' : 'outline'}
-            size="sm"
-            className="text-xs h-7 whitespace-nowrap"
-            onClick={() => onFilterChange({ status: status as any })}
-          >
-            {statusLabels[status as keyof typeof statusLabels]}
-          </Button>
-        ))}
+        {/* Filtros */}
+        <ConversationFiltersComponent
+          connectionId={selectedConnectionId}
+          filters={filters}
+          onFiltersChange={onFilterChange}
+          currentUserId={user?.id}
+        />
       </div>
 
       {/* Conversation List */}
       <ScrollArea className="flex-1">
         <div className="divide-y divide-border">
-          {filteredConversations.length === 0 ? (
+          {isLoading ? (
+            <div className="p-8 text-center">
+              <div className="animate-spin w-6 h-6 border-2 border-primary border-t-transparent rounded-full mx-auto mb-2" />
+              <p className="text-sm text-muted-foreground">Carregando...</p>
+            </div>
+          ) : filteredConversations.length === 0 ? (
             <div className="p-8 text-center text-muted-foreground">
-              <p className="text-sm">Nenhuma conversa encontrada</p>
+              <p className="text-sm">
+                {searchQuery || (filters.status && filters.status !== 'all') || (filters.assignedUserId && filters.assignedUserId !== 'all') || filters.departmentId
+                  ? 'Nenhuma conversa com estes filtros'
+                  : 'Nenhuma conversa nesta conexão'}
+              </p>
             </div>
           ) : (
             filteredConversations.map((conversation) => (
