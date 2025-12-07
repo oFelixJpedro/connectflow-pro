@@ -28,9 +28,9 @@ export const mockUser: User = {
 };
 
 export const mockDepartments: Department[] = [
-  { id: '1', companyId: '1', name: 'Vendas', description: 'Equipe de vendas', color: '#3B82F6', active: true, createdAt: '2024-01-01T00:00:00Z', updatedAt: '2024-01-01T00:00:00Z' },
-  { id: '2', companyId: '1', name: 'Suporte', description: 'Suporte técnico', color: '#10B981', active: true, createdAt: '2024-01-01T00:00:00Z', updatedAt: '2024-01-01T00:00:00Z' },
-  { id: '3', companyId: '1', name: 'Financeiro', description: 'Departamento financeiro', color: '#F59E0B', active: true, createdAt: '2024-01-01T00:00:00Z', updatedAt: '2024-01-01T00:00:00Z' },
+  { id: '1', whatsappConnectionId: '1', name: 'Vendas', description: 'Equipe de vendas', color: '#3B82F6', isDefault: true, active: true, createdAt: '2024-01-01T00:00:00Z', updatedAt: '2024-01-01T00:00:00Z' },
+  { id: '2', whatsappConnectionId: '1', name: 'Suporte', description: 'Suporte técnico', color: '#10B981', isDefault: false, active: true, createdAt: '2024-01-01T00:00:00Z', updatedAt: '2024-01-01T00:00:00Z' },
+  { id: '3', whatsappConnectionId: '1', name: 'Financeiro', description: 'Departamento financeiro', color: '#F59E0B', isDefault: false, active: true, createdAt: '2024-01-01T00:00:00Z', updatedAt: '2024-01-01T00:00:00Z' },
 ];
 
 export const mockTags: Tag[] = [

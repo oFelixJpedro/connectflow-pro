@@ -212,39 +212,42 @@ export type Database = {
         Row: {
           active: boolean | null
           color: string | null
-          company_id: string
           created_at: string | null
           description: string | null
           id: string
+          is_default: boolean | null
           name: string
           updated_at: string | null
+          whatsapp_connection_id: string
         }
         Insert: {
           active?: boolean | null
           color?: string | null
-          company_id: string
           created_at?: string | null
           description?: string | null
           id?: string
+          is_default?: boolean | null
           name: string
           updated_at?: string | null
+          whatsapp_connection_id: string
         }
         Update: {
           active?: boolean | null
           color?: string | null
-          company_id?: string
           created_at?: string | null
           description?: string | null
           id?: string
+          is_default?: boolean | null
           name?: string
           updated_at?: string | null
+          whatsapp_connection_id?: string
         }
         Relationships: [
           {
-            foreignKeyName: "departments_company_id_fkey"
-            columns: ["company_id"]
+            foreignKeyName: "departments_whatsapp_connection_id_fkey"
+            columns: ["whatsapp_connection_id"]
             isOneToOne: false
-            referencedRelation: "companies"
+            referencedRelation: "whatsapp_connections"
             referencedColumns: ["id"]
           },
         ]
@@ -560,6 +563,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      get_connection_company_id: {
+        Args: { connection_id: string }
+        Returns: string
+      }
       get_user_company_id: { Args: never; Returns: string }
       get_user_role: {
         Args: never
