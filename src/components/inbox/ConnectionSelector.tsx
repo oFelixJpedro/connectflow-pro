@@ -42,16 +42,28 @@ export function ConnectionSelector({
   onConnectionChange,
   onNoConnections,
 }: ConnectionSelectorProps) {
+  console.log('🔵 ConnectionSelector - MONTOU');
+  
   const { profile } = useAuth();
   const [connections, setConnections] = useState<WhatsAppConnectionItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isOpen, setIsOpen] = useState(false);
 
   useEffect(() => {
-    async function loadConnections() {
-      if (!profile?.company_id) return;
+    console.log('🔵 ConnectionSelector - useEffect EXECUTANDO', { 
+      companyId: profile?.company_id,
+      selectedConnectionId 
+    });
 
+    async function loadConnections() {
+      if (!profile?.company_id) {
+        console.log('🔵 ConnectionSelector - Sem company_id, abortando');
+        return;
+      }
+
+      console.log('🔵 ConnectionSelector - Buscando conexões...');
       setIsLoading(true);
+      
       try {
         const { data, error } = await supabase
           .from('whatsapp_connections')
@@ -60,8 +72,10 @@ export function ConnectionSelector({
           .eq('status', 'connected')
           .order('name');
 
+        console.log('🔵 ConnectionSelector - Query executada:', { data, error });
+
         if (error) {
-          console.error('[ConnectionSelector] Erro ao carregar conexões:', error);
+          console.error('🔵 ConnectionSelector - ERRO na query:', error);
           return;
         }
 
@@ -72,40 +86,35 @@ export function ConnectionSelector({
           status: c.status as WhatsAppConnectionItem['status'],
         }));
 
-        console.log('[ConnectionSelector] Conexões encontradas:', transformed.length);
-        console.log('[ConnectionSelector] selectedConnectionId atual:', selectedConnectionId);
+        console.log('🔵 ConnectionSelector - Conexões encontradas:', transformed.length);
+        console.log('🔵 ConnectionSelector - selectedConnectionId atual:', selectedConnectionId);
 
         setConnections(transformed);
 
-        // Se não há conexões, notificar
         if (transformed.length === 0) {
-          console.log('[ConnectionSelector] Nenhuma conexão encontrada, notificando...');
+          console.log('🔵 ConnectionSelector - Nenhuma conexão, chamando onNoConnections');
           onNoConnections?.();
           return;
         }
 
-        // Se não há conexão selecionada ou a selecionada não existe mais
         const currentConnectionExists = selectedConnectionId && transformed.find(c => c.id === selectedConnectionId);
         
         if (!currentConnectionExists) {
-          // Tentar recuperar do localStorage
           const savedId = localStorage.getItem('selectedConnectionId');
           const savedConnection = savedId ? transformed.find(c => c.id === savedId) : null;
           
           if (savedConnection) {
-            console.log('[ConnectionSelector] Restaurando conexão do localStorage:', savedConnection.id);
+            console.log('🔵 ConnectionSelector - SETANDO do localStorage:', savedConnection.id);
             onConnectionChange(savedConnection.id);
           } else {
-            // Selecionar primeira conexão disponível
-            const firstConnection = transformed[0];
-            console.log('[ConnectionSelector] Setando primeira conexão automaticamente:', firstConnection.id);
-            onConnectionChange(firstConnection.id);
+            console.log('🔵 ConnectionSelector - SETANDO primeira conexão:', transformed[0].id);
+            onConnectionChange(transformed[0].id);
           }
         } else {
-          console.log('[ConnectionSelector] Conexão atual válida:', selectedConnectionId);
+          console.log('🔵 ConnectionSelector - Conexão atual válida:', selectedConnectionId);
         }
       } catch (err) {
-        console.error('[ConnectionSelector] Erro inesperado:', err);
+        console.error('🔵 ConnectionSelector - Erro inesperado:', err);
       } finally {
         setIsLoading(false);
       }
@@ -115,6 +124,8 @@ export function ConnectionSelector({
   }, [profile?.company_id]);
 
   const selectedConnection = connections.find(c => c.id === selectedConnectionId);
+
+  console.log('🔵 ConnectionSelector - RENDER', { isLoading, connectionsCount: connections.length, selectedConnection: selectedConnection?.name });
 
   if (isLoading) {
     return (
@@ -126,6 +137,7 @@ export function ConnectionSelector({
   }
 
   if (connections.length === 0) {
+    console.log('🔵 ConnectionSelector - Retornando NULL (sem conexões)');
     return null;
   }
 
