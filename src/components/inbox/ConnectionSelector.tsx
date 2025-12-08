@@ -100,7 +100,7 @@ export function ConnectionSelector({
           data = connectionsData;
         } else {
           // Agents and viewers: check for explicit assignments first
-          const { data: assignmentsData, error: assignmentsError } = await supabase
+          const { data: userAssignments, error: assignmentsError } = await supabase
             .from('connection_users')
             .select('connection_id')
             .eq('user_id', profile.id);
@@ -109,66 +109,60 @@ export function ConnectionSelector({
             console.error('🔵 ConnectionSelector - ERRO ao buscar atribuições:', assignmentsError);
           }
 
-          console.log('🔵 ConnectionSelector - Atribuições do usuário:', assignmentsData);
+          console.log('🔵 ConnectionSelector - Atribuições do usuário:', userAssignments);
 
-          if (assignmentsData && assignmentsData.length > 0) {
-            // User has explicit assignments - only show those connections
-            const connectionIds = assignmentsData.map(a => a.connection_id);
-            
-            const { data: connectionsData, error } = await supabase
-              .from('whatsapp_connections')
-              .select('id, name, phone_number, status')
-              .eq('company_id', profile.company_id)
-              .eq('status', 'connected')
-              .in('id', connectionIds)
-              .order('name');
+          // Get all connected connections for the company
+          const { data: allConnections, error: allConnectionsError } = await supabase
+            .from('whatsapp_connections')
+            .select('id, name, phone_number, status')
+            .eq('company_id', profile.company_id)
+            .eq('status', 'connected')
+            .order('name');
 
-            if (error) {
-              console.error('🔵 ConnectionSelector - ERRO na query:', error);
-              return;
-            }
-            data = connectionsData;
-          } else {
-            // User has no explicit assignments
-            // For each connection, check if that specific connection has any assignments
-            // If a connection has assignments and user is not in them, hide it
-            // If a connection has no assignments, show it (legacy behavior per connection)
-            
-            console.log('🔵 ConnectionSelector - Usuário sem atribuições, verificando por conexão');
-            
-            // Get all connected connections
-            const { data: allConnections, error: allConnectionsError } = await supabase
-              .from('whatsapp_connections')
-              .select('id, name, phone_number, status')
-              .eq('company_id', profile.company_id)
-              .eq('status', 'connected')
-              .order('name');
-
-            if (allConnectionsError) {
-              console.error('🔵 ConnectionSelector - ERRO na query:', allConnectionsError);
-              return;
-            }
-
-            // Get all connection_users to check which connections have assignments
-            const { data: allAssignments, error: allAssignmentsError } = await supabase
-              .from('connection_users')
-              .select('connection_id');
-
-            if (allAssignmentsError) {
-              console.error('🔵 ConnectionSelector - ERRO ao buscar atribuições:', allAssignmentsError);
-            }
-
-            // Create set of connection IDs that have assignments
-            const connectionsWithAssignments = new Set(
-              (allAssignments || []).map(a => a.connection_id)
-            );
-
-            // Filter: show connections that have NO assignments (legacy behavior)
-            data = (allConnections || []).filter(conn => !connectionsWithAssignments.has(conn.id));
-            
-            console.log('🔵 ConnectionSelector - Conexões com atribuições:', connectionsWithAssignments.size);
-            console.log('🔵 ConnectionSelector - Conexões disponíveis (sem atribuições):', data.length);
+          if (allConnectionsError) {
+            console.error('🔵 ConnectionSelector - ERRO na query:', allConnectionsError);
+            return;
           }
+
+          // Get all connection_users to check which connections have any assignments
+          const { data: allAssignments, error: allAssignmentsError } = await supabase
+            .from('connection_users')
+            .select('connection_id');
+
+          if (allAssignmentsError) {
+            console.error('🔵 ConnectionSelector - ERRO ao buscar todas atribuições:', allAssignmentsError);
+          }
+
+          // Create maps for quick lookup
+          const userAssignedConnections = new Set(
+            (userAssignments || []).map(a => a.connection_id)
+          );
+          const connectionsWithAnyAssignments = new Set(
+            (allAssignments || []).map(a => a.connection_id)
+          );
+
+          console.log('🔵 ConnectionSelector - Conexões com atribuições:', connectionsWithAnyAssignments.size);
+          console.log('🔵 ConnectionSelector - Conexões que o usuário tem acesso:', userAssignedConnections.size);
+
+          // Filter connections based on access rules:
+          // - If user has assignment to connection -> show it
+          // - If connection has NO assignments -> show it (legacy behavior)
+          // - If connection has assignments but user is NOT in them -> hide it
+          data = (allConnections || []).filter(conn => {
+            const userHasAccess = userAssignedConnections.has(conn.id);
+            const connectionHasRestrictions = connectionsWithAnyAssignments.has(conn.id);
+            
+            // User explicitly has access
+            if (userHasAccess) return true;
+            
+            // Connection has no restrictions (legacy mode)
+            if (!connectionHasRestrictions) return true;
+            
+            // Connection has restrictions and user is not in them
+            return false;
+          });
+
+          console.log('🔵 ConnectionSelector - Conexões disponíveis para o usuário:', data.length);
         }
 
         console.log('🔵 ConnectionSelector - Query executada:', { data });
