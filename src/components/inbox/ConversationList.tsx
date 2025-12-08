@@ -152,13 +152,6 @@ export function ConversationList({
                           {getInitials(conversation.contact?.name)}
                         </AvatarFallback>
                       </Avatar>
-                      {/* Priority indicator */}
-                      <span 
-                        className={cn(
-                          'absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-card',
-                          priorityColors[conversation.priority]
-                        )}
-                      />
                     </div>
 
                     {/* Content */}
