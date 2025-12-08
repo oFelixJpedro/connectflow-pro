@@ -242,9 +242,14 @@ export function ConversationActions({
             )}
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-56">
+        <DropdownMenuContent align="end" className="w-56 z-[100]">
           {/* Detalhes do contato */}
-          <DropdownMenuItem onClick={onOpenContactDetails}>
+          <DropdownMenuItem 
+            onClick={() => {
+              console.log('[ConversationActions] Abrindo detalhes do contato');
+              onOpenContactDetails?.();
+            }}
+          >
             <Contact className="w-4 h-4 mr-2" />
             <span>Detalhes do contato</span>
           </DropdownMenuItem>
@@ -258,7 +263,7 @@ export function ConversationActions({
               <span>Transferir para...</span>
             </DropdownMenuSubTrigger>
             <DropdownMenuPortal>
-              <DropdownMenuSubContent className="max-h-64 overflow-y-auto">
+              <DropdownMenuSubContent className="max-h-64 overflow-y-auto z-[110]">
                 {agents.length === 0 ? (
                   <DropdownMenuItem disabled>
                     Nenhum atendente disponível
@@ -267,7 +272,10 @@ export function ConversationActions({
                   agents.map((agent) => (
                     <DropdownMenuItem
                       key={agent.id}
-                      onClick={() => handleTransfer(agent.id)}
+                      onClick={() => {
+                        console.log('[ConversationActions] Transferindo para:', agent.id);
+                        handleTransfer(agent.id);
+                      }}
                       disabled={loadingAction === 'transfer'}
                     >
                       <Avatar className="w-6 h-6 mr-2">
@@ -301,7 +309,7 @@ export function ConversationActions({
               <span>Mover para departamento...</span>
             </DropdownMenuSubTrigger>
             <DropdownMenuPortal>
-              <DropdownMenuSubContent>
+              <DropdownMenuSubContent className="z-[110]">
                 {departments.length === 0 ? (
                   <DropdownMenuItem disabled>
                     Nenhum departamento
