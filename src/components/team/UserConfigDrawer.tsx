@@ -179,14 +179,8 @@ export function UserConfigDrawer({ open, onClose, member, onSaveSuccess, isOwner
   const handleSave = async () => {
     if (!member) return;
 
-    // Validate at least one connection if agent/viewer
-    if (selectedRole === 'agent' || selectedRole === 'viewer') {
-      const hasAnyConnection = connectionAccess.some(ca => ca.enabled);
-      if (!hasAnyConnection) {
-        toast.error('Configure pelo menos uma conexão para este usuário');
-        return;
-      }
-    }
+    // No longer require at least one connection - user can have zero connections
+    // They will simply see an empty inbox
 
     setIsSaving(true);
     try {
