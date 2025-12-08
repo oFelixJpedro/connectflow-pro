@@ -67,6 +67,18 @@ serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseServiceKey)
 
     // ═══════════════════════════════════════════════════════════════════
+    // 1.5️⃣ VERIFICAR ROLE DO USUÁRIO
+    // ═══════════════════════════════════════════════════════════════════
+    const { data: userRole } = await supabase
+      .from('user_roles')
+      .select('role')
+      .eq('user_id', user.id)
+      .single()
+
+    const isAdminOrOwner = userRole?.role === 'owner' || userRole?.role === 'admin'
+    console.log('📋 Role do usuário:', userRole?.role, '| isAdminOrOwner:', isAdminOrOwner)
+
+    // ═══════════════════════════════════════════════════════════════════
     // 2️⃣ PARSE REQUEST BODY
     // ═══════════════════════════════════════════════════════════════════
     console.log('\n┌─────────────────────────────────────────────────────────────────┐')
@@ -136,6 +148,48 @@ serve(async (req) => {
     console.log('   - connection status:', conversation.whatsapp_connections?.status)
 
     // Verificar se WhatsApp está conectado
+    // ═══════════════════════════════════════════════════════════════════
+    // 3.5️⃣ VERIFICAR ACESSO À CONEXÃO
+    // ═══════════════════════════════════════════════════════════════════
+    console.log('\n┌─────────────────────────────────────────────────────────────────┐')
+    console.log('│ 3.5️⃣ VERIFICAR ACESSO À CONEXÃO                                 │')
+    console.log('└─────────────────────────────────────────────────────────────────┘')
+
+    const connectionId = conversation.whatsapp_connections?.id
+
+    if (!isAdminOrOwner && connectionId) {
+      // Check if this connection has any assignments
+      const { data: connectionAssignments } = await supabase
+        .from('connection_users')
+        .select('user_id')
+        .eq('connection_id', connectionId)
+
+      const hasAnyAssignments = connectionAssignments && connectionAssignments.length > 0
+      console.log('📋 Conexão tem atribuições:', hasAnyAssignments)
+
+      if (hasAnyAssignments) {
+        // Connection has assignments - check if user is assigned
+        const userIsAssigned = connectionAssignments.some(a => a.user_id === user.id)
+        console.log('📋 Usuário está atribuído:', userIsAssigned)
+
+        if (!userIsAssigned) {
+          console.log('❌ Usuário não tem acesso a esta conexão')
+          await updateMessageStatus(supabase, messageId, 'failed', 'Sem acesso a esta conexão')
+          return new Response(
+            JSON.stringify({ 
+              success: false, 
+              error: 'Você não tem acesso a esta conexão.', 
+              code: 'CONNECTION_ACCESS_DENIED' 
+            }),
+            { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
+        }
+      }
+      // If no assignments on connection, allow (legacy behavior)
+    }
+
+    console.log('✅ Acesso à conexão verificado')
+
     if (conversation.whatsapp_connections?.status !== 'connected') {
       console.log('❌ WhatsApp não está conectado')
       await updateMessageStatus(supabase, messageId, 'failed', 'WhatsApp desconectado')
