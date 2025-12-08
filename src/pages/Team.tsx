@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Users, Settings2, Loader2, Shield, ShieldCheck, UserCheck, Eye } from 'lucide-react';
+import { Users, Settings2, Loader2, Shield, ShieldCheck, UserCheck, Eye, UserPlus } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { UserConfigDrawer } from '@/components/team/UserConfigDrawer';
+import { InviteUserModal } from '@/components/team/InviteUserModal';
 
 interface TeamMember {
   id: string;
@@ -38,6 +39,7 @@ export default function Team() {
   const [isLoading, setIsLoading] = useState(true);
   const [selectedMember, setSelectedMember] = useState<TeamMember | null>(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
 
   const isOwner = userRole?.role === 'owner';
   const isAdmin = userRole?.role === 'admin';
@@ -166,14 +168,21 @@ export default function Team() {
 
   return (
     <div className="container max-w-5xl py-6 space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold flex items-center gap-2">
-          <Users className="w-6 h-6" />
-          Gestão de Equipe
-        </h1>
-        <p className="text-muted-foreground mt-1">
-          Gerencie permissões e acesso dos membros da sua equipe
-        </p>
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-2xl font-bold flex items-center gap-2">
+            <Users className="w-6 h-6" />
+            Gestão de Equipe
+          </h1>
+          <p className="text-muted-foreground mt-1">
+            Gerencie permissões e acesso dos membros da sua equipe
+          </p>
+        </div>
+        
+        <Button onClick={() => setIsInviteModalOpen(true)} className="gap-2">
+          <UserPlus className="w-4 h-4" />
+          Convidar membro
+        </Button>
       </div>
 
       <Card>
@@ -283,6 +292,13 @@ export default function Team() {
         member={selectedMember}
         onSaveSuccess={handleSaveSuccess}
         isOwner={isOwner}
+      />
+
+      {/* Invite User Modal */}
+      <InviteUserModal
+        open={isInviteModalOpen}
+        onOpenChange={setIsInviteModalOpen}
+        onSuccess={loadMembers}
       />
     </div>
   );

@@ -1,13 +1,14 @@
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Loader2 } from 'lucide-react';
+import { ForcePasswordChangeModal } from '@/components/auth/ForcePasswordChangeModal';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
 }
 
 export function ProtectedRoute({ children }: ProtectedRouteProps) {
-  const { user, loading } = useAuth();
+  const { user, loading, needsPasswordChange, clearPasswordChangeFlag, profile } = useAuth();
   const location = useLocation();
 
   if (loading) {
@@ -24,6 +25,20 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
   if (!user) {
     // Redirect to auth page, but save the attempted location
     return <Navigate to="/auth" state={{ from: location }} replace />;
+  }
+
+  // Show forced password change modal if needed
+  if (needsPasswordChange && profile) {
+    return (
+      <>
+        {children}
+        <ForcePasswordChangeModal
+          open={true}
+          userEmail={profile.email}
+          onSuccess={clearPasswordChangeFlag}
+        />
+      </>
+    );
   }
 
   return <>{children}</>;

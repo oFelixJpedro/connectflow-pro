@@ -7,7 +7,6 @@ type Profile = Tables<'profiles'>;
 type Company = Tables<'companies'>;
 type UserRole = Tables<'user_roles'>;
 
-
 interface AuthContextType {
   user: User | null;
   profile: Profile | null;
@@ -15,11 +14,13 @@ interface AuthContextType {
   userRole: UserRole | null;
   session: Session | null;
   loading: boolean;
+  needsPasswordChange: boolean;
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
   resetPassword: (email: string) => Promise<{ error: Error | null }>;
   updateProfile: (updates: Partial<Profile>) => Promise<{ error: Error | null }>;
   updateStatus: (status: Profile['status']) => Promise<void>;
+  clearPasswordChangeFlag: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -31,6 +32,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [userRole, setUserRole] = useState<UserRole | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
+  const [needsPasswordChange, setNeedsPasswordChange] = useState(false);
 
   useEffect(() => {
     // Set up auth state listener FIRST
@@ -83,6 +85,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       
       setProfile(profileData as Profile);
+      setNeedsPasswordChange(profileData.needs_password_change ?? false);
 
       // Load company
       const { data: companyData, error: companyError } = await supabase
@@ -179,6 +182,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  function clearPasswordChangeFlag() {
+    setNeedsPasswordChange(false);
+    if (profile) {
+      setProfile({ ...profile, needs_password_change: false });
+    }
+  }
+
   return (
     <AuthContext.Provider value={{
       user,
@@ -187,11 +197,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       userRole,
       session,
       loading,
+      needsPasswordChange,
       signIn,
       signOut,
       resetPassword,
       updateProfile,
-      updateStatus
+      updateStatus,
+      clearPasswordChangeFlag
     }}>
       {children}
     </AuthContext.Provider>
