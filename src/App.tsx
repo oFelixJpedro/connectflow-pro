@@ -12,7 +12,7 @@ import Inbox from "./pages/Inbox";
 import Contacts from "./pages/Contacts";
 import Tags from "./pages/Tags";
 import QuickReplies from "./pages/QuickReplies";
-import Reports from "./pages/Reports";
+import Departments from "./pages/Departments";
 import Connections from "./pages/Connections";
 import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";
@@ -41,7 +41,7 @@ const App = () => (
               <Route path="/contacts" element={<Contacts />} />
               <Route path="/tags" element={<Tags />} />
               <Route path="/quick-replies" element={<QuickReplies />} />
-              <Route path="/reports" element={<Reports />} />
+              <Route path="/departments" element={<Departments />} />
               <Route path="/connections" element={<Connections />} />
               <Route path="/settings" element={<Settings />} />
             </Route>

@@ -9,7 +9,6 @@ import {
   MessageCircle,
   Tag,
   Zap,
-  BarChart3,
   Plug,
   LogOut,
   Building2,
@@ -63,15 +62,15 @@ const menuItems = [
     badge: null 
   },
   { 
-    icon: Zap, 
-    label: 'Respostas Rápidas', 
-    path: '/quick-replies',
+    icon: Building2, 
+    label: 'Departamentos', 
+    path: '/departments',
     badge: null 
   },
   { 
-    icon: BarChart3, 
-    label: 'Relatórios', 
-    path: '/reports',
+    icon: Zap, 
+    label: 'Respostas Rápidas', 
+    path: '/quick-replies',
     badge: null 
   },
   { 
