@@ -372,6 +372,7 @@ export type Database = {
           last_seen_at: string | null
           max_conversations: number | null
           metadata: Json | null
+          needs_password_change: boolean
           status: Database["public"]["Enums"]["user_status"] | null
           updated_at: string | null
         }
@@ -387,6 +388,7 @@ export type Database = {
           last_seen_at?: string | null
           max_conversations?: number | null
           metadata?: Json | null
+          needs_password_change?: boolean
           status?: Database["public"]["Enums"]["user_status"] | null
           updated_at?: string | null
         }
@@ -402,6 +404,7 @@ export type Database = {
           last_seen_at?: string | null
           max_conversations?: number | null
           metadata?: Json | null
+          needs_password_change?: boolean
           status?: Database["public"]["Enums"]["user_status"] | null
           updated_at?: string | null
         }
