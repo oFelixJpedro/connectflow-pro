@@ -4,6 +4,7 @@ import { ChatPanel } from '@/components/inbox/ChatPanel';
 import { ContactPanel } from '@/components/inbox/ContactPanel';
 import { NoConnectionsState } from '@/components/inbox/NoConnectionsState';
 import { NoAccessState } from '@/components/inbox/NoAccessState';
+import { RestrictedAccessBanner } from '@/components/inbox/RestrictedAccessBanner';
 import { useAppStore } from '@/stores/appStore';
 import { useInboxData } from '@/hooks/useInboxData';
 import { useAuth } from '@/contexts/AuthContext';
@@ -22,6 +23,7 @@ export default function Inbox() {
     setConversationFilters,
     selectedConnectionId,
     setSelectedConnectionId,
+    currentAccessLevel,
   } = useAppStore();
 
   const [hasNoConnections, setHasNoConnections] = useState(false);
@@ -107,20 +109,31 @@ export default function Inbox() {
     );
   }
 
+  const isRestricted = currentAccessLevel === 'assigned_only';
+
   return (
-    <div className="flex h-full">
-      {/* Conversation List */}
-      <ConversationList
-        conversations={conversations}
-        selectedId={selectedConversation?.id}
-        onSelect={selectConversation}
-        filters={conversationFilters}
-        onFilterChange={handleFilterChange}
-        selectedConnectionId={selectedConnectionId}
-        onConnectionChange={handleConnectionChange}
-        onNoConnections={handleNoConnections}
-        isLoading={isLoadingConversations}
-      />
+    <div className="flex flex-col h-full">
+      {/* Restricted access banner */}
+      {isRestricted && (
+        <div className="shrink-0 px-4 pt-2">
+          <RestrictedAccessBanner />
+        </div>
+      )}
+      
+      <div className="flex flex-1 min-h-0">
+        {/* Conversation List */}
+        <ConversationList
+          conversations={conversations}
+          selectedId={selectedConversation?.id}
+          onSelect={selectConversation}
+          filters={conversationFilters}
+          onFilterChange={handleFilterChange}
+          selectedConnectionId={selectedConnectionId}
+          onConnectionChange={handleConnectionChange}
+          onNoConnections={handleNoConnections}
+          isLoading={isLoadingConversations}
+          isRestricted={isRestricted}
+        />
 
       {/* Chat Panel */}
       {selectedConnectionId ? (
@@ -156,6 +169,7 @@ export default function Inbox() {
           onClose={toggleContactPanel}
         />
       )}
+      </div>
     </div>
   );
 }

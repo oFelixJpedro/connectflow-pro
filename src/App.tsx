@@ -15,6 +15,7 @@ import QuickReplies from "./pages/QuickReplies";
 import Departments from "./pages/Departments";
 import Connections from "./pages/Connections";
 import Settings from "./pages/Settings";
+import Team from "./pages/Team";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -43,6 +44,7 @@ const App = () => (
               <Route path="/quick-replies" element={<QuickReplies />} />
               <Route path="/departments" element={<Departments />} />
               <Route path="/connections" element={<Connections />} />
+              <Route path="/team" element={<Team />} />
               <Route path="/settings" element={<Settings />} />
             </Route>
             

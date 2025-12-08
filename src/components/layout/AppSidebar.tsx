@@ -36,54 +36,71 @@ import {
 import { useState } from 'react';
 import { toast } from 'sonner';
 
+import { UsersRound } from 'lucide-react';
+
 const menuItems = [
   { 
     icon: LayoutDashboard, 
     label: 'Dashboard', 
     path: '/dashboard',
-    badge: null 
+    badge: null,
+    adminOnly: false,
   },
   { 
     icon: MessageSquare, 
     label: 'Inbox', 
     path: '/inbox',
-    badge: 5 
+    badge: 5,
+    adminOnly: false,
   },
   { 
     icon: Users, 
     label: 'Contatos', 
     path: '/contacts',
-    badge: null 
+    badge: null,
+    adminOnly: false,
   },
   { 
     icon: Tag, 
     label: 'Tags', 
     path: '/tags',
-    badge: null 
+    badge: null,
+    adminOnly: false,
   },
   { 
     icon: Building2, 
     label: 'Departamentos', 
     path: '/departments',
-    badge: null 
+    badge: null,
+    adminOnly: true,
   },
   { 
     icon: Zap, 
     label: 'Respostas Rápidas', 
     path: '/quick-replies',
-    badge: null 
+    badge: null,
+    adminOnly: false,
   },
   { 
     icon: Plug, 
     label: 'Conexões', 
     path: '/connections',
-    badge: null 
+    badge: null,
+    adminOnly: true,
+  },
+  { 
+    icon: UsersRound, 
+    label: 'Equipe', 
+    path: '/team',
+    badge: null,
+    adminOnly: true,
   },
   { 
     icon: Settings, 
     label: 'Configurações', 
     path: '/settings',
-    badge: null 
+    badge: null,
+    adminOnly: false,
   },
 ];
 
@@ -199,7 +216,9 @@ export function AppSidebar() {
 
       {/* Navigation */}
       <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-        {menuItems.map((item) => {
+        {menuItems
+          .filter(item => !item.adminOnly || userRole?.role === 'owner' || userRole?.role === 'admin')
+          .map((item) => {
           const isActive = location.pathname === item.path || 
             (item.path === '/inbox' && location.pathname.startsWith('/inbox'));
           

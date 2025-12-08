@@ -89,19 +89,20 @@ function transformMessage(db: any): Message {
 }
 
 export function useInboxData() {
-  const { user, profile } = useAuth();
-  const { selectedConnectionId, conversationFilters } = useAppStore();
+  const { user, profile, userRole } = useAuth();
+  const { selectedConnectionId, conversationFilters, setCurrentAccessLevel } = useAppStore();
   
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
+  const [accessLevel, setAccessLevel] = useState<'full' | 'assigned_only'>('full');
   
   const [isLoadingConversations, setIsLoadingConversations] = useState(true);
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
   const [isSendingMessage, setIsSendingMessage] = useState(false);
 
   // ============================================================
-  // 1. CARREGAR CONVERSAS DO BANCO (FILTRADO POR CONEXÃO)
+  // 1. CARREGAR CONVERSAS DO BANCO (FILTRADO POR CONEXÃO E ACCESS_LEVEL)
   // ============================================================
   const loadConversations = useCallback(async () => {
     if (!profile?.company_id) {
@@ -121,6 +122,26 @@ export function useInboxData() {
     setIsLoadingConversations(true);
 
     try {
+      // Check user's access level for this connection
+      const isAdminOrOwner = userRole?.role === 'owner' || userRole?.role === 'admin';
+      let effectiveAccessLevel: 'full' | 'assigned_only' = 'full';
+
+      if (!isAdminOrOwner && user?.id) {
+        // Check connection_users for this user
+        const { data: accessData } = await supabase
+          .from('connection_users')
+          .select('access_level')
+          .eq('connection_id', selectedConnectionId)
+          .eq('user_id', user.id)
+          .maybeSingle();
+
+        // If no assignment found, treat as 'full' (legacy behavior)
+        effectiveAccessLevel = (accessData?.access_level as 'full' | 'assigned_only') || 'full';
+      }
+
+      setAccessLevel(effectiveAccessLevel);
+      setCurrentAccessLevel(effectiveAccessLevel);
+
       let query = supabase
         .from('conversations')
         .select(`
@@ -148,13 +169,20 @@ export function useInboxData() {
         query = query.eq('status', conversationFilters.status);
       }
 
-      // Filtro de atribuição
-      if (conversationFilters.assignedUserId === 'mine' && user?.id) {
+      // Filtro de atribuição - ONLY if access_level is 'full'
+      // If 'assigned_only', force filter to only user's conversations
+      if (effectiveAccessLevel === 'assigned_only' && user?.id) {
+        // Force filter to only assigned to current user
         query = query.eq('assigned_user_id', user.id);
-      } else if (conversationFilters.assignedUserId === 'unassigned') {
-        query = query.is('assigned_user_id', null);
-      } else if (conversationFilters.assignedUserId === 'others' && user?.id) {
-        query = query.neq('assigned_user_id', user.id).not('assigned_user_id', 'is', null);
+      } else {
+        // Normal assignment filter logic
+        if (conversationFilters.assignedUserId === 'mine' && user?.id) {
+          query = query.eq('assigned_user_id', user.id);
+        } else if (conversationFilters.assignedUserId === 'unassigned') {
+          query = query.is('assigned_user_id', null);
+        } else if (conversationFilters.assignedUserId === 'others' && user?.id) {
+          query = query.neq('assigned_user_id', user.id).not('assigned_user_id', 'is', null);
+        }
       }
 
       // Filtro de departamento
@@ -191,7 +219,7 @@ export function useInboxData() {
     } finally {
       setIsLoadingConversations(false);
     }
-  }, [profile?.company_id, selectedConnectionId, conversationFilters, user?.id]);
+  }, [profile?.company_id, selectedConnectionId, conversationFilters, user?.id, userRole?.role, setCurrentAccessLevel]);
 
   // ============================================================
   // 2. CARREGAR MENSAGENS DE UMA CONVERSA
