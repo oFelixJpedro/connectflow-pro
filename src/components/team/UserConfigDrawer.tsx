@@ -228,9 +228,15 @@ export function UserConfigDrawer({ open, onClose, member, onSaveSuccess, isOwner
           : ca
       )
     );
-    // Expand when enabling
+    // Always expand when enabling to show department options
     if (enabled) {
       setExpandedConnections(prev => new Set([...prev, connectionId]));
+    } else {
+      setExpandedConnections(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(connectionId);
+        return newSet;
+      });
     }
   };
 
@@ -512,26 +518,16 @@ export function UserConfigDrawer({ open, onClose, member, onSaveSuccess, isOwner
                                 </p>
                               </div>
                             </div>
-                            {access?.enabled && conn.departments.length > 0 && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => toggleConnectionExpanded(conn.id)}
-                              >
-                                {isExpanded ? (
-                                  <ChevronUp className="w-4 h-4" />
-                                ) : (
-                                  <ChevronDown className="w-4 h-4" />
-                                )}
-                              </Button>
+                            {access?.enabled && (
+                              <Badge variant="secondary" className="text-xs">
+                                {conn.departments.length} dept{conn.departments.length !== 1 ? 's' : ''}
+                              </Badge>
                             )}
                           </div>
 
-                          {/* Connection Details (expanded) */}
+                          {/* Connection Details - always visible when enabled */}
                           {access?.enabled && (
-                            <Collapsible open={isExpanded}>
-                              <CollapsibleContent>
-                                <div className="p-4 pt-0 space-y-4 border-t bg-muted/30">
+                            <div className="p-4 space-y-4 border-t bg-muted/30">
                                   {/* Access Level */}
                                   <div className="space-y-2">
                                     <Label className="text-xs text-muted-foreground">Nível de Acesso às Conversas</Label>
@@ -612,9 +608,7 @@ export function UserConfigDrawer({ open, onClose, member, onSaveSuccess, isOwner
                                     </div>
                                   )}
                                 </div>
-                              </CollapsibleContent>
-                            </Collapsible>
-                          )}
+                              )}
                         </div>
                       );
                     })
