@@ -13,7 +13,7 @@ function loadSavedFilters(): ConversationFilters {
   }
   return {
     status: 'all',
-    assignedUserId: 'all',
+    assignedUserId: 'mine',
   };
 }
 
@@ -131,7 +131,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   resetFilters: () => {
     const defaultFilters: ConversationFilters = {
       status: 'all',
-      assignedUserId: 'all',
+      assignedUserId: 'mine',
     };
     localStorage.removeItem('conversationFilters');
     set({ conversationFilters: defaultFilters });
