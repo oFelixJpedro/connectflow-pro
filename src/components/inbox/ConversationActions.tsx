@@ -7,6 +7,7 @@ import {
   FolderInput,
   CheckCircle,
   Loader2,
+  Contact,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -54,6 +55,7 @@ interface ConversationActionsProps {
   currentUserId: string;
   currentUserRole?: string;
   onAction: () => void;
+  onOpenContactDetails?: () => void;
 }
 
 export function ConversationActions({
@@ -61,6 +63,7 @@ export function ConversationActions({
   currentUserId,
   currentUserRole = 'agent',
   onAction,
+  onOpenContactDetails,
 }: ConversationActionsProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [loadingAction, setLoadingAction] = useState<string | null>(null);
@@ -240,6 +243,14 @@ export function ConversationActions({
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-56">
+          {/* Detalhes do contato */}
+          <DropdownMenuItem onClick={onOpenContactDetails}>
+            <Contact className="w-4 h-4 mr-2" />
+            <span>Detalhes do contato</span>
+          </DropdownMenuItem>
+
+          <DropdownMenuSeparator />
+
           {/* Transferir */}
           <DropdownMenuSub>
             <DropdownMenuSubTrigger disabled={!canTransfer}>
