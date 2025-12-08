@@ -129,10 +129,10 @@ export function useInboxData() {
       let allowedDepartmentIds: string[] | null = null; // null means all departments
 
       if (!isAdminOrOwner && user?.id) {
-        // Check connection_users for this user
+        // Check connection_users for this user - include department_access_mode
         const { data: accessData } = await supabase
           .from('connection_users')
-          .select('access_level')
+          .select('access_level, department_access_mode')
           .eq('connection_id', selectedConnectionId)
           .eq('user_id', user.id)
           .maybeSingle();
@@ -141,40 +141,27 @@ export function useInboxData() {
           // User has explicit assignment - use their access level
           effectiveAccessLevel = (accessData.access_level as 'full' | 'assigned_only') || 'full';
           
-          // Check department access
-          const { data: departmentAssignments } = await supabase
-            .from('department_users')
-            .select('department_id, departments!inner(whatsapp_connection_id)')
-            .eq('user_id', user.id);
+          // Check department access mode
+          const deptAccessMode = (accessData as any).department_access_mode || 'all';
+          
+          if (deptAccessMode === 'none') {
+            // User explicitly has no department access - show no conversations
+            allowedDepartmentIds = [];
+          } else if (deptAccessMode === 'specific') {
+            // User has specific department access - check department_users
+            const { data: departmentAssignments } = await supabase
+              .from('department_users')
+              .select('department_id, departments!inner(whatsapp_connection_id)')
+              .eq('user_id', user.id);
 
-          // Filter to departments of current connection
-          const userDeptIds = (departmentAssignments || [])
-            .filter((da: any) => da.departments?.whatsapp_connection_id === selectedConnectionId)
-            .map((da: any) => da.department_id);
+            // Filter to departments of current connection
+            const userDeptIds = (departmentAssignments || [])
+              .filter((da: any) => da.departments?.whatsapp_connection_id === selectedConnectionId)
+              .map((da: any) => da.department_id);
 
-          // Check if this connection has any department restrictions
-          const { data: allConnectionDepts } = await supabase
-            .from('departments')
-            .select('id')
-            .eq('whatsapp_connection_id', selectedConnectionId)
-            .eq('active', true);
-
-          const { data: anyDeptAssignments } = await supabase
-            .from('department_users')
-            .select('department_id')
-            .in('department_id', (allConnectionDepts || []).map(d => d.id))
-            .limit(1);
-
-          // If there are department assignments for this connection and user has some
-          if (anyDeptAssignments && anyDeptAssignments.length > 0) {
-            if (userDeptIds.length > 0) {
-              allowedDepartmentIds = userDeptIds;
-            } else {
-              // Connection has department restrictions but user has none - show no departments
-              allowedDepartmentIds = [];
-            }
+            allowedDepartmentIds = userDeptIds.length > 0 ? userDeptIds : [];
           }
-          // If no department assignments exist, allow all (legacy behavior)
+          // If deptAccessMode === 'all', allowedDepartmentIds stays null (all departments)
         } else {
           // User has no connection assignment - check if connection has ANY assignments
           const { data: connectionAssignments } = await supabase

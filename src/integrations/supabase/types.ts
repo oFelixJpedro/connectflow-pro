@@ -64,6 +64,7 @@ export type Database = {
           access_level: string
           connection_id: string
           created_at: string | null
+          department_access_mode: string
           id: string
           user_id: string
         }
@@ -71,6 +72,7 @@ export type Database = {
           access_level?: string
           connection_id: string
           created_at?: string | null
+          department_access_mode?: string
           id?: string
           user_id: string
         }
@@ -78,6 +80,7 @@ export type Database = {
           access_level?: string
           connection_id?: string
           created_at?: string | null
+          department_access_mode?: string
           id?: string
           user_id?: string
         }

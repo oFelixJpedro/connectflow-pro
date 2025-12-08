@@ -174,7 +174,7 @@ export function UserConfigDrawer({ open, onClose, member, onSaveSuccess, isOwner
       // Load user's connection assignments
       const { data: connectionAssignments, error: connectionAssignmentsError } = await supabase
         .from('connection_users')
-        .select('connection_id, access_level')
+        .select('connection_id, access_level, department_access_mode')
         .eq('user_id', member.id);
 
       if (connectionAssignmentsError) throw connectionAssignmentsError;
@@ -197,15 +197,14 @@ export function UserConfigDrawer({ open, onClose, member, onSaveSuccess, isOwner
         const connDepartmentIds = conn.departments.map(d => d.id);
         const userDepartmentsInConn = connDepartmentIds.filter(id => userDepartmentIds.has(id));
         
-        // If user has some but not all departments, it's specific access
-        const hasDepartmentRestrictions = userDepartmentsInConn.length > 0 && 
-          userDepartmentsInConn.length < conn.departments.length;
+        // Use the stored department_access_mode if available
+        const deptAccessMode = (assignment?.department_access_mode as 'all' | 'specific' | 'none') || 'all';
         
         return {
           connectionId: conn.id,
           enabled: !!assignment,
           accessLevel: (assignment?.access_level as 'full' | 'assigned_only') || 'full',
-          departmentAccess: hasDepartmentRestrictions || userDepartmentsInConn.length > 0 ? 'specific' : 'all',
+          departmentAccess: deptAccessMode,
           selectedDepartmentIds: new Set(userDepartmentsInConn),
         };
       });
@@ -327,6 +326,7 @@ export function UserConfigDrawer({ open, onClose, member, onSaveSuccess, isOwner
             connection_id: ca.connectionId,
             user_id: member.id,
             access_level: ca.accessLevel,
+            department_access_mode: ca.departmentAccess, // 'all', 'specific', or 'none'
           }));
 
         if (connectionAssignmentsToInsert.length > 0) {
