@@ -1,14 +1,16 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { ConversationList } from '@/components/inbox/ConversationList';
 import { ChatPanel } from '@/components/inbox/ChatPanel';
 import { ContactPanel } from '@/components/inbox/ContactPanel';
 import { NoConnectionsState } from '@/components/inbox/NoConnectionsState';
+import { NoAccessState } from '@/components/inbox/NoAccessState';
 import { useAppStore } from '@/stores/appStore';
 import { useInboxData } from '@/hooks/useInboxData';
 import { useAuth } from '@/contexts/AuthContext';
 import type { ConversationFilters } from '@/types';
 import { toast } from '@/hooks/use-toast';
 import { Loader2, MessageSquare } from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
 
 export default function Inbox() {
   const { user } = useAuth();
@@ -88,9 +90,9 @@ export default function Inbox() {
     setHasNoConnections(true);
   }, []);
 
-  // Estado sem conexões
+  // Estado sem conexões (inclui agents sem acesso)
   if (hasNoConnections) {
-    return <NoConnectionsState />;
+    return <NoAccessState type="no-connections" />;
   }
 
   // Estado de loading inicial (apenas se não tiver conexão selecionada ainda)

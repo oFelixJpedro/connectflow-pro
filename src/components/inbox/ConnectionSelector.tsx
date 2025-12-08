@@ -48,6 +48,7 @@ export function ConnectionSelector({
   const [connections, setConnections] = useState<WhatsAppConnectionItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isOpen, setIsOpen] = useState(false);
+  const [userRole, setUserRole] = useState<string | null>(null);
 
   useEffect(() => {
     console.log('🔵 ConnectionSelector - useEffect EXECUTANDO', { 
@@ -56,8 +57,8 @@ export function ConnectionSelector({
     });
 
     async function loadConnections() {
-      if (!profile?.company_id) {
-        console.log('🔵 ConnectionSelector - Sem company_id, abortando');
+      if (!profile?.company_id || !profile?.id) {
+        console.log('🔵 ConnectionSelector - Sem company_id ou profile_id, abortando');
         setIsLoading(false);
         return;
       }
@@ -66,19 +67,105 @@ export function ConnectionSelector({
       setIsLoading(true);
       
       try {
-        const { data, error } = await supabase
-          .from('whatsapp_connections')
-          .select('id, name, phone_number, status')
-          .eq('company_id', profile.company_id)
-          .eq('status', 'connected')
-          .order('name');
+        // First, get the user's role
+        const { data: roleData, error: roleError } = await supabase
+          .from('user_roles')
+          .select('role')
+          .eq('user_id', profile.id)
+          .single();
 
-        console.log('🔵 ConnectionSelector - Query executada:', { data, error });
-
-        if (error) {
-          console.error('🔵 ConnectionSelector - ERRO na query:', error);
-          return;
+        if (roleError) {
+          console.error('🔵 ConnectionSelector - ERRO ao buscar role:', roleError);
         }
+
+        const role = roleData?.role || 'agent';
+        setUserRole(role);
+        console.log('🔵 ConnectionSelector - Role do usuário:', role);
+
+        let data: any[] | null = null;
+
+        // Owner and admin see all connections
+        if (role === 'owner' || role === 'admin') {
+          const { data: connectionsData, error } = await supabase
+            .from('whatsapp_connections')
+            .select('id, name, phone_number, status')
+            .eq('company_id', profile.company_id)
+            .eq('status', 'connected')
+            .order('name');
+
+          if (error) {
+            console.error('🔵 ConnectionSelector - ERRO na query:', error);
+            return;
+          }
+          data = connectionsData;
+        } else {
+          // Agents and viewers: check for explicit assignments first
+          const { data: assignmentsData, error: assignmentsError } = await supabase
+            .from('connection_users')
+            .select('connection_id')
+            .eq('user_id', profile.id);
+
+          if (assignmentsError) {
+            console.error('🔵 ConnectionSelector - ERRO ao buscar atribuições:', assignmentsError);
+          }
+
+          console.log('🔵 ConnectionSelector - Atribuições do usuário:', assignmentsData);
+
+          if (assignmentsData && assignmentsData.length > 0) {
+            // User has explicit assignments - only show those connections
+            const connectionIds = assignmentsData.map(a => a.connection_id);
+            
+            const { data: connectionsData, error } = await supabase
+              .from('whatsapp_connections')
+              .select('id, name, phone_number, status')
+              .eq('company_id', profile.company_id)
+              .eq('status', 'connected')
+              .in('id', connectionIds)
+              .order('name');
+
+            if (error) {
+              console.error('🔵 ConnectionSelector - ERRO na query:', error);
+              return;
+            }
+            data = connectionsData;
+          } else {
+            // No explicit assignments - check if ANY connection has assignments
+            // If no connection has any assignments, show all (legacy behavior)
+            // If some connections have assignments, show none for this user
+            
+            const { data: anyAssignments, error: anyAssignmentsError } = await supabase
+              .from('connection_users')
+              .select('id')
+              .limit(1);
+
+            if (anyAssignmentsError) {
+              console.error('🔵 ConnectionSelector - ERRO ao verificar atribuições:', anyAssignmentsError);
+            }
+
+            if (anyAssignments && anyAssignments.length > 0) {
+              // There are assignments in the system, but user has none = no access
+              console.log('🔵 ConnectionSelector - Há atribuições no sistema, mas usuário não tem nenhuma');
+              data = [];
+            } else {
+              // No assignments in the system = legacy behavior, show all
+              console.log('🔵 ConnectionSelector - Sem atribuições no sistema, mostrando todas (legado)');
+              const { data: connectionsData, error } = await supabase
+                .from('whatsapp_connections')
+                .select('id, name, phone_number, status')
+                .eq('company_id', profile.company_id)
+                .eq('status', 'connected')
+                .order('name');
+
+              if (error) {
+                console.error('🔵 ConnectionSelector - ERRO na query:', error);
+                return;
+              }
+              data = connectionsData;
+            }
+          }
+        }
+
+        console.log('🔵 ConnectionSelector - Query executada:', { data });
 
         const transformed: WhatsAppConnectionItem[] = (data || []).map((c) => ({
           id: c.id,
@@ -122,7 +209,7 @@ export function ConnectionSelector({
     }
 
     loadConnections();
-  }, [profile?.company_id, onConnectionChange, onNoConnections]);
+  }, [profile?.company_id, profile?.id, onConnectionChange, onNoConnections]);
 
   const selectedConnection = connections.find(c => c.id === selectedConnectionId);
 
