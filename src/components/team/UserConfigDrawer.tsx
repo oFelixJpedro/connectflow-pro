@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Loader2, Shield, ShieldCheck, UserCheck, Eye, Info } from 'lucide-react';
+import { Loader2, Shield, ShieldCheck, UserCheck, Eye, Info, ChevronDown, ChevronUp } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Separator } from '@/components/ui/separator';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Select,
   SelectContent,
@@ -28,6 +29,11 @@ import {
   Alert,
   AlertDescription,
 } from '@/components/ui/alert';
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -44,17 +50,27 @@ interface TeamMember {
   hasRestrictedAccess: boolean;
 }
 
+interface Department {
+  id: string;
+  name: string;
+  color: string | null;
+  is_default: boolean;
+}
+
 interface Connection {
   id: string;
   name: string;
   phone_number: string;
   status: string;
+  departments: Department[];
 }
 
 interface ConnectionAccess {
   connectionId: string;
   enabled: boolean;
   accessLevel: 'full' | 'assigned_only';
+  departmentAccess: 'all' | 'specific';
+  selectedDepartmentIds: Set<string>;
 }
 
 interface UserConfigDrawerProps {
@@ -72,11 +88,20 @@ const ROLE_OPTIONS = [
   { value: 'viewer', label: 'Visualizador', description: 'Pode visualizar conversas mas não pode responder.', icon: Eye },
 ];
 
+// Helper to serialize ConnectionAccess for comparison
+function serializeAccess(access: ConnectionAccess[]): string {
+  return JSON.stringify(access.map(a => ({
+    ...a,
+    selectedDepartmentIds: Array.from(a.selectedDepartmentIds).sort()
+  })));
+}
+
 export function UserConfigDrawer({ open, onClose, member, onSaveSuccess, isOwner }: UserConfigDrawerProps) {
   const { profile } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [connections, setConnections] = useState<Connection[]>([]);
+  const [expandedConnections, setExpandedConnections] = useState<Set<string>>(new Set());
   
   // Form state
   const [selectedRole, setSelectedRole] = useState<string>('agent');
@@ -96,7 +121,7 @@ export function UserConfigDrawer({ open, onClose, member, onSaveSuccess, isOwner
   useEffect(() => {
     // Check for changes
     const roleChanged = selectedRole !== originalRole;
-    const accessChanged = JSON.stringify(connectionAccess) !== JSON.stringify(originalAccess);
+    const accessChanged = serializeAccess(connectionAccess) !== serializeAccess(originalAccess);
     setHasChanges(roleChanged || accessChanged);
   }, [selectedRole, connectionAccess, originalRole, originalAccess]);
 
@@ -105,7 +130,7 @@ export function UserConfigDrawer({ open, onClose, member, onSaveSuccess, isOwner
 
     setIsLoading(true);
     try {
-      // Load connections
+      // Load connections with their departments
       const { data: connectionsData, error: connectionsError } = await supabase
         .from('whatsapp_connections')
         .select('id, name, phone_number, status')
@@ -114,7 +139,25 @@ export function UserConfigDrawer({ open, onClose, member, onSaveSuccess, isOwner
         .order('name');
 
       if (connectionsError) throw connectionsError;
-      setConnections(connectionsData || []);
+
+      // Load departments for each connection
+      const connectionIds = (connectionsData || []).map(c => c.id);
+      const { data: departmentsData, error: departmentsError } = await supabase
+        .from('departments')
+        .select('id, name, color, is_default, whatsapp_connection_id')
+        .in('whatsapp_connection_id', connectionIds)
+        .eq('active', true)
+        .order('name');
+
+      if (departmentsError) throw departmentsError;
+
+      // Map departments to connections
+      const connectionsWithDepts: Connection[] = (connectionsData || []).map(conn => ({
+        ...conn,
+        departments: (departmentsData || []).filter(d => d.whatsapp_connection_id === conn.id)
+      }));
+
+      setConnections(connectionsWithDepts);
 
       // Load user's current role
       const { data: roleData, error: roleError } = await supabase
@@ -129,25 +172,46 @@ export function UserConfigDrawer({ open, onClose, member, onSaveSuccess, isOwner
       setOriginalRole(currentRole);
 
       // Load user's connection assignments
-      const { data: assignmentsData, error: assignmentsError } = await supabase
+      const { data: connectionAssignments, error: connectionAssignmentsError } = await supabase
         .from('connection_users')
         .select('connection_id, access_level')
         .eq('user_id', member.id);
 
-      if (assignmentsError) throw assignmentsError;
+      if (connectionAssignmentsError) throw connectionAssignmentsError;
+
+      // Load user's department assignments
+      const { data: departmentAssignments, error: departmentAssignmentsError } = await supabase
+        .from('department_users')
+        .select('department_id')
+        .eq('user_id', member.id);
+
+      if (departmentAssignmentsError) throw departmentAssignmentsError;
+
+      const userDepartmentIds = new Set((departmentAssignments || []).map(da => da.department_id));
 
       // Build connection access state
-      const accessState: ConnectionAccess[] = (connectionsData || []).map(conn => {
-        const assignment = assignmentsData?.find(a => a.connection_id === conn.id);
+      const accessState: ConnectionAccess[] = connectionsWithDepts.map(conn => {
+        const assignment = connectionAssignments?.find(a => a.connection_id === conn.id);
+        
+        // Check if user has any department assignments for this connection
+        const connDepartmentIds = conn.departments.map(d => d.id);
+        const userDepartmentsInConn = connDepartmentIds.filter(id => userDepartmentIds.has(id));
+        
+        // If user has some but not all departments, it's specific access
+        const hasDepartmentRestrictions = userDepartmentsInConn.length > 0 && 
+          userDepartmentsInConn.length < conn.departments.length;
+        
         return {
           connectionId: conn.id,
           enabled: !!assignment,
           accessLevel: (assignment?.access_level as 'full' | 'assigned_only') || 'full',
+          departmentAccess: hasDepartmentRestrictions || userDepartmentsInConn.length > 0 ? 'specific' : 'all',
+          selectedDepartmentIds: new Set(userDepartmentsInConn),
         };
       });
 
       setConnectionAccess(accessState);
-      setOriginalAccess(JSON.parse(JSON.stringify(accessState)));
+      setOriginalAccess(accessState.map(a => ({ ...a, selectedDepartmentIds: new Set(a.selectedDepartmentIds) })));
     } catch (error) {
       console.error('[UserConfigDrawer] Erro ao carregar dados:', error);
       toast.error('Erro ao carregar configurações do usuário');
@@ -160,10 +224,14 @@ export function UserConfigDrawer({ open, onClose, member, onSaveSuccess, isOwner
     setConnectionAccess(prev => 
       prev.map(ca => 
         ca.connectionId === connectionId 
-          ? { ...ca, enabled, accessLevel: enabled ? ca.accessLevel : 'full' } 
+          ? { ...ca, enabled, accessLevel: enabled ? ca.accessLevel : 'full', departmentAccess: 'all', selectedDepartmentIds: new Set() } 
           : ca
       )
     );
+    // Expand when enabling
+    if (enabled) {
+      setExpandedConnections(prev => new Set([...prev, connectionId]));
+    }
   };
 
   const handleAccessLevelChange = (connectionId: string, level: 'full' | 'assigned_only') => {
@@ -176,23 +244,57 @@ export function UserConfigDrawer({ open, onClose, member, onSaveSuccess, isOwner
     );
   };
 
+  const handleDepartmentAccessChange = (connectionId: string, access: 'all' | 'specific') => {
+    setConnectionAccess(prev => 
+      prev.map(ca => {
+        if (ca.connectionId !== connectionId) return ca;
+        if (access === 'all') {
+          return { ...ca, departmentAccess: 'all', selectedDepartmentIds: new Set() };
+        }
+        return { ...ca, departmentAccess: 'specific' };
+      })
+    );
+  };
+
+  const handleDepartmentToggle = (connectionId: string, departmentId: string, checked: boolean) => {
+    setConnectionAccess(prev => 
+      prev.map(ca => {
+        if (ca.connectionId !== connectionId) return ca;
+        const newSet = new Set(ca.selectedDepartmentIds);
+        if (checked) {
+          newSet.add(departmentId);
+        } else {
+          newSet.delete(departmentId);
+        }
+        return { ...ca, selectedDepartmentIds: newSet };
+      })
+    );
+  };
+
+  const toggleConnectionExpanded = (connectionId: string) => {
+    setExpandedConnections(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(connectionId)) {
+        newSet.delete(connectionId);
+      } else {
+        newSet.add(connectionId);
+      }
+      return newSet;
+    });
+  };
+
   const handleSave = async () => {
     if (!member) return;
-
-    // No longer require at least one connection - user can have zero connections
-    // They will simply see an empty inbox
 
     setIsSaving(true);
     try {
       // 1. Update role if changed
       if (selectedRole !== originalRole) {
-        // Delete old role
         await supabase
           .from('user_roles')
           .delete()
           .eq('user_id', member.id);
 
-        // Insert new role
         const { error: roleError } = await supabase
           .from('user_roles')
           .insert({ user_id: member.id, role: selectedRole as 'owner' | 'admin' | 'supervisor' | 'agent' | 'viewer' });
@@ -201,21 +303,19 @@ export function UserConfigDrawer({ open, onClose, member, onSaveSuccess, isOwner
       }
 
       // 2. Update connection access
-      // If role is owner/admin, clear all assignments (they have auto access)
       if (selectedRole === 'owner' || selectedRole === 'admin') {
-        await supabase
-          .from('connection_users')
-          .delete()
-          .eq('user_id', member.id);
+        // Clear all assignments for admin/owner
+        await supabase.from('connection_users').delete().eq('user_id', member.id);
+        await supabase.from('department_users').delete().eq('user_id', member.id);
       } else {
-        // Delete all existing assignments
-        await supabase
-          .from('connection_users')
-          .delete()
-          .eq('user_id', member.id);
+        // Delete all existing connection assignments
+        await supabase.from('connection_users').delete().eq('user_id', member.id);
+        
+        // Delete all existing department assignments
+        await supabase.from('department_users').delete().eq('user_id', member.id);
 
-        // Insert new assignments
-        const assignmentsToInsert = connectionAccess
+        // Insert new connection assignments
+        const connectionAssignmentsToInsert = connectionAccess
           .filter(ca => ca.enabled)
           .map(ca => ({
             connection_id: ca.connectionId,
@@ -223,12 +323,34 @@ export function UserConfigDrawer({ open, onClose, member, onSaveSuccess, isOwner
             access_level: ca.accessLevel,
           }));
 
-        if (assignmentsToInsert.length > 0) {
+        if (connectionAssignmentsToInsert.length > 0) {
           const { error: insertError } = await supabase
             .from('connection_users')
-            .insert(assignmentsToInsert);
+            .insert(connectionAssignmentsToInsert);
 
           if (insertError) throw insertError;
+        }
+
+        // Insert new department assignments
+        const departmentAssignmentsToInsert: { department_id: string; user_id: string }[] = [];
+        
+        connectionAccess
+          .filter(ca => ca.enabled && ca.departmentAccess === 'specific')
+          .forEach(ca => {
+            ca.selectedDepartmentIds.forEach(deptId => {
+              departmentAssignmentsToInsert.push({
+                department_id: deptId,
+                user_id: member.id,
+              });
+            });
+          });
+
+        if (departmentAssignmentsToInsert.length > 0) {
+          const { error: deptInsertError } = await supabase
+            .from('department_users')
+            .insert(departmentAssignmentsToInsert);
+
+          if (deptInsertError) throw deptInsertError;
         }
       }
 
@@ -333,7 +455,6 @@ export function UserConfigDrawer({ open, onClose, member, onSaveSuccess, isOwner
                 </SelectContent>
               </Select>
               
-              {/* Role description */}
               <p className="text-sm text-muted-foreground">
                 {ROLE_OPTIONS.find(r => r.value === selectedRole)?.description}
               </p>
@@ -358,7 +479,7 @@ export function UserConfigDrawer({ open, onClose, member, onSaveSuccess, isOwner
                 <Alert>
                   <ShieldCheck className="h-4 w-4" />
                   <AlertDescription>
-                    Proprietários e administradores têm acesso automático a todas as conexões.
+                    Proprietários e administradores têm acesso automático a todas as conexões e departamentos.
                   </AlertDescription>
                 </Alert>
               ) : (
@@ -370,54 +491,129 @@ export function UserConfigDrawer({ open, onClose, member, onSaveSuccess, isOwner
                   ) : (
                     connections.map(conn => {
                       const access = connectionAccess.find(ca => ca.connectionId === conn.id);
+                      const isExpanded = expandedConnections.has(conn.id);
                       
                       return (
                         <div
                           key={conn.id}
-                          className="p-4 border rounded-lg space-y-3"
+                          className="border rounded-lg overflow-hidden"
                         >
-                          <div className="flex items-center justify-between">
-                            <div>
-                              <p className="font-medium">{conn.name}</p>
-                              <p className="text-sm text-muted-foreground">
-                                {formatPhoneNumber(conn.phone_number)}
-                              </p>
+                          {/* Connection Header */}
+                          <div className="p-4 flex items-center justify-between bg-card">
+                            <div className="flex items-center gap-3">
+                              <Switch
+                                checked={access?.enabled || false}
+                                onCheckedChange={(checked) => handleConnectionToggle(conn.id, checked)}
+                              />
+                              <div>
+                                <p className="font-medium">{conn.name}</p>
+                                <p className="text-sm text-muted-foreground">
+                                  {formatPhoneNumber(conn.phone_number)}
+                                </p>
+                              </div>
                             </div>
-                            <Switch
-                              checked={access?.enabled || false}
-                              onCheckedChange={(checked) => handleConnectionToggle(conn.id, checked)}
-                            />
+                            {access?.enabled && conn.departments.length > 0 && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => toggleConnectionExpanded(conn.id)}
+                              >
+                                {isExpanded ? (
+                                  <ChevronUp className="w-4 h-4" />
+                                ) : (
+                                  <ChevronDown className="w-4 h-4" />
+                                )}
+                              </Button>
+                            )}
                           </div>
 
+                          {/* Connection Details (expanded) */}
                           {access?.enabled && (
-                            <div className="space-y-2 pl-4 border-l-2 border-muted">
-                              <Label className="text-xs text-muted-foreground">Nível de Acesso</Label>
-                              <Select
-                                value={access.accessLevel}
-                                onValueChange={(value) => handleAccessLevelChange(conn.id, value as 'full' | 'assigned_only')}
-                              >
-                                <SelectTrigger className="h-9">
-                                  <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="full">
-                                    <div className="flex flex-col items-start">
-                                      <span>Acesso completo</span>
+                            <Collapsible open={isExpanded}>
+                              <CollapsibleContent>
+                                <div className="p-4 pt-0 space-y-4 border-t bg-muted/30">
+                                  {/* Access Level */}
+                                  <div className="space-y-2">
+                                    <Label className="text-xs text-muted-foreground">Nível de Acesso às Conversas</Label>
+                                    <Select
+                                      value={access.accessLevel}
+                                      onValueChange={(value) => handleAccessLevelChange(conn.id, value as 'full' | 'assigned_only')}
+                                    >
+                                      <SelectTrigger className="h-9">
+                                        <SelectValue />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="full">Acesso completo</SelectItem>
+                                        <SelectItem value="assigned_only">Apenas atribuídas</SelectItem>
+                                      </SelectContent>
+                                    </Select>
+                                    <p className="text-xs text-muted-foreground">
+                                      {access.accessLevel === 'full' 
+                                        ? 'Vê todas as conversas, pode puxar da fila'
+                                        : 'Vê apenas conversas atribuídas a ele'}
+                                    </p>
+                                  </div>
+
+                                  {/* Department Access */}
+                                  {conn.departments.length > 0 && (
+                                    <div className="space-y-2">
+                                      <Label className="text-xs text-muted-foreground">Acesso a Departamentos</Label>
+                                      <Select
+                                        value={access.departmentAccess}
+                                        onValueChange={(value) => handleDepartmentAccessChange(conn.id, value as 'all' | 'specific')}
+                                      >
+                                        <SelectTrigger className="h-9">
+                                          <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          <SelectItem value="all">Todos os departamentos</SelectItem>
+                                          <SelectItem value="specific">Departamentos específicos</SelectItem>
+                                        </SelectContent>
+                                      </Select>
+
+                                      {access.departmentAccess === 'specific' && (
+                                        <div className="space-y-2 mt-3 p-3 bg-background rounded-lg border">
+                                          <p className="text-xs text-muted-foreground mb-2">
+                                            Selecione os departamentos que o usuário pode acessar:
+                                          </p>
+                                          {conn.departments.map(dept => (
+                                            <div key={dept.id} className="flex items-center gap-2">
+                                              <Checkbox
+                                                id={`dept-${dept.id}`}
+                                                checked={access.selectedDepartmentIds.has(dept.id)}
+                                                onCheckedChange={(checked) => 
+                                                  handleDepartmentToggle(conn.id, dept.id, checked === true)
+                                                }
+                                              />
+                                              <label 
+                                                htmlFor={`dept-${dept.id}`}
+                                                className="text-sm flex items-center gap-2 cursor-pointer"
+                                              >
+                                                <span 
+                                                  className="w-2 h-2 rounded-full"
+                                                  style={{ backgroundColor: dept.color || '#3B82F6' }}
+                                                />
+                                                {dept.name}
+                                                {dept.is_default && (
+                                                  <Badge variant="secondary" className="text-xs py-0 h-4">
+                                                    Padrão
+                                                  </Badge>
+                                                )}
+                                              </label>
+                                            </div>
+                                          ))}
+                                          {access.selectedDepartmentIds.size === 0 && (
+                                            <p className="text-xs text-warning">
+                                              Selecione pelo menos um departamento ou escolha "Todos os departamentos"
+                                            </p>
+                                          )}
+                                        </div>
+                                      )}
                                     </div>
-                                  </SelectItem>
-                                  <SelectItem value="assigned_only">
-                                    <div className="flex flex-col items-start">
-                                      <span>Apenas atribuídas</span>
-                                    </div>
-                                  </SelectItem>
-                                </SelectContent>
-                              </Select>
-                              <p className="text-xs text-muted-foreground">
-                                {access.accessLevel === 'full' 
-                                  ? 'Vê todas as conversas, pode puxar da fila'
-                                  : 'Vê apenas conversas atribuídas a ele'}
-                              </p>
-                            </div>
+                                  )}
+                                </div>
+                              </CollapsibleContent>
+                            </Collapsible>
                           )}
                         </div>
                       );

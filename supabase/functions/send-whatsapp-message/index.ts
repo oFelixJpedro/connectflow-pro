@@ -170,7 +170,7 @@ serve(async (req) => {
       if (hasAnyAssignments) {
         // Connection has assignments - check if user is assigned
         const userIsAssigned = connectionAssignments.some(a => a.user_id === user.id)
-        console.log('📋 Usuário está atribuído:', userIsAssigned)
+        console.log('📋 Usuário está atribuído à conexão:', userIsAssigned)
 
         if (!userIsAssigned) {
           console.log('❌ Usuário não tem acesso a esta conexão')
@@ -184,11 +184,52 @@ serve(async (req) => {
             { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
           )
         }
+
+        // Check department access
+        const departmentId = conversation.department_id
+        if (departmentId) {
+          // Get all departments for this connection
+          const { data: connectionDepts } = await supabase
+            .from('departments')
+            .select('id')
+            .eq('whatsapp_connection_id', connectionId)
+            .eq('active', true)
+
+          // Check if any user has department assignments for this connection
+          const { data: anyDeptAssignments } = await supabase
+            .from('department_users')
+            .select('department_id, user_id')
+            .in('department_id', (connectionDepts || []).map(d => d.id))
+
+          const hasDeptRestrictions = anyDeptAssignments && anyDeptAssignments.length > 0
+          console.log('📋 Conexão tem restrições de departamento:', hasDeptRestrictions)
+
+          if (hasDeptRestrictions) {
+            // Check if user has access to this specific department
+            const userHasDeptAccess = anyDeptAssignments.some(
+              da => da.user_id === user.id && da.department_id === departmentId
+            )
+            console.log('📋 Usuário tem acesso ao departamento:', userHasDeptAccess)
+
+            if (!userHasDeptAccess) {
+              console.log('❌ Usuário não tem acesso a este departamento')
+              await updateMessageStatus(supabase, messageId, 'failed', 'Sem acesso a este departamento')
+              return new Response(
+                JSON.stringify({ 
+                  success: false, 
+                  error: 'Você não tem acesso a este departamento.', 
+                  code: 'DEPARTMENT_ACCESS_DENIED' 
+                }),
+                { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+              )
+            }
+          }
+        }
       }
       // If no assignments on connection, allow (legacy behavior)
     }
 
-    console.log('✅ Acesso à conexão verificado')
+    console.log('✅ Acesso à conexão e departamento verificado')
 
     if (conversation.whatsapp_connections?.status !== 'connected') {
       console.log('❌ WhatsApp não está conectado')
