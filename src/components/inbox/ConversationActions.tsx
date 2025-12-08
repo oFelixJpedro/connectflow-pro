@@ -258,17 +258,21 @@ export function ConversationActions({
 
           {/* Transferir */}
           <DropdownMenuSub>
-            <DropdownMenuSubTrigger disabled={!canTransfer}>
+            <DropdownMenuSubTrigger 
+              disabled={!canTransfer}
+              className={!canTransfer ? 'opacity-50 cursor-not-allowed' : ''}
+            >
               <ArrowRight className="w-4 h-4 mr-2" />
               <span>Transferir para...</span>
             </DropdownMenuSubTrigger>
-            <DropdownMenuPortal>
-              <DropdownMenuSubContent className="max-h-64 overflow-y-auto z-[110]">
-                {agents.length === 0 ? (
-                  <DropdownMenuItem disabled>
-                    Nenhum atendente disponível
-                  </DropdownMenuItem>
-                ) : (
+            {canTransfer && (
+              <DropdownMenuPortal>
+                <DropdownMenuSubContent className="max-h-64 overflow-y-auto z-[110]">
+                  {agents.length === 0 ? (
+                    <DropdownMenuItem disabled>
+                      Nenhum atendente disponível
+                    </DropdownMenuItem>
+                  ) : (
                   agents.map((agent) => (
                     <DropdownMenuItem
                       key={agent.id}
@@ -300,6 +304,7 @@ export function ConversationActions({
                 )}
               </DropdownMenuSubContent>
             </DropdownMenuPortal>
+            )}
           </DropdownMenuSub>
 
           {/* Mover para departamento */}
