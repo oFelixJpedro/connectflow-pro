@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { UserPlus, Check, Loader2 } from 'lucide-react';
+import { UserPlus, Check, Loader2, Lock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
 import type { Conversation } from '@/types';
@@ -9,12 +10,14 @@ interface AssignButtonProps {
   conversation: Conversation;
   currentUserId: string;
   onAssigned: () => void;
+  isRestricted?: boolean; // true if user has 'assigned_only' access level
 }
 
 export function AssignButton({
   conversation,
   currentUserId,
   onAssigned,
+  isRestricted = false,
 }: AssignButtonProps) {
   const [isLoading, setIsLoading] = useState(false);
 
@@ -72,6 +75,23 @@ export function AssignButton({
 
   // Se não está atribuída
   if (!isAssigned) {
+    // Block assign button if user has restricted access
+    if (isRestricted) {
+      return (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button size="sm" variant="outline" disabled className="gap-2">
+              <Lock className="w-4 h-4" />
+              Atribuir para mim
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>
+            <p>Você não tem permissão para puxar conversas da fila</p>
+          </TooltipContent>
+        </Tooltip>
+      );
+    }
+
     return (
       <Button size="sm" onClick={handleAssign} disabled={isLoading} className="gap-2">
         {isLoading ? (

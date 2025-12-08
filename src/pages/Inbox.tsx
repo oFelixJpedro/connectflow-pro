@@ -148,6 +148,7 @@ export default function Inbox() {
           onOpenContactDetails={openContactPanel}
           isLoadingMessages={isLoadingMessages}
           isSendingMessage={isSendingMessage}
+          isRestricted={isRestricted}
         />
       ) : (
         <div className="flex-1 flex items-center justify-center bg-muted/30">

@@ -111,6 +111,7 @@ export function ConversationList({
           filters={filters}
           onFiltersChange={onFilterChange}
           currentUserId={user?.id}
+          isRestricted={isRestricted}
         />
       </div>
 

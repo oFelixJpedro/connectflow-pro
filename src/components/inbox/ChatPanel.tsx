@@ -41,6 +41,7 @@ interface ChatPanelProps {
   onOpenContactDetails?: () => void;
   isLoadingMessages?: boolean;
   isSendingMessage?: boolean;
+  isRestricted?: boolean;
 }
 
 const statusIcons = {
@@ -70,6 +71,7 @@ export function ChatPanel({
   onOpenContactDetails,
   isLoadingMessages = false,
   isSendingMessage = false,
+  isRestricted = false,
 }: ChatPanelProps) {
   const { user, userRole } = useAuth();
   const [inputValue, setInputValue] = useState('');
@@ -220,6 +222,7 @@ export function ChatPanel({
               conversation={conversation}
               currentUserId={currentUserId}
               onAssigned={onRefresh || onAssign}
+              isRestricted={isRestricted}
             />
             
             {/* Menu de ações */}
