@@ -10,7 +10,9 @@ import {
   Pencil,
   Trash2,
   Power,
-  PowerOff
+  PowerOff,
+  ChevronDown,
+  Wifi
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -451,36 +453,59 @@ export default function Departments() {
         </Card>
       ) : (
         <>
-          {/* Connection Selector Card */}
-          <Card>
-            <CardContent className="py-4">
-              <div className="flex items-center gap-4">
-                <Label className="text-sm font-medium whitespace-nowrap">
-                  Conexão WhatsApp:
-                </Label>
-                <div className="flex flex-wrap gap-2">
-                  {connections.map((conn) => (
-                    <Button
-                      key={conn.id}
-                      variant={selectedConnectionId === conn.id ? 'default' : 'outline'}
-                      size="sm"
-                      onClick={() => setSelectedConnectionId(conn.id)}
-                      className="flex items-center gap-2"
-                    >
-                      <div className={cn(
-                        'w-2 h-2 rounded-full',
-                        conn.status === 'connected' ? 'bg-green-500' : 'bg-gray-400'
-                      )} />
-                      <span>{conn.name}</span>
-                      <span className="text-xs opacity-70">
-                        {formatPhoneNumber(conn.phone_number)}
-                      </span>
-                    </Button>
-                  ))}
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+          {/* Connection Selector Dropdown */}
+          <div className="w-full max-w-xs">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="outline"
+                  className="w-full justify-between gap-2 h-auto py-2 px-3 bg-card border-border"
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Wifi className="w-4 h-4 text-success shrink-0" />
+                    <div className="text-left min-w-0">
+                      <p className="text-sm font-medium truncate">
+                        {connections.find(c => c.id === selectedConnectionId)?.name || 'Selecione uma conexão'}
+                      </p>
+                      {selectedConnectionId && (
+                        <p className="text-xs text-muted-foreground truncate">
+                          {formatPhoneNumber(connections.find(c => c.id === selectedConnectionId)?.phone_number || '')}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  <ChevronDown className="w-4 h-4 text-muted-foreground shrink-0" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent 
+                align="start" 
+                className="w-[280px] bg-popover border-border"
+                sideOffset={4}
+              >
+                {connections.map((connection) => (
+                  <DropdownMenuItem
+                    key={connection.id}
+                    onClick={() => setSelectedConnectionId(connection.id)}
+                    className={cn(
+                      'flex items-center gap-3 py-3 px-3 cursor-pointer',
+                      connection.id === selectedConnectionId && 'bg-muted'
+                    )}
+                  >
+                    <Wifi className="w-4 h-4 text-success shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">{connection.name}</p>
+                      <p className="text-xs text-muted-foreground truncate">
+                        {formatPhoneNumber(connection.phone_number)}
+                      </p>
+                    </div>
+                    {connection.id === selectedConnectionId && (
+                      <Check className="w-4 h-4 text-primary shrink-0" />
+                    )}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
 
           {/* Departments List */}
           {loadingDepartments ? (
