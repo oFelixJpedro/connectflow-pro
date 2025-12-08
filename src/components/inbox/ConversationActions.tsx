@@ -221,8 +221,10 @@ export function ConversationActions({
       .slice(0, 2);
   };
 
-  // Pode transferir: se está atribuída e (é admin/owner ou é o responsável)
-  const canTransfer = isAssigned && !isClosed && (isAdminOrOwner || isAssignedToMe);
+  // Pode transferir/atribuir: owners/admins podem sempre, agents apenas se estiver atribuída a eles
+  const canTransfer = !isClosed && (isAdminOrOwner || (isAssigned && isAssignedToMe));
+  // Texto do botão muda se está atribuída ou não
+  const transferLabel = isAssigned ? 'Transferir para...' : 'Atribuir para...';
   // Pode liberar: se está atribuída e (é admin/owner ou é o responsável)
   const canRelease = isAssigned && !isClosed && (isAdminOrOwner || isAssignedToMe);
   // Pode fechar: se está atribuída e não está fechada
@@ -256,14 +258,14 @@ export function ConversationActions({
 
           <DropdownMenuSeparator />
 
-          {/* Transferir */}
+          {/* Transferir/Atribuir */}
           <DropdownMenuSub>
             <DropdownMenuSubTrigger 
               disabled={!canTransfer}
               className={!canTransfer ? 'opacity-50 cursor-not-allowed' : ''}
             >
               <ArrowRight className="w-4 h-4 mr-2" />
-              <span>Transferir para...</span>
+              <span>{transferLabel}</span>
             </DropdownMenuSubTrigger>
             {canTransfer && (
               <DropdownMenuPortal>
