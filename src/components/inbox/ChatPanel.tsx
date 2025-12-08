@@ -37,6 +37,7 @@ interface ChatPanelProps {
   onResendMessage?: (messageId: string) => void;
   onAssign: () => void;
   onClose: () => void;
+  onRefresh?: () => void;
   isLoadingMessages?: boolean;
   isSendingMessage?: boolean;
 }
@@ -64,6 +65,7 @@ export function ChatPanel({
   onResendMessage,
   onAssign,
   onClose,
+  onRefresh,
   isLoadingMessages = false,
   isSendingMessage = false,
 }: ChatPanelProps) {
@@ -173,7 +175,7 @@ export function ChatPanel({
             <AssignButton
               conversation={conversation}
               currentUserId={currentUserId}
-              onAssigned={onAssign}
+              onAssigned={onRefresh || onAssign}
             />
             
             {/* Menu de ações */}
@@ -181,7 +183,7 @@ export function ChatPanel({
               conversation={conversation}
               currentUserId={currentUserId}
               currentUserRole={currentUserRole}
-              onAction={onAssign}
+              onAction={onRefresh || onAssign}
             />
           </div>
         </div>

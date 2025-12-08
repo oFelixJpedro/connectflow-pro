@@ -650,13 +650,23 @@ export function useInboxData() {
             const updated = prev.map((c) => {
               if (c.id !== conversationId) return c;
               
+              // Usar hasOwnProperty para verificar se o campo foi enviado (mesmo que null)
+              const hasAssignedUserId = 'assigned_user_id' in updatedData;
+              
               return {
                 ...c,
                 status: (updatedData.status as Conversation['status']) || c.status,
                 priority: (updatedData.priority as Conversation['priority']) || c.priority,
                 unreadCount: (updatedData.unread_count as number) ?? c.unreadCount,
                 lastMessageAt: (updatedData.last_message_at as string) || c.lastMessageAt,
-                assignedUserId: (updatedData.assigned_user_id as string) || c.assignedUserId,
+                // Para assigned_user_id, aceitar null explicitamente
+                assignedUserId: hasAssignedUserId 
+                  ? (updatedData.assigned_user_id as string | undefined) ?? undefined
+                  : c.assignedUserId,
+                // Limpar assignedUser se foi desatribuído
+                assignedUser: hasAssignedUserId && !updatedData.assigned_user_id 
+                  ? undefined 
+                  : c.assignedUser,
                 closedAt: (updatedData.closed_at as string) || c.closedAt,
               };
             });
@@ -672,6 +682,8 @@ export function useInboxData() {
           // Se for a conversa selecionada, atualizar também
           const currentConversation = selectedConversationRef.current;
           if (currentConversation?.id === conversationId) {
+            const hasAssignedUserId = 'assigned_user_id' in updatedData;
+            
             setSelectedConversation((prev) => {
               if (!prev) return null;
               return {
@@ -680,7 +692,12 @@ export function useInboxData() {
                 priority: (updatedData.priority as Conversation['priority']) || prev.priority,
                 unreadCount: (updatedData.unread_count as number) ?? prev.unreadCount,
                 lastMessageAt: (updatedData.last_message_at as string) || prev.lastMessageAt,
-                assignedUserId: (updatedData.assigned_user_id as string) || prev.assignedUserId,
+                assignedUserId: hasAssignedUserId 
+                  ? (updatedData.assigned_user_id as string | undefined) ?? undefined
+                  : prev.assignedUserId,
+                assignedUser: hasAssignedUserId && !updatedData.assigned_user_id 
+                  ? undefined 
+                  : prev.assignedUser,
                 closedAt: (updatedData.closed_at as string) || prev.closedAt,
               };
             });
