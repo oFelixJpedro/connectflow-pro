@@ -125,6 +125,7 @@ export function useInboxData() {
       // Check user's access level for this connection
       const isAdminOrOwner = userRole?.role === 'owner' || userRole?.role === 'admin';
       let effectiveAccessLevel: 'full' | 'assigned_only' = 'full';
+      let hasConnectionAccess = true;
 
       if (!isAdminOrOwner && user?.id) {
         // Check connection_users for this user
@@ -135,8 +136,38 @@ export function useInboxData() {
           .eq('user_id', user.id)
           .maybeSingle();
 
-        // If no assignment found, treat as 'full' (legacy behavior)
-        effectiveAccessLevel = (accessData?.access_level as 'full' | 'assigned_only') || 'full';
+        if (accessData) {
+          // User has explicit assignment - use their access level
+          effectiveAccessLevel = (accessData.access_level as 'full' | 'assigned_only') || 'full';
+        } else {
+          // User has no assignment - check if connection has ANY assignments
+          const { data: connectionAssignments } = await supabase
+            .from('connection_users')
+            .select('id')
+            .eq('connection_id', selectedConnectionId)
+            .limit(1);
+
+          if (connectionAssignments && connectionAssignments.length > 0) {
+            // Connection has assignments but user is not in them - NO ACCESS
+            console.log('[useInboxData] Usuário sem acesso a esta conexão');
+            hasConnectionAccess = false;
+          }
+          // If connection has no assignments, allow full access (legacy behavior)
+        }
+      }
+
+      // If user doesn't have access, return empty and don't load conversations
+      if (!hasConnectionAccess) {
+        setAccessLevel('full');
+        setCurrentAccessLevel('full');
+        setConversations([]);
+        setIsLoadingConversations(false);
+        toast({
+          title: 'Sem acesso',
+          description: 'Você não tem permissão para acessar esta conexão.',
+          variant: 'destructive',
+        });
+        return;
       }
 
       setAccessLevel(effectiveAccessLevel);

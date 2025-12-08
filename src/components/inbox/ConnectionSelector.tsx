@@ -129,39 +129,45 @@ export function ConnectionSelector({
             }
             data = connectionsData;
           } else {
-            // No explicit assignments - check if ANY connection has assignments
-            // If no connection has any assignments, show all (legacy behavior)
-            // If some connections have assignments, show none for this user
+            // User has no explicit assignments
+            // For each connection, check if that specific connection has any assignments
+            // If a connection has assignments and user is not in them, hide it
+            // If a connection has no assignments, show it (legacy behavior per connection)
             
-            const { data: anyAssignments, error: anyAssignmentsError } = await supabase
+            console.log('🔵 ConnectionSelector - Usuário sem atribuições, verificando por conexão');
+            
+            // Get all connected connections
+            const { data: allConnections, error: allConnectionsError } = await supabase
+              .from('whatsapp_connections')
+              .select('id, name, phone_number, status')
+              .eq('company_id', profile.company_id)
+              .eq('status', 'connected')
+              .order('name');
+
+            if (allConnectionsError) {
+              console.error('🔵 ConnectionSelector - ERRO na query:', allConnectionsError);
+              return;
+            }
+
+            // Get all connection_users to check which connections have assignments
+            const { data: allAssignments, error: allAssignmentsError } = await supabase
               .from('connection_users')
-              .select('id')
-              .limit(1);
+              .select('connection_id');
 
-            if (anyAssignmentsError) {
-              console.error('🔵 ConnectionSelector - ERRO ao verificar atribuições:', anyAssignmentsError);
+            if (allAssignmentsError) {
+              console.error('🔵 ConnectionSelector - ERRO ao buscar atribuições:', allAssignmentsError);
             }
 
-            if (anyAssignments && anyAssignments.length > 0) {
-              // There are assignments in the system, but user has none = no access
-              console.log('🔵 ConnectionSelector - Há atribuições no sistema, mas usuário não tem nenhuma');
-              data = [];
-            } else {
-              // No assignments in the system = legacy behavior, show all
-              console.log('🔵 ConnectionSelector - Sem atribuições no sistema, mostrando todas (legado)');
-              const { data: connectionsData, error } = await supabase
-                .from('whatsapp_connections')
-                .select('id, name, phone_number, status')
-                .eq('company_id', profile.company_id)
-                .eq('status', 'connected')
-                .order('name');
+            // Create set of connection IDs that have assignments
+            const connectionsWithAssignments = new Set(
+              (allAssignments || []).map(a => a.connection_id)
+            );
 
-              if (error) {
-                console.error('🔵 ConnectionSelector - ERRO na query:', error);
-                return;
-              }
-              data = connectionsData;
-            }
+            // Filter: show connections that have NO assignments (legacy behavior)
+            data = (allConnections || []).filter(conn => !connectionsWithAssignments.has(conn.id));
+            
+            console.log('🔵 ConnectionSelector - Conexões com atribuições:', connectionsWithAssignments.size);
+            console.log('🔵 ConnectionSelector - Conexões disponíveis (sem atribuições):', data.length);
           }
         }
 
