@@ -34,6 +34,7 @@ export default function Inbox() {
     sendMessage,
     resendMessage,
     updateConversation,
+    loadConversations,
   } = useInboxData();
 
   const handleSendMessage = async (content: string) => {
@@ -127,6 +128,7 @@ export default function Inbox() {
           onResendMessage={resendMessage}
           onAssign={handleAssign}
           onClose={handleCloseConversation}
+          onRefresh={loadConversations}
           isLoadingMessages={isLoadingMessages}
           isSendingMessage={isSendingMessage}
         />

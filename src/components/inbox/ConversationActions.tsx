@@ -119,6 +119,8 @@ export function ConversationActions({
     setIsLoading(true);
     setLoadingAction(action);
 
+    console.log('[ConversationActions] Executando ação:', action, 'para conversa:', conversation.id);
+
     try {
       const { data: session } = await supabase.auth.getSession();
       if (!session.session?.access_token) {
@@ -133,9 +135,21 @@ export function ConversationActions({
         },
       });
 
+      console.log('[ConversationActions] Resposta da edge function:', response);
+
+      // Verificar erro do Supabase ou erro no body da resposta
       if (response.error) {
-        throw new Error(response.data?.error || 'Erro ao executar ação');
+        console.error('[ConversationActions] Erro Supabase:', response.error);
+        throw new Error(response.error.message || 'Erro ao executar ação');
       }
+
+      // Verificar se a resposta indica sucesso
+      if (response.data && response.data.success === false) {
+        console.error('[ConversationActions] Erro no body:', response.data);
+        throw new Error(response.data.error || 'Erro ao executar ação');
+      }
+
+      console.log('[ConversationActions] Ação executada com sucesso');
 
       // Toast de sucesso baseado na ação
       const messages: Record<string, string> = {
@@ -152,16 +166,20 @@ export function ConversationActions({
 
       onAction();
     } catch (error: any) {
-      console.error(`Erro ao executar ${action}:`, error);
+      console.error(`[ConversationActions] Erro ao executar ${action}:`, error);
       toast({
         title: 'Erro',
         description: error.message || 'Ocorreu um erro ao executar a ação',
         variant: 'destructive',
       });
     } finally {
-      setIsLoading(false);
+      setIsLoading(true);
       setLoadingAction(null);
       setConfirmDialog({ open: false, action: '', title: '', description: '' });
+      // Aguardar um pouco e resetar o loading
+      setTimeout(() => {
+        setIsLoading(false);
+      }, 500);
     }
   };
 
