@@ -121,11 +121,11 @@ export function ForcePasswordChangeModal({
   return (
     <Dialog open={open} onOpenChange={() => {}}>
       <DialogContent
-        className="sm:max-w-md [&>button]:hidden"
+        className="sm:max-w-md [&>button]:hidden max-h-[90vh] flex flex-col"
         onPointerDownOutside={(e) => e.preventDefault()}
         onEscapeKeyDown={(e) => e.preventDefault()}
       >
-        <DialogHeader>
+        <DialogHeader className="flex-shrink-0">
           <DialogTitle className="flex items-center gap-2">
             <Lock className="w-5 h-5" />
             Troca de Senha Obrigatória
@@ -135,7 +135,7 @@ export function ForcePasswordChangeModal({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4 py-4">
+        <div className="flex-1 overflow-y-auto space-y-4 py-4 pr-1">
           {/* Current Password */}
           <div className="space-y-2">
             <Label htmlFor="currentPassword">Senha atual (padrao123)</Label>
@@ -270,16 +270,18 @@ export function ForcePasswordChangeModal({
           </div>
         </div>
 
-        <Button onClick={handleSubmit} disabled={!canSubmit || isLoading} className="w-full">
-          {isLoading ? (
-            <>
-              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              Alterando senha...
-            </>
-          ) : (
-            'Alterar senha e continuar'
-          )}
-        </Button>
+        <div className="flex-shrink-0 pt-4 border-t">
+          <Button onClick={handleSubmit} disabled={!canSubmit || isLoading} className="w-full">
+            {isLoading ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                Alterando senha...
+              </>
+            ) : (
+              'Alterar senha e continuar'
+            )}
+          </Button>
+        </div>
       </DialogContent>
     </Dialog>
   );
