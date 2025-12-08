@@ -163,7 +163,7 @@ export function ConversationFiltersComponent({
               <h4 className="font-medium text-sm">Filtrar Conversas</h4>
             </div>
             
-            <ScrollArea className="flex-1 min-h-0">
+            <div className="flex-1 overflow-y-auto min-h-0 max-h-[300px]">
               <div className="p-3 space-y-4">
                 {/* Filtro de Atribuição */}
                 <div className="space-y-2">
@@ -263,7 +263,7 @@ export function ConversationFiltersComponent({
                   </>
                 )}
               </div>
-            </ScrollArea>
+            </div>
 
             <div className="p-3 border-t border-border flex gap-2 shrink-0">
               <Button
