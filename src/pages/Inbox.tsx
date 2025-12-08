@@ -92,13 +92,8 @@ export default function Inbox() {
     setHasNoConnections(true);
   }, []);
 
-  // Estado sem conexões (inclui agents sem acesso)
-  if (hasNoConnections) {
-    return <NoAccessState type="no-connections" />;
-  }
-
-  // Estado de loading inicial (apenas se não tiver conexão selecionada ainda)
-  if (!selectedConnectionId && isLoadingConversations) {
+  // Estado de loading inicial (apenas se não tiver conexão selecionada ainda e está carregando)
+  if (!selectedConnectionId && isLoadingConversations && !hasNoConnections) {
     return (
       <div className="flex h-full items-center justify-center">
         <div className="text-center">
@@ -152,12 +147,17 @@ export default function Inbox() {
         />
       ) : (
         <div className="flex-1 flex items-center justify-center bg-muted/30">
-          <div className="text-center">
+          <div className="text-center max-w-md px-6">
             <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center mx-auto mb-4">
               <MessageSquare className="w-8 h-8 text-muted-foreground" />
             </div>
-            <p className="text-muted-foreground">
-              Selecione uma conexão para ver as conversas
+            <h3 className="font-medium text-foreground mb-2">
+              {hasNoConnections ? 'Sem acesso a conexões' : 'Selecione uma conexão'}
+            </h3>
+            <p className="text-sm text-muted-foreground">
+              {hasNoConnections 
+                ? 'Você não tem acesso a nenhuma conexão WhatsApp. Entre em contato com um administrador para solicitar acesso.'
+                : 'Selecione uma conexão para ver as conversas'}
             </p>
           </div>
         </div>

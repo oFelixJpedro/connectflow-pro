@@ -225,8 +225,13 @@ export function ConnectionSelector({
   }
 
   if (connections.length === 0) {
-    console.log('🔵 ConnectionSelector - Retornando NULL (sem conexões)');
-    return null;
+    console.log('🔵 ConnectionSelector - Sem conexões disponíveis');
+    return (
+      <div className="flex items-center gap-2 px-3 py-2 bg-muted/50 rounded-lg border border-border">
+        <WifiOff className="w-4 h-4 text-muted-foreground" />
+        <span className="text-sm text-muted-foreground">Sem conexão disponível</span>
+      </div>
+    );
   }
 
   return (
