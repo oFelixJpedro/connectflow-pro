@@ -69,7 +69,7 @@ interface ConnectionAccess {
   connectionId: string;
   enabled: boolean;
   accessLevel: 'full' | 'assigned_only';
-  departmentAccess: 'all' | 'specific';
+  departmentAccess: 'all' | 'specific' | 'none';
   selectedDepartmentIds: Set<string>;
 }
 
@@ -250,12 +250,12 @@ export function UserConfigDrawer({ open, onClose, member, onSaveSuccess, isOwner
     );
   };
 
-  const handleDepartmentAccessChange = (connectionId: string, access: 'all' | 'specific') => {
+  const handleDepartmentAccessChange = (connectionId: string, access: 'all' | 'specific' | 'none') => {
     setConnectionAccess(prev => 
       prev.map(ca => {
         if (ca.connectionId !== connectionId) return ca;
-        if (access === 'all') {
-          return { ...ca, departmentAccess: 'all', selectedDepartmentIds: new Set() };
+        if (access === 'all' || access === 'none') {
+          return { ...ca, departmentAccess: access, selectedDepartmentIds: new Set() };
         }
         return { ...ca, departmentAccess: 'specific' };
       })
@@ -556,7 +556,7 @@ export function UserConfigDrawer({ open, onClose, member, onSaveSuccess, isOwner
                                       <Label className="text-xs text-muted-foreground">Acesso a Departamentos</Label>
                                       <Select
                                         value={access.departmentAccess}
-                                        onValueChange={(value) => handleDepartmentAccessChange(conn.id, value as 'all' | 'specific')}
+                                        onValueChange={(value) => handleDepartmentAccessChange(conn.id, value as 'all' | 'specific' | 'none')}
                                       >
                                         <SelectTrigger className="h-9">
                                           <SelectValue />
@@ -564,6 +564,7 @@ export function UserConfigDrawer({ open, onClose, member, onSaveSuccess, isOwner
                                         <SelectContent>
                                           <SelectItem value="all">Todos os departamentos</SelectItem>
                                           <SelectItem value="specific">Departamentos específicos</SelectItem>
+                                          <SelectItem value="none">Nenhum departamento</SelectItem>
                                         </SelectContent>
                                       </Select>
 
@@ -598,11 +599,6 @@ export function UserConfigDrawer({ open, onClose, member, onSaveSuccess, isOwner
                                               </label>
                                             </div>
                                           ))}
-                                          {access.selectedDepartmentIds.size === 0 && (
-                                            <p className="text-xs text-warning">
-                                              Selecione pelo menos um departamento ou escolha "Todos os departamentos"
-                                            </p>
-                                          )}
                                         </div>
                                       )}
                                     </div>
