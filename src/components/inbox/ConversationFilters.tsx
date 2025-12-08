@@ -156,14 +156,14 @@ export function ConversationFiltersComponent({
           </PopoverTrigger>
           <PopoverContent 
             align="start" 
-            className="w-72 p-0 bg-popover border-border"
+            className="w-72 p-0 bg-popover border-border flex flex-col max-h-[60vh]"
             sideOffset={4}
           >
-            <div className="p-3 border-b border-border">
+            <div className="p-3 border-b border-border shrink-0">
               <h4 className="font-medium text-sm">Filtrar Conversas</h4>
             </div>
             
-            <ScrollArea className="max-h-[400px]">
+            <ScrollArea className="flex-1 min-h-0">
               <div className="p-3 space-y-4">
                 {/* Filtro de Atribuição */}
                 <div className="space-y-2">
@@ -265,7 +265,7 @@ export function ConversationFiltersComponent({
               </div>
             </ScrollArea>
 
-            <div className="p-3 border-t border-border flex gap-2">
+            <div className="p-3 border-t border-border flex gap-2 shrink-0">
               <Button
                 variant="outline"
                 size="sm"
