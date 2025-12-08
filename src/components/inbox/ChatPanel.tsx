@@ -85,7 +85,10 @@ export function ChatPanel({
 
   // Scroll para o final
   const scrollToBottom = useCallback((behavior: ScrollBehavior = 'smooth') => {
-    messagesEndRef.current?.scrollIntoView({ behavior });
+    const container = scrollContainerRef.current;
+    if (container) {
+      container.scrollTop = container.scrollHeight;
+    }
   }, []);
 
   // Verificar se está no final do scroll
@@ -98,13 +101,18 @@ export function ChatPanel({
     setShowScrollButton(!isAtBottom);
   }, []);
 
-  // Auto-scroll para última mensagem quando conversa muda
+  // Auto-scroll para última mensagem quando conversa muda ou mensagens carregam
   useEffect(() => {
-    if (conversation?.id) {
-      // Pequeno delay para garantir que as mensagens renderizaram
-      setTimeout(() => scrollToBottom('instant'), 100);
+    if (conversation?.id && messages.length > 0 && !isLoadingMessages) {
+      // Usar requestAnimationFrame para garantir que o DOM atualizou
+      requestAnimationFrame(() => {
+        const container = scrollContainerRef.current;
+        if (container) {
+          container.scrollTop = container.scrollHeight;
+        }
+      });
     }
-  }, [conversation?.id, scrollToBottom]);
+  }, [conversation?.id, messages.length, isLoadingMessages]);
 
   // Auto-scroll quando novas mensagens chegam (se já estava no final)
   useEffect(() => {
