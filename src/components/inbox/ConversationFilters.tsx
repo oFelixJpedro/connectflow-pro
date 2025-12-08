@@ -24,6 +24,7 @@ interface ConversationFiltersProps {
   filters: FiltersType;
   onFiltersChange: (filters: FiltersType) => void;
   currentUserId?: string;
+  isRestricted?: boolean; // true if access_level = 'assigned_only'
 }
 
 const ASSIGNMENT_OPTIONS = [
@@ -45,6 +46,7 @@ export function ConversationFiltersComponent({
   filters,
   onFiltersChange,
   currentUserId,
+  isRestricted = false,
 }: ConversationFiltersProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [departments, setDepartments] = useState<Department[]>([]);
@@ -81,9 +83,9 @@ export function ConversationFiltersComponent({
     setLocalFilters(filters);
   }, [filters]);
 
-  // Contar filtros ativos
+  // Contar filtros ativos (don't count assignment filter if restricted)
   const activeFiltersCount = [
-    filters.assignedUserId && filters.assignedUserId !== 'all',
+    !isRestricted && filters.assignedUserId && filters.assignedUserId !== 'all',
     filters.status && filters.status !== 'all',
     filters.departmentId && filters.departmentId !== 'all',
   ].filter(Boolean).length;
@@ -164,34 +166,36 @@ export function ConversationFiltersComponent({
             </div>
             
             <div className="flex-1 overflow-y-auto min-h-0 max-h-[300px]">
-              <div className="p-3 space-y-4">
-                {/* Filtro de Atribuição */}
-                <div className="space-y-2">
-                  <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                    Atribuição
-                  </Label>
-                  <RadioGroup
-                    value={localFilters.assignedUserId || 'all'}
-                    onValueChange={(value) => 
-                      setLocalFilters(prev => ({ ...prev, assignedUserId: value as FiltersType['assignedUserId'] }))
-                    }
-                    className="space-y-1.5"
-                  >
-                    {ASSIGNMENT_OPTIONS.map((option) => (
-                      <div key={option.value} className="flex items-center space-x-2">
-                        <RadioGroupItem value={option.value} id={`assignment-${option.value}`} />
-                        <Label 
-                          htmlFor={`assignment-${option.value}`}
-                          className="text-sm font-normal cursor-pointer"
-                        >
-                          {option.label}
-                        </Label>
-                      </div>
-                    ))}
-                  </RadioGroup>
-                </div>
+            <div className="p-3 space-y-4">
+                {/* Filtro de Atribuição - hide if restricted */}
+                {!isRestricted && (
+                  <div className="space-y-2">
+                    <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                      Atribuição
+                    </Label>
+                    <RadioGroup
+                      value={localFilters.assignedUserId || 'all'}
+                      onValueChange={(value) => 
+                        setLocalFilters(prev => ({ ...prev, assignedUserId: value as FiltersType['assignedUserId'] }))
+                      }
+                      className="space-y-1.5"
+                    >
+                      {ASSIGNMENT_OPTIONS.map((option) => (
+                        <div key={option.value} className="flex items-center space-x-2">
+                          <RadioGroupItem value={option.value} id={`assignment-${option.value}`} />
+                          <Label 
+                            htmlFor={`assignment-${option.value}`}
+                            className="text-sm font-normal cursor-pointer"
+                          >
+                            {option.label}
+                          </Label>
+                        </div>
+                      ))}
+                    </RadioGroup>
+                  </div>
+                )}
 
-                <Separator />
+                {!isRestricted && <Separator />}
 
                 {/* Filtro de Status */}
                 <div className="space-y-2">
@@ -300,7 +304,7 @@ export function ConversationFiltersComponent({
       {/* Chips dos filtros ativos */}
       {activeFiltersCount > 0 && (
         <div className="flex flex-wrap gap-1.5">
-          {filters.assignedUserId && filters.assignedUserId !== 'all' && (
+          {!isRestricted && filters.assignedUserId && filters.assignedUserId !== 'all' && (
             <Badge variant="secondary" className="gap-1 pl-2 pr-1 py-0.5">
               <span className="text-xs">{getFilterLabel('assignedUserId', filters.assignedUserId)}</span>
               <button

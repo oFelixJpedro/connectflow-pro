@@ -61,18 +61,21 @@ export type Database = {
       }
       connection_users: {
         Row: {
+          access_level: string
           connection_id: string
           created_at: string | null
           id: string
           user_id: string
         }
         Insert: {
+          access_level?: string
           connection_id: string
           created_at?: string | null
           id?: string
           user_id: string
         }
         Update: {
+          access_level?: string
           connection_id?: string
           created_at?: string | null
           id?: string

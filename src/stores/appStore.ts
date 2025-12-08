@@ -35,6 +35,7 @@ interface AppState {
   
   // Inbox state
   selectedConnectionId: string | null;
+  currentAccessLevel: 'full' | 'assigned_only' | null;
   conversations: Conversation[];
   selectedConversation: Conversation | null;
   messages: Message[];
@@ -52,6 +53,7 @@ interface AppState {
   
   // Actions - Inbox
   setSelectedConnectionId: (id: string | null) => void;
+  setCurrentAccessLevel: (level: 'full' | 'assigned_only' | null) => void;
   setConversations: (conversations: Conversation[]) => void;
   selectConversation: (conversation: Conversation | null) => void;
   setMessages: (messages: Message[]) => void;
@@ -73,6 +75,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   company: null,
   isAuthenticated: false,
   selectedConnectionId: loadSavedConnectionId(),
+  currentAccessLevel: null,
   conversations: [],
   selectedConversation: null,
   messages: [],
@@ -105,8 +108,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     const currentFilters = get().conversationFilters;
     const newFilters = { ...currentFilters, departmentId: undefined };
     localStorage.setItem('conversationFilters', JSON.stringify(newFilters));
-    set({ selectedConnectionId: id, conversationFilters: newFilters, selectedConversation: null });
+    set({ selectedConnectionId: id, currentAccessLevel: null, conversationFilters: newFilters, selectedConversation: null });
   },
+  setCurrentAccessLevel: (level) => set({ currentAccessLevel: level }),
   setConversations: (conversations) => set({ conversations }),
   selectConversation: (conversation) => set({ selectedConversation: conversation }),
   setMessages: (messages) => set({ messages }),

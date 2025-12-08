@@ -23,6 +23,7 @@ interface ConversationListProps {
   onConnectionChange: (connectionId: string) => void;
   onNoConnections?: () => void;
   isLoading?: boolean;
+  isRestricted?: boolean;
 }
 
 const priorityColors = {
@@ -51,6 +52,7 @@ export function ConversationList({
   onConnectionChange,
   onNoConnections,
   isLoading,
+  isRestricted = false,
 }: ConversationListProps) {
   const { user } = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
