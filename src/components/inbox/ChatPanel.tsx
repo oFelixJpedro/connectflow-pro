@@ -38,6 +38,7 @@ interface ChatPanelProps {
   onAssign: () => void;
   onClose: () => void;
   onRefresh?: () => void;
+  onOpenContactDetails?: () => void;
   isLoadingMessages?: boolean;
   isSendingMessage?: boolean;
 }
@@ -66,6 +67,7 @@ export function ChatPanel({
   onAssign,
   onClose,
   onRefresh,
+  onOpenContactDetails,
   isLoadingMessages = false,
   isSendingMessage = false,
 }: ChatPanelProps) {
@@ -226,6 +228,7 @@ export function ChatPanel({
               currentUserId={currentUserId}
               currentUserRole={currentUserRole}
               onAction={onRefresh || onAssign}
+              onOpenContactDetails={onOpenContactDetails}
             />
           </div>
         </div>

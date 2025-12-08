@@ -63,6 +63,7 @@ interface AppState {
   // Actions - UI
   toggleSidebar: () => void;
   toggleContactPanel: () => void;
+  openContactPanel: () => void;
   setSidebarCollapsed: (collapsed: boolean) => void;
 }
 
@@ -135,5 +136,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   // UI actions
   toggleSidebar: () => set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
   toggleContactPanel: () => set((state) => ({ contactPanelOpen: !state.contactPanelOpen })),
+  openContactPanel: () => set({ contactPanelOpen: true }),
   setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
 }));

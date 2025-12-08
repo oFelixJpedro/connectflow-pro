@@ -15,6 +15,7 @@ export default function Inbox() {
   const { 
     contactPanelOpen,
     toggleContactPanel,
+    openContactPanel,
     conversationFilters,
     setConversationFilters,
     selectedConnectionId,
@@ -129,6 +130,7 @@ export default function Inbox() {
           onAssign={handleAssign}
           onClose={handleCloseConversation}
           onRefresh={loadConversations}
+          onOpenContactDetails={openContactPanel}
           isLoadingMessages={isLoadingMessages}
           isSendingMessage={isSendingMessage}
         />
