@@ -17,3 +17,6 @@ verify_jwt = true
 
 [functions.create-user]
 verify_jwt = true
+
+[functions.send-whatsapp-audio]
+verify_jwt = true
