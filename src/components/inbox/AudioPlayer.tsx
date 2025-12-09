@@ -77,19 +77,52 @@ export function AudioPlayer({
     }
   }, [playbackSpeed]);
 
-  const handleProgressClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    const audio = audioRef.current;
+  const calculateTimeFromEvent = useCallback((e: React.MouseEvent<HTMLDivElement> | MouseEvent) => {
     const progressBar = progressRef.current;
-    if (!audio || !progressBar) return;
+    if (!progressBar || !duration) return null;
 
     const rect = progressBar.getBoundingClientRect();
     const clickX = e.clientX - rect.left;
     const percentage = Math.max(0, Math.min(1, clickX / rect.width));
-    const newTime = percentage * duration;
-    
-    audio.currentTime = newTime;
-    setCurrentTime(newTime);
+    return percentage * duration;
   }, [duration]);
+
+  const handleProgressClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    const audio = audioRef.current;
+    if (!audio) return;
+
+    const newTime = calculateTimeFromEvent(e);
+    if (newTime !== null) {
+      audio.currentTime = newTime;
+      setCurrentTime(newTime);
+    }
+  }, [calculateTimeFromEvent]);
+
+  const handleMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDragging(true);
+    handleProgressClick(e);
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      const audio = audioRef.current;
+      if (!audio) return;
+
+      const newTime = calculateTimeFromEvent(moveEvent);
+      if (newTime !== null) {
+        audio.currentTime = newTime;
+        setCurrentTime(newTime);
+      }
+    };
+
+    const handleMouseUp = () => {
+      setIsDragging(false);
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+  }, [calculateTimeFromEvent, handleProgressClick]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     const audio = audioRef.current;
@@ -316,32 +349,46 @@ export function AudioPlayer({
         )}
       </button>
 
-      {/* Progress bar */}
+      {/* Progress bar - larger clickable area */}
       <div className="flex-1 flex items-center gap-3 min-w-0">
         <div
           ref={progressRef}
           onClick={handleProgressClick}
-          className="flex-1 h-1 bg-black/10 rounded-full cursor-pointer relative group"
+          onMouseDown={handleMouseDown}
+          className={cn(
+            "flex-1 py-2 cursor-pointer relative group",
+            isDragging && "cursor-grabbing"
+          )}
           role="slider"
           aria-valuenow={currentTime}
           aria-valuemin={0}
           aria-valuemax={duration}
           aria-label="Progresso do áudio"
         >
-          {/* Progress fill */}
-          <div 
-            className="absolute inset-y-0 left-0 bg-blue-500 rounded-full transition-all duration-100"
-            style={{ width: `${progress}%` }}
-          />
+          {/* Track background */}
+          <div className={cn(
+            "h-1 bg-black/10 rounded-full relative overflow-visible",
+            "group-hover:h-1.5 transition-all duration-150"
+          )}>
+            {/* Progress fill */}
+            <div 
+              className={cn(
+                "absolute inset-y-0 left-0 bg-blue-500 rounded-full",
+                !isDragging && "transition-all duration-100"
+              )}
+              style={{ width: `${progress}%` }}
+            />
+          </div>
           
-          {/* Draggable handle (visible on hover) */}
+          {/* Draggable handle */}
           <div 
             className={cn(
-              "absolute top-1/2 -translate-y-1/2 w-3 h-3 bg-blue-500 rounded-full shadow-md",
-              "opacity-0 group-hover:opacity-100 transition-opacity",
-              "pointer-events-none"
+              "absolute top-1/2 -translate-y-1/2 w-3.5 h-3.5 bg-blue-500 rounded-full shadow-md",
+              "opacity-0 group-hover:opacity-100 transition-opacity duration-150",
+              isDragging && "opacity-100 scale-110",
+              "pointer-events-none border-2 border-white"
             )}
-            style={{ left: `calc(${progress}% - 6px)` }}
+            style={{ left: `calc(${progress}% - 7px)` }}
           />
         </div>
 
