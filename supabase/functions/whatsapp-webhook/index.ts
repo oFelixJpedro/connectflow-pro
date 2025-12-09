@@ -36,33 +36,90 @@ function getExtensionFromMimeType(mimeType: string): string {
   return mimeMap[baseMime] || 'ogg'
 }
 
-// Helper to download media from UAZAPI
-async function downloadMedia(url: string, apiKey: string): Promise<{ buffer: ArrayBuffer; contentType: string } | null> {
-  try {
-    console.log(`🔽 Downloading media from: ${url}`)
-    
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: {
-        'token': apiKey,
-        'Accept': '*/*',
-      },
-    })
-    
-    if (!response.ok) {
-      console.log(`❌ Download failed with status: ${response.status}`)
-      return null
+// Helper to download media from UAZAPI via POST /message/download with base64
+async function downloadMediaFromUazapi(
+  messageId: string, 
+  uazapiBaseUrl: string, 
+  instanceToken: string
+): Promise<{ buffer: Uint8Array; mimeType: string; fileSize: number } | null> {
+  const downloadUrl = `${uazapiBaseUrl}/message/download`
+  
+  console.log(`🔽 Downloading media via POST ${downloadUrl}`)
+  console.log(`   - messageId: ${messageId}`)
+  
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      console.log(`🔄 Tentativa ${attempt}/2...`)
+      
+      const response = await fetch(downloadUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'instance': instanceToken,
+        },
+        body: JSON.stringify({
+          id: messageId,
+          return_base64: true,
+        }),
+      })
+      
+      const responseText = await response.text()
+      console.log(`📥 Response status: ${response.status}`)
+      
+      if (!response.ok) {
+        console.log(`❌ Download failed: ${response.status} - ${responseText.substring(0, 200)}`)
+        if (attempt === 2) return null
+        await new Promise(r => setTimeout(r, 2000))
+        continue
+      }
+      
+      let data
+      try {
+        data = JSON.parse(responseText)
+      } catch (e) {
+        console.log(`❌ Failed to parse response as JSON`)
+        if (attempt === 2) return null
+        await new Promise(r => setTimeout(r, 2000))
+        continue
+      }
+      
+      console.log(`📋 Response keys: ${Object.keys(data).join(', ')}`)
+      
+      // Extract base64 from various possible response structures
+      let base64 = data.base64 || data.data?.base64 || data.media?.base64
+      const mimeType = data.mimetype || data.data?.mimetype || data.media?.mimetype || 'audio/ogg'
+      const fileSize = data.fileSize || data.data?.fileSize || data.media?.fileSize || 0
+      
+      if (!base64) {
+        console.log(`❌ base64 not found in response. Keys: ${JSON.stringify(Object.keys(data))}`)
+        if (attempt === 2) return null
+        await new Promise(r => setTimeout(r, 2000))
+        continue
+      }
+      
+      // Remove data URL prefix if present (e.g., "data:audio/ogg;base64,")
+      if (base64.includes(',')) {
+        base64 = base64.split(',')[1]
+      }
+      
+      // Convert base64 to Uint8Array
+      const binaryString = atob(base64)
+      const buffer = new Uint8Array(binaryString.length)
+      for (let i = 0; i < binaryString.length; i++) {
+        buffer[i] = binaryString.charCodeAt(i)
+      }
+      
+      console.log(`✅ Downloaded ${buffer.byteLength} bytes, type: ${mimeType}`)
+      return { buffer, mimeType: mimeType.split(';')[0].trim(), fileSize: fileSize || buffer.byteLength }
+      
+    } catch (error) {
+      console.error(`❌ Attempt ${attempt} error:`, error)
+      if (attempt === 2) return null
+      await new Promise(r => setTimeout(r, 2000))
     }
-    
-    const contentType = response.headers.get('content-type') || 'audio/ogg'
-    const buffer = await response.arrayBuffer()
-    
-    console.log(`✅ Downloaded ${buffer.byteLength} bytes, type: ${contentType}`)
-    return { buffer, contentType }
-  } catch (error) {
-    console.error(`❌ Error downloading media:`, error)
-    return null
   }
+  
+  return null
 }
 
 serve(async (req) => {
@@ -307,7 +364,7 @@ serve(async (req) => {
     
     const { data: connection, error: connectionError } = await supabase
       .from('whatsapp_connections')
-      .select('id, company_id, instance_token')
+      .select('id, company_id, instance_token, uazapi_base_url')
       .eq('session_id', instanceName)
       .maybeSingle()
     
@@ -625,109 +682,88 @@ serve(async (req) => {
                       0
       
       console.log(`🎵 Áudio recebido:`)
-      console.log(`   - URL original: ${originalUrl}`)
       console.log(`   - MimeType: ${mimeType}`)
       console.log(`   - Duração: ${duration}s`)
       console.log(`   - Tamanho: ${fileSize} bytes`)
-      console.log(`   - Fonte dos dados: ${mediaData ? 'mediaData extraído' : 'payload direto'}`)
+      console.log(`   - messageId para download: ${messageId}`)
       
-      if (originalUrl) {
-        // Get UAZAPI API key for downloading
-        const uazapiKey = instanceToken || Deno.env.get('UAZAPI_API_KEY')
+      // Download via UAZAPI POST /message/download endpoint
+      const uazapiBaseUrl = connection.uazapi_base_url || 'https://whatsapi.uazapi.com'
+      
+      if (!instanceToken) {
+        console.log(`⚠️ Token não disponível para download`)
+        mediaMetadata = {
+          error: 'No instance token available',
+          mimeType,
+          duration,
+          fileSize
+        }
+      } else {
+        console.log(`📥 Baixando áudio via UAZAPI /message/download...`)
+        const downloadResult = await downloadMediaFromUazapi(messageId, uazapiBaseUrl, instanceToken)
         
-        if (uazapiKey) {
-          // Retry logic - 2 attempts with 1s delay
-          let downloadResult = null
-          for (let attempt = 1; attempt <= 2; attempt++) {
-            console.log(`🔄 Tentativa de download ${attempt}/2...`)
-            downloadResult = await downloadMedia(originalUrl, uazapiKey)
-            if (downloadResult) break
-            if (attempt < 2) {
-              console.log(`⏳ Aguardando 1s antes de nova tentativa...`)
-              await new Promise(r => setTimeout(r, 1000))
-            }
-          }
+        if (downloadResult) {
+          const { buffer, mimeType: downloadedMimeType, fileSize: downloadedSize } = downloadResult
+          const actualMimeType = downloadedMimeType.startsWith('audio/') ? downloadedMimeType : mimeType.split(';')[0].trim()
+          const extension = getExtensionFromMimeType(actualMimeType)
           
-          if (downloadResult) {
-            const { buffer, contentType } = downloadResult
-            const actualMimeType = contentType.startsWith('audio/') ? contentType : mimeType.split(';')[0].trim()
-            const extension = getExtensionFromMimeType(actualMimeType)
-            
-            // Generate unique filename
-            const now = new Date()
-            const year = now.getFullYear()
-            const month = String(now.getMonth() + 1).padStart(2, '0')
-            const randomId = Math.random().toString(36).substring(2, 8)
-            const fileName = `audio_${Date.now()}_${randomId}.${extension}`
-            const storagePath = `${companyId}/${whatsappConnectionId}/${year}-${month}/${fileName}`
-            
-            console.log(`📤 Fazendo upload para Storage: ${storagePath}`)
-            
-            // Upload to Supabase Storage
-            const { data: uploadData, error: uploadError } = await supabase.storage
-              .from('whatsapp-media')
-              .upload(storagePath, buffer, {
-                contentType: actualMimeType,
-                cacheControl: '3600',
-                upsert: false
-              })
-            
-            if (uploadError) {
-              console.log(`❌ Erro no upload: ${uploadError.message}`)
-              // Continue without media URL - save message as failed
-              mediaMetadata = {
-                error: 'Upload failed',
-                errorMessage: uploadError.message,
-                originalUrl,
-                mimeType: actualMimeType,
-                duration,
-                fileSize
-              }
-            } else {
-              console.log(`✅ Upload concluído: ${uploadData.path}`)
-              
-              // Get public URL
-              const { data: { publicUrl } } = supabase.storage
-                .from('whatsapp-media')
-                .getPublicUrl(storagePath)
-              
-              mediaUrl = publicUrl
-              mediaMimeType = actualMimeType
-              mediaMetadata = {
-                duration,
-                fileSize: buffer.byteLength,
-                originalUrl,
-                fileName,
-                storagePath,
-                processedAt: new Date().toISOString()
-              }
-              
-              console.log(`🔗 URL pública: ${mediaUrl}`)
+          // Generate unique filename
+          const now = new Date()
+          const year = now.getFullYear()
+          const month = String(now.getMonth() + 1).padStart(2, '0')
+          const randomId = Math.random().toString(36).substring(2, 8)
+          const fileName = `audio_${Date.now()}_${randomId}.${extension}`
+          const storagePath = `${companyId}/${whatsappConnectionId}/${year}-${month}/${fileName}`
+          
+          console.log(`📤 Fazendo upload para Storage: ${storagePath}`)
+          
+          // Upload to Supabase Storage
+          const { data: uploadData, error: uploadError } = await supabase.storage
+            .from('whatsapp-media')
+            .upload(storagePath, buffer, {
+              contentType: actualMimeType,
+              cacheControl: '3600',
+              upsert: false
+            })
+          
+          if (uploadError) {
+            console.log(`❌ Erro no upload: ${uploadError.message}`)
+            mediaMetadata = {
+              error: 'Upload failed',
+              errorMessage: uploadError.message,
+              mimeType: actualMimeType,
+              duration,
+              fileSize: downloadedSize
             }
           } else {
-            console.log(`⚠️ Falha no download do áudio após 2 tentativas`)
+            console.log(`✅ Upload concluído: ${uploadData.path}`)
+            
+            // Get public URL
+            const { data: { publicUrl } } = supabase.storage
+              .from('whatsapp-media')
+              .getPublicUrl(storagePath)
+            
+            mediaUrl = publicUrl
+            mediaMimeType = actualMimeType
             mediaMetadata = {
-              error: 'Download failed after retries',
-              originalUrl,
-              mimeType,
               duration,
-              fileSize
+              fileSize: downloadedSize,
+              fileName,
+              storagePath,
+              processedAt: new Date().toISOString()
             }
+            
+            console.log(`🔗 URL pública: ${mediaUrl}`)
           }
         } else {
-          console.log(`⚠️ Token não disponível para download`)
+          console.log(`⚠️ Falha no download do áudio via UAZAPI`)
           mediaMetadata = {
-            error: 'No token available',
-            originalUrl,
+            error: 'Download failed from UAZAPI',
             mimeType,
             duration,
             fileSize
           }
         }
-      } else {
-        console.log(`⚠️ URL do áudio não encontrada no payload`)
-        console.log(`📋 audioSource:`, JSON.stringify(audioSource, null, 2))
-        mediaMetadata = { error: 'No URL in payload', audioSource }
       }
     }
     
