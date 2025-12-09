@@ -11,7 +11,8 @@ import {
   Loader2,
   RotateCcw,
   ArrowDown,
-  Reply
+  Reply,
+  Mic
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -31,11 +32,15 @@ import { VideoMessage } from './VideoMessage';
 import StickerMessage from './StickerMessage';
 import { DocumentMessage } from './DocumentMessage';
 import { QuotedMessagePreview, ReplyInputPreview } from './QuotedMessagePreview';
+import { AudioRecorder } from './AudioRecorder';
+import { AudioFilePreview } from './AudioFilePreview';
 import { cn } from '@/lib/utils';
 import type { Conversation, Message, QuotedMessage } from '@/types';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/integrations/supabase/client';
+import { toast } from '@/hooks/use-toast';
 
 interface ChatPanelProps {
   conversation: Conversation | null;
@@ -84,10 +89,14 @@ export function ChatPanel({
   const [inputValue, setInputValue] = useState('');
   const [showScrollButton, setShowScrollButton] = useState(false);
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
+  const [isRecordingAudio, setIsRecordingAudio] = useState(false);
+  const [audioFile, setAudioFile] = useState<File | null>(null);
+  const [isSendingAudio, setIsSendingAudio] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messageRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const audioInputRef = useRef<HTMLInputElement>(null);
 
   const currentUserId = user?.id || '';
   const currentUserRole = userRole?.role || 'agent';
@@ -95,6 +104,109 @@ export function ChatPanel({
   // Verificar se pode responder
   const blockInfo = useMessageBlocker(conversation, currentUserId);
   const canReply = !blockInfo.blocked;
+
+  // Send audio handler
+  const handleSendAudio = async (audioBlob: Blob, duration: number) => {
+    if (!conversation) return;
+
+    setIsSendingAudio(true);
+    try {
+      // Convert blob to base64
+      const reader = new FileReader();
+      const base64Promise = new Promise<string>((resolve, reject) => {
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = reject;
+      });
+      reader.readAsDataURL(audioBlob);
+      const base64Data = await base64Promise;
+
+      console.log('📤 Enviando áudio para Edge Function...');
+
+      const { data, error } = await supabase.functions.invoke('send-whatsapp-audio', {
+        body: {
+          audioData: base64Data,
+          fileName: `audio_${Date.now()}.webm`,
+          mimeType: audioBlob.type || 'audio/webm',
+          duration,
+          conversationId: conversation.id,
+          quotedMessageId: replyingTo?.id,
+        }
+      });
+
+      if (error) throw error;
+
+      if (!data?.success) {
+        throw new Error(data?.error || 'Erro ao enviar áudio');
+      }
+
+      console.log('✅ Áudio enviado com sucesso!');
+      setIsRecordingAudio(false);
+      setReplyingTo(null);
+      onRefresh?.();
+
+    } catch (error: any) {
+      console.error('❌ Erro ao enviar áudio:', error);
+      toast({
+        title: 'Erro ao enviar áudio',
+        description: error.message || 'Tente novamente',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSendingAudio(false);
+    }
+  };
+
+  // Send audio file handler
+  const handleSendAudioFile = async (file: File, duration: number) => {
+    if (!conversation) return;
+
+    setIsSendingAudio(true);
+    try {
+      const reader = new FileReader();
+      const base64Promise = new Promise<string>((resolve, reject) => {
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = reject;
+      });
+      reader.readAsDataURL(file);
+      const base64Data = await base64Promise;
+
+      const { data, error } = await supabase.functions.invoke('send-whatsapp-audio', {
+        body: {
+          audioData: base64Data,
+          fileName: file.name,
+          mimeType: file.type,
+          duration,
+          conversationId: conversation.id,
+          quotedMessageId: replyingTo?.id,
+        }
+      });
+
+      if (error) throw error;
+      if (!data?.success) throw new Error(data?.error || 'Erro ao enviar áudio');
+
+      setAudioFile(null);
+      setReplyingTo(null);
+      onRefresh?.();
+
+    } catch (error: any) {
+      console.error('❌ Erro ao enviar áudio:', error);
+      toast({
+        title: 'Erro ao enviar áudio',
+        description: error.message || 'Tente novamente',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSendingAudio(false);
+    }
+  };
+
+  const handleAudioFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setAudioFile(file);
+    }
+    e.target.value = '';
+  };
 
   // Scroll para o final
   const scrollToBottom = useCallback((behavior: ScrollBehavior = 'smooth') => {
@@ -674,61 +786,113 @@ export function ChatPanel({
           currentUserId={currentUserId}
         />
 
-        <div className="flex items-end gap-2">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button 
-                variant="ghost" 
-                size="icon" 
-                className="flex-shrink-0"
+        {/* Audio recorder */}
+        {isRecordingAudio && (
+          <div className="mb-3">
+            <AudioRecorder
+              onSend={handleSendAudio}
+              onCancel={() => setIsRecordingAudio(false)}
+              disabled={isSendingAudio}
+            />
+          </div>
+        )}
+
+        {/* Audio file preview */}
+        {audioFile && !isRecordingAudio && (
+          <div className="mb-3">
+            <AudioFilePreview
+              file={audioFile}
+              onSend={handleSendAudioFile}
+              onCancel={() => setAudioFile(null)}
+              disabled={isSendingAudio}
+            />
+          </div>
+        )}
+
+        {/* Hidden audio input */}
+        <input
+          ref={audioInputRef}
+          type="file"
+          accept="audio/mp3,audio/mpeg,audio/ogg,audio/wav,audio/webm,audio/aac,.mp3,.ogg,.wav,.webm,.aac,.m4a"
+          className="hidden"
+          onChange={handleAudioFileSelect}
+        />
+
+        {!isRecordingAudio && !audioFile && (
+          <div className="flex items-end gap-2">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button 
+                  variant="ghost" 
+                  size="icon" 
+                  className="flex-shrink-0"
+                  disabled={!canReply}
+                  onClick={() => audioInputRef.current?.click()}
+                >
+                  <Paperclip className="w-5 h-5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Anexar áudio</TooltipContent>
+            </Tooltip>
+            
+            <div className="flex-1 relative">
+              <Textarea
+                ref={textareaRef}
+                value={inputValue}
+                onChange={(e) => setInputValue(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder={
+                  canReply 
+                    ? "Digite uma mensagem... (Enter para enviar)" 
+                    : blockInfo.message
+                }
+                className={cn(
+                  "min-h-[44px] max-h-32 resize-none pr-12",
+                  !canReply && "bg-muted/50 cursor-not-allowed"
+                )}
+                rows={1}
+                disabled={isSendingMessage || !canReply}
+              />
+              <Button
+                variant="ghost"
+                size="icon"
+                className="absolute right-1 bottom-1"
                 disabled={!canReply}
               >
-                <Paperclip className="w-5 h-5" />
+                <Smile className="w-5 h-5 text-muted-foreground" />
               </Button>
-            </TooltipTrigger>
-            <TooltipContent>Anexar arquivo</TooltipContent>
-          </Tooltip>
-          
-          <div className="flex-1 relative">
-            <Textarea
-              ref={textareaRef}
-              value={inputValue}
-              onChange={(e) => setInputValue(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder={
-                canReply 
-                  ? "Digite uma mensagem... (Enter para enviar)" 
-                  : blockInfo.message
-              }
-              className={cn(
-                "min-h-[44px] max-h-32 resize-none pr-12",
-                !canReply && "bg-muted/50 cursor-not-allowed"
-              )}
-              rows={1}
-              disabled={isSendingMessage || !canReply}
-            />
-            <Button
-              variant="ghost"
-              size="icon"
-              className="absolute right-1 bottom-1"
-              disabled={!canReply}
-            >
-              <Smile className="w-5 h-5 text-muted-foreground" />
-            </Button>
-          </div>
-          
-          <Button 
-            onClick={handleSend}
-            disabled={!inputValue.trim() || isSendingMessage || !canReply}
-            className="flex-shrink-0"
-          >
-            {isSendingMessage ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
+            </div>
+
+            {/* Mic button - show when no text */}
+            {!inputValue.trim() ? (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button 
+                    onClick={() => setIsRecordingAudio(true)}
+                    disabled={!canReply}
+                    variant="ghost"
+                    className="flex-shrink-0"
+                  >
+                    <Mic className="w-5 h-5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Gravar áudio</TooltipContent>
+              </Tooltip>
             ) : (
-              <Send className="w-4 h-4" />
+              <Button 
+                onClick={handleSend}
+                disabled={!inputValue.trim() || isSendingMessage || !canReply}
+                className="flex-shrink-0"
+              >
+                {isSendingMessage ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Send className="w-4 h-4" />
+                )}
+              </Button>
             )}
-          </Button>
-        </div>
+          </div>
+        )}
       </div>
     </div>
   );
