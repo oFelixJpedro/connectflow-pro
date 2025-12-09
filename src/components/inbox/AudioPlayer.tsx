@@ -154,13 +154,13 @@ export function AudioPlayer({
   if (status === 'failed' || hasError) {
     return (
       <div className={cn(
-        "flex items-center gap-3 p-3 rounded-2xl min-w-[200px] max-w-[320px] shadow-sm",
+        "flex items-center gap-3 py-3 px-4 rounded-xl w-[336px] max-w-full shadow-sm",
         isOutbound 
           ? "bg-gradient-to-br from-red-100 to-red-200" 
-          : "bg-gradient-to-br from-red-50 to-red-100"
+          : "bg-red-50"
       )}>
-        <div className="flex-shrink-0 w-9 h-9 rounded-full bg-red-500/15 flex items-center justify-center">
-          <AlertCircle className="w-5 h-5 text-red-500" />
+        <div className="flex-shrink-0 w-8 h-8 rounded-full bg-red-500/15 flex items-center justify-center">
+          <AlertCircle className="w-4 h-4 text-red-500" />
         </div>
         <div className="flex-1 min-w-0">
           <p className="text-xs text-red-600 font-medium">
@@ -189,25 +189,25 @@ export function AudioPlayer({
   if (isLoading) {
     return (
       <div className={cn(
-        "flex items-center gap-3 p-3 rounded-2xl min-w-[220px] max-w-[320px] shadow-sm",
+        "flex items-center gap-3 py-3 px-4 rounded-xl w-[336px] max-w-full shadow-sm",
         isOutbound 
-          ? "bg-gradient-to-br from-green-100 to-green-200" 
-          : "bg-gradient-to-br from-gray-100 to-gray-200"
+          ? "bg-gradient-to-br from-blue-100 to-blue-200" 
+          : "bg-slate-100"
       )}>
         <audio ref={audioRef} src={src} preload="metadata" />
         
         {/* Mic icon skeleton */}
-        <div className="flex-shrink-0 w-9 h-9 sm:w-9 sm:h-9 rounded-full bg-blue-500/15 flex items-center justify-center">
-          <Mic className="w-5 h-5 text-blue-500" />
+        <div className="flex-shrink-0 w-8 h-8 rounded-full bg-blue-500/15 flex items-center justify-center">
+          <Mic className="w-4 h-4 text-blue-500" />
         </div>
         
         {/* Play button skeleton */}
-        <div className="flex-shrink-0 w-8 h-8 sm:w-8 sm:h-8 rounded-full bg-gray-300/50 animate-pulse" />
+        <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gray-300/50 animate-pulse" />
         
         {/* Progress skeleton */}
         <div className="flex-1 flex items-center gap-3">
           <div className="flex-1 h-1 bg-gray-300/50 rounded-full animate-pulse" />
-          <div className="w-8 h-3 bg-gray-300/50 rounded animate-pulse" />
+          <div className="w-10 h-3 bg-gray-300/50 rounded animate-pulse" />
         </div>
       </div>
     );
@@ -216,12 +216,12 @@ export function AudioPlayer({
   return (
     <div
       className={cn(
-        "flex items-center gap-3 p-3 pr-4 rounded-2xl min-w-[220px] max-w-[320px] shadow-sm",
-        "transition-all duration-200 hover:scale-[1.02] hover:shadow-md",
+        "flex items-center gap-3 py-3 px-4 rounded-xl w-[336px] max-w-full shadow-sm",
+        "transition-all duration-200 hover:shadow-md",
         "focus-within:ring-2 focus-within:ring-blue-500/50 focus-within:ring-offset-1",
         isOutbound 
-          ? "bg-gradient-to-br from-green-100 to-green-200 hover:from-green-150 hover:to-green-250" 
-          : "bg-gradient-to-br from-gray-100 to-gray-200 hover:from-gray-150 hover:to-gray-250"
+          ? "bg-gradient-to-br from-blue-100 to-blue-200" 
+          : "bg-slate-100"
       )}
       onKeyDown={handleKeyDown}
       tabIndex={0}
@@ -233,10 +233,10 @@ export function AudioPlayer({
 
       {/* Mic icon with pulse when playing */}
       <div className={cn(
-        "flex-shrink-0 w-9 h-9 rounded-full bg-blue-500/15 flex items-center justify-center transition-transform",
+        "flex-shrink-0 w-8 h-8 rounded-full bg-blue-500/15 flex items-center justify-center transition-transform",
         isPlaying && "animate-pulse"
       )}>
-        <Mic className="w-5 h-5 text-blue-500" />
+        <Mic className="w-4 h-4 text-blue-500" />
       </div>
 
       {/* Play/Pause button */}
@@ -290,24 +290,11 @@ export function AudioPlayer({
         </div>
 
         {/* Duration display */}
-        <span className="flex-shrink-0 text-xs font-medium text-gray-500 min-w-[32px] text-right tabular-nums">
+        <span className="flex-shrink-0 text-xs font-medium text-gray-500 min-w-[40px] text-right tabular-nums">
           {isPlaying ? formatTime(currentTime) : formatTime(duration)}
         </span>
       </div>
 
-      {/* Download button (optional) */}
-      <button
-        onClick={handleDownload}
-        className={cn(
-          "flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center",
-          "text-gray-400 hover:text-gray-600 hover:bg-black/5",
-          "transition-colors opacity-0 group-hover:opacity-100",
-          "focus:outline-none focus:opacity-100"
-        )}
-        aria-label="Baixar áudio"
-      >
-        <Download className="w-3.5 h-3.5" />
-      </button>
     </div>
   );
 }
