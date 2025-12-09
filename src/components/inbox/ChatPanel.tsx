@@ -380,6 +380,7 @@ export function ChatPanel({
                                 fileSize={(message.metadata as any)?.fileSize}
                                 status={message.status}
                                 errorMessage={message.errorMessage}
+                                caption={message.content}
                               />
                             ) : message.messageType === 'image' ? (
                               // Image without URL (loading or failed)
