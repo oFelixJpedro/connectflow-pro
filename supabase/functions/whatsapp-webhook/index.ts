@@ -43,6 +43,18 @@ function getExtensionFromMimeType(mimeType: string): string {
     'video/quicktime': 'mov',
     'video/webm': 'webm',
     'video/x-msvideo': 'avi',
+    // Documents
+    'application/pdf': 'pdf',
+    'application/msword': 'doc',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+    'application/vnd.ms-excel': 'xls',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+    'application/vnd.ms-powerpoint': 'ppt',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'pptx',
+    'text/plain': 'txt',
+    'application/zip': 'zip',
+    'application/x-rar-compressed': 'rar',
+    'application/x-7z-compressed': '7z',
   }
   
   // Handle mime types with codecs (e.g., "audio/ogg; codecs=opus")
@@ -322,10 +334,24 @@ serve(async (req) => {
       console.log(`   - via mimetype: ${isVideoByMimetype}`)
       console.log(`   - content:`, JSON.stringify(videoContentData, null, 2))
     }
-    else if (messageType === 'DocumentMessage' || messageType === 'DocumentWithCaptionMessage') {
+    // Check for DocumentMessage
+    let isDocumentMessage = false
+    let documentContentData: any = null
+    
+    const isDocumentByMessageType = messageType === 'DocumentMessage' || messageType === 'DocumentWithCaptionMessage'
+    const isDocumentByType = rawMessageType === 'document'
+    const isDocumentByMediaType = mediaType === 'document'
+    
+    if (isDocumentByMessageType || isDocumentByType || isDocumentByMediaType) {
+      isDocumentMessage = true
       isMediaMessage = true
       detectedSubtype = 'document'
-      console.log(`📄 [DOCUMENTO DETECTADO] (ainda não implementado)`)
+      documentContentData = payload.message?.content || {}
+      console.log(`📄 [DOCUMENTO DETECTADO]`)
+      console.log(`   - via messageType: ${isDocumentByMessageType}`)
+      console.log(`   - via type: ${isDocumentByType}`)
+      console.log(`   - via mediaType: ${isDocumentByMediaType}`)
+      console.log(`   - content:`, JSON.stringify(documentContentData, null, 2))
     }
     // Check for StickerMessage
     let isStickerMessage = false
@@ -391,8 +417,8 @@ serve(async (req) => {
       )
     }
     
-    // If it's a media type but not audio, image, or video, save as unsupported
-    if (isMediaMessage && !isAudioMessage && !isImageMessage && !isVideoMessage && detectedSubtype !== 'unknown') {
+    // If it's a media type but not audio, image, video, sticker, or document, save as unsupported
+    if (isMediaMessage && !isAudioMessage && !isImageMessage && !isVideoMessage && !isStickerMessage && !isDocumentMessage && detectedSubtype !== 'unknown') {
       console.log(`ℹ️ Mídia tipo "${detectedSubtype}" ainda não implementada`)
       // Continue to save as unsupported media message
     }
@@ -765,9 +791,158 @@ serve(async (req) => {
     let mediaMimeType: string | null = null
     let mediaMetadata: Record<string, any> = {}
     let unsupportedMediaText: string | null = null
+    let documentCaption: string | null = null
     
-    // Handle unsupported media types (document, etc.)
-    if (isMediaMessage && !isAudioMessage && !isImageMessage && !isVideoMessage && !isStickerMessage) {
+    // Handle document messages
+    if (isDocumentMessage) {
+      console.log('\n┌─────────────────────────────────────────────────────────────────┐')
+      console.log('│ 8️⃣  ETAPA 5: PROCESSAR DOCUMENTO                                │')
+      console.log('└─────────────────────────────────────────────────────────────────┘')
+      
+      const docSource = documentContentData || payload.message?.content || {}
+      
+      console.log(`🔍 [DOCUMENT SOURCE]:`, JSON.stringify(docSource, null, 2))
+      
+      // Extract document properties from UAZAPI payload
+      const mimeType = docSource.mimetype || docSource.mimeType || 'application/octet-stream'
+      const fileName = docSource.fileName || docSource.filename || `document_${Date.now()}`
+      const fileSize = docSource.fileLength || docSource.fileSize || 0
+      const pageCount = docSource.pageCount || 0
+      const hasJPEGThumbnail = !!docSource.JPEGThumbnail
+      const caption = docSource.caption || null
+      
+      // Validate file size (max 100MB for documents)
+      const MAX_DOC_SIZE = 100 * 1024 * 1024 // 100MB
+      if (fileSize > MAX_DOC_SIZE) {
+        console.log(`❌ Documento muito grande: ${fileSize} bytes (max: ${MAX_DOC_SIZE})`)
+        mediaMetadata = {
+          error: 'File too large',
+          mimeType,
+          fileName,
+          fileSize,
+          pageCount,
+          hasJPEGThumbnail
+        }
+      } else {
+        console.log(`📄 Documento recebido:`)
+        console.log(`   - Nome: ${fileName}`)
+        console.log(`   - MimeType: ${mimeType}`)
+        console.log(`   - Tamanho: ${fileSize} bytes (${(fileSize / 1024 / 1024).toFixed(2)} MB)`)
+        console.log(`   - Páginas: ${pageCount || 'N/A'}`)
+        console.log(`   - Caption: ${caption || 'Nenhum'}`)
+        console.log(`   - Tem thumbnail: ${hasJPEGThumbnail}`)
+        console.log(`   - messageId para download: ${messageId}`)
+        
+        const uazapiBaseUrl = connection.uazapi_base_url || 'https://whatsapi.uazapi.com'
+        
+        if (!instanceToken) {
+          console.log(`⚠️ Token não disponível para download`)
+          mediaMetadata = {
+            error: 'No instance token available',
+            mimeType,
+            fileName,
+            fileSize,
+            pageCount,
+            hasJPEGThumbnail
+          }
+        } else {
+          console.log(`📥 Baixando documento via UAZAPI /message/download...`)
+          console.log(`   - URL: ${uazapiBaseUrl}/message/download`)
+          console.log(`   - messageId: ${messageId}`)
+          
+          const downloadResult = await downloadMediaFromUazapi(messageId, uazapiBaseUrl, instanceToken)
+          
+          if (downloadResult) {
+            const { buffer, mimeType: downloadedMimeType, fileSize: downloadedSize } = downloadResult
+            const actualMimeType = downloadedMimeType || mimeType.split(';')[0].trim()
+            
+            // Get extension from fileName or mimeType
+            let extension = 'bin'
+            if (fileName && fileName.includes('.')) {
+              extension = fileName.split('.').pop()?.toLowerCase() || 'bin'
+            } else {
+              extension = getExtensionFromMimeType(actualMimeType)
+            }
+            
+            // Generate unique filename
+            const now = new Date()
+            const year = now.getFullYear()
+            const month = String(now.getMonth() + 1).padStart(2, '0')
+            const randomId = Math.random().toString(36).substring(2, 8)
+            const uniqueFileName = `document_${Date.now()}_${randomId}.${extension}`
+            const storagePath = `${companyId}/${whatsappConnectionId}/${year}-${month}/${uniqueFileName}`
+            
+            console.log(`📤 Fazendo upload para Storage: ${storagePath}`)
+            
+            // Upload to Supabase Storage
+            const { data: uploadData, error: uploadError } = await supabase.storage
+              .from('whatsapp-media')
+              .upload(storagePath, buffer, {
+                contentType: actualMimeType,
+                cacheControl: '31536000', // 1 year cache
+                upsert: false
+              })
+            
+            if (uploadError) {
+              console.log(`❌ Erro no upload: ${uploadError.message}`)
+              mediaMetadata = {
+                error: 'Upload failed',
+                errorMessage: uploadError.message,
+                mimeType: actualMimeType,
+                fileName,
+                fileSize: downloadedSize,
+                pageCount,
+                hasJPEGThumbnail
+              }
+            } else {
+              console.log(`✅ Upload concluído: ${uploadData.path}`)
+              
+              // Get public URL
+              const { data: { publicUrl } } = supabase.storage
+                .from('whatsapp-media')
+                .getPublicUrl(storagePath)
+              
+              mediaUrl = publicUrl
+              mediaMimeType = actualMimeType
+              
+              // Set caption as message content
+              if (caption) {
+                documentCaption = caption
+              }
+              
+              mediaMetadata = {
+                fileName,
+                originalFileName: fileName,
+                fileSize: downloadedSize,
+                fileExtension: extension,
+                pageCount,
+                storagePath,
+                originalMessageId: messageId,
+                downloadedAt: new Date().toISOString(),
+                originalMimetype: mimeType,
+                hasJPEGThumbnail,
+                hasCaption: !!caption,
+                captionLength: caption?.length || 0
+              }
+              
+              console.log(`🔗 URL pública: ${mediaUrl}`)
+            }
+          } else {
+            console.log(`⚠️ Falha no download do documento via UAZAPI`)
+            mediaMetadata = {
+              error: 'Download failed',
+              mimeType,
+              fileName,
+              fileSize,
+              pageCount,
+              hasJPEGThumbnail
+            }
+          }
+        }
+      }
+    }
+    // Handle unsupported media types
+    else if (isMediaMessage && !isAudioMessage && !isImageMessage && !isVideoMessage && !isStickerMessage && !isDocumentMessage) {
       console.log('\n┌─────────────────────────────────────────────────────────────────┐')
       console.log('│ 8️⃣  ETAPA 5: MÍDIA NÃO SUPORTADA                                │')
       console.log('└─────────────────────────────────────────────────────────────────┘')
@@ -1350,6 +1525,8 @@ serve(async (req) => {
       dbMessageType = 'video'
     } else if (isStickerMessage) {
       dbMessageType = 'sticker'
+    } else if (isDocumentMessage) {
+      dbMessageType = 'document'
     } else if (unsupportedMediaText) {
       dbMessageType = 'text' // Save unsupported media as text with placeholder
     } else {
@@ -1372,7 +1549,7 @@ serve(async (req) => {
       null
     ) : null
     // Stickers never have captions
-    const messageContent = unsupportedMediaText || (isAudioMessage || isStickerMessage ? null : (isImageMessage ? imageCaption : (isVideoMessage ? videoCaption : messageText)))
+    const messageContent = unsupportedMediaText || (isAudioMessage || isStickerMessage ? null : (isImageMessage ? imageCaption : (isVideoMessage ? videoCaption : (isDocumentMessage ? documentCaption : messageText))))
     
     console.log(`💾 Salvando mensagem...`)
     console.log(`   - direction: ${direction}`)
