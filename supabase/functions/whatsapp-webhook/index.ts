@@ -168,6 +168,12 @@ serve(async (req) => {
     try {
       payload = JSON.parse(rawBody)
       console.log('✅ JSON parsed successfully')
+      
+      // DEBUG COMPLETO - Log do payload inteiro
+      console.log('🔍 [DEBUG COMPLETO] ==========================================')
+      console.log('🔍 [PAYLOAD COMPLETO]:', JSON.stringify(payload, null, 2))
+      console.log('🔍 ==========================================')
+      
     } catch (e) {
       console.log(`❌ Failed to parse JSON: ${e}`)
       return new Response(
