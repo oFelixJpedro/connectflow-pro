@@ -42,8 +42,8 @@ export default function Inbox() {
     loadConversations,
   } = useInboxData();
 
-  const handleSendMessage = async (content: string) => {
-    const success = await sendMessage(content);
+  const handleSendMessage = async (content: string, quotedMessageId?: string) => {
+    const success = await sendMessage(content, quotedMessageId);
     if (!success) {
       // Erro já tratado no hook
     }
