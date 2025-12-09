@@ -592,6 +592,7 @@ export type Database = {
           session_id: string
           settings: Json | null
           status: Database["public"]["Enums"]["connection_status"] | null
+          uazapi_base_url: string | null
           updated_at: string | null
           webhook_url: string | null
         }
@@ -609,6 +610,7 @@ export type Database = {
           session_id: string
           settings?: Json | null
           status?: Database["public"]["Enums"]["connection_status"] | null
+          uazapi_base_url?: string | null
           updated_at?: string | null
           webhook_url?: string | null
         }
@@ -626,6 +628,7 @@ export type Database = {
           session_id?: string
           settings?: Json | null
           status?: Database["public"]["Enums"]["connection_status"] | null
+          uazapi_base_url?: string | null
           updated_at?: string | null
           webhook_url?: string | null
         }
