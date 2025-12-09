@@ -353,16 +353,13 @@ export function ChatPanel({
                           key={message.id}
                           ref={(el) => { messageRefs.current[message.id] = el; }}
                           className={cn(
-                            'flex group/message relative',
+                            'flex items-center gap-2 group/message',
                             isOutbound ? 'justify-end' : 'justify-start'
                           )}
                         >
-                          {/* Reply button - visible on hover */}
-                          {canReply && (
-                            <div className={cn(
-                              "absolute top-1/2 -translate-y-1/2 opacity-0 group-hover/message:opacity-100 transition-opacity",
-                              isOutbound ? "left-0 -translate-x-full pr-2" : "right-0 translate-x-full pl-2"
-                            )}>
+                          {/* Reply button - LEFT side for outbound messages */}
+                          {canReply && isOutbound && (
+                            <div className="opacity-0 group-hover/message:opacity-100 transition-opacity duration-200">
                               <Tooltip>
                                 <TooltipTrigger asChild>
                                   <Button
@@ -386,6 +383,14 @@ export function ChatPanel({
                               isFailed && 'opacity-80'
                             )}
                           >
+                            {/* Quoted message preview */}
+                            {message.quotedMessage && (
+                              <QuotedMessagePreview
+                                quotedMessage={message.quotedMessage}
+                                isOutbound={isOutbound}
+                                onClick={() => message.quotedMessageId && scrollToMessage(message.quotedMessageId)}
+                              />
+                            )}
                             {/* Quoted message preview */}
                             {message.quotedMessage && (
                               <QuotedMessagePreview
@@ -611,6 +616,25 @@ export function ChatPanel({
                               </div>
                             )}
                           </div>
+                          
+                          {/* Reply button - RIGHT side for inbound messages */}
+                          {canReply && !isOutbound && (
+                            <div className="opacity-0 group-hover/message:opacity-100 transition-opacity duration-200">
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-7 w-7 rounded-full bg-muted/80 hover:bg-muted"
+                                    onClick={() => handleReply(message)}
+                                  >
+                                    <Reply className="w-3.5 h-3.5" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>Responder</TooltipContent>
+                              </Tooltip>
+                            </div>
+                          )}
                         </div>
                       );
                     })}
