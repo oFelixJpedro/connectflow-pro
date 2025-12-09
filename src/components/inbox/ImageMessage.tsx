@@ -17,6 +17,7 @@ interface ImageMessageProps {
   fileSize?: number;
   status?: string;
   errorMessage?: string;
+  caption?: string | null;
 }
 
 function formatFileSize(bytes: number): string {
@@ -34,6 +35,7 @@ export function ImageMessage({
   fileSize,
   status,
   errorMessage,
+  caption,
 }: ImageMessageProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
@@ -156,7 +158,7 @@ export function ImageMessage({
           </div>
         )}
 
-        {/* Download button */}
+      {/* Download button */}
         {!isLoading && !hasError && (
           <Button
             variant="ghost"
@@ -174,6 +176,19 @@ export function ImageMessage({
           >
             <Download className="w-3.5 h-3.5" />
           </Button>
+        )}
+
+        {/* Caption */}
+        {caption && (
+          <div 
+            className={cn(
+              "px-3 py-2 text-sm leading-relaxed",
+              "whitespace-pre-wrap break-words",
+              isOutbound ? "text-foreground" : "text-foreground"
+            )}
+          >
+            {caption}
+          </div>
         )}
       </div>
 

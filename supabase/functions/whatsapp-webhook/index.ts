@@ -849,6 +849,10 @@ serve(async (req) => {
               
               mediaUrl = publicUrl
               mediaMimeType = actualMimeType
+              
+              // Extract caption if present
+              const caption = imageSource.caption || payload.message?.content?.caption || null
+              
               mediaMetadata = {
                 width,
                 height,
@@ -858,7 +862,9 @@ serve(async (req) => {
                 originalMessageId: messageId,
                 downloadedAt: new Date().toISOString(),
                 originalMimetype: mimeType,
-                hasJPEGThumbnail
+                hasJPEGThumbnail,
+                hasCaption: !!caption,
+                captionLength: caption?.length || 0
               }
               
               console.log(`🔗 URL pública: ${mediaUrl}`)
@@ -1036,8 +1042,14 @@ serve(async (req) => {
     
     const status = mediaMetadata.error ? 'failed' : 'delivered'
     
-    // Determine content - null for audio/image, text for everything else
-    const messageContent = unsupportedMediaText || ((isAudioMessage || isImageMessage) ? null : messageText)
+    // Determine content - null for audio, caption for images, text for everything else
+    // For images, extract caption from message.content.caption
+    const imageCaption = isImageMessage ? (
+      payload.message?.content?.caption || 
+      imageContentData?.caption || 
+      null
+    ) : null
+    const messageContent = unsupportedMediaText || (isAudioMessage ? null : (isImageMessage ? imageCaption : messageText))
     
     console.log(`💾 Salvando mensagem...`)
     console.log(`   - direction: ${direction}`)
