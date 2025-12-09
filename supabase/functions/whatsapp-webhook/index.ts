@@ -18,6 +18,67 @@ function convertTimestamp(timestamp: number): string {
   return new Date(timestamp).toISOString()
 }
 
+// Helper to get correct mimetype based on file extension
+// Prioritizes file extension over original mimetype to fix Supabase Storage restrictions
+function getCorrectMimeType(fileName: string | undefined, originalMimeType: string): string {
+  // Extract extension from fileName
+  const extension = fileName?.split('.').pop()?.toLowerCase()
+  
+  // Extension to mimetype mapping
+  const extensionMimeMap: Record<string, string> = {
+    // Markdown - CRITICAL: These come as text/plain but Storage rejects it
+    'md': 'text/markdown',
+    'markdown': 'text/markdown',
+    // Text
+    'txt': 'text/plain',
+    // Documents
+    'pdf': 'application/pdf',
+    'doc': 'application/msword',
+    'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'xls': 'application/vnd.ms-excel',
+    'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'ppt': 'application/vnd.ms-powerpoint',
+    'pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    // Archives
+    'zip': 'application/zip',
+    'rar': 'application/x-rar-compressed',
+    '7z': 'application/x-7z-compressed',
+    // Images
+    'jpg': 'image/jpeg',
+    'jpeg': 'image/jpeg',
+    'png': 'image/png',
+    'gif': 'image/gif',
+    'webp': 'image/webp',
+    'svg': 'image/svg+xml',
+    // Audio
+    'mp3': 'audio/mpeg',
+    'ogg': 'audio/ogg',
+    'opus': 'audio/opus',
+    'm4a': 'audio/mp4',
+    'wav': 'audio/wav',
+    'aac': 'audio/aac',
+    // Video
+    'mp4': 'video/mp4',
+    'webm': 'video/webm',
+    'mov': 'video/quicktime',
+    '3gp': 'video/3gpp',
+    'avi': 'video/x-msvideo',
+  }
+  
+  // If we have a valid extension mapping, use it
+  if (extension && extensionMimeMap[extension]) {
+    return extensionMimeMap[extension]
+  }
+  
+  // If original mimetype is available and not empty, use it
+  if (originalMimeType && originalMimeType.trim()) {
+    return originalMimeType.split(';')[0].trim()
+  }
+  
+  // Fallback to generic binary
+  return 'application/octet-stream'
+}
+
 // Helper to get file extension from mime type
 function getExtensionFromMimeType(mimeType: string, fileName?: string): string {
   // Prioritize file extension if available
@@ -885,14 +946,27 @@ serve(async (req) => {
           
           if (downloadResult) {
             const { buffer, mimeType: downloadedMimeType, fileSize: downloadedSize } = downloadResult
-            const actualMimeType = downloadedMimeType || mimeType.split(';')[0].trim()
+            const originalMimeType = downloadedMimeType || mimeType.split(';')[0].trim()
             
             // Get extension from fileName or mimeType
             let extension = 'bin'
             if (fileName && fileName.includes('.')) {
               extension = fileName.split('.').pop()?.toLowerCase() || 'bin'
             } else {
-              extension = getExtensionFromMimeType(actualMimeType)
+              extension = getExtensionFromMimeType(originalMimeType)
+            }
+            
+            // CRITICAL: Correct mimetype based on file extension
+            // This fixes issues with .md files coming as text/plain which Storage rejects
+            const correctedMimeType = getCorrectMimeType(fileName, originalMimeType)
+            const mimetypeWasCorrected = correctedMimeType !== originalMimeType
+            
+            console.log(`📋 Mimetype original: ${originalMimeType}`)
+            console.log(`🔍 Extensão detectada: .${extension}`)
+            if (mimetypeWasCorrected) {
+              console.log(`🔄 Mimetype CORRIGIDO para: ${correctedMimeType}`)
+            } else {
+              console.log(`✓ Mimetype mantido: ${correctedMimeType}`)
             }
             
             // Generate unique filename
@@ -904,42 +978,75 @@ serve(async (req) => {
             const storagePath = `${companyId}/${whatsappConnectionId}/${year}-${month}/${uniqueFileName}`
             
             console.log(`📤 Fazendo upload para Storage: ${storagePath}`)
+            console.log(`   - contentType: ${correctedMimeType}`)
             
-            // Upload to Supabase Storage
-            const { data: uploadData, error: uploadError } = await supabase.storage
+            // Upload to Supabase Storage with CORRECTED mimetype
+            let uploadData = null
+            let uploadError = null
+            
+            // First attempt with corrected mimetype
+            const firstAttempt = await supabase.storage
               .from('whatsapp-media')
               .upload(storagePath, buffer, {
-                contentType: actualMimeType,
+                contentType: correctedMimeType,
                 cacheControl: '31536000', // 1 year cache
                 upsert: false
               })
+            
+            uploadData = firstAttempt.data
+            uploadError = firstAttempt.error
+            
+            // If corrected mimetype fails and was different from original, try original as fallback
+            if (uploadError && mimetypeWasCorrected) {
+              console.log(`⚠️ Upload com mimetype corrigido falhou: ${uploadError.message}`)
+              console.log(`🔄 Tentando com mimetype original: ${originalMimeType}`)
+              
+              const fallbackPath = storagePath.replace(`.${extension}`, `_fallback.${extension}`)
+              const secondAttempt = await supabase.storage
+                .from('whatsapp-media')
+                .upload(fallbackPath, buffer, {
+                  contentType: originalMimeType,
+                  cacheControl: '31536000',
+                  upsert: false
+                })
+              
+              if (!secondAttempt.error) {
+                uploadData = secondAttempt.data
+                uploadError = null
+                console.log(`✅ Upload com mimetype original bem-sucedido`)
+              }
+            }
             
             if (uploadError) {
               console.log(`❌ Erro no upload: ${uploadError.message}`)
               mediaMetadata = {
                 error: 'Upload failed',
                 errorMessage: uploadError.message,
-                mimeType: actualMimeType,
+                mimeType: correctedMimeType,
+                originalMimetype: originalMimeType,
+                mimetypeWasCorrected,
                 fileName,
                 fileSize: downloadedSize,
                 pageCount,
                 hasJPEGThumbnail
               }
             } else {
-              console.log(`✅ Upload concluído: ${uploadData.path}`)
+              console.log(`✅ Upload concluído: ${uploadData!.path}`)
               
               // Get public URL
               const { data: { publicUrl } } = supabase.storage
                 .from('whatsapp-media')
-                .getPublicUrl(storagePath)
+                .getPublicUrl(uploadData!.path)
               
               mediaUrl = publicUrl
-              mediaMimeType = actualMimeType
+              mediaMimeType = correctedMimeType  // Save CORRECTED mimetype
               
               // Set caption as message content
               if (caption) {
                 documentCaption = caption
               }
+              
+              console.log(`🔗 URL pública: ${mediaUrl}`)
               
               mediaMetadata = {
                 fileName,
@@ -947,16 +1054,16 @@ serve(async (req) => {
                 fileSize: downloadedSize,
                 fileExtension: extension,
                 pageCount,
-                storagePath,
+                originalMimetype: originalMimeType,
+                uploadMimetype: correctedMimeType,
+                mimetypeWasCorrected,
+                storagePath: uploadData!.path,
                 originalMessageId: messageId,
                 downloadedAt: new Date().toISOString(),
-                originalMimetype: mimeType,
                 hasJPEGThumbnail,
                 hasCaption: !!caption,
                 captionLength: caption?.length || 0
               }
-              
-              console.log(`🔗 URL pública: ${mediaUrl}`)
             }
           } else {
             console.log(`⚠️ Falha no download do documento via UAZAPI`)
