@@ -6,8 +6,8 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-// Get base URL from secrets (with fallback for backwards compatibility)
-const UAZAPI_BASE_URL = Deno.env.get('UAZAPI_BASE_URL')?.trim() || 'https://whatsapi.uazapi.com'
+// Get base URL from secrets (REQUIRED - no fallback)
+const UAZAPI_BASE_URL = Deno.env.get('UAZAPI_BASE_URL')?.trim() || ''
 
 // Helper to extract phone number from WhatsApp JID
 function extractPhoneNumber(jid: string): string {
