@@ -122,6 +122,27 @@ serve(async (req) => {
 
     console.log('✅ Mensagem encontrada:', message.id)
     console.log('   - content:', message.content?.substring(0, 50))
+    console.log('   - quoted_message_id:', message.quoted_message_id || 'Nenhuma')
+    
+    // Se tem mensagem citada, buscar o whatsapp_message_id dela para usar como replyid
+    let replyId: string | null = null
+    if (message.quoted_message_id) {
+      console.log('🔍 Buscando whatsapp_message_id da mensagem citada...')
+      const { data: quotedMessage } = await supabase
+        .from('messages')
+        .select('whatsapp_message_id')
+        .eq('id', message.quoted_message_id)
+        .maybeSingle()
+      
+      if (quotedMessage?.whatsapp_message_id) {
+        // Extrair apenas o ID da mensagem (remover prefixo do telefone se houver)
+        const fullId = quotedMessage.whatsapp_message_id
+        replyId = fullId.includes(':') ? fullId.split(':').pop()! : fullId
+        console.log('✅ replyId encontrado:', replyId)
+      } else {
+        console.log('⚠️ Mensagem citada não tem whatsapp_message_id')
+      }
+    }
 
     // Buscar conversa com contato e conexão
     const { data: conversation, error: convError } = await supabase
@@ -286,10 +307,14 @@ serve(async (req) => {
     // Limpar número de telefone (remover caracteres especiais)
     const cleanPhoneNumber = phoneNumber.replace(/[^\d]/g, '')
 
-    // Montar payload para UAZAPI
-    const uazapiPayload = {
+    // Montar payload para UAZAPI - incluir replyid se estiver respondendo
+    const uazapiPayload: { number: string; text: string; replyid?: string } = {
       number: cleanPhoneNumber,
       text: messageContent
+    }
+    
+    if (replyId) {
+      uazapiPayload.replyid = replyId
     }
 
     console.log('📤 UAZAPI Request:')
@@ -297,6 +322,7 @@ serve(async (req) => {
     console.log('   - token: ***' + instanceToken.slice(-8))
     console.log('   - number:', cleanPhoneNumber)
     console.log('   - text:', messageContent.substring(0, 100))
+    console.log('   - replyid:', replyId || '(nenhum)')
 
     const uazapiResponse = await fetch('https://whatsapi.uazapi.com/send/text', {
       method: 'POST',
