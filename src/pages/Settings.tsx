@@ -1,13 +1,8 @@
 import { useState } from 'react';
 import { 
   Building2, 
-  Users, 
-  MessageSquare, 
-  Link2, 
   Bell, 
-  Shield,
   CreditCard,
-  Palette,
   Save,
   Upload
 } from 'lucide-react';
@@ -53,7 +48,7 @@ export default function Settings() {
         </div>
 
         <Tabs defaultValue="company" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-4 lg:w-auto lg:inline-flex">
+          <TabsList className="grid w-full grid-cols-3 lg:w-auto lg:inline-flex">
             <TabsTrigger value="company" className="gap-2">
               <Building2 className="w-4 h-4" />
               <span className="hidden sm:inline">Empresa</span>
@@ -61,10 +56,6 @@ export default function Settings() {
             <TabsTrigger value="notifications" className="gap-2">
               <Bell className="w-4 h-4" />
               <span className="hidden sm:inline">Notificações</span>
-            </TabsTrigger>
-            <TabsTrigger value="team" className="gap-2">
-              <Users className="w-4 h-4" />
-              <span className="hidden sm:inline">Equipe</span>
             </TabsTrigger>
             <TabsTrigger value="billing" className="gap-2">
               <CreditCard className="w-4 h-4" />
@@ -260,52 +251,6 @@ export default function Settings() {
                     </p>
                   </div>
                   <Switch defaultChecked />
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          {/* Team Settings */}
-          <TabsContent value="team" className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>Gerenciar Equipe</CardTitle>
-                <CardDescription>
-                  Adicione e gerencie os membros da sua equipe
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="flex justify-between items-center">
-                  <p className="text-sm text-muted-foreground">
-                    {1} membro(s) na equipe
-                  </p>
-                  <Button>
-                    <Users className="w-4 h-4 mr-2" />
-                    Convidar Membro
-                  </Button>
-                </div>
-                <Separator />
-                
-                {/* Team Member */}
-                <div className="flex items-center justify-between p-4 rounded-lg border">
-                  <div className="flex items-center gap-3">
-                    <Avatar>
-                      <AvatarImage src={user?.avatarUrl} />
-                      <AvatarFallback className="bg-primary/10 text-primary">
-                        {user?.fullName?.charAt(0) || 'U'}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div>
-                      <p className="font-medium">{user?.fullName}</p>
-                      <p className="text-sm text-muted-foreground">{user?.email}</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm text-muted-foreground capitalize">
-                      {user?.role}
-                    </span>
-                    <span className="w-2 h-2 rounded-full bg-success" />
-                  </div>
                 </div>
               </CardContent>
             </Card>
