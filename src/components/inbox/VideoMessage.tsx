@@ -75,9 +75,9 @@ export function VideoMessage({
     <div className="relative group">
       <div
         className={cn(
-          'rounded-xl overflow-hidden relative',
+          'overflow-hidden relative',
           'max-w-[400px] min-w-[200px]',
-          isOutbound ? 'bg-primary/10' : 'bg-muted/50'
+          caption ? '' : 'rounded-xl'
         )}
       >
         {/* Loading skeleton */}
@@ -129,7 +129,8 @@ export function VideoMessage({
             preload="metadata"
             className={cn(
               'w-full max-h-[500px] object-contain bg-black/90',
-              (isLoading || hasError) && 'opacity-0 absolute'
+              (isLoading || hasError) && 'opacity-0 absolute',
+              caption ? 'rounded-t-xl' : 'rounded-xl'
             )}
             style={{
               aspectRatio: width && height ? `${width}/${height}` : undefined,
@@ -169,9 +170,11 @@ export function VideoMessage({
         {caption && (
           <div 
             className={cn(
-              "px-3 py-2 text-sm leading-relaxed",
+              "px-4 py-3 rounded-b-xl text-sm leading-relaxed",
               "whitespace-pre-wrap break-words",
-              "text-foreground"
+              isOutbound 
+                ? "bg-gradient-to-br from-blue-100 to-blue-200 text-blue-900"
+                : "bg-slate-100 text-slate-900"
             )}
           >
             {caption}
