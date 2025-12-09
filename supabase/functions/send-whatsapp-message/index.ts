@@ -122,25 +122,6 @@ serve(async (req) => {
 
     console.log('✅ Mensagem encontrada:', message.id)
     console.log('   - content:', message.content?.substring(0, 50))
-    console.log('   - quoted_message_id:', message.quoted_message_id || 'Nenhuma')
-    
-    // Se tem mensagem citada, buscar o whatsapp_message_id dela
-    let quotedWhatsappMessageId: string | null = null
-    if (message.quoted_message_id) {
-      console.log('🔍 Buscando whatsapp_message_id da mensagem citada...')
-      const { data: quotedMessage } = await supabase
-        .from('messages')
-        .select('whatsapp_message_id')
-        .eq('id', message.quoted_message_id)
-        .maybeSingle()
-      
-      if (quotedMessage?.whatsapp_message_id) {
-        quotedWhatsappMessageId = quotedMessage.whatsapp_message_id
-        console.log('✅ Mensagem citada encontrada, whatsapp_message_id:', quotedWhatsappMessageId)
-      } else {
-        console.log('⚠️ Mensagem citada não tem whatsapp_message_id (pode ser mensagem local)')
-      }
-    }
 
     // Buscar conversa com contato e conexão
     const { data: conversation, error: convError } = await supabase
@@ -305,16 +286,10 @@ serve(async (req) => {
     // Limpar número de telefone (remover caracteres especiais)
     const cleanPhoneNumber = phoneNumber.replace(/[^\d]/g, '')
 
-    // Montar payload para UAZAPI - incluir quoted se houver
-    const uazapiPayload: { number: string; text: string; quoted?: string } = {
+    // Montar payload para UAZAPI
+    const uazapiPayload = {
       number: cleanPhoneNumber,
       text: messageContent
-    }
-    
-    // Adicionar campo quoted se estiver respondendo a uma mensagem
-    if (quotedWhatsappMessageId) {
-      uazapiPayload.quoted = quotedWhatsappMessageId
-      console.log('💬 Enviando com citação!')
     }
 
     console.log('📤 UAZAPI Request:')
@@ -322,7 +297,6 @@ serve(async (req) => {
     console.log('   - token: ***' + instanceToken.slice(-8))
     console.log('   - number:', cleanPhoneNumber)
     console.log('   - text:', messageContent.substring(0, 100))
-    console.log('   - quoted:', quotedWhatsappMessageId || '(nenhum)')
 
     const uazapiResponse = await fetch('https://whatsapi.uazapi.com/send/text', {
       method: 'POST',
