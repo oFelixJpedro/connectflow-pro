@@ -10,8 +10,7 @@ import {
   Trash2,
   MoreHorizontal,
   Loader2,
-  X,
-  Users
+  X
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -39,7 +38,6 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
@@ -47,11 +45,8 @@ import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import type { Tables } from '@/integrations/supabase/types';
-import { ConnectionUsersTab } from '@/components/connections/ConnectionUsersTab';
 
-type WhatsAppConnection = Tables<'whatsapp_connections'> & {
-  userCount?: number;
-};
+type WhatsAppConnection = Tables<'whatsapp_connections'>;
 
 type DialogStep = 'name' | 'qr' | 'connecting';
 
@@ -97,36 +92,7 @@ export default function Connections() {
         .order('created_at', { ascending: false });
 
       if (error) throw error;
-
-      // Get user counts for each connection
-      const connectionIds = (data || []).map(c => c.id);
-      
-      if (connectionIds.length > 0) {
-        const { data: userCountsData, error: countsError } = await supabase
-          .from('connection_users')
-          .select('connection_id')
-          .in('connection_id', connectionIds);
-
-        if (!countsError && userCountsData) {
-          // Count users per connection
-          const countMap = new Map<string, number>();
-          userCountsData.forEach(cu => {
-            countMap.set(cu.connection_id, (countMap.get(cu.connection_id) || 0) + 1);
-          });
-
-          // Add counts to connections
-          const connectionsWithCounts = (data || []).map(c => ({
-            ...c,
-            userCount: countMap.get(c.id) || 0
-          }));
-          
-          setConnections(connectionsWithCounts);
-        } else {
-          setConnections(data || []);
-        }
-      } else {
-        setConnections(data || []);
-      }
+      setConnections(data || []);
     } catch (error) {
       console.error('Error loading connections:', error);
       toast.error('Erro ao carregar conexões');
@@ -480,7 +446,6 @@ export default function Connections() {
               <TableRow>
                 <TableHead>Nome</TableHead>
                 <TableHead>Número</TableHead>
-                <TableHead>Usuários</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="text-right">Ações</TableHead>
               </TableRow>
@@ -508,15 +473,6 @@ export default function Connections() {
                     </TableCell>
                     <TableCell>{connection.phone_number}</TableCell>
                     <TableCell>
-                      <Badge variant="outline" className="bg-muted/50">
-                        <Users className="w-3 h-3 mr-1" />
-                        {connection.userCount && connection.userCount > 0 
-                          ? `${connection.userCount} usuário${connection.userCount > 1 ? 's' : ''}`
-                          : 'Todos os agentes'
-                        }
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
                       <Badge variant="outline" className={status.className}>
                         <StatusIcon className={cn(
                           'w-3 h-3 mr-1',
@@ -539,13 +495,6 @@ export default function Connections() {
                           }}>
                             <Settings className="w-4 h-4 mr-2" />
                             Configurações
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => {
-                            setSelectedConnectionForSettings(connection);
-                            setIsSettingsDialogOpen(true);
-                          }}>
-                            <Users className="w-4 h-4 mr-2" />
-                            Gerenciar usuários
                           </DropdownMenuItem>
                           {connection.status === 'connected' && (
                             <DropdownMenuItem onClick={() => handleDisconnect(connection)}>
@@ -708,7 +657,6 @@ export default function Connections() {
         if (!open) {
           setIsSettingsDialogOpen(false);
           setSelectedConnectionForSettings(null);
-          loadConnections(); // Reload to get updated user counts
         }
       }}>
         <DialogContent className="sm:max-w-lg">
@@ -721,41 +669,13 @@ export default function Connections() {
             </DialogDescription>
           </DialogHeader>
           
-          <Tabs defaultValue="users" className="w-full">
-            <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="general" className="flex items-center gap-2">
-                <Settings className="w-4 h-4" />
-                Geral
-              </TabsTrigger>
-              <TabsTrigger value="users" className="flex items-center gap-2">
-                <Users className="w-4 h-4" />
-                Usuários
-              </TabsTrigger>
-            </TabsList>
-            
-            <TabsContent value="general" className="mt-4">
-              <div className="space-y-4">
-                <div className="p-4 bg-muted/50 rounded-lg">
-                  <p className="text-sm text-muted-foreground">
-                    Configurações gerais estarão disponíveis em breve.
-                  </p>
-                </div>
-              </div>
-            </TabsContent>
-            
-            <TabsContent value="users" className="mt-4">
-              {selectedConnectionForSettings && (
-                <ConnectionUsersTab 
-                  connectionId={selectedConnectionForSettings.id}
-                  onClose={() => {
-                    setIsSettingsDialogOpen(false);
-                    setSelectedConnectionForSettings(null);
-                    loadConnections();
-                  }}
-                />
-              )}
-            </TabsContent>
-          </Tabs>
+          <div className="space-y-4 py-4">
+            <div className="p-4 bg-muted/50 rounded-lg">
+              <p className="text-sm text-muted-foreground">
+                Configurações gerais estarão disponíveis em breve.
+              </p>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </div>
