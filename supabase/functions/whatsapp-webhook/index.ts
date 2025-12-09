@@ -218,58 +218,88 @@ serve(async (req) => {
     
     // Check message type - detect the actual type from payload
     const rawMessageType = payload.message?.type
-    console.log(`📋 Tipo de mensagem raw: ${rawMessageType}`)
+    const messageType = payload.message?.messageType // AudioMessage, ImageMessage, etc.
+    const mediaType = payload.message?.mediaType // ptt, audio, image, video, etc.
+    const contentMimetype = payload.message?.content?.mimetype || ''
+    
+    console.log(`📋 Tipo de mensagem:`)
+    console.log(`   - type (raw): ${rawMessageType}`)
+    console.log(`   - messageType: ${messageType}`)
+    console.log(`   - mediaType: ${mediaType}`)
+    console.log(`   - content.mimetype: ${contentMimetype}`)
     
     // Detect if it's a media message and identify the subtype
     let isAudioMessage = false
     let isMediaMessage = false
     let detectedSubtype = ''
-    let mediaData: any = null
+    let audioContentData: any = null
     
-    // Direct audio/ptt types
-    if (rawMessageType === 'audio' || rawMessageType === 'ptt') {
+    // Check for AudioMessage (UAZAPI sends messageType = "AudioMessage" for audio)
+    const isAudioByMessageType = messageType === 'AudioMessage'
+    const isAudioByMediaType = mediaType === 'ptt' || mediaType === 'audio'
+    const isAudioByMimetype = typeof contentMimetype === 'string' && contentMimetype.startsWith('audio/')
+    
+    if (isAudioByMessageType || isAudioByMediaType || isAudioByMimetype) {
       isAudioMessage = true
-      detectedSubtype = rawMessageType
-      mediaData = payload.message?.audio || payload.message?.ptt || payload.message
-      console.log(`✅ Tipo direto de áudio detectado: ${rawMessageType}`)
+      isMediaMessage = true
+      detectedSubtype = 'audio'
+      audioContentData = payload.message?.content || {}
+      console.log(`🎵 [ÁUDIO DETECTADO]`)
+      console.log(`   - via messageType: ${isAudioByMessageType}`)
+      console.log(`   - via mediaType: ${isAudioByMediaType}`)
+      console.log(`   - via mimetype: ${isAudioByMimetype}`)
+      console.log(`   - content:`, JSON.stringify(audioContentData, null, 2))
     }
-    // Media type - check subtype
+    // Check for other media types (messageType: ImageMessage, VideoMessage, etc.)
+    else if (messageType === 'ImageMessage' || (typeof contentMimetype === 'string' && contentMimetype.startsWith('image/'))) {
+      isMediaMessage = true
+      detectedSubtype = 'image'
+      console.log(`🖼️ [IMAGEM DETECTADA] (ainda não implementado)`)
+    }
+    else if (messageType === 'VideoMessage' || (typeof contentMimetype === 'string' && contentMimetype.startsWith('video/'))) {
+      isMediaMessage = true
+      detectedSubtype = 'video'
+      console.log(`🎬 [VÍDEO DETECTADO] (ainda não implementado)`)
+    }
+    else if (messageType === 'DocumentMessage' || messageType === 'DocumentWithCaptionMessage') {
+      isMediaMessage = true
+      detectedSubtype = 'document'
+      console.log(`📄 [DOCUMENTO DETECTADO] (ainda não implementado)`)
+    }
+    else if (messageType === 'StickerMessage') {
+      isMediaMessage = true
+      detectedSubtype = 'sticker'
+      console.log(`🎭 [STICKER DETECTADO] (ainda não implementado)`)
+    }
+    // Old detection for backward compatibility: rawMessageType = 'media' with media object
     else if (rawMessageType === 'media') {
       isMediaMessage = true
-      console.log('[WEBHOOK] Tipo "media" detectado - verificando subtipo...')
-      console.log('[WEBHOOK] Media completo:', JSON.stringify(payload.message?.media, null, 2))
-      
       const media = payload.message?.media || {}
-      const mimetype = media.mimetype || media.mimeType || ''
+      const mediaMime = media.mimetype || media.mimeType || ''
       
-      // Check if it's audio
-      if (media.audio || mimetype.startsWith('audio/')) {
+      if (media.audio || (typeof mediaMime === 'string' && mediaMime.startsWith('audio/'))) {
         isAudioMessage = true
-        detectedSubtype = 'audio (via media)'
-        mediaData = media.audio || media
-        console.log(`[WEBHOOK] Subtipo detectado: ÁUDIO`)
-        console.log(`   - mimetype: ${mimetype}`)
-      }
-      // Check for image
-      else if (media.image || mimetype.startsWith('image/')) {
+        detectedSubtype = 'audio (legacy media)'
+        audioContentData = media.audio || media
+        console.log(`🎵 [ÁUDIO via media object]`)
+      } else if (media.image || (typeof mediaMime === 'string' && mediaMime.startsWith('image/'))) {
         detectedSubtype = 'image'
-        console.log(`[WEBHOOK] Subtipo detectado: IMAGEM (ainda não implementado)`)
-      }
-      // Check for video
-      else if (media.video || mimetype.startsWith('video/')) {
+      } else if (media.video || (typeof mediaMime === 'string' && mediaMime.startsWith('video/'))) {
         detectedSubtype = 'video'
-        console.log(`[WEBHOOK] Subtipo detectado: VÍDEO (ainda não implementado)`)
-      }
-      // Check for document
-      else if (media.document || mimetype.startsWith('application/')) {
+      } else if (media.document || (typeof mediaMime === 'string' && mediaMime.startsWith('application/'))) {
         detectedSubtype = 'document'
-        console.log(`[WEBHOOK] Subtipo detectado: DOCUMENTO (ainda não implementado)`)
-      }
-      // Unknown media type
-      else {
+      } else {
         detectedSubtype = 'unknown'
-        console.log(`[WEBHOOK] Subtipo de mídia desconhecido:`, JSON.stringify(media, null, 2))
+        console.log(`❓ [MÍDIA DESCONHECIDA]`, JSON.stringify(media, null, 2))
       }
+    }
+    // Direct audio/ptt types (backward compatibility)
+    else if (rawMessageType === 'audio' || rawMessageType === 'ptt') {
+      isAudioMessage = true
+      isMediaMessage = true
+      detectedSubtype = rawMessageType
+      audioContentData = payload.message?.audio || payload.message?.ptt || payload.message?.content || {}
+      console.log(`🎵 [ÁUDIO tipo direto: ${rawMessageType}]`)
     }
     // Text type
     else if (rawMessageType === 'text' || rawMessageType === 'chat') {
@@ -278,11 +308,11 @@ serve(async (req) => {
     }
     // Other unsupported types
     else {
-      console.log(`ℹ️ Mensagem tipo "${rawMessageType}" ignorada (não é texto, áudio ou media)`)
+      console.log(`ℹ️ Mensagem tipo "${rawMessageType}" / messageType="${messageType}" ignorada`)
       return new Response(
         JSON.stringify({ 
           success: true, 
-          message: `Message type "${rawMessageType}" ignored` 
+          message: `Message type "${rawMessageType || messageType}" ignored` 
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
@@ -342,8 +372,8 @@ serve(async (req) => {
     if (isTextMessage) {
       console.log(`   - text: ${messageText?.substring(0, 50)}${messageText?.length > 50 ? '...' : ''}`)
     }
-    if (isAudioMessage && mediaData) {
-      console.log(`   - mediaData disponível: sim`)
+    if (isAudioMessage && audioContentData) {
+      console.log(`   - audioContentData disponível: sim`)
     }
     
     // ═══════════════════════════════════════════════════════════════════
@@ -659,38 +689,45 @@ serve(async (req) => {
       console.log('│ 8️⃣  ETAPA 5: PROCESSAR ÁUDIO                                    │')
       console.log('└─────────────────────────────────────────────────────────────────┘')
       
-      // Use mediaData that was already extracted, with fallbacks
-      const audioSource = mediaData || payload.message?.audio || payload.message?.ptt || payload.message?.media || {}
+      // Use audioContentData extracted during detection (from message.content)
+      // Fallbacks for backward compatibility
+      const audioSource = audioContentData || 
+                         payload.message?.content || 
+                         payload.message?.audio || 
+                         payload.message?.ptt || 
+                         payload.message?.media || 
+                         {}
       
-      // Extract URL from various possible locations
-      const originalUrl = audioSource.url || 
-                         audioSource.audio?.url ||
-                         payload.message?.mediaUrl || 
-                         payload.message?.media?.url
+      console.log(`🔍 [AUDIO SOURCE]:`, JSON.stringify(audioSource, null, 2))
       
-      // Extract mimetype from various possible locations
+      // Extract mimetype - UAZAPI sends in content.mimetype (e.g., "audio/ogg; codecs=opus")
       const mimeType = audioSource.mimetype || 
                       audioSource.mimeType || 
-                      audioSource.audio?.mimetype ||
-                      payload.message?.media?.mimetype ||
+                      payload.message?.content?.mimetype ||
                       'audio/ogg'
       
-      // Extract duration and size
+      // Extract duration - UAZAPI sends in content.seconds
       const duration = audioSource.seconds || 
                       audioSource.duration || 
-                      audioSource.audio?.seconds ||
-                      payload.message?.media?.seconds || 
+                      payload.message?.content?.seconds || 
                       0
+      
+      // Extract file size - UAZAPI sends in content.fileLength
       const fileSize = audioSource.fileLength || 
                       audioSource.fileSize || 
-                      audioSource.audio?.fileLength ||
-                      payload.message?.media?.fileLength || 
+                      payload.message?.content?.fileLength || 
                       0
+      
+      // Check if it's PTT (Push-to-Talk voice message)
+      const isPTT = audioSource.PTT === true || 
+                   audioSource.ptt === true || 
+                   mediaType === 'ptt'
       
       console.log(`🎵 Áudio recebido:`)
       console.log(`   - MimeType: ${mimeType}`)
       console.log(`   - Duração: ${duration}s`)
       console.log(`   - Tamanho: ${fileSize} bytes`)
+      console.log(`   - É PTT (voz): ${isPTT}`)
       console.log(`   - messageId para download: ${messageId}`)
       
       // Download via UAZAPI POST /message/download endpoint
@@ -702,10 +739,14 @@ serve(async (req) => {
           error: 'No instance token available',
           mimeType,
           duration,
-          fileSize
+          fileSize,
+          isPTT
         }
       } else {
         console.log(`📥 Baixando áudio via UAZAPI /message/download...`)
+        console.log(`   - URL: ${uazapiBaseUrl}/message/download`)
+        console.log(`   - messageId: ${messageId}`)
+        
         const downloadResult = await downloadMediaFromUazapi(messageId, uazapiBaseUrl, instanceToken)
         
         if (downloadResult) {
@@ -739,7 +780,8 @@ serve(async (req) => {
               errorMessage: uploadError.message,
               mimeType: actualMimeType,
               duration,
-              fileSize: downloadedSize
+              fileSize: downloadedSize,
+              isPTT
             }
           } else {
             console.log(`✅ Upload concluído: ${uploadData.path}`)
@@ -756,7 +798,9 @@ serve(async (req) => {
               fileSize: downloadedSize,
               fileName,
               storagePath,
-              processedAt: new Date().toISOString()
+              isPTT,
+              originalMessageId: messageId,
+              downloadedAt: new Date().toISOString()
             }
             
             console.log(`🔗 URL pública: ${mediaUrl}`)
@@ -767,7 +811,8 @@ serve(async (req) => {
             error: 'Download failed from UAZAPI',
             mimeType,
             duration,
-            fileSize
+            fileSize,
+            isPTT
           }
         }
       }
