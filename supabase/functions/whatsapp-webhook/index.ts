@@ -37,6 +37,12 @@ function getExtensionFromMimeType(mimeType: string): string {
     'image/gif': 'gif',
     'image/webp': 'webp',
     'image/svg+xml': 'svg',
+    // Videos
+    'video/mp4': 'mp4',
+    'video/3gpp': '3gp',
+    'video/quicktime': 'mov',
+    'video/webm': 'webm',
+    'video/x-msvideo': 'avi',
   }
   
   // Handle mime types with codecs (e.g., "audio/ogg; codecs=opus")
@@ -297,10 +303,24 @@ serve(async (req) => {
       console.log(`   - via mimetype: ${isImageByMimetype}`)
       console.log(`   - content:`, JSON.stringify(imageContentData, null, 2))
     }
-    else if (messageType === 'VideoMessage' || (typeof contentMimetype === 'string' && contentMimetype.startsWith('video/'))) {
+    // Check for VideoMessage
+    let isVideoMessage = false
+    let videoContentData: any = null
+    
+    const isVideoByMessageType = messageType === 'VideoMessage'
+    const isVideoByMediaType = mediaType === 'video'
+    const isVideoByMimetype = typeof contentMimetype === 'string' && contentMimetype.startsWith('video/')
+    
+    if (isVideoByMessageType || isVideoByMediaType || isVideoByMimetype) {
+      isVideoMessage = true
       isMediaMessage = true
       detectedSubtype = 'video'
-      console.log(`🎬 [VÍDEO DETECTADO] (ainda não implementado)`)
+      videoContentData = payload.message?.content || {}
+      console.log(`🎬 [VÍDEO DETECTADO]`)
+      console.log(`   - via messageType: ${isVideoByMessageType}`)
+      console.log(`   - via mediaType: ${isVideoByMediaType}`)
+      console.log(`   - via mimetype: ${isVideoByMimetype}`)
+      console.log(`   - content:`, JSON.stringify(videoContentData, null, 2))
     }
     else if (messageType === 'DocumentMessage' || messageType === 'DocumentWithCaptionMessage') {
       isMediaMessage = true
@@ -359,8 +379,8 @@ serve(async (req) => {
       )
     }
     
-    // If it's a media type but not audio or image, save as unsupported
-    if (isMediaMessage && !isAudioMessage && !isImageMessage && detectedSubtype !== 'unknown') {
+    // If it's a media type but not audio, image, or video, save as unsupported
+    if (isMediaMessage && !isAudioMessage && !isImageMessage && !isVideoMessage && detectedSubtype !== 'unknown') {
       console.log(`ℹ️ Mídia tipo "${detectedSubtype}" ainda não implementada`)
       // Continue to save as unsupported media message
     }
@@ -734,8 +754,8 @@ serve(async (req) => {
     let mediaMetadata: Record<string, any> = {}
     let unsupportedMediaText: string | null = null
     
-    // Handle unsupported media types (video, document, sticker)
-    if (isMediaMessage && !isAudioMessage && !isImageMessage) {
+    // Handle unsupported media types (document, sticker, etc.)
+    if (isMediaMessage && !isAudioMessage && !isImageMessage && !isVideoMessage) {
       console.log('\n┌─────────────────────────────────────────────────────────────────┐')
       console.log('│ 8️⃣  ETAPA 5: MÍDIA NÃO SUPORTADA                                │')
       console.log('└─────────────────────────────────────────────────────────────────┘')
@@ -744,6 +764,150 @@ serve(async (req) => {
       mediaMetadata = {
         unsupportedType: detectedSubtype,
         originalPayload: payload.message?.media
+      }
+    }
+    // Handle video messages
+    else if (isVideoMessage) {
+      console.log('\n┌─────────────────────────────────────────────────────────────────┐')
+      console.log('│ 8️⃣  ETAPA 5: PROCESSAR VÍDEO                                    │')
+      console.log('└─────────────────────────────────────────────────────────────────┘')
+      
+      const videoSource = videoContentData || payload.message?.content || {}
+      
+      console.log(`🔍 [VIDEO SOURCE]:`, JSON.stringify(videoSource, null, 2))
+      
+      // Extract video properties from UAZAPI payload
+      const mimeType = videoSource.mimetype || 
+                      videoSource.mimeType || 
+                      'video/mp4'
+      const width = videoSource.width || 0
+      const height = videoSource.height || 0
+      const fileSize = videoSource.fileLength || videoSource.fileSize || 0
+      const duration = videoSource.seconds || videoSource.duration || 0
+      const hasJPEGThumbnail = !!videoSource.JPEGThumbnail
+      
+      // Validate file size (max 100MB for videos)
+      const MAX_VIDEO_SIZE = 100 * 1024 * 1024 // 100MB
+      if (fileSize > MAX_VIDEO_SIZE) {
+        console.log(`❌ Vídeo muito grande: ${fileSize} bytes (max: ${MAX_VIDEO_SIZE})`)
+        mediaMetadata = {
+          error: 'File too large',
+          mimeType,
+          width,
+          height,
+          duration,
+          fileSize,
+          hasJPEGThumbnail
+        }
+      } else {
+        console.log(`🎬 Vídeo recebido:`)
+        console.log(`   - MimeType: ${mimeType}`)
+        console.log(`   - Dimensões: ${width}×${height}`)
+        console.log(`   - Duração: ${duration}s`)
+        console.log(`   - Tamanho: ${fileSize} bytes (${(fileSize / 1024 / 1024).toFixed(2)} MB)`)
+        console.log(`   - Tem thumbnail: ${hasJPEGThumbnail}`)
+        console.log(`   - messageId para download: ${messageId}`)
+        
+        const uazapiBaseUrl = connection.uazapi_base_url || 'https://whatsapi.uazapi.com'
+        
+        if (!instanceToken) {
+          console.log(`⚠️ Token não disponível para download`)
+          mediaMetadata = {
+            error: 'No instance token available',
+            mimeType,
+            width,
+            height,
+            duration,
+            fileSize,
+            hasJPEGThumbnail
+          }
+        } else {
+          console.log(`📥 Baixando vídeo via UAZAPI /message/download...`)
+          console.log(`   - URL: ${uazapiBaseUrl}/message/download`)
+          console.log(`   - messageId: ${messageId}`)
+          
+          const downloadResult = await downloadMediaFromUazapi(messageId, uazapiBaseUrl, instanceToken)
+          
+          if (downloadResult) {
+            const { buffer, mimeType: downloadedMimeType, fileSize: downloadedSize } = downloadResult
+            const actualMimeType = downloadedMimeType.startsWith('video/') ? downloadedMimeType : mimeType.split(';')[0].trim()
+            const extension = getExtensionFromMimeType(actualMimeType)
+            
+            // Generate unique filename
+            const now = new Date()
+            const year = now.getFullYear()
+            const month = String(now.getMonth() + 1).padStart(2, '0')
+            const randomId = Math.random().toString(36).substring(2, 8)
+            const fileName = `video_${Date.now()}_${randomId}.${extension}`
+            const storagePath = `${companyId}/${whatsappConnectionId}/${year}-${month}/${fileName}`
+            
+            console.log(`📤 Fazendo upload para Storage: ${storagePath}`)
+            
+            // Upload to Supabase Storage
+            const { data: uploadData, error: uploadError } = await supabase.storage
+              .from('whatsapp-media')
+              .upload(storagePath, buffer, {
+                contentType: actualMimeType,
+                cacheControl: '31536000', // 1 year cache
+                upsert: false
+              })
+            
+            if (uploadError) {
+              console.log(`❌ Erro no upload: ${uploadError.message}`)
+              mediaMetadata = {
+                error: 'Upload failed',
+                errorMessage: uploadError.message,
+                mimeType: actualMimeType,
+                width,
+                height,
+                duration,
+                fileSize: downloadedSize,
+                hasJPEGThumbnail
+              }
+            } else {
+              console.log(`✅ Upload concluído: ${uploadData.path}`)
+              
+              // Get public URL
+              const { data: { publicUrl } } = supabase.storage
+                .from('whatsapp-media')
+                .getPublicUrl(storagePath)
+              
+              mediaUrl = publicUrl
+              mediaMimeType = actualMimeType
+              
+              // Extract caption if present
+              const caption = videoSource.caption || payload.message?.content?.caption || null
+              
+              mediaMetadata = {
+                width,
+                height,
+                duration,
+                fileSize: downloadedSize,
+                fileName,
+                storagePath,
+                originalMessageId: messageId,
+                downloadedAt: new Date().toISOString(),
+                originalMimetype: mimeType,
+                hasJPEGThumbnail,
+                hasCaption: !!caption,
+                captionLength: caption?.length || 0
+              }
+              
+              console.log(`🔗 URL pública: ${mediaUrl}`)
+            }
+          } else {
+            console.log(`⚠️ Falha no download do vídeo via UAZAPI`)
+            mediaMetadata = {
+              error: 'Download failed from UAZAPI',
+              mimeType,
+              width,
+              height,
+              duration,
+              fileSize,
+              hasJPEGThumbnail
+            }
+          }
+        }
       }
     }
     // Handle image messages
@@ -1034,6 +1198,8 @@ serve(async (req) => {
       dbMessageType = 'audio'
     } else if (isImageMessage) {
       dbMessageType = 'image'
+    } else if (isVideoMessage) {
+      dbMessageType = 'video'
     } else if (unsupportedMediaText) {
       dbMessageType = 'text' // Save unsupported media as text with placeholder
     } else {
@@ -1042,14 +1208,20 @@ serve(async (req) => {
     
     const status = mediaMetadata.error ? 'failed' : 'delivered'
     
-    // Determine content - null for audio, caption for images, text for everything else
+    // Determine content - null for audio, caption for images/videos, text for everything else
     // For images, extract caption from message.content.caption
     const imageCaption = isImageMessage ? (
       payload.message?.content?.caption || 
       imageContentData?.caption || 
       null
     ) : null
-    const messageContent = unsupportedMediaText || (isAudioMessage ? null : (isImageMessage ? imageCaption : messageText))
+    // For videos, extract caption from message.content.caption
+    const videoCaption = isVideoMessage ? (
+      payload.message?.content?.caption || 
+      videoContentData?.caption || 
+      null
+    ) : null
+    const messageContent = unsupportedMediaText || (isAudioMessage ? null : (isImageMessage ? imageCaption : (isVideoMessage ? videoCaption : messageText)))
     
     console.log(`💾 Salvando mensagem...`)
     console.log(`   - direction: ${direction}`)
