@@ -9,7 +9,8 @@ import {
   Archive,
   FileX,
   AlertCircle,
-  Loader2
+  Loader2,
+  FileCode
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
@@ -34,7 +35,11 @@ function formatFileSize(bytes: number): string {
 function getFileExtension(fileName?: string, mimeType?: string): string {
   if (fileName) {
     const ext = fileName.split('.').pop()?.toLowerCase();
-    if (ext) return ext.toUpperCase();
+    if (ext) {
+      // Special handling for markdown
+      if (ext === 'md' || ext === 'markdown') return 'Markdown';
+      return ext.toUpperCase();
+    }
   }
   
   if (mimeType) {
@@ -47,6 +52,8 @@ function getFileExtension(fileName?: string, mimeType?: string): string {
       'application/vnd.ms-powerpoint': 'PPT',
       'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'PPTX',
       'text/plain': 'TXT',
+      'text/markdown': 'Markdown',
+      'text/x-markdown': 'Markdown',
       'application/zip': 'ZIP',
       'application/x-rar-compressed': 'RAR',
       'application/x-7z-compressed': '7Z',
@@ -57,8 +64,21 @@ function getFileExtension(fileName?: string, mimeType?: string): string {
   return 'FILE';
 }
 
-function getFileIcon(mimeType?: string) {
+function getFileIcon(fileName?: string, mimeType?: string) {
+  // Check file extension first (more reliable for markdown)
+  if (fileName) {
+    const ext = fileName.split('.').pop()?.toLowerCase();
+    if (ext === 'md' || ext === 'markdown') {
+      return <FileCode className="w-10 h-10 text-purple-500" />;
+    }
+  }
+  
   if (!mimeType) return <File className="w-10 h-10 text-slate-400" />;
+  
+  // Markdown by mimetype
+  if (mimeType.includes('markdown')) {
+    return <FileCode className="w-10 h-10 text-purple-500" />;
+  }
   
   // PDF
   if (mimeType === 'application/pdf') {
@@ -202,7 +222,7 @@ export function DocumentMessage({
                 "flex items-center justify-center w-12 h-12 rounded-lg flex-shrink-0",
                 isOutbound ? "bg-blue-200/50" : "bg-slate-200/50"
               )}>
-                {getFileIcon(mimeType)}
+                {getFileIcon(fileName, mimeType)}
               </div>
               
               {/* File info */}

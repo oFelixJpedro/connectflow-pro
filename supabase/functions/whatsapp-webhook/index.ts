@@ -19,7 +19,15 @@ function convertTimestamp(timestamp: number): string {
 }
 
 // Helper to get file extension from mime type
-function getExtensionFromMimeType(mimeType: string): string {
+function getExtensionFromMimeType(mimeType: string, fileName?: string): string {
+  // Prioritize file extension if available
+  if (fileName) {
+    const ext = fileName.split('.').pop()?.toLowerCase()
+    if (ext && ext.length <= 10) {
+      return ext
+    }
+  }
+  
   const mimeMap: Record<string, string> = {
     // Audio
     'audio/ogg': 'ogg',
@@ -52,6 +60,8 @@ function getExtensionFromMimeType(mimeType: string): string {
     'application/vnd.ms-powerpoint': 'ppt',
     'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'pptx',
     'text/plain': 'txt',
+    'text/markdown': 'md',
+    'text/x-markdown': 'md',
     'application/zip': 'zip',
     'application/x-rar-compressed': 'rar',
     'application/x-7z-compressed': '7z',
@@ -342,7 +352,14 @@ serve(async (req) => {
     const isDocumentByType = rawMessageType === 'document'
     const isDocumentByMediaType = mediaType === 'document'
     
-    if (isDocumentByMessageType || isDocumentByType || isDocumentByMediaType) {
+    // Special check for markdown files that may come as text/plain or octet-stream
+    const documentFileName = payload.message?.content?.fileName || ''
+    const documentMimetype = payload.message?.content?.mimetype || ''
+    const isMarkdownByExtension = /\.(md|markdown)$/i.test(documentFileName)
+    const isMarkdownByMimetype = documentMimetype.includes('markdown')
+    const isTextPlainWithMarkdownExt = (documentMimetype === 'text/plain' || documentMimetype === 'application/octet-stream') && isMarkdownByExtension
+    
+    if (isDocumentByMessageType || isDocumentByType || isDocumentByMediaType || isTextPlainWithMarkdownExt || isMarkdownByMimetype) {
       isDocumentMessage = true
       isMediaMessage = true
       detectedSubtype = 'document'
@@ -351,6 +368,10 @@ serve(async (req) => {
       console.log(`   - via messageType: ${isDocumentByMessageType}`)
       console.log(`   - via type: ${isDocumentByType}`)
       console.log(`   - via mediaType: ${isDocumentByMediaType}`)
+      console.log(`   - via markdown extension: ${isMarkdownByExtension}`)
+      console.log(`   - via markdown mimetype: ${isMarkdownByMimetype}`)
+      console.log(`   - fileName: ${documentFileName}`)
+      console.log(`   - mimetype: ${documentMimetype}`)
       console.log(`   - content:`, JSON.stringify(documentContentData, null, 2))
     }
     // Check for StickerMessage
