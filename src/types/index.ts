@@ -110,7 +110,7 @@ export interface Conversation {
 // Message types
 export type MessageDirection = 'inbound' | 'outbound';
 export type SenderType = 'user' | 'contact' | 'system' | 'bot';
-export type MessageType = 'text' | 'image' | 'video' | 'audio' | 'document' | 'location' | 'contact';
+export type MessageType = 'text' | 'image' | 'video' | 'audio' | 'document' | 'location' | 'contact' | 'sticker';
 export type MessageStatus = 'pending' | 'sent' | 'delivered' | 'read' | 'failed';
 
 export interface Message {

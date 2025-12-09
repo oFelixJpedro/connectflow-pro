@@ -27,6 +27,7 @@ import { MessageInputBlocker, useMessageBlocker } from './MessageInputBlocker';
 import { AudioPlayer } from './AudioPlayer';
 import { ImageMessage } from './ImageMessage';
 import { VideoMessage } from './VideoMessage';
+import StickerMessage from './StickerMessage';
 import { cn } from '@/lib/utils';
 import type { Conversation, Message } from '@/types';
 import { format } from 'date-fns';
@@ -436,6 +437,34 @@ export function ChatPanel({
                                     <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
                                     <span className="text-xs text-muted-foreground">
                                       Carregando vídeo...
+                                    </span>
+                                  </>
+                                )}
+                              </div>
+                            ) : message.messageType === 'sticker' && message.mediaUrl ? (
+                              // Sticker message
+                              <StickerMessage
+                                mediaUrl={message.mediaUrl}
+                                isAnimated={(message.metadata as any)?.isAnimated}
+                              />
+                            ) : message.messageType === 'sticker' ? (
+                              // Sticker without URL (loading or failed)
+                              <div className={cn(
+                                "flex items-center gap-2 p-3 rounded-lg min-w-[150px]",
+                                isOutbound ? "bg-primary/10" : "bg-muted/50"
+                              )}>
+                                {isFailed ? (
+                                  <>
+                                    <AlertCircle className="w-5 h-5 text-destructive" />
+                                    <span className="text-xs text-destructive">
+                                      Falha ao carregar figurinha
+                                    </span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+                                    <span className="text-xs text-muted-foreground">
+                                      Carregando figurinha...
                                     </span>
                                   </>
                                 )}
