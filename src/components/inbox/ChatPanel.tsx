@@ -391,14 +391,6 @@ export function ChatPanel({
                                 onClick={() => message.quotedMessageId && scrollToMessage(message.quotedMessageId)}
                               />
                             )}
-                            {/* Quoted message preview */}
-                            {message.quotedMessage && (
-                              <QuotedMessagePreview
-                                quotedMessage={message.quotedMessage}
-                                isOutbound={isOutbound}
-                                onClick={() => message.quotedMessageId && scrollToMessage(message.quotedMessageId)}
-                              />
-                            )}
                             {/* Audio message */}
                             {message.messageType === 'audio' && message.mediaUrl ? (
                               <AudioPlayer

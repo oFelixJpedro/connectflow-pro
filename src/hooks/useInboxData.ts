@@ -689,14 +689,39 @@ export function useInboxData() {
           schema: 'public',
           table: 'messages',
         },
-        (payload) => {
+        async (payload) => {
           console.log('[Realtime] Nova mensagem recebida:', payload);
           
-          const newMessage = transformMessage(payload.new);
+          let newMessage = transformMessage(payload.new);
           const currentConversation = selectedConversationRef.current;
           
           // Se a mensagem é da conversa atualmente selecionada, adicionar ao array
           if (currentConversation && newMessage.conversationId === currentConversation.id) {
+            // Se tem quoted_message_id, buscar os dados da mensagem citada
+            if (newMessage.quotedMessageId) {
+              console.log('[Realtime] Buscando mensagem citada:', newMessage.quotedMessageId);
+              const { data: quotedData } = await supabase
+                .from('messages')
+                .select('id, content, message_type, sender_type, media_url, created_at')
+                .eq('id', newMessage.quotedMessageId)
+                .maybeSingle();
+              
+              if (quotedData) {
+                newMessage = {
+                  ...newMessage,
+                  quotedMessage: {
+                    id: quotedData.id,
+                    content: quotedData.content || undefined,
+                    messageType: quotedData.message_type as Message['messageType'],
+                    senderType: quotedData.sender_type as Message['senderType'],
+                    mediaUrl: quotedData.media_url || undefined,
+                    createdAt: quotedData.created_at,
+                  },
+                };
+                console.log('[Realtime] Mensagem citada encontrada');
+              }
+            }
+            
             setMessages((prev) => {
               // Evitar duplicatas
               if (prev.some((m) => m.id === newMessage.id)) {
