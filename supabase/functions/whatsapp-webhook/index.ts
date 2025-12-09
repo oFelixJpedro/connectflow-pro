@@ -327,10 +327,22 @@ serve(async (req) => {
       detectedSubtype = 'document'
       console.log(`📄 [DOCUMENTO DETECTADO] (ainda não implementado)`)
     }
-    else if (messageType === 'StickerMessage') {
+    // Check for StickerMessage
+    let isStickerMessage = false
+    let stickerContentData: any = null
+    
+    const isStickerByMessageType = messageType === 'StickerMessage'
+    const isStickerByType = rawMessageType === 'sticker'
+    
+    if (isStickerByMessageType || isStickerByType) {
+      isStickerMessage = true
       isMediaMessage = true
       detectedSubtype = 'sticker'
-      console.log(`🎭 [STICKER DETECTADO] (ainda não implementado)`)
+      stickerContentData = payload.message?.content || {}
+      console.log(`🎨 [STICKER DETECTADO]`)
+      console.log(`   - via messageType: ${isStickerByMessageType}`)
+      console.log(`   - via type: ${isStickerByType}`)
+      console.log(`   - content:`, JSON.stringify(stickerContentData, null, 2))
     }
     // Old detection for backward compatibility: rawMessageType = 'media' with media object
     else if (rawMessageType === 'media') {
@@ -754,8 +766,8 @@ serve(async (req) => {
     let mediaMetadata: Record<string, any> = {}
     let unsupportedMediaText: string | null = null
     
-    // Handle unsupported media types (document, sticker, etc.)
-    if (isMediaMessage && !isAudioMessage && !isImageMessage && !isVideoMessage) {
+    // Handle unsupported media types (document, etc.)
+    if (isMediaMessage && !isAudioMessage && !isImageMessage && !isVideoMessage && !isStickerMessage) {
       console.log('\n┌─────────────────────────────────────────────────────────────────┐')
       console.log('│ 8️⃣  ETAPA 5: MÍDIA NÃO SUPORTADA                                │')
       console.log('└─────────────────────────────────────────────────────────────────┘')
@@ -764,6 +776,142 @@ serve(async (req) => {
       mediaMetadata = {
         unsupportedType: detectedSubtype,
         originalPayload: payload.message?.media
+      }
+    }
+    // Handle sticker messages
+    else if (isStickerMessage) {
+      console.log('\n┌─────────────────────────────────────────────────────────────────┐')
+      console.log('│ 8️⃣  ETAPA 5: PROCESSAR STICKER                                  │')
+      console.log('└─────────────────────────────────────────────────────────────────┘')
+      
+      const stickerSource = stickerContentData || payload.message?.content || {}
+      
+      console.log(`🔍 [STICKER SOURCE]:`, JSON.stringify(stickerSource, null, 2))
+      
+      // Extract sticker properties from UAZAPI payload
+      const mimeType = stickerSource.mimetype || 'image/webp'
+      const width = stickerSource.width || 512
+      const height = stickerSource.height || 512
+      const fileSize = stickerSource.fileLength || stickerSource.fileSize || 0
+      const isAnimated = stickerSource.isAnimated || false
+      const hasJPEGThumbnail = !!stickerSource.JPEGThumbnail
+      
+      // Validate file size (max 10MB for stickers)
+      const MAX_STICKER_SIZE = 10 * 1024 * 1024 // 10MB
+      if (fileSize > MAX_STICKER_SIZE) {
+        console.log(`❌ Sticker muito grande: ${fileSize} bytes (max: ${MAX_STICKER_SIZE})`)
+        mediaMetadata = {
+          error: 'File too large',
+          mimeType,
+          width,
+          height,
+          fileSize,
+          isAnimated,
+          hasJPEGThumbnail
+        }
+      } else {
+        console.log(`🎨 Sticker recebido:`)
+        console.log(`   - MimeType: ${mimeType}`)
+        console.log(`   - Dimensões: ${width}×${height}`)
+        console.log(`   - Tamanho: ${fileSize} bytes (${(fileSize / 1024).toFixed(2)} KB)`)
+        console.log(`   - Animado: ${isAnimated}`)
+        console.log(`   - Tem thumbnail: ${hasJPEGThumbnail}`)
+        console.log(`   - messageId para download: ${messageId}`)
+        
+        const uazapiBaseUrl = connection.uazapi_base_url || 'https://whatsapi.uazapi.com'
+        
+        if (!instanceToken) {
+          console.log(`⚠️ Token não disponível para download`)
+          mediaMetadata = {
+            error: 'No instance token available',
+            mimeType,
+            width,
+            height,
+            fileSize,
+            isAnimated,
+            hasJPEGThumbnail
+          }
+        } else {
+          console.log(`📥 Baixando sticker via UAZAPI /message/download...`)
+          console.log(`   - URL: ${uazapiBaseUrl}/message/download`)
+          console.log(`   - messageId: ${messageId}`)
+          
+          const downloadResult = await downloadMediaFromUazapi(messageId, uazapiBaseUrl, instanceToken)
+          
+          if (downloadResult) {
+            const { buffer, mimeType: downloadedMimeType, fileSize: downloadedSize } = downloadResult
+            
+            // Generate unique filename - stickers are always .webp
+            const now = new Date()
+            const year = now.getFullYear()
+            const month = String(now.getMonth() + 1).padStart(2, '0')
+            const randomId = Math.random().toString(36).substring(2, 8)
+            const fileName = `sticker_${Date.now()}_${randomId}.webp`
+            const storagePath = `${companyId}/${whatsappConnectionId}/${year}-${month}/${fileName}`
+            
+            console.log(`📤 Fazendo upload para Storage: ${storagePath}`)
+            
+            // Upload to Supabase Storage
+            const { data: uploadData, error: uploadError } = await supabase.storage
+              .from('whatsapp-media')
+              .upload(storagePath, buffer, {
+                contentType: 'image/webp',
+                cacheControl: '31536000', // 1 year cache
+                upsert: false
+              })
+            
+            if (uploadError) {
+              console.log(`❌ Erro no upload: ${uploadError.message}`)
+              mediaMetadata = {
+                error: 'Upload failed',
+                errorMessage: uploadError.message,
+                mimeType: 'image/webp',
+                width,
+                height,
+                fileSize: downloadedSize,
+                isAnimated,
+                hasJPEGThumbnail
+              }
+            } else {
+              console.log(`✅ Upload concluído: ${uploadData.path}`)
+              
+              // Get public URL
+              const { data: { publicUrl } } = supabase.storage
+                .from('whatsapp-media')
+                .getPublicUrl(storagePath)
+              
+              mediaUrl = publicUrl
+              mediaMimeType = 'image/webp'
+              
+              mediaMetadata = {
+                width,
+                height,
+                fileSize: downloadedSize,
+                fileName,
+                storagePath,
+                originalMessageId: messageId,
+                downloadedAt: new Date().toISOString(),
+                originalMimetype: mimeType,
+                isAnimated,
+                hasJPEGThumbnail,
+                stickerType: isAnimated ? 'animated' : 'regular'
+              }
+              
+              console.log(`🔗 URL pública: ${mediaUrl}`)
+            }
+          } else {
+            console.log(`⚠️ Falha no download do sticker via UAZAPI`)
+            mediaMetadata = {
+              error: 'Download failed',
+              mimeType,
+              width,
+              height,
+              fileSize,
+              isAnimated,
+              hasJPEGThumbnail
+            }
+          }
+        }
       }
     }
     // Handle video messages
@@ -1200,6 +1348,8 @@ serve(async (req) => {
       dbMessageType = 'image'
     } else if (isVideoMessage) {
       dbMessageType = 'video'
+    } else if (isStickerMessage) {
+      dbMessageType = 'sticker'
     } else if (unsupportedMediaText) {
       dbMessageType = 'text' // Save unsupported media as text with placeholder
     } else {
@@ -1208,7 +1358,7 @@ serve(async (req) => {
     
     const status = mediaMetadata.error ? 'failed' : 'delivered'
     
-    // Determine content - null for audio, caption for images/videos, text for everything else
+    // Determine content - null for audio/sticker, caption for images/videos, text for everything else
     // For images, extract caption from message.content.caption
     const imageCaption = isImageMessage ? (
       payload.message?.content?.caption || 
@@ -1221,7 +1371,8 @@ serve(async (req) => {
       videoContentData?.caption || 
       null
     ) : null
-    const messageContent = unsupportedMediaText || (isAudioMessage ? null : (isImageMessage ? imageCaption : (isVideoMessage ? videoCaption : messageText)))
+    // Stickers never have captions
+    const messageContent = unsupportedMediaText || (isAudioMessage || isStickerMessage ? null : (isImageMessage ? imageCaption : (isVideoMessage ? videoCaption : messageText)))
     
     console.log(`💾 Salvando mensagem...`)
     console.log(`   - direction: ${direction}`)
