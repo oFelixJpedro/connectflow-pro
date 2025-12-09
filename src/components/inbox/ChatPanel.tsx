@@ -24,6 +24,7 @@ import {
 import { AssignButton } from './AssignButton';
 import { ConversationActions } from './ConversationActions';
 import { MessageInputBlocker, useMessageBlocker } from './MessageInputBlocker';
+import { AudioPlayer } from './AudioPlayer';
 import { cn } from '@/lib/utils';
 import type { Conversation, Message } from '@/types';
 import { format } from 'date-fns';
@@ -332,43 +333,79 @@ export function ChatPanel({
                           <div
                             className={cn(
                               'max-w-[70%] group',
-                              isOutbound ? 'message-bubble-outgoing' : 'message-bubble-incoming',
+                              message.messageType !== 'audio' && (isOutbound ? 'message-bubble-outgoing' : 'message-bubble-incoming'),
                               isFailed && 'opacity-80'
                             )}
                           >
-                            {/* Message content */}
-                            <p className="text-sm whitespace-pre-wrap break-words">
-                              {message.content}
-                            </p>
-                            
-                            {/* Message footer */}
-                            <div className={cn(
-                              'flex items-center gap-1 mt-1',
-                              isOutbound ? 'justify-end' : 'justify-start'
-                            )}>
-                              <span className={cn(
-                                'text-xs',
-                                isOutbound ? 'text-primary-foreground/70' : 'text-muted-foreground'
+                            {/* Audio message */}
+                            {message.messageType === 'audio' && message.mediaUrl ? (
+                              <AudioPlayer
+                                src={message.mediaUrl}
+                                mimeType={message.mediaMimeType}
+                                duration={(message.metadata as any)?.duration}
+                                isOutbound={isOutbound}
+                                status={message.status}
+                                errorMessage={message.errorMessage}
+                              />
+                            ) : message.messageType === 'audio' ? (
+                              // Audio without URL (loading or failed)
+                              <div className={cn(
+                                "flex items-center gap-2 p-3 rounded-xl min-w-[200px]",
+                                isOutbound ? "bg-primary/20" : "bg-muted/80"
                               )}>
-                                {formatMessageTime(message.createdAt)}
-                              </span>
-                              {isOutbound && (
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <span className={cn(
-                                      'text-primary-foreground/70 cursor-default',
-                                      message.status === 'read' && 'text-primary-foreground',
-                                      message.status === 'failed' && 'text-destructive'
-                                    )}>
-                                      {statusIcons[message.status]}
+                                {isFailed ? (
+                                  <>
+                                    <AlertCircle className="w-5 h-5 text-destructive" />
+                                    <span className="text-xs text-destructive">
+                                      Falha ao carregar áudio
                                     </span>
-                                  </TooltipTrigger>
-                                  <TooltipContent side="left">
-                                    {statusTooltips[message.status] || message.status}
-                                  </TooltipContent>
-                                </Tooltip>
-                              )}
-                            </div>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+                                    <span className="text-xs text-muted-foreground">
+                                      Carregando áudio...
+                                    </span>
+                                  </>
+                                )}
+                              </div>
+                            ) : (
+                              /* Text message content */
+                              <p className="text-sm whitespace-pre-wrap break-words">
+                                {message.content}
+                              </p>
+                            )}
+                            
+                            {/* Message footer - only for non-audio or audio with URL */}
+                            {(message.messageType !== 'audio' || !message.mediaUrl) && (
+                              <div className={cn(
+                                'flex items-center gap-1 mt-1',
+                                isOutbound ? 'justify-end' : 'justify-start'
+                              )}>
+                                <span className={cn(
+                                  'text-xs',
+                                  isOutbound ? 'text-primary-foreground/70' : 'text-muted-foreground'
+                                )}>
+                                  {formatMessageTime(message.createdAt)}
+                                </span>
+                                {isOutbound && (
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <span className={cn(
+                                        'text-primary-foreground/70 cursor-default',
+                                        message.status === 'read' && 'text-primary-foreground',
+                                        message.status === 'failed' && 'text-destructive'
+                                      )}>
+                                        {statusIcons[message.status]}
+                                      </span>
+                                    </TooltipTrigger>
+                                    <TooltipContent side="left">
+                                      {statusTooltips[message.status] || message.status}
+                                    </TooltipContent>
+                                  </Tooltip>
+                                )}
+                              </div>
+                            )}
                             
                             {/* Resend button for failed messages */}
                             {isOutbound && isFailed && onResendMessage && (
