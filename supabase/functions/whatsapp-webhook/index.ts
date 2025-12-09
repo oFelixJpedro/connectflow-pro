@@ -9,15 +9,60 @@ const corsHeaders = {
 // Helper to extract phone number from WhatsApp JID
 function extractPhoneNumber(jid: string): string {
   if (!jid) return ''
-  // Remove @s.whatsapp.net, @c.us, etc.
   return jid.split('@')[0]
 }
 
 // Helper to convert Unix timestamp (milliseconds) to ISO string
 function convertTimestamp(timestamp: number): string {
   if (!timestamp) return new Date().toISOString()
-  // UAZAPI sends timestamp in milliseconds
   return new Date(timestamp).toISOString()
+}
+
+// Helper to get file extension from mime type
+function getExtensionFromMimeType(mimeType: string): string {
+  const mimeMap: Record<string, string> = {
+    'audio/ogg': 'ogg',
+    'audio/mpeg': 'mp3',
+    'audio/mp3': 'mp3',
+    'audio/opus': 'opus',
+    'audio/mp4': 'm4a',
+    'audio/aac': 'aac',
+    'audio/wav': 'wav',
+    'audio/webm': 'webm',
+  }
+  
+  // Handle mime types with codecs (e.g., "audio/ogg; codecs=opus")
+  const baseMime = mimeType.split(';')[0].trim().toLowerCase()
+  return mimeMap[baseMime] || 'ogg'
+}
+
+// Helper to download media from UAZAPI
+async function downloadMedia(url: string, apiKey: string): Promise<{ buffer: ArrayBuffer; contentType: string } | null> {
+  try {
+    console.log(`🔽 Downloading media from: ${url}`)
+    
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'token': apiKey,
+        'Accept': '*/*',
+      },
+    })
+    
+    if (!response.ok) {
+      console.log(`❌ Download failed with status: ${response.status}`)
+      return null
+    }
+    
+    const contentType = response.headers.get('content-type') || 'audio/ogg'
+    const buffer = await response.arrayBuffer()
+    
+    console.log(`✅ Downloaded ${buffer.byteLength} bytes, type: ${contentType}`)
+    return { buffer, contentType }
+  } catch (error) {
+    console.error(`❌ Error downloading media:`, error)
+    return null
+  }
 }
 
 serve(async (req) => {
@@ -108,19 +153,23 @@ serve(async (req) => {
     }
     console.log('✅ Não é mensagem de grupo')
     
-    // Check message type - only process text for now
+    // Check message type - process text and audio
     const messageType = payload.message?.type
-    if (messageType !== 'text') {
-      console.log(`ℹ️ Mensagem tipo "${messageType}" ignorada (processando apenas texto)`)
+    const supportedTypes = ['text', 'audio', 'ptt'] // ptt = push-to-talk (voice note)
+    
+    if (!supportedTypes.includes(messageType)) {
+      console.log(`ℹ️ Mensagem tipo "${messageType}" ignorada (processando apenas texto e áudio)`)
       return new Response(
         JSON.stringify({ 
           success: true, 
-          message: `Message type "${messageType}" ignored (processing text only)` 
+          message: `Message type "${messageType}" ignored (processing text and audio only)` 
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
-    console.log('✅ Tipo = text')
+    console.log(`✅ Tipo = ${messageType}`)
+    
+    const isAudioMessage = messageType === 'audio' || messageType === 'ptt'
     
     // Validate required fields
     const instanceName = payload.instanceName
@@ -152,7 +201,8 @@ serve(async (req) => {
       )
     }
     
-    if (!messageText && messageText !== '') {
+    // For text messages, validate text content
+    if (!isAudioMessage && !messageText && messageText !== '') {
       console.log('❌ Campo obrigatório faltando: message.text')
       return new Response(
         JSON.stringify({ success: false, error: 'Missing required field: message.text' }),
@@ -164,7 +214,9 @@ serve(async (req) => {
     console.log(`   - instanceName: ${instanceName}`)
     console.log(`   - messageid: ${messageId}`)
     console.log(`   - sender: ${sender}`)
-    console.log(`   - text: ${messageText.substring(0, 50)}${messageText.length > 50 ? '...' : ''}`)
+    if (!isAudioMessage) {
+      console.log(`   - text: ${messageText?.substring(0, 50)}${messageText?.length > 50 ? '...' : ''}`)
+    }
     
     // ═══════════════════════════════════════════════════════════════════
     // 3️⃣ INITIALIZE SUPABASE CLIENT
@@ -190,11 +242,10 @@ serve(async (req) => {
     
     const { data: connection, error: connectionError } = await supabase
       .from('whatsapp_connections')
-      .select('id, company_id')
+      .select('id, company_id, instance_token')
       .eq('session_id', instanceName)
       .maybeSingle()
     
-    // Buscar departamento padrão desta conexão
     let defaultDepartmentId: string | null = null
     
     if (connectionError) {
@@ -223,6 +274,7 @@ serve(async (req) => {
     
     const whatsappConnectionId = connection.id
     const companyId = connection.company_id
+    const instanceToken = connection.instance_token
     
     console.log(`✅ Conexão encontrada!`)
     console.log(`   - whatsapp_connection_id: ${whatsappConnectionId}`)
@@ -253,60 +305,27 @@ serve(async (req) => {
     console.log('│ 5️⃣  ETAPA 2: PROCESSAR CONTATO                                  │')
     console.log('└─────────────────────────────────────────────────────────────────┘')
     
-    // ========== DEBUG: LOGS DO OBJETO CHAT ==========
-    console.log('\n🔍 DEBUG - OBJETO CHAT COMPLETO:')
-    console.log(JSON.stringify(payload.chat, null, 2))
-
-    console.log('\n📋 CAMPOS INDIVIDUAIS DO CHAT:')
-    console.log('   - chat.wa_chatid:', payload.chat?.wa_chatid)
-    console.log('   - chat.phone:', payload.chat?.phone)  
-    console.log('   - chat.owner:', payload.chat?.owner)
-    console.log('   - chat.wa_fastid:', payload.chat?.wa_fastid)
-    console.log('   - chat.wa_name:', payload.chat?.wa_name)
-    console.log('   - chat.wa_contactName:', payload.chat?.wa_contactName)
-
-    console.log('\n📋 CAMPOS INDIVIDUAIS DA MESSAGE:')
-    console.log('   - message.sender:', payload.message?.sender)
-    console.log('   - message.chatid:', payload.message?.chatid)
-    console.log('   - message.senderName:', payload.message?.senderName)
-    console.log('========================================\n')
-
-    // ======================================================================
-    // EXTRAÇÃO DO NÚMERO DO CONTATO DA CONVERSA
-    // ======================================================================
-    // IMPORTANTE: Extrair o número do CONTATO (pessoa do outro lado), 
-    // NÃO o número do remetente da mensagem específica
-    // ======================================================================
-
+    // Phone number extraction
     let phoneNumber: string
     let source: string
 
-    // Prioridade 1: chat.wa_chatid (SEMPRE contém o número do contato)
     if (payload.chat?.wa_chatid) {
       phoneNumber = payload.chat.wa_chatid.split('@')[0]
       source = 'chat.wa_chatid'
-    }
-    // Prioridade 2: message.chatid (backup confiável)
-    else if (payload.message?.chatid) {
+    } else if (payload.message?.chatid) {
       phoneNumber = payload.message.chatid.split('@')[0]
       source = 'message.chatid'
-    }
-    // Prioridade 3: chat.phone (remover formatação: +, espaços, hífens)
-    else if (payload.chat?.phone) {
+    } else if (payload.chat?.phone) {
       phoneNumber = payload.chat.phone.replace(/[^\d]/g, '')
       source = 'chat.phone (formatado)'
-    }
-    // Fallback: message.sender (pode estar errado para mensagens recebidas)
-    else {
+    } else {
       phoneNumber = extractPhoneNumber(sender)
-      source = 'message.sender (FALLBACK - pode estar incorreto)'
+      source = 'message.sender (FALLBACK)'
     }
 
     console.log(`📞 Phone number extraído: ${phoneNumber}`)
     console.log(`   - Fonte: ${source}`)
-    console.log(`   - Fonte: ${payload.chat?.owner ? 'chat.owner' : 'message.sender'}`)
     
-    // Extract contact name
     const contactName = payload.chat?.wa_name || payload.message?.senderName || phoneNumber
     console.log(`👤 Nome do contato: ${contactName}`)
     
@@ -333,7 +352,6 @@ serve(async (req) => {
     
     if (contactError) {
       console.log(`❌ Erro ao processar contato: ${contactError.message}`)
-      console.log('📋 Payload completo:', JSON.stringify(payload, null, 2))
       return new Response(
         JSON.stringify({ 
           success: false, 
@@ -347,8 +365,6 @@ serve(async (req) => {
     const contactId = contact.id
     console.log(`✅ Contato processado!`)
     console.log(`   - contact_id: ${contactId}`)
-    console.log(`   - phone: ${phoneNumber}`)
-    console.log(`   - name: ${contactName}`)
     
     // ═══════════════════════════════════════════════════════════════════
     // 6️⃣ ETAPA 3: CRIAR/ATUALIZAR CONVERSA
@@ -362,7 +378,6 @@ serve(async (req) => {
     
     console.log(`🔍 Buscando conversa ativa para contact_id: ${contactId}`)
     
-    // Find existing open conversation
     const { data: existingConversation, error: convSearchError } = await supabase
       .from('conversations')
       .select('id, unread_count')
@@ -388,7 +403,6 @@ serve(async (req) => {
     let conversationId: string
     
     if (existingConversation) {
-      // Update existing conversation
       console.log(`📝 Conversa existente encontrada: ${existingConversation.id}`)
       
       const newUnreadCount = isFromMe ? existingConversation.unread_count : (existingConversation.unread_count || 0) + 1
@@ -416,10 +430,7 @@ serve(async (req) => {
       
       conversationId = existingConversation.id
       console.log(`✅ Conversa atualizada!`)
-      console.log(`   - conversation_id: ${conversationId}`)
-      console.log(`   - unread_count: ${newUnreadCount}`)
     } else {
-      // Create new conversation
       console.log('📝 Nenhuma conversa ativa encontrada, criando nova...')
       
       const { data: newConversation, error: createConvError } = await supabase
@@ -428,7 +439,7 @@ serve(async (req) => {
           company_id: companyId,
           contact_id: contactId,
           whatsapp_connection_id: whatsappConnectionId,
-          department_id: defaultDepartmentId, // Adicionar departamento padrão
+          department_id: defaultDepartmentId,
           status: 'open',
           unread_count: isFromMe ? 0 : 1,
           last_message_at: messageTimestamp,
@@ -450,8 +461,7 @@ serve(async (req) => {
       }
       
       conversationId = newConversation.id
-      console.log(`✅ Nova conversa criada!`)
-      console.log(`   - conversation_id: ${conversationId}`)
+      console.log(`✅ Nova conversa criada: ${conversationId}`)
     }
     
     // ═══════════════════════════════════════════════════════════════════
@@ -487,10 +497,7 @@ serve(async (req) => {
         JSON.stringify({ 
           success: true, 
           message: 'Duplicate message ignored',
-          data: {
-            message_id: existingMessage.id,
-            duplicate: true
-          }
+          data: { message_id: existingMessage.id, duplicate: true }
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
@@ -499,20 +506,139 @@ serve(async (req) => {
     console.log('✅ Mensagem não é duplicata')
     
     // ═══════════════════════════════════════════════════════════════════
-    // 8️⃣ ETAPA 5: SALVAR MENSAGEM
+    // 8️⃣ ETAPA 5: PROCESSAR MÍDIA (SE ÁUDIO)
+    // ═══════════════════════════════════════════════════════════════════
+    let mediaUrl: string | null = null
+    let mediaMimeType: string | null = null
+    let mediaMetadata: Record<string, any> = {}
+    
+    if (isAudioMessage) {
+      console.log('\n┌─────────────────────────────────────────────────────────────────┐')
+      console.log('│ 8️⃣  ETAPA 5: PROCESSAR ÁUDIO                                    │')
+      console.log('└─────────────────────────────────────────────────────────────────┘')
+      
+      // Extract audio info from payload
+      const audioData = payload.message?.audio || payload.message?.ptt || {}
+      const originalUrl = audioData.url || payload.message?.mediaUrl || payload.message?.media?.url
+      const mimeType = audioData.mimetype || audioData.mimeType || 'audio/ogg'
+      const duration = audioData.seconds || audioData.duration || 0
+      const fileSize = audioData.fileLength || audioData.fileSize || 0
+      
+      console.log(`🎵 Áudio recebido:`)
+      console.log(`   - URL original: ${originalUrl}`)
+      console.log(`   - MimeType: ${mimeType}`)
+      console.log(`   - Duração: ${duration}s`)
+      console.log(`   - Tamanho: ${fileSize} bytes`)
+      
+      if (originalUrl) {
+        // Get UAZAPI API key for downloading
+        const uazapiKey = instanceToken || Deno.env.get('UAZAPI_API_KEY')
+        
+        if (uazapiKey) {
+          const downloadResult = await downloadMedia(originalUrl, uazapiKey)
+          
+          if (downloadResult) {
+            const { buffer, contentType } = downloadResult
+            const actualMimeType = contentType.startsWith('audio/') ? contentType : mimeType
+            const extension = getExtensionFromMimeType(actualMimeType)
+            
+            // Generate unique filename
+            const now = new Date()
+            const year = now.getFullYear()
+            const month = String(now.getMonth() + 1).padStart(2, '0')
+            const randomId = Math.random().toString(36).substring(2, 8)
+            const fileName = `audio_${Date.now()}_${randomId}.${extension}`
+            const storagePath = `${companyId}/${whatsappConnectionId}/${year}-${month}/${fileName}`
+            
+            console.log(`📤 Fazendo upload para Storage: ${storagePath}`)
+            
+            // Upload to Supabase Storage
+            const { data: uploadData, error: uploadError } = await supabase.storage
+              .from('whatsapp-media')
+              .upload(storagePath, buffer, {
+                contentType: actualMimeType,
+                cacheControl: '3600',
+                upsert: false
+              })
+            
+            if (uploadError) {
+              console.log(`❌ Erro no upload: ${uploadError.message}`)
+              // Continue without media URL - save message as failed
+              mediaMetadata = {
+                error: 'Upload failed',
+                errorMessage: uploadError.message,
+                originalUrl,
+                mimeType: actualMimeType,
+                duration,
+                fileSize
+              }
+            } else {
+              console.log(`✅ Upload concluído: ${uploadData.path}`)
+              
+              // Get public URL
+              const { data: { publicUrl } } = supabase.storage
+                .from('whatsapp-media')
+                .getPublicUrl(storagePath)
+              
+              mediaUrl = publicUrl
+              mediaMimeType = actualMimeType
+              mediaMetadata = {
+                duration,
+                fileSize: buffer.byteLength,
+                originalUrl,
+                fileName,
+                storagePath,
+                processedAt: new Date().toISOString()
+              }
+              
+              console.log(`🔗 URL pública: ${mediaUrl}`)
+            }
+          } else {
+            console.log(`⚠️ Falha no download do áudio`)
+            mediaMetadata = {
+              error: 'Download failed',
+              originalUrl,
+              mimeType,
+              duration,
+              fileSize
+            }
+          }
+        } else {
+          console.log(`⚠️ Token não disponível para download`)
+          mediaMetadata = {
+            error: 'No token available',
+            originalUrl,
+            mimeType,
+            duration,
+            fileSize
+          }
+        }
+      } else {
+        console.log(`⚠️ URL do áudio não encontrada no payload`)
+        mediaMetadata = { error: 'No URL in payload' }
+      }
+    }
+    
+    // ═══════════════════════════════════════════════════════════════════
+    // 9️⃣ ETAPA 6: SALVAR MENSAGEM
     // ═══════════════════════════════════════════════════════════════════
     console.log('\n┌─────────────────────────────────────────────────────────────────┐')
-    console.log('│ 8️⃣  ETAPA 5: SALVAR MENSAGEM                                    │')
+    console.log('│ 9️⃣  ETAPA 6: SALVAR MENSAGEM                                    │')
     console.log('└─────────────────────────────────────────────────────────────────┘')
     
-    // Define direction and sender_type based on fromMe
     const direction = isFromMe ? 'outbound' : 'inbound'
     const senderType = isFromMe ? 'user' : 'contact'
+    const dbMessageType = isAudioMessage ? 'audio' : 'text'
+    const status = mediaMetadata.error ? 'failed' : 'delivered'
     
     console.log(`💾 Salvando mensagem...`)
     console.log(`   - direction: ${direction}`)
     console.log(`   - sender_type: ${senderType}`)
-    console.log(`   - content: ${messageText.substring(0, 50)}${messageText.length > 50 ? '...' : ''}`)
+    console.log(`   - message_type: ${dbMessageType}`)
+    console.log(`   - status: ${status}`)
+    if (mediaUrl) {
+      console.log(`   - media_url: ${mediaUrl}`)
+    }
     
     const { data: savedMessage, error: saveMessageError } = await supabase
       .from('messages')
@@ -520,11 +646,15 @@ serve(async (req) => {
         conversation_id: conversationId,
         direction: direction,
         sender_type: senderType,
-        sender_id: null, // Always NULL in this phase
-        content: messageText,
-        message_type: 'text',
+        sender_id: null,
+        content: isAudioMessage ? null : messageText,
+        message_type: dbMessageType,
+        media_url: mediaUrl,
+        media_mime_type: mediaMimeType,
         whatsapp_message_id: messageId,
-        status: 'delivered',
+        status: status,
+        error_message: mediaMetadata.error || null,
+        metadata: mediaMetadata,
         created_at: messageTimestamp
       })
       .select('id')
@@ -532,7 +662,6 @@ serve(async (req) => {
     
     if (saveMessageError) {
       console.log(`❌ Erro ao salvar mensagem: ${saveMessageError.message}`)
-      console.log('📋 Payload completo:', JSON.stringify(payload, null, 2))
       return new Response(
         JSON.stringify({ 
           success: false, 
@@ -547,7 +676,7 @@ serve(async (req) => {
     console.log(`   - message_id: ${savedMessage.id}`)
     
     // ═══════════════════════════════════════════════════════════════════
-    // 9️⃣ SUCESSO FINAL
+    // 🎉 SUCESSO FINAL
     // ═══════════════════════════════════════════════════════════════════
     console.log('\n╔══════════════════════════════════════════════════════════════════╗')
     console.log('║              🎉 WEBHOOK PROCESSADO COM SUCESSO!                  ║')
@@ -556,6 +685,7 @@ serve(async (req) => {
     console.log(`   👤 Contact: ${contactName} (${phoneNumber})`)
     console.log(`   💬 Conversation: ${conversationId}`)
     console.log(`   📨 Message: ${savedMessage.id}`)
+    console.log(`   📝 Type: ${dbMessageType}`)
     console.log(`   ⏰ Processed at: ${new Date().toISOString()}`)
     
     return new Response(
@@ -565,7 +695,9 @@ serve(async (req) => {
         data: {
           contact_id: contactId,
           conversation_id: conversationId,
-          message_id: savedMessage.id
+          message_id: savedMessage.id,
+          message_type: dbMessageType,
+          media_url: mediaUrl
         }
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
