@@ -59,9 +59,9 @@ async function downloadMediaFromUazapi(
       
       const headers = {
         'Content-Type': 'application/json',
-        'instance': instanceToken,
+        'token': instanceToken,
       }
-      console.log(`📤 Headers: Content-Type=application/json, instance=${instanceToken.substring(0, 10)}...`)
+      console.log(`📤 Headers: Content-Type=application/json, token=${instanceToken.substring(0, 10)}...`)
       
       const response = await fetch(downloadUrl, {
         method: 'POST',
