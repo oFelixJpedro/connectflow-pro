@@ -128,8 +128,19 @@ export interface Message {
   errorMessage?: string;
   metadata: Record<string, unknown>;
   isInternalNote: boolean;
+  quotedMessageId?: string;
+  quotedMessage?: QuotedMessage;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface QuotedMessage {
+  id: string;
+  content?: string;
+  messageType: MessageType;
+  senderType: SenderType;
+  mediaUrl?: string;
+  createdAt: string;
 }
 
 // Tag types

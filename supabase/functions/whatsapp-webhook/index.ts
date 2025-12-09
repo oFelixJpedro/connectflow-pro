@@ -496,6 +496,16 @@ serve(async (req) => {
       console.log(`   - audioContentData disponível: sim`)
     }
     
+    // Extract quoted message ID if present
+    const quotedWhatsAppId = 
+      payload.message?.quoted || 
+      payload.message?.content?.contextInfo?.stanzaID ||
+      null
+    
+    if (quotedWhatsAppId) {
+      console.log(`📝 Mensagem citando outra: ${quotedWhatsAppId}`)
+    }
+    
     // ═══════════════════════════════════════════════════════════════════
     // 3️⃣ INITIALIZE SUPABASE CLIENT
     // ═══════════════════════════════════════════════════════════════════
@@ -1582,6 +1592,25 @@ serve(async (req) => {
       console.log(`   - media_url: ${mediaUrl}`)
     }
     
+    // Lookup quoted message ID if present
+    let quotedMessageDbId: string | null = null
+    if (quotedWhatsAppId) {
+      console.log(`🔍 Buscando mensagem citada com whatsapp_message_id: ${quotedWhatsAppId}`)
+      const { data: quotedMsg } = await supabase
+        .from('messages')
+        .select('id')
+        .eq('whatsapp_message_id', quotedWhatsAppId)
+        .eq('conversation_id', conversationId)
+        .maybeSingle()
+      
+      if (quotedMsg) {
+        quotedMessageDbId = quotedMsg.id
+        console.log(`✅ Mensagem citada encontrada: ${quotedMessageDbId}`)
+      } else {
+        console.log(`⚠️ Mensagem citada não encontrada no banco`)
+      }
+    }
+    
     const { data: savedMessage, error: saveMessageError } = await supabase
       .from('messages')
       .insert({
@@ -1597,6 +1626,7 @@ serve(async (req) => {
         status: status,
         error_message: mediaMetadata.error || null,
         metadata: mediaMetadata,
+        quoted_message_id: quotedMessageDbId,
         created_at: messageTimestamp
       })
       .select('id')
