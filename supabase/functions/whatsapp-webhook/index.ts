@@ -46,17 +46,26 @@ async function downloadMediaFromUazapi(
   
   console.log(`🔽 Downloading media via POST ${downloadUrl}`)
   console.log(`   - messageId: ${messageId}`)
+  console.log(`🔑 Token para download: ${instanceToken ? `${instanceToken.substring(0, 10)}... (${instanceToken.length} chars)` : 'VAZIO'}`)
+  
+  if (!instanceToken) {
+    console.log(`❌ Erro: Token vazio! Não é possível fazer download.`)
+    return null
+  }
   
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
       console.log(`🔄 Tentativa ${attempt}/2...`)
       
+      const headers = {
+        'Content-Type': 'application/json',
+        'instance': instanceToken,
+      }
+      console.log(`📤 Headers: Content-Type=application/json, instance=${instanceToken.substring(0, 10)}...`)
+      
       const response = await fetch(downloadUrl, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'instance': instanceToken,
-        },
+        headers,
         body: JSON.stringify({
           id: messageId,
           return_base64: true,
@@ -432,11 +441,33 @@ serve(async (req) => {
     
     const whatsappConnectionId = connection.id
     const companyId = connection.company_id
-    const instanceToken = connection.instance_token
+    
+    // Get instance token - use database value or fallback to payload token
+    const dbInstanceToken = connection.instance_token
+    const payloadToken = payload.token
+    const instanceToken = dbInstanceToken || payloadToken
     
     console.log(`✅ Conexão encontrada!`)
     console.log(`   - whatsapp_connection_id: ${whatsappConnectionId}`)
     console.log(`   - company_id: ${companyId}`)
+    console.log(`🔑 Token do banco (instance_token): ${dbInstanceToken ? `${dbInstanceToken.substring(0, 10)}... (${dbInstanceToken.length} chars)` : 'VAZIO/NULL'}`)
+    console.log(`🔑 Token do payload: ${payloadToken ? `${payloadToken.substring(0, 10)}... (${payloadToken.length} chars)` : 'VAZIO/NULL'}`)
+    console.log(`🔑 Token a ser usado: ${instanceToken ? `${instanceToken.substring(0, 10)}... (${instanceToken.length} chars)` : 'NENHUM'}`)
+    
+    // If DB token is empty but payload has token, update the connection record
+    if (!dbInstanceToken && payloadToken) {
+      console.log(`📝 Atualizando instance_token na conexão...`)
+      const { error: updateError } = await supabase
+        .from('whatsapp_connections')
+        .update({ instance_token: payloadToken })
+        .eq('id', whatsappConnectionId)
+      
+      if (updateError) {
+        console.log(`⚠️ Falha ao atualizar instance_token: ${updateError.message}`)
+      } else {
+        console.log(`✅ instance_token atualizado com sucesso!`)
+      }
+    }
     
     // Buscar departamento padrão da conexão
     const { data: defaultDepartment, error: deptError } = await supabase
