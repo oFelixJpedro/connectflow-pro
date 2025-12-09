@@ -1,4 +1,4 @@
-// Updated: 2025-12-05 - Fixed status, logout, added delete action, save instance_token
+// Updated: 2025-12-09 - Dynamic URL from secrets
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const corsHeaders = {
@@ -6,7 +6,8 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-const UAZAPI_BASE_URL = 'https://whatsapi.uazapi.com'
+// Get base URL from secrets (with fallback for backwards compatibility)
+const UAZAPI_BASE_URL = Deno.env.get('UAZAPI_BASE_URL')?.trim() || 'https://whatsapi.uazapi.com'
 
 Deno.serve(async (req) => {
   // Handle CORS preflight requests
