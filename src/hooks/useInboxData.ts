@@ -743,11 +743,21 @@ export function useInboxData() {
             }
             
             setMessages((prev) => {
-              // Evitar duplicatas
-              if (prev.some((m) => m.id === newMessage.id)) {
+              const existingIndex = prev.findIndex((m) => m.id === newMessage.id);
+              
+              if (existingIndex !== -1) {
+                // Mensagem já existe - atualizar com quotedMessage se não tinha
+                const existing = prev[existingIndex];
+                if (!existing.quotedMessage && newMessage.quotedMessage) {
+                  console.log('[Realtime] Atualizando mensagem existente com quotedMessage');
+                  const updated = [...prev];
+                  updated[existingIndex] = { ...existing, quotedMessage: newMessage.quotedMessage };
+                  return updated;
+                }
                 console.log('[Realtime] Mensagem já existe, ignorando');
                 return prev;
               }
+              
               console.log('[Realtime] Adicionando mensagem ao chat');
               return [...prev, newMessage];
             });
