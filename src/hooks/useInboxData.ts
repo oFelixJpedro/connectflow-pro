@@ -83,6 +83,15 @@ function transformMessage(db: any): Message {
     errorMessage: db.error_message || undefined,
     metadata: (db.metadata as Record<string, unknown>) || {},
     isInternalNote: db.is_internal_note || false,
+    quotedMessageId: db.quoted_message_id || undefined,
+    quotedMessage: db.quoted_message ? {
+      id: db.quoted_message.id,
+      content: db.quoted_message.content || undefined,
+      messageType: db.quoted_message.message_type as Message['messageType'],
+      senderType: db.quoted_message.sender_type as Message['senderType'],
+      mediaUrl: db.quoted_message.media_url || undefined,
+      createdAt: db.quoted_message.created_at,
+    } : undefined,
     createdAt: db.created_at,
     updatedAt: db.updated_at,
   };
@@ -299,7 +308,17 @@ export function useInboxData() {
     try {
       const { data, error } = await supabase
         .from('messages')
-        .select('*')
+        .select(`
+          *,
+          quoted_message:quoted_message_id (
+            id,
+            content,
+            message_type,
+            sender_type,
+            media_url,
+            created_at
+          )
+        `)
         .eq('conversation_id', conversationId)
         .order('created_at', { ascending: true });
 
@@ -364,7 +383,7 @@ export function useInboxData() {
   // ============================================================
   // 4. ENVIAR MENSAGEM (SALVAR NO BANCO + ENVIAR VIA WHATSAPP)
   // ============================================================
-  const sendMessage = useCallback(async (content: string): Promise<boolean> => {
+  const sendMessage = useCallback(async (content: string, quotedMessageId?: string): Promise<boolean> => {
     if (!selectedConversation || !user?.id) {
       console.error('[useInboxData] Sem conversa selecionada ou usuário');
       return false;
@@ -374,6 +393,9 @@ export function useInboxData() {
     if (!trimmedContent) return false;
 
     console.log('[useInboxData] Enviando mensagem para conversa:', selectedConversation.id);
+    if (quotedMessageId) {
+      console.log('[useInboxData] Citando mensagem:', quotedMessageId);
+    }
     setIsSendingMessage(true);
 
     try {
@@ -389,9 +411,10 @@ export function useInboxData() {
           sender_type: 'user' as const,
           sender_id: user.id,
           message_type: 'text' as const,
-          status: 'pending' as const, // Status inicial enquanto envia
+          status: 'pending' as const,
           metadata: {},
           is_internal_note: false,
+          quoted_message_id: quotedMessageId || null,
         })
         .select()
         .single();

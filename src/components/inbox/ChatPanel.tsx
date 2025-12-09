@@ -10,7 +10,8 @@ import {
   Phone,
   Loader2,
   RotateCcw,
-  ArrowDown
+  ArrowDown,
+  Reply
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -29,8 +30,9 @@ import { ImageMessage } from './ImageMessage';
 import { VideoMessage } from './VideoMessage';
 import StickerMessage from './StickerMessage';
 import { DocumentMessage } from './DocumentMessage';
+import { QuotedMessagePreview, ReplyInputPreview } from './QuotedMessagePreview';
 import { cn } from '@/lib/utils';
-import type { Conversation, Message } from '@/types';
+import type { Conversation, Message, QuotedMessage } from '@/types';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { useAuth } from '@/contexts/AuthContext';
@@ -38,7 +40,7 @@ import { useAuth } from '@/contexts/AuthContext';
 interface ChatPanelProps {
   conversation: Conversation | null;
   messages: Message[];
-  onSendMessage: (content: string) => void;
+  onSendMessage: (content: string, quotedMessageId?: string) => void;
   onResendMessage?: (messageId: string) => void;
   onAssign: () => void;
   onClose: () => void;
@@ -81,8 +83,10 @@ export function ChatPanel({
   const { user, userRole } = useAuth();
   const [inputValue, setInputValue] = useState('');
   const [showScrollButton, setShowScrollButton] = useState(false);
+  const [replyingTo, setReplyingTo] = useState<Message | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messageRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const currentUserId = user?.id || '';
@@ -141,9 +145,27 @@ export function ChatPanel({
 
   const handleSend = () => {
     if (!inputValue.trim() || isSendingMessage || !canReply) return;
-    onSendMessage(inputValue.trim());
+    onSendMessage(inputValue.trim(), replyingTo?.id);
     setInputValue('');
+    setReplyingTo(null);
     textareaRef.current?.focus();
+  };
+
+  const handleReply = (message: Message) => {
+    setReplyingTo(message);
+    textareaRef.current?.focus();
+  };
+
+  const scrollToMessage = (messageId: string) => {
+    const element = messageRefs.current[messageId];
+    if (element) {
+      element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      // Add highlight animation
+      element.classList.add('animate-pulse');
+      setTimeout(() => {
+        element.classList.remove('animate-pulse');
+      }, 1500);
+    }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -329,11 +351,34 @@ export function ChatPanel({
                       return (
                         <div
                           key={message.id}
+                          ref={(el) => { messageRefs.current[message.id] = el; }}
                           className={cn(
-                            'flex',
+                            'flex group/message relative',
                             isOutbound ? 'justify-end' : 'justify-start'
                           )}
                         >
+                          {/* Reply button - visible on hover */}
+                          {canReply && (
+                            <div className={cn(
+                              "absolute top-1/2 -translate-y-1/2 opacity-0 group-hover/message:opacity-100 transition-opacity",
+                              isOutbound ? "left-0 -translate-x-full pr-2" : "right-0 translate-x-full pl-2"
+                            )}>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-7 w-7 rounded-full bg-muted/80 hover:bg-muted"
+                                    onClick={() => handleReply(message)}
+                                  >
+                                    <Reply className="w-3.5 h-3.5" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>Responder</TooltipContent>
+                              </Tooltip>
+                            </div>
+                          )}
+                          
                           <div
                             className={cn(
                               'max-w-[70%] group',
@@ -341,6 +386,14 @@ export function ChatPanel({
                               isFailed && 'opacity-80'
                             )}
                           >
+                            {/* Quoted message preview */}
+                            {message.quotedMessage && (
+                              <QuotedMessagePreview
+                                quotedMessage={message.quotedMessage}
+                                isOutbound={isOutbound}
+                                onClick={() => message.quotedMessageId && scrollToMessage(message.quotedMessageId)}
+                              />
+                            )}
                             {/* Audio message */}
                             {message.messageType === 'audio' && message.mediaUrl ? (
                               <AudioPlayer
@@ -584,6 +637,21 @@ export function ChatPanel({
 
       {/* Input Area */}
       <div className="p-4 border-t border-border bg-card">
+        {/* Reply preview */}
+        {replyingTo && (
+          <ReplyInputPreview
+            quotedMessage={{
+              id: replyingTo.id,
+              content: replyingTo.content,
+              messageType: replyingTo.messageType,
+              senderType: replyingTo.senderType,
+              mediaUrl: replyingTo.mediaUrl,
+              createdAt: replyingTo.createdAt,
+            }}
+            onCancel={() => setReplyingTo(null)}
+          />
+        )}
+        
         {/* Blocker message */}
         <MessageInputBlocker
           conversation={conversation}
