@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { Play, Pause, Mic, Download, AlertCircle, Loader2 } from 'lucide-react';
+import { Play, Pause, Mic, Download, AlertCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface AudioPlayerProps {
@@ -23,6 +23,10 @@ function formatTime(seconds: number): string {
   return `${mins}:${secs.toString().padStart(2, '0')}`;
 }
 
+function formatSpeed(speed: number): string {
+  return speed.toFixed(1).replace('.', ',') + '×';
+}
+
 export function AudioPlayer({
   src,
   mimeType,
@@ -40,6 +44,7 @@ export function AudioPlayer({
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+  const [playbackSpeed, setPlaybackSpeed] = useState(1.0);
 
   const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
 
@@ -56,6 +61,21 @@ export function AudioPlayer({
       });
     }
   }, [isPlaying]);
+
+  const cycleSpeed = useCallback(() => {
+    setPlaybackSpeed(prev => {
+      if (prev === 1.0) return 1.5;
+      if (prev === 1.5) return 2.0;
+      return 1.0;
+    });
+  }, []);
+
+  // Sync playback speed with audio element
+  useEffect(() => {
+    if (audioRef.current) {
+      audioRef.current.playbackRate = playbackSpeed;
+    }
+  }, [playbackSpeed]);
 
   const handleProgressClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     const audio = audioRef.current;
@@ -90,6 +110,14 @@ export function AudioPlayer({
         break;
     }
   }, [togglePlayback, duration]);
+
+  const handleSpeedKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      e.stopPropagation();
+      cycleSpeed();
+    }
+  }, [cycleSpeed]);
 
   const handleDownload = useCallback(() => {
     const link = document.createElement('a');
@@ -197,7 +225,7 @@ export function AudioPlayer({
         <audio ref={audioRef} src={src} preload="metadata" />
         
         {/* Mic icon skeleton */}
-        <div className="flex-shrink-0 w-8 h-8 rounded-full bg-blue-500/15 flex items-center justify-center">
+        <div className="flex-shrink-0 w-8 h-8 rounded-full bg-blue-500/20 flex items-center justify-center">
           <Mic className="w-4 h-4 text-blue-500" />
         </div>
         
@@ -231,12 +259,40 @@ export function AudioPlayer({
       {/* Hidden audio element */}
       <audio ref={audioRef} src={src} preload="metadata" />
 
-      {/* Mic icon with pulse when playing */}
-      <div className={cn(
-        "flex-shrink-0 w-8 h-8 rounded-full bg-blue-500/15 flex items-center justify-center transition-transform",
-        isPlaying && "animate-pulse"
-      )}>
-        <Mic className="w-4 h-4 text-blue-500" />
+      {/* Dynamic: Mic icon (paused) OR Speed control (playing) */}
+      <div className="flex-shrink-0 w-[42px] h-8 flex items-center justify-center">
+        {isPlaying ? (
+          // Speed control button
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              cycleSpeed();
+            }}
+            onKeyDown={handleSpeedKeyDown}
+            className={cn(
+              "w-[42px] h-8 rounded-lg bg-blue-500/15 flex items-center justify-center",
+              "cursor-pointer select-none",
+              "hover:bg-blue-500/25 hover:scale-105",
+              "active:scale-95",
+              "transition-all duration-150",
+              "focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+            )}
+            aria-label={`Velocidade de reprodução: ${formatSpeed(playbackSpeed)}`}
+            title="Alterar velocidade"
+          >
+            <span className="text-xs font-semibold text-blue-500 tabular-nums">
+              {formatSpeed(playbackSpeed)}
+            </span>
+          </button>
+        ) : (
+          // Mic icon
+          <div className={cn(
+            "w-8 h-8 rounded-full bg-blue-500/20 flex items-center justify-center",
+            "transition-all duration-150"
+          )}>
+            <Mic className="w-4 h-4 text-blue-500" />
+          </div>
+        )}
       </div>
 
       {/* Play/Pause button */}
@@ -294,7 +350,6 @@ export function AudioPlayer({
           {isPlaying ? formatTime(currentTime) : formatTime(duration)}
         </span>
       </div>
-
     </div>
   );
 }
