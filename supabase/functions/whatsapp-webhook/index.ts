@@ -608,7 +608,7 @@ serve(async (req) => {
     
     const { data: connection, error: connectionError } = await supabase
       .from('whatsapp_connections')
-      .select('id, company_id, instance_token, uazapi_base_url')
+      .select('id, company_id, instance_token')
       .eq('session_id', instanceName)
       .maybeSingle()
     
@@ -942,7 +942,7 @@ serve(async (req) => {
         console.log(`   - Tem thumbnail: ${hasJPEGThumbnail}`)
         console.log(`   - messageId para download: ${messageId}`)
         
-        const uazapiBaseUrl = connection.uazapi_base_url || UAZAPI_BASE_URL
+        const uazapiBaseUrl = UAZAPI_BASE_URL
         
         if (!instanceToken) {
           console.log(`⚠️ Token não disponível para download`)
@@ -1122,7 +1122,7 @@ serve(async (req) => {
         console.log(`   - Tem thumbnail: ${hasJPEGThumbnail}`)
         console.log(`   - messageId para download: ${messageId}`)
         
-        const uazapiBaseUrl = connection.uazapi_base_url || UAZAPI_BASE_URL
+        const uazapiBaseUrl = UAZAPI_BASE_URL
         
         if (!instanceToken) {
           console.log(`⚠️ Token não disponível para download`)
@@ -1260,7 +1260,7 @@ serve(async (req) => {
         console.log(`   - Tem thumbnail: ${hasJPEGThumbnail}`)
         console.log(`   - messageId para download: ${messageId}`)
         
-        const uazapiBaseUrl = connection.uazapi_base_url || UAZAPI_BASE_URL
+        const uazapiBaseUrl = UAZAPI_BASE_URL
         
         if (!instanceToken) {
           console.log(`⚠️ Token não disponível para download`)
@@ -1401,7 +1401,7 @@ serve(async (req) => {
         console.log(`   - Tem thumbnail: ${hasJPEGThumbnail}`)
         console.log(`   - messageId para download: ${messageId}`)
         
-        const uazapiBaseUrl = connection.uazapi_base_url || UAZAPI_BASE_URL
+        const uazapiBaseUrl = UAZAPI_BASE_URL
         
         if (!instanceToken) {
           console.log(`⚠️ Token não disponível para download`)
@@ -1547,7 +1547,7 @@ serve(async (req) => {
       console.log(`   - messageId para download: ${messageId}`)
       
       // Download via UAZAPI POST /message/download endpoint
-      const uazapiBaseUrl = connection.uazapi_base_url || UAZAPI_BASE_URL
+      const uazapiBaseUrl = UAZAPI_BASE_URL
       
       if (!instanceToken) {
         console.log(`⚠️ Token não disponível para download`)
