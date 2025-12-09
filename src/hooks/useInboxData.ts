@@ -431,11 +431,31 @@ export function useInboxData() {
 
       console.log('[useInboxData] Mensagem salva:', newMessage.id);
 
-      // 2. Adicionar mensagem ao estado local imediatamente (optimistic update)
-      const transformedMessage = transformMessage(newMessage);
+      // 2. Buscar dados da mensagem citada (se houver) para exibição imediata
+      let quotedMessageData: Message['quotedMessage'] | undefined = undefined;
+      if (quotedMessageId) {
+        const quotedMsg = messages.find(m => m.id === quotedMessageId);
+        if (quotedMsg) {
+          quotedMessageData = {
+            id: quotedMsg.id,
+            content: quotedMsg.content,
+            messageType: quotedMsg.messageType,
+            senderType: quotedMsg.senderType,
+            mediaUrl: quotedMsg.mediaUrl,
+            createdAt: quotedMsg.createdAt,
+          };
+          console.log('[useInboxData] Dados da citação encontrados localmente');
+        }
+      }
+
+      // 3. Adicionar mensagem ao estado local imediatamente (optimistic update)
+      const transformedMessage: Message = {
+        ...transformMessage(newMessage),
+        quotedMessage: quotedMessageData,
+      };
       setMessages(prev => [...prev, transformedMessage]);
 
-      // 3. Atualizar last_message_at da conversa
+      // 4. Atualizar last_message_at da conversa
       const { error: updateError } = await supabase
         .from('conversations')
         .update({ last_message_at: now })
@@ -445,13 +465,13 @@ export function useInboxData() {
         console.error('[useInboxData] Erro ao atualizar last_message_at:', updateError);
       }
 
-      // 4. Atualizar last_message_at no estado local
+      // 5. Atualizar last_message_at no estado local
       setConversations(prev =>
         prev.map(c => c.id === selectedConversation.id ? { ...c, lastMessageAt: now } : c)
       );
       setSelectedConversation(prev => prev ? { ...prev, lastMessageAt: now } : null);
 
-      // 5. Chamar Edge Function para enviar via WhatsApp
+      // 6. Chamar Edge Function para enviar via WhatsApp
       console.log('[useInboxData] Chamando edge function send-whatsapp-message');
       
       const { data: session } = await supabase.auth.getSession();
