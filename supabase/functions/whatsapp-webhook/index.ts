@@ -21,6 +21,7 @@ function convertTimestamp(timestamp: number): string {
 // Helper to get file extension from mime type
 function getExtensionFromMimeType(mimeType: string): string {
   const mimeMap: Record<string, string> = {
+    // Audio
     'audio/ogg': 'ogg',
     'audio/mpeg': 'mp3',
     'audio/mp3': 'mp3',
@@ -29,11 +30,29 @@ function getExtensionFromMimeType(mimeType: string): string {
     'audio/aac': 'aac',
     'audio/wav': 'wav',
     'audio/webm': 'webm',
+    // Images
+    'image/jpeg': 'jpg',
+    'image/jpg': 'jpg',
+    'image/png': 'png',
+    'image/gif': 'gif',
+    'image/webp': 'webp',
+    'image/svg+xml': 'svg',
   }
   
   // Handle mime types with codecs (e.g., "audio/ogg; codecs=opus")
   const baseMime = mimeType.split(';')[0].trim().toLowerCase()
-  return mimeMap[baseMime] || 'ogg'
+  
+  // Return from map or derive from mime type
+  if (mimeMap[baseMime]) return mimeMap[baseMime]
+  
+  // Try to extract from mime type (e.g., "image/jpeg" -> "jpeg")
+  const typePart = baseMime.split('/')[1]
+  if (typePart) {
+    if (typePart === 'jpeg') return 'jpg'
+    return typePart
+  }
+  
+  return 'bin'
 }
 
 // Helper to download media from UAZAPI via POST /message/download with base64
@@ -259,11 +278,24 @@ serve(async (req) => {
       console.log(`   - via mimetype: ${isAudioByMimetype}`)
       console.log(`   - content:`, JSON.stringify(audioContentData, null, 2))
     }
-    // Check for other media types (messageType: ImageMessage, VideoMessage, etc.)
-    else if (messageType === 'ImageMessage' || (typeof contentMimetype === 'string' && contentMimetype.startsWith('image/'))) {
+    // Check for ImageMessage
+    let isImageMessage = false
+    let imageContentData: any = null
+    
+    const isImageByMessageType = messageType === 'ImageMessage'
+    const isImageByMediaType = mediaType === 'image'
+    const isImageByMimetype = typeof contentMimetype === 'string' && contentMimetype.startsWith('image/')
+    
+    if (isImageByMessageType || isImageByMediaType || isImageByMimetype) {
+      isImageMessage = true
       isMediaMessage = true
       detectedSubtype = 'image'
-      console.log(`🖼️ [IMAGEM DETECTADA] (ainda não implementado)`)
+      imageContentData = payload.message?.content || {}
+      console.log(`🖼️ [IMAGEM DETECTADA]`)
+      console.log(`   - via messageType: ${isImageByMessageType}`)
+      console.log(`   - via mediaType: ${isImageByMediaType}`)
+      console.log(`   - via mimetype: ${isImageByMimetype}`)
+      console.log(`   - content:`, JSON.stringify(imageContentData, null, 2))
     }
     else if (messageType === 'VideoMessage' || (typeof contentMimetype === 'string' && contentMimetype.startsWith('video/'))) {
       isMediaMessage = true
@@ -327,8 +359,8 @@ serve(async (req) => {
       )
     }
     
-    // If it's a media type but not audio, save as unsupported and return
-    if (isMediaMessage && !isAudioMessage && detectedSubtype !== 'unknown') {
+    // If it's a media type but not audio or image, save as unsupported
+    if (isMediaMessage && !isAudioMessage && !isImageMessage && detectedSubtype !== 'unknown') {
       console.log(`ℹ️ Mídia tipo "${detectedSubtype}" ainda não implementada`)
       // Continue to save as unsupported media message
     }
@@ -702,8 +734,8 @@ serve(async (req) => {
     let mediaMetadata: Record<string, any> = {}
     let unsupportedMediaText: string | null = null
     
-    // Handle unsupported media types (image, video, document)
-    if (isMediaMessage && !isAudioMessage) {
+    // Handle unsupported media types (video, document, sticker)
+    if (isMediaMessage && !isAudioMessage && !isImageMessage) {
       console.log('\n┌─────────────────────────────────────────────────────────────────┐')
       console.log('│ 8️⃣  ETAPA 5: MÍDIA NÃO SUPORTADA                                │')
       console.log('└─────────────────────────────────────────────────────────────────┘')
@@ -712,6 +744,137 @@ serve(async (req) => {
       mediaMetadata = {
         unsupportedType: detectedSubtype,
         originalPayload: payload.message?.media
+      }
+    }
+    // Handle image messages
+    else if (isImageMessage) {
+      console.log('\n┌─────────────────────────────────────────────────────────────────┐')
+      console.log('│ 8️⃣  ETAPA 5: PROCESSAR IMAGEM                                   │')
+      console.log('└─────────────────────────────────────────────────────────────────┘')
+      
+      const imageSource = imageContentData || payload.message?.content || {}
+      
+      console.log(`🔍 [IMAGE SOURCE]:`, JSON.stringify(imageSource, null, 2))
+      
+      // Extract image properties from UAZAPI payload
+      const mimeType = imageSource.mimetype || 
+                      imageSource.mimeType || 
+                      'image/jpeg'
+      const width = imageSource.width || 0
+      const height = imageSource.height || 0
+      const fileSize = imageSource.fileLength || imageSource.fileSize || 0
+      const hasJPEGThumbnail = !!imageSource.JPEGThumbnail
+      
+      // Validate file size (max 50MB)
+      const MAX_FILE_SIZE = 50 * 1024 * 1024 // 50MB
+      if (fileSize > MAX_FILE_SIZE) {
+        console.log(`❌ Imagem muito grande: ${fileSize} bytes (max: ${MAX_FILE_SIZE})`)
+        mediaMetadata = {
+          error: 'File too large',
+          mimeType,
+          width,
+          height,
+          fileSize,
+          hasJPEGThumbnail
+        }
+      } else {
+        console.log(`🖼️ Imagem recebida:`)
+        console.log(`   - MimeType: ${mimeType}`)
+        console.log(`   - Dimensões: ${width}×${height}`)
+        console.log(`   - Tamanho: ${fileSize} bytes (${(fileSize / 1024).toFixed(1)} KB)`)
+        console.log(`   - Tem thumbnail: ${hasJPEGThumbnail}`)
+        console.log(`   - messageId para download: ${messageId}`)
+        
+        const uazapiBaseUrl = connection.uazapi_base_url || 'https://whatsapi.uazapi.com'
+        
+        if (!instanceToken) {
+          console.log(`⚠️ Token não disponível para download`)
+          mediaMetadata = {
+            error: 'No instance token available',
+            mimeType,
+            width,
+            height,
+            fileSize,
+            hasJPEGThumbnail
+          }
+        } else {
+          console.log(`📥 Baixando imagem via UAZAPI /message/download...`)
+          console.log(`   - URL: ${uazapiBaseUrl}/message/download`)
+          console.log(`   - messageId: ${messageId}`)
+          
+          const downloadResult = await downloadMediaFromUazapi(messageId, uazapiBaseUrl, instanceToken)
+          
+          if (downloadResult) {
+            const { buffer, mimeType: downloadedMimeType, fileSize: downloadedSize } = downloadResult
+            const actualMimeType = downloadedMimeType.startsWith('image/') ? downloadedMimeType : mimeType.split(';')[0].trim()
+            const extension = getExtensionFromMimeType(actualMimeType)
+            
+            // Generate unique filename
+            const now = new Date()
+            const year = now.getFullYear()
+            const month = String(now.getMonth() + 1).padStart(2, '0')
+            const randomId = Math.random().toString(36).substring(2, 8)
+            const fileName = `image_${Date.now()}_${randomId}.${extension}`
+            const storagePath = `${companyId}/${whatsappConnectionId}/${year}-${month}/${fileName}`
+            
+            console.log(`📤 Fazendo upload para Storage: ${storagePath}`)
+            
+            // Upload to Supabase Storage
+            const { data: uploadData, error: uploadError } = await supabase.storage
+              .from('whatsapp-media')
+              .upload(storagePath, buffer, {
+                contentType: actualMimeType,
+                cacheControl: '31536000', // 1 year cache for images
+                upsert: false
+              })
+            
+            if (uploadError) {
+              console.log(`❌ Erro no upload: ${uploadError.message}`)
+              mediaMetadata = {
+                error: 'Upload failed',
+                errorMessage: uploadError.message,
+                mimeType: actualMimeType,
+                width,
+                height,
+                fileSize: downloadedSize,
+                hasJPEGThumbnail
+              }
+            } else {
+              console.log(`✅ Upload concluído: ${uploadData.path}`)
+              
+              // Get public URL
+              const { data: { publicUrl } } = supabase.storage
+                .from('whatsapp-media')
+                .getPublicUrl(storagePath)
+              
+              mediaUrl = publicUrl
+              mediaMimeType = actualMimeType
+              mediaMetadata = {
+                width,
+                height,
+                fileSize: downloadedSize,
+                fileName,
+                storagePath,
+                originalMessageId: messageId,
+                downloadedAt: new Date().toISOString(),
+                originalMimetype: mimeType,
+                hasJPEGThumbnail
+              }
+              
+              console.log(`🔗 URL pública: ${mediaUrl}`)
+            }
+          } else {
+            console.log(`⚠️ Falha no download da imagem via UAZAPI`)
+            mediaMetadata = {
+              error: 'Download failed from UAZAPI',
+              mimeType,
+              width,
+              height,
+              fileSize,
+              hasJPEGThumbnail
+            }
+          }
+        }
       }
     }
     // Handle audio messages
@@ -863,6 +1026,8 @@ serve(async (req) => {
     let dbMessageType: string
     if (isAudioMessage) {
       dbMessageType = 'audio'
+    } else if (isImageMessage) {
+      dbMessageType = 'image'
     } else if (unsupportedMediaText) {
       dbMessageType = 'text' // Save unsupported media as text with placeholder
     } else {
@@ -871,8 +1036,8 @@ serve(async (req) => {
     
     const status = mediaMetadata.error ? 'failed' : 'delivered'
     
-    // Determine content
-    const messageContent = unsupportedMediaText || (isAudioMessage ? null : messageText)
+    // Determine content - null for audio/image, text for everything else
+    const messageContent = unsupportedMediaText || ((isAudioMessage || isImageMessage) ? null : messageText)
     
     console.log(`💾 Salvando mensagem...`)
     console.log(`   - direction: ${direction}`)

@@ -25,6 +25,7 @@ import { AssignButton } from './AssignButton';
 import { ConversationActions } from './ConversationActions';
 import { MessageInputBlocker, useMessageBlocker } from './MessageInputBlocker';
 import { AudioPlayer } from './AudioPlayer';
+import { ImageMessage } from './ImageMessage';
 import { cn } from '@/lib/utils';
 import type { Conversation, Message } from '@/types';
 import { format } from 'date-fns';
@@ -369,6 +370,39 @@ export function ChatPanel({
                                   </>
                                 )}
                               </div>
+                            ) : message.messageType === 'image' && message.mediaUrl ? (
+                              // Image message
+                              <ImageMessage
+                                src={message.mediaUrl}
+                                isOutbound={isOutbound}
+                                width={(message.metadata as any)?.width}
+                                height={(message.metadata as any)?.height}
+                                fileSize={(message.metadata as any)?.fileSize}
+                                status={message.status}
+                                errorMessage={message.errorMessage}
+                              />
+                            ) : message.messageType === 'image' ? (
+                              // Image without URL (loading or failed)
+                              <div className={cn(
+                                "flex items-center gap-2 p-3 rounded-xl min-w-[200px]",
+                                isOutbound ? "bg-primary/20" : "bg-muted/80"
+                              )}>
+                                {isFailed ? (
+                                  <>
+                                    <AlertCircle className="w-5 h-5 text-destructive" />
+                                    <span className="text-xs text-destructive">
+                                      Falha ao carregar imagem
+                                    </span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+                                    <span className="text-xs text-muted-foreground">
+                                      Carregando imagem...
+                                    </span>
+                                  </>
+                                )}
+                              </div>
                             ) : (
                               /* Text message content */
                               <p className="text-sm whitespace-pre-wrap break-words">
@@ -376,8 +410,8 @@ export function ChatPanel({
                               </p>
                             )}
                             
-                            {/* Message footer - only for non-audio or audio with URL */}
-                            {(message.messageType !== 'audio' || !message.mediaUrl) && (
+                            {/* Message footer - only for non-audio/image or audio/image without URL */}
+                            {((message.messageType !== 'audio' && message.messageType !== 'image') || (!message.mediaUrl)) && (
                               <div className={cn(
                                 'flex items-center gap-1 mt-1',
                                 isOutbound ? 'justify-end' : 'justify-start'
