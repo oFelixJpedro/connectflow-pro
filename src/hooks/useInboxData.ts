@@ -770,7 +770,14 @@ export function useInboxData() {
           // Se a mensagem é da conversa atualmente selecionada, atualizar no array
           if (currentConversation && updatedMessage.conversationId === currentConversation.id) {
             setMessages((prev) => 
-              prev.map((m) => m.id === updatedMessage.id ? updatedMessage : m)
+              prev.map((m) => {
+                if (m.id !== updatedMessage.id) return m;
+                // Preservar quotedMessage existente ao atualizar status
+                return {
+                  ...updatedMessage,
+                  quotedMessage: updatedMessage.quotedMessage || m.quotedMessage,
+                };
+              })
             );
           }
         }
