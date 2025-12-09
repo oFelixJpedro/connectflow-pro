@@ -1,4 +1,4 @@
-// Updated: 2025-12-09 - Dynamic URL from secrets
+// Updated: 2025-12-09 - Auto webhook config on instance creation
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const corsHeaders = {
@@ -8,6 +8,50 @@ const corsHeaders = {
 
 // Get base URL from secrets (with fallback for backwards compatibility)
 const UAZAPI_BASE_URL = Deno.env.get('UAZAPI_BASE_URL')?.trim() || 'https://whatsapi.uazapi.com'
+const SUPABASE_URL = Deno.env.get('SUPABASE_URL')?.trim() || ''
+
+// Helper function to configure webhook on UAZAPI instance
+async function configureWebhook(instanceToken: string, adminToken: string): Promise<{ success: boolean; error?: string }> {
+  const webhookUrl = `${SUPABASE_URL}/functions/v1/whatsapp-webhook`
+  
+  console.log('🔗 Configuring webhook on UAZAPI...')
+  console.log('   - Webhook URL:', webhookUrl)
+  console.log('   - Events: messages, connection')
+  console.log('   - Exclude: wasSentByApi, isGroupYes')
+  
+  try {
+    const response = await fetch(`${UAZAPI_BASE_URL}/webhook`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'token': instanceToken
+      },
+      body: JSON.stringify({
+        enabled: true,
+        url: webhookUrl,
+        events: ['messages', 'connection'],
+        excludeMessages: ['wasSentByApi', 'isGroupYes']
+      })
+    })
+    
+    const responseText = await response.text()
+    console.log('   - Response status:', response.status)
+    console.log('   - Response:', responseText)
+    
+    if (!response.ok) {
+      console.error('❌ Failed to configure webhook:', responseText)
+      return { success: false, error: responseText }
+    }
+    
+    console.log('✅ Webhook configured successfully!')
+    return { success: true }
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+    console.error('❌ Error configuring webhook:', errorMessage)
+    return { success: false, error: errorMessage }
+  }
+}
 
 Deno.serve(async (req) => {
   // Handle CORS preflight requests
@@ -146,6 +190,12 @@ Deno.serve(async (req) => {
           console.error('Failed to save instance token:', updateError)
         } else {
           console.log('✅ Instance token saved!')
+        }
+        
+        // Configurar webhook automaticamente
+        const webhookResult = await configureWebhook(instanceToken, UAZAPI_API_KEY)
+        if (!webhookResult.success) {
+          console.warn('⚠️ Webhook configuration failed, but continuing with instance creation')
         }
       }
 
