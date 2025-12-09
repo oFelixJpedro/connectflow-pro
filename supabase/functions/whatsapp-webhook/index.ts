@@ -1703,12 +1703,43 @@ serve(async (req) => {
     let quotedMessageDbId: string | null = null
     if (quotedWhatsAppId) {
       console.log(`🔍 Buscando mensagem citada com whatsapp_message_id: ${quotedWhatsAppId}`)
-      const { data: quotedMsg } = await supabase
+      
+      // First, try exact match
+      let { data: quotedMsg } = await supabase
         .from('messages')
         .select('id')
         .eq('whatsapp_message_id', quotedWhatsAppId)
         .eq('conversation_id', conversationId)
         .maybeSingle()
+      
+      // If not found, try searching with LIKE pattern (whatsapp_message_id may have phone prefix)
+      if (!quotedMsg) {
+        console.log(`   Tentando busca com LIKE %${quotedWhatsAppId}`)
+        const { data: quotedMsgLike } = await supabase
+          .from('messages')
+          .select('id')
+          .like('whatsapp_message_id', `%${quotedWhatsAppId}`)
+          .eq('conversation_id', conversationId)
+          .limit(1)
+          .maybeSingle()
+        
+        quotedMsg = quotedMsgLike
+      }
+      
+      // If still not found, try without the prefix (extract just the message ID part)
+      if (!quotedMsg && quotedWhatsAppId.includes(':')) {
+        const msgIdOnly = quotedWhatsAppId.split(':').pop()
+        console.log(`   Tentando busca apenas com msgId: ${msgIdOnly}`)
+        const { data: quotedMsgById } = await supabase
+          .from('messages')
+          .select('id')
+          .like('whatsapp_message_id', `%${msgIdOnly}`)
+          .eq('conversation_id', conversationId)
+          .limit(1)
+          .maybeSingle()
+        
+        quotedMsg = quotedMsgById
+      }
       
       if (quotedMsg) {
         quotedMessageDbId = quotedMsg.id
