@@ -28,6 +28,7 @@ import { AudioPlayer } from './AudioPlayer';
 import { ImageMessage } from './ImageMessage';
 import { VideoMessage } from './VideoMessage';
 import StickerMessage from './StickerMessage';
+import { DocumentMessage } from './DocumentMessage';
 import { cn } from '@/lib/utils';
 import type { Conversation, Message } from '@/types';
 import { format } from 'date-fns';
@@ -469,6 +470,41 @@ export function ChatPanel({
                                   </>
                                 )}
                               </div>
+                            ) : message.messageType === 'document' && message.mediaUrl ? (
+                              // Document message
+                              <DocumentMessage
+                                src={message.mediaUrl}
+                                isOutbound={isOutbound}
+                                fileName={(message.metadata as any)?.fileName || (message.metadata as any)?.originalFileName}
+                                fileSize={(message.metadata as any)?.fileSize}
+                                mimeType={message.mediaMimeType || (message.metadata as any)?.originalMimetype}
+                                pageCount={(message.metadata as any)?.pageCount}
+                                status={message.status}
+                                errorMessage={message.errorMessage}
+                                caption={message.content}
+                              />
+                            ) : message.messageType === 'document' ? (
+                              // Document without URL (loading or failed)
+                              <div className={cn(
+                                "flex items-center gap-2 p-3 rounded-xl min-w-[200px]",
+                                isOutbound ? "bg-primary/20" : "bg-muted/80"
+                              )}>
+                                {isFailed ? (
+                                  <>
+                                    <AlertCircle className="w-5 h-5 text-destructive" />
+                                    <span className="text-xs text-destructive">
+                                      Falha ao carregar documento
+                                    </span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+                                    <span className="text-xs text-muted-foreground">
+                                      Carregando documento...
+                                    </span>
+                                  </>
+                                )}
+                              </div>
                             ) : (
                               /* Text message content */
                               <p className="text-sm whitespace-pre-wrap break-words">
@@ -477,7 +513,7 @@ export function ChatPanel({
                             )}
                             
                             {/* Message footer - only for non-audio/image/video or audio/image/video without URL */}
-                            {((message.messageType !== 'audio' && message.messageType !== 'image' && message.messageType !== 'video') || (!message.mediaUrl)) && (
+                            {((message.messageType !== 'audio' && message.messageType !== 'image' && message.messageType !== 'video' && message.messageType !== 'document') || (!message.mediaUrl)) && (
                               <div className={cn(
                                 'flex items-center gap-1 mt-1',
                                 isOutbound ? 'justify-end' : 'justify-start'
