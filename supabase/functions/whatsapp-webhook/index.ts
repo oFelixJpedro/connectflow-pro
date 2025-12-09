@@ -153,23 +153,83 @@ serve(async (req) => {
     }
     console.log('✅ Não é mensagem de grupo')
     
-    // Check message type - process text and audio
-    const messageType = payload.message?.type
-    const supportedTypes = ['text', 'audio', 'ptt'] // ptt = push-to-talk (voice note)
+    // Check message type - detect the actual type from payload
+    const rawMessageType = payload.message?.type
+    console.log(`📋 Tipo de mensagem raw: ${rawMessageType}`)
     
-    if (!supportedTypes.includes(messageType)) {
-      console.log(`ℹ️ Mensagem tipo "${messageType}" ignorada (processando apenas texto e áudio)`)
+    // Detect if it's a media message and identify the subtype
+    let isAudioMessage = false
+    let isMediaMessage = false
+    let detectedSubtype = ''
+    let mediaData: any = null
+    
+    // Direct audio/ptt types
+    if (rawMessageType === 'audio' || rawMessageType === 'ptt') {
+      isAudioMessage = true
+      detectedSubtype = rawMessageType
+      mediaData = payload.message?.audio || payload.message?.ptt || payload.message
+      console.log(`✅ Tipo direto de áudio detectado: ${rawMessageType}`)
+    }
+    // Media type - check subtype
+    else if (rawMessageType === 'media') {
+      isMediaMessage = true
+      console.log('[WEBHOOK] Tipo "media" detectado - verificando subtipo...')
+      console.log('[WEBHOOK] Media completo:', JSON.stringify(payload.message?.media, null, 2))
+      
+      const media = payload.message?.media || {}
+      const mimetype = media.mimetype || media.mimeType || ''
+      
+      // Check if it's audio
+      if (media.audio || mimetype.startsWith('audio/')) {
+        isAudioMessage = true
+        detectedSubtype = 'audio (via media)'
+        mediaData = media.audio || media
+        console.log(`[WEBHOOK] Subtipo detectado: ÁUDIO`)
+        console.log(`   - mimetype: ${mimetype}`)
+      }
+      // Check for image
+      else if (media.image || mimetype.startsWith('image/')) {
+        detectedSubtype = 'image'
+        console.log(`[WEBHOOK] Subtipo detectado: IMAGEM (ainda não implementado)`)
+      }
+      // Check for video
+      else if (media.video || mimetype.startsWith('video/')) {
+        detectedSubtype = 'video'
+        console.log(`[WEBHOOK] Subtipo detectado: VÍDEO (ainda não implementado)`)
+      }
+      // Check for document
+      else if (media.document || mimetype.startsWith('application/')) {
+        detectedSubtype = 'document'
+        console.log(`[WEBHOOK] Subtipo detectado: DOCUMENTO (ainda não implementado)`)
+      }
+      // Unknown media type
+      else {
+        detectedSubtype = 'unknown'
+        console.log(`[WEBHOOK] Subtipo de mídia desconhecido:`, JSON.stringify(media, null, 2))
+      }
+    }
+    // Text type
+    else if (rawMessageType === 'text' || rawMessageType === 'chat') {
+      detectedSubtype = 'text'
+      console.log(`✅ Tipo texto detectado`)
+    }
+    // Other unsupported types
+    else {
+      console.log(`ℹ️ Mensagem tipo "${rawMessageType}" ignorada (não é texto, áudio ou media)`)
       return new Response(
         JSON.stringify({ 
           success: true, 
-          message: `Message type "${messageType}" ignored (processing text and audio only)` 
+          message: `Message type "${rawMessageType}" ignored` 
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
-    console.log(`✅ Tipo = ${messageType}`)
     
-    const isAudioMessage = messageType === 'audio' || messageType === 'ptt'
+    // If it's a media type but not audio, save as unsupported and return
+    if (isMediaMessage && !isAudioMessage && detectedSubtype !== 'unknown') {
+      console.log(`ℹ️ Mídia tipo "${detectedSubtype}" ainda não implementada`)
+      // Continue to save as unsupported media message
+    }
     
     // Validate required fields
     const instanceName = payload.instanceName
@@ -201,8 +261,9 @@ serve(async (req) => {
       )
     }
     
-    // For text messages, validate text content
-    if (!isAudioMessage && !messageText && messageText !== '') {
+    // For text messages only, validate text content
+    const isTextMessage = !isAudioMessage && !isMediaMessage
+    if (isTextMessage && !messageText && messageText !== '') {
       console.log('❌ Campo obrigatório faltando: message.text')
       return new Response(
         JSON.stringify({ success: false, error: 'Missing required field: message.text' }),
@@ -214,8 +275,12 @@ serve(async (req) => {
     console.log(`   - instanceName: ${instanceName}`)
     console.log(`   - messageid: ${messageId}`)
     console.log(`   - sender: ${sender}`)
-    if (!isAudioMessage) {
+    console.log(`   - detectedSubtype: ${detectedSubtype}`)
+    if (isTextMessage) {
       console.log(`   - text: ${messageText?.substring(0, 50)}${messageText?.length > 50 ? '...' : ''}`)
+    }
+    if (isAudioMessage && mediaData) {
+      console.log(`   - mediaData disponível: sim`)
     }
     
     // ═══════════════════════════════════════════════════════════════════
@@ -506,40 +571,86 @@ serve(async (req) => {
     console.log('✅ Mensagem não é duplicata')
     
     // ═══════════════════════════════════════════════════════════════════
-    // 8️⃣ ETAPA 5: PROCESSAR MÍDIA (SE ÁUDIO)
+    // 8️⃣ ETAPA 5: PROCESSAR MÍDIA
     // ═══════════════════════════════════════════════════════════════════
     let mediaUrl: string | null = null
     let mediaMimeType: string | null = null
     let mediaMetadata: Record<string, any> = {}
+    let unsupportedMediaText: string | null = null
     
-    if (isAudioMessage) {
+    // Handle unsupported media types (image, video, document)
+    if (isMediaMessage && !isAudioMessage) {
+      console.log('\n┌─────────────────────────────────────────────────────────────────┐')
+      console.log('│ 8️⃣  ETAPA 5: MÍDIA NÃO SUPORTADA                                │')
+      console.log('└─────────────────────────────────────────────────────────────────┘')
+      console.log(`⚠️ Tipo de mídia "${detectedSubtype}" ainda não implementado`)
+      unsupportedMediaText = `[Mídia não suportada: ${detectedSubtype}]`
+      mediaMetadata = {
+        unsupportedType: detectedSubtype,
+        originalPayload: payload.message?.media
+      }
+    }
+    // Handle audio messages
+    else if (isAudioMessage) {
       console.log('\n┌─────────────────────────────────────────────────────────────────┐')
       console.log('│ 8️⃣  ETAPA 5: PROCESSAR ÁUDIO                                    │')
       console.log('└─────────────────────────────────────────────────────────────────┘')
       
-      // Extract audio info from payload
-      const audioData = payload.message?.audio || payload.message?.ptt || {}
-      const originalUrl = audioData.url || payload.message?.mediaUrl || payload.message?.media?.url
-      const mimeType = audioData.mimetype || audioData.mimeType || 'audio/ogg'
-      const duration = audioData.seconds || audioData.duration || 0
-      const fileSize = audioData.fileLength || audioData.fileSize || 0
+      // Use mediaData that was already extracted, with fallbacks
+      const audioSource = mediaData || payload.message?.audio || payload.message?.ptt || payload.message?.media || {}
+      
+      // Extract URL from various possible locations
+      const originalUrl = audioSource.url || 
+                         audioSource.audio?.url ||
+                         payload.message?.mediaUrl || 
+                         payload.message?.media?.url
+      
+      // Extract mimetype from various possible locations
+      const mimeType = audioSource.mimetype || 
+                      audioSource.mimeType || 
+                      audioSource.audio?.mimetype ||
+                      payload.message?.media?.mimetype ||
+                      'audio/ogg'
+      
+      // Extract duration and size
+      const duration = audioSource.seconds || 
+                      audioSource.duration || 
+                      audioSource.audio?.seconds ||
+                      payload.message?.media?.seconds || 
+                      0
+      const fileSize = audioSource.fileLength || 
+                      audioSource.fileSize || 
+                      audioSource.audio?.fileLength ||
+                      payload.message?.media?.fileLength || 
+                      0
       
       console.log(`🎵 Áudio recebido:`)
       console.log(`   - URL original: ${originalUrl}`)
       console.log(`   - MimeType: ${mimeType}`)
       console.log(`   - Duração: ${duration}s`)
       console.log(`   - Tamanho: ${fileSize} bytes`)
+      console.log(`   - Fonte dos dados: ${mediaData ? 'mediaData extraído' : 'payload direto'}`)
       
       if (originalUrl) {
         // Get UAZAPI API key for downloading
         const uazapiKey = instanceToken || Deno.env.get('UAZAPI_API_KEY')
         
         if (uazapiKey) {
-          const downloadResult = await downloadMedia(originalUrl, uazapiKey)
+          // Retry logic - 2 attempts with 1s delay
+          let downloadResult = null
+          for (let attempt = 1; attempt <= 2; attempt++) {
+            console.log(`🔄 Tentativa de download ${attempt}/2...`)
+            downloadResult = await downloadMedia(originalUrl, uazapiKey)
+            if (downloadResult) break
+            if (attempt < 2) {
+              console.log(`⏳ Aguardando 1s antes de nova tentativa...`)
+              await new Promise(r => setTimeout(r, 1000))
+            }
+          }
           
           if (downloadResult) {
             const { buffer, contentType } = downloadResult
-            const actualMimeType = contentType.startsWith('audio/') ? contentType : mimeType
+            const actualMimeType = contentType.startsWith('audio/') ? contentType : mimeType.split(';')[0].trim()
             const extension = getExtensionFromMimeType(actualMimeType)
             
             // Generate unique filename
@@ -594,9 +705,9 @@ serve(async (req) => {
               console.log(`🔗 URL pública: ${mediaUrl}`)
             }
           } else {
-            console.log(`⚠️ Falha no download do áudio`)
+            console.log(`⚠️ Falha no download do áudio após 2 tentativas`)
             mediaMetadata = {
-              error: 'Download failed',
+              error: 'Download failed after retries',
               originalUrl,
               mimeType,
               duration,
@@ -615,7 +726,8 @@ serve(async (req) => {
         }
       } else {
         console.log(`⚠️ URL do áudio não encontrada no payload`)
-        mediaMetadata = { error: 'No URL in payload' }
+        console.log(`📋 audioSource:`, JSON.stringify(audioSource, null, 2))
+        mediaMetadata = { error: 'No URL in payload', audioSource }
       }
     }
     
@@ -628,14 +740,28 @@ serve(async (req) => {
     
     const direction = isFromMe ? 'outbound' : 'inbound'
     const senderType = isFromMe ? 'user' : 'contact'
-    const dbMessageType = isAudioMessage ? 'audio' : 'text'
+    
+    // Determine message type for database
+    let dbMessageType: string
+    if (isAudioMessage) {
+      dbMessageType = 'audio'
+    } else if (unsupportedMediaText) {
+      dbMessageType = 'text' // Save unsupported media as text with placeholder
+    } else {
+      dbMessageType = 'text'
+    }
+    
     const status = mediaMetadata.error ? 'failed' : 'delivered'
+    
+    // Determine content
+    const messageContent = unsupportedMediaText || (isAudioMessage ? null : messageText)
     
     console.log(`💾 Salvando mensagem...`)
     console.log(`   - direction: ${direction}`)
     console.log(`   - sender_type: ${senderType}`)
     console.log(`   - message_type: ${dbMessageType}`)
     console.log(`   - status: ${status}`)
+    console.log(`   - content: ${messageContent?.substring(0, 50) || '[null]'}`)
     if (mediaUrl) {
       console.log(`   - media_url: ${mediaUrl}`)
     }
@@ -647,7 +773,7 @@ serve(async (req) => {
         direction: direction,
         sender_type: senderType,
         sender_id: null,
-        content: isAudioMessage ? null : messageText,
+        content: messageContent,
         message_type: dbMessageType,
         media_url: mediaUrl,
         media_mime_type: mediaMimeType,
