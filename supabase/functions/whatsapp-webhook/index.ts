@@ -94,13 +94,13 @@ async function downloadMediaFromUazapi(
       
       console.log(`📋 Response keys: ${Object.keys(data).join(', ')}`)
       
-      // Extract base64 from various possible response structures
-      let base64 = data.base64 || data.data?.base64 || data.media?.base64
+      // Extract base64 from various possible response structures - UAZAPI uses base64Data
+      let base64 = data.base64Data || data.base64 || data.data?.base64 || data.media?.base64
       const mimeType = data.mimetype || data.data?.mimetype || data.media?.mimetype || 'audio/ogg'
       const fileSize = data.fileSize || data.data?.fileSize || data.media?.fileSize || 0
       
       if (!base64) {
-        console.log(`❌ base64 not found in response. Keys: ${JSON.stringify(Object.keys(data))}`)
+        console.log(`❌ base64Data not found in response. Keys: ${JSON.stringify(Object.keys(data))}`)
         if (attempt === 2) return null
         await new Promise(r => setTimeout(r, 2000))
         continue
