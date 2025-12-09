@@ -18,20 +18,14 @@ function convertTimestamp(timestamp: number): string {
   return new Date(timestamp).toISOString()
 }
 
-// Helper to get correct mimetype based on file extension
-// Prioritizes file extension over original mimetype to fix Supabase Storage restrictions
-function getCorrectMimeType(fileName: string | undefined, originalMimeType: string): string {
-  // Extract extension from fileName
+// Helper to get correct mimetype based on file extension for display purposes
+function getDisplayMimeType(fileName: string | undefined, originalMimeType: string): string {
   const extension = fileName?.split('.').pop()?.toLowerCase()
   
-  // Extension to mimetype mapping
   const extensionMimeMap: Record<string, string> = {
-    // Markdown - CRITICAL: These come as text/plain but Storage rejects it
     'md': 'text/markdown',
     'markdown': 'text/markdown',
-    // Text
     'txt': 'text/plain',
-    // Documents
     'pdf': 'application/pdf',
     'doc': 'application/msword',
     'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
@@ -39,44 +33,64 @@ function getCorrectMimeType(fileName: string | undefined, originalMimeType: stri
     'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     'ppt': 'application/vnd.ms-powerpoint',
     'pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-    // Archives
     'zip': 'application/zip',
     'rar': 'application/x-rar-compressed',
     '7z': 'application/x-7z-compressed',
-    // Images
     'jpg': 'image/jpeg',
     'jpeg': 'image/jpeg',
     'png': 'image/png',
     'gif': 'image/gif',
     'webp': 'image/webp',
     'svg': 'image/svg+xml',
-    // Audio
     'mp3': 'audio/mpeg',
     'ogg': 'audio/ogg',
     'opus': 'audio/opus',
     'm4a': 'audio/mp4',
     'wav': 'audio/wav',
     'aac': 'audio/aac',
-    // Video
     'mp4': 'video/mp4',
     'webm': 'video/webm',
     'mov': 'video/quicktime',
     '3gp': 'video/3gpp',
     'avi': 'video/x-msvideo',
+    'html': 'text/html',
+    'css': 'text/css',
+    'js': 'application/javascript',
+    'json': 'application/json',
+    'xml': 'application/xml',
   }
   
-  // If we have a valid extension mapping, use it
   if (extension && extensionMimeMap[extension]) {
     return extensionMimeMap[extension]
   }
   
-  // If original mimetype is available and not empty, use it
   if (originalMimeType && originalMimeType.trim()) {
     return originalMimeType.split(';')[0].trim()
   }
   
-  // Fallback to generic binary
   return 'application/octet-stream'
+}
+
+// Helper to get Storage-safe mimetype
+// Supabase Storage rejects some text/* mimetypes, so we use application/octet-stream for those
+function getStorageSafeMimeType(displayMimeType: string): string {
+  // Mimetypes that Supabase Storage rejects
+  const unsupportedMimeTypes = [
+    'text/markdown',
+    'text/html',
+    'text/css',
+    'text/javascript',
+    'text/xml',
+    'text/csv',
+    'text/plain', // Sometimes rejected
+  ]
+  
+  // If mimetype is not supported by Storage, use octet-stream
+  if (unsupportedMimeTypes.includes(displayMimeType) || displayMimeType.startsWith('text/')) {
+    return 'application/octet-stream'
+  }
+  
+  return displayMimeType
 }
 
 // Helper to get file extension from mime type
@@ -956,17 +970,17 @@ serve(async (req) => {
               extension = getExtensionFromMimeType(originalMimeType)
             }
             
-            // CRITICAL: Correct mimetype based on file extension
-            // This fixes issues with .md files coming as text/plain which Storage rejects
-            const correctedMimeType = getCorrectMimeType(fileName, originalMimeType)
-            const mimetypeWasCorrected = correctedMimeType !== originalMimeType
+            // Get display mimetype (correct based on extension) and storage-safe mimetype
+            const displayMimeType = getDisplayMimeType(fileName, originalMimeType)
+            const storageMimeType = getStorageSafeMimeType(displayMimeType)
+            const mimetypeWasCorrected = displayMimeType !== originalMimeType
+            const usingOctetStream = storageMimeType !== displayMimeType
             
             console.log(`📋 Mimetype original: ${originalMimeType}`)
             console.log(`🔍 Extensão detectada: .${extension}`)
-            if (mimetypeWasCorrected) {
-              console.log(`🔄 Mimetype CORRIGIDO para: ${correctedMimeType}`)
-            } else {
-              console.log(`✓ Mimetype mantido: ${correctedMimeType}`)
+            console.log(`📋 Mimetype para exibição: ${displayMimeType}`)
+            if (usingOctetStream) {
+              console.log(`🔄 Usando mimetype seguro para Storage: ${storageMimeType}`)
             }
             
             // Generate unique filename
@@ -978,51 +992,24 @@ serve(async (req) => {
             const storagePath = `${companyId}/${whatsappConnectionId}/${year}-${month}/${uniqueFileName}`
             
             console.log(`📤 Fazendo upload para Storage: ${storagePath}`)
-            console.log(`   - contentType: ${correctedMimeType}`)
+            console.log(`   - contentType: ${storageMimeType}`)
             
-            // Upload to Supabase Storage with CORRECTED mimetype
-            let uploadData = null
-            let uploadError = null
-            
-            // First attempt with corrected mimetype
-            const firstAttempt = await supabase.storage
+            // Upload to Supabase Storage with storage-safe mimetype
+            const { data: uploadData, error: uploadError } = await supabase.storage
               .from('whatsapp-media')
               .upload(storagePath, buffer, {
-                contentType: correctedMimeType,
+                contentType: storageMimeType,
                 cacheControl: '31536000', // 1 year cache
                 upsert: false
               })
-            
-            uploadData = firstAttempt.data
-            uploadError = firstAttempt.error
-            
-            // If corrected mimetype fails and was different from original, try original as fallback
-            if (uploadError && mimetypeWasCorrected) {
-              console.log(`⚠️ Upload com mimetype corrigido falhou: ${uploadError.message}`)
-              console.log(`🔄 Tentando com mimetype original: ${originalMimeType}`)
-              
-              const fallbackPath = storagePath.replace(`.${extension}`, `_fallback.${extension}`)
-              const secondAttempt = await supabase.storage
-                .from('whatsapp-media')
-                .upload(fallbackPath, buffer, {
-                  contentType: originalMimeType,
-                  cacheControl: '31536000',
-                  upsert: false
-                })
-              
-              if (!secondAttempt.error) {
-                uploadData = secondAttempt.data
-                uploadError = null
-                console.log(`✅ Upload com mimetype original bem-sucedido`)
-              }
-            }
             
             if (uploadError) {
               console.log(`❌ Erro no upload: ${uploadError.message}`)
               mediaMetadata = {
                 error: 'Upload failed',
                 errorMessage: uploadError.message,
-                mimeType: correctedMimeType,
+                mimeType: displayMimeType,
+                storageMimeType,
                 originalMimetype: originalMimeType,
                 mimetypeWasCorrected,
                 fileName,
@@ -1031,15 +1018,15 @@ serve(async (req) => {
                 hasJPEGThumbnail
               }
             } else {
-              console.log(`✅ Upload concluído: ${uploadData!.path}`)
+              console.log(`✅ Upload concluído: ${uploadData.path}`)
               
               // Get public URL
               const { data: { publicUrl } } = supabase.storage
                 .from('whatsapp-media')
-                .getPublicUrl(uploadData!.path)
+                .getPublicUrl(uploadData.path)
               
               mediaUrl = publicUrl
-              mediaMimeType = correctedMimeType  // Save CORRECTED mimetype
+              mediaMimeType = displayMimeType  // Save display mimetype for frontend
               
               // Set caption as message content
               if (caption) {
@@ -1055,9 +1042,10 @@ serve(async (req) => {
                 fileExtension: extension,
                 pageCount,
                 originalMimetype: originalMimeType,
-                uploadMimetype: correctedMimeType,
+                displayMimetype: displayMimeType,
+                storageMimetype: storageMimeType,
                 mimetypeWasCorrected,
-                storagePath: uploadData!.path,
+                storagePath: uploadData.path,
                 originalMessageId: messageId,
                 downloadedAt: new Date().toISOString(),
                 hasJPEGThumbnail,
