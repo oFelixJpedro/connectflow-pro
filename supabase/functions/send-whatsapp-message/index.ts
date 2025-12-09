@@ -6,6 +6,9 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+// Get base URL from secrets (with fallback for backwards compatibility)
+const UAZAPI_BASE_URL = Deno.env.get('UAZAPI_BASE_URL')?.trim() || 'https://whatsapi.uazapi.com'
+
 serve(async (req) => {
   console.log('\n')
   console.log('╔══════════════════════════════════════════════════════════════════╗')
@@ -318,13 +321,13 @@ serve(async (req) => {
     }
 
     console.log('📤 UAZAPI Request:')
-    console.log('   - URL: https://whatsapi.uazapi.com/send/text')
+    console.log('   - URL:', `${UAZAPI_BASE_URL}/send/text`)
     console.log('   - token: ***' + instanceToken.slice(-8))
     console.log('   - number:', cleanPhoneNumber)
     console.log('   - text:', messageContent.substring(0, 100))
     console.log('   - replyid:', replyId || '(nenhum)')
 
-    const uazapiResponse = await fetch('https://whatsapi.uazapi.com/send/text', {
+    const uazapiResponse = await fetch(`${UAZAPI_BASE_URL}/send/text`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
