@@ -20,3 +20,6 @@ verify_jwt = true
 
 [functions.send-whatsapp-audio]
 verify_jwt = true
+
+[functions.send-whatsapp-image]
+verify_jwt = true
