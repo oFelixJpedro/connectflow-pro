@@ -499,10 +499,17 @@ serve(async (req) => {
       audioContentData = payload.message?.audio || payload.message?.ptt || payload.message?.content || {}
       console.log(`🎵 [ÁUDIO tipo direto: ${rawMessageType}]`)
     }
-    // Text type
+    // Text type - includes regular text and ExtendedTextMessage (links with preview)
     else if (rawMessageType === 'text' || rawMessageType === 'chat') {
       detectedSubtype = 'text'
       console.log(`✅ Tipo texto detectado`)
+    }
+    // ExtendedTextMessage is a text message with link preview (mediaType: 'url')
+    // Treat it as text, not media
+    else if (messageType === 'ExtendedTextMessage' || (rawMessageType === 'media' && mediaType === 'url')) {
+      detectedSubtype = 'text'
+      isMediaMessage = false // Override - this is text, not media
+      console.log(`✅ Tipo texto com link preview detectado (ExtendedTextMessage)`)
     }
     // Other unsupported types
     else {
