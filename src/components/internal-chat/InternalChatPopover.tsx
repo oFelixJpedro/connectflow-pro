@@ -26,6 +26,8 @@ export function InternalChatPopover() {
     isLoadingMessages,
     sendMessage,
     getOrCreateDirectRoom,
+    loadTeamMembers,
+    loadRooms,
   } = useInternalChat();
 
   const [isOpen, setIsOpen] = useState(false);
@@ -36,6 +38,15 @@ export function InternalChatPopover() {
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
+
+  // Reload data when popover opens
+  useEffect(() => {
+    if (isOpen) {
+      console.log('[InternalChatPopover] Popover aberto, recarregando dados...');
+      loadTeamMembers();
+      loadRooms();
+    }
+  }, [isOpen, loadTeamMembers, loadRooms]);
 
   useEffect(() => {
     if (messages.length > 0) {
