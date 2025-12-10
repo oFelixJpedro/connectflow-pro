@@ -12,7 +12,8 @@ import {
   ChevronDown,
   ChevronUp,
   Loader2,
-  Check
+  Check,
+  StickyNote
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -38,11 +39,13 @@ import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { ContactFormModal } from '@/components/contacts/ContactFormModal';
 import { ContactFormData } from '@/hooks/useContactsData';
+import { ChatNotesModal } from './ChatNotesModal';
 
 interface ContactPanelProps {
   conversation: Conversation | null;
   onClose: () => void;
   onContactUpdated?: () => void;
+  onScrollToMessage?: (messageId: string) => void;
 }
 
 interface Tag {
@@ -58,7 +61,7 @@ interface ConversationHistory {
   messageCount: number;
 }
 
-export function ContactPanel({ conversation, onClose, onContactUpdated }: ContactPanelProps) {
+export function ContactPanel({ conversation, onClose, onContactUpdated, onScrollToMessage }: ContactPanelProps) {
   const { toast } = useToast();
   const [notesOpen, setNotesOpen] = useState(true);
   const [historyOpen, setHistoryOpen] = useState(true);
@@ -78,6 +81,10 @@ export function ContactPanel({ conversation, onClose, onContactUpdated }: Contac
 
   // Edit modal state
   const [editModalOpen, setEditModalOpen] = useState(false);
+  
+  // Chat notes modal state
+  const [chatNotesModalOpen, setChatNotesModalOpen] = useState(false);
+  const [chatNotesCount, setChatNotesCount] = useState(0);
 
   const contact = conversation?.contact;
 
@@ -88,8 +95,51 @@ export function ContactPanel({ conversation, onClose, onContactUpdated }: Contac
       setContactTags(contact.tags || []);
       loadAvailableTags();
       loadConversationHistory();
+      loadChatNotesCount();
     }
   }, [contact?.id]);
+
+  // Realtime subscription for chat notes count
+  useEffect(() => {
+    if (!conversation?.id) return;
+
+    const channel = supabase
+      .channel(`chat-notes-${conversation.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'messages',
+          filter: `conversation_id=eq.${conversation.id}`,
+        },
+        (payload: any) => {
+          // Check if it's an internal note
+          if (payload.new?.is_internal_note || payload.old?.is_internal_note) {
+            loadChatNotesCount();
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [conversation?.id]);
+
+  const loadChatNotesCount = async () => {
+    if (!conversation?.id) return;
+    try {
+      const { count } = await supabase
+        .from('messages')
+        .select('*', { count: 'exact', head: true })
+        .eq('conversation_id', conversation.id)
+        .eq('is_internal_note', true);
+      setChatNotesCount(count || 0);
+    } catch (error) {
+      console.error('[ContactPanel] Erro ao contar notas:', error);
+    }
+  };
 
   const loadAvailableTags = async () => {
     setIsLoadingTags(true);
@@ -496,6 +546,34 @@ export function ContactPanel({ conversation, onClose, onContactUpdated }: Contac
 
           <Separator />
 
+          {/* Chat Notes */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <h5 className="text-sm font-medium text-foreground">Notas de Chat</h5>
+                {chatNotesCount > 0 && (
+                  <Badge variant="secondary" className="text-xs bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300">
+                    {chatNotesCount}
+                  </Badge>
+                )}
+              </div>
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                className="h-7 px-2"
+                onClick={() => setChatNotesModalOpen(true)}
+              >
+                <StickyNote className="w-3 h-3 mr-1 text-amber-500" />
+                Ver notas
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Notas feitas diretamente no chat para contexto rápido
+            </p>
+          </div>
+
+          <Separator />
+
           {/* Notes */}
           <Collapsible open={notesOpen} onOpenChange={setNotesOpen}>
             <CollapsibleTrigger className="flex items-center justify-between w-full">
@@ -604,6 +682,18 @@ export function ContactPanel({ conversation, onClose, onContactUpdated }: Contac
         tags={availableTags}
         onSave={handleSaveContact}
       />
+
+      {/* Chat Notes Modal */}
+      {conversation && (
+        <ChatNotesModal
+          open={chatNotesModalOpen}
+          onOpenChange={setChatNotesModalOpen}
+          conversationId={conversation.id}
+          onNoteClick={(noteId) => {
+            onScrollToMessage?.(noteId);
+          }}
+        />
+      )}
     </div>
   );
 }
