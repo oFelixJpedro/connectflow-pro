@@ -48,15 +48,22 @@ export function useNotifications() {
   const [unreadCounts, setUnreadCounts] = useState<UnreadCounts>({ whatsapp: 0, internalChat: 0, total: 0 });
   const [isLoading, setIsLoading] = useState(true);
   
-  // Track last seen message per internal chat room (stored in localStorage)
-  const [lastSeenByRoom, setLastSeenByRoom] = useState<Record<string, string>>(() => {
+  // Storage key includes user ID to prevent cross-user data sharing
+  const storageKey = profile?.id ? `internalChatLastSeen_${profile.id}` : null;
+  
+  // Track last seen message per internal chat room (stored in localStorage per user)
+  const [lastSeenByRoom, setLastSeenByRoom] = useState<Record<string, string>>({});
+
+  // Load last seen from localStorage when user changes
+  useEffect(() => {
+    if (!storageKey) return;
     try {
-      const stored = localStorage.getItem('internalChatLastSeen');
-      return stored ? JSON.parse(stored) : {};
+      const stored = localStorage.getItem(storageKey);
+      setLastSeenByRoom(stored ? JSON.parse(stored) : {});
     } catch {
-      return {};
+      setLastSeenByRoom({});
     }
-  });
+  }, [storageKey]);
 
   // Track processed message IDs to avoid duplicate sounds
   const processedMessageIds = useRef<Set<string>>(new Set());
@@ -82,12 +89,12 @@ export function useNotifications() {
 
   // Load internal chat unread count
   const loadInternalChatUnread = useCallback(async () => {
-    if (!company?.id || !profile?.id) return 0;
+    if (!company?.id || !profile?.id || !storageKey) return 0;
 
-    // Always read fresh from localStorage
+    // Always read fresh from localStorage with user-specific key
     let currentLastSeenByRoom: Record<string, string> = {};
     try {
-      const stored = localStorage.getItem('internalChatLastSeen');
+      const stored = localStorage.getItem(storageKey);
       currentLastSeenByRoom = stored ? JSON.parse(stored) : {};
     } catch { }
 
@@ -119,7 +126,7 @@ export function useNotifications() {
     }
 
     return totalUnread;
-  }, [company?.id, profile?.id]);
+  }, [company?.id, profile?.id, storageKey]);
 
   // Load recent notifications
   const loadRecentNotifications = useCallback(async () => {
@@ -177,14 +184,16 @@ export function useNotifications() {
 
   // Mark internal chat room as read
   const markRoomAsRead = useCallback((roomId: string) => {
+    if (!storageKey) return;
+    
     const now = new Date().toISOString();
     const updated = { ...lastSeenByRoom, [roomId]: now };
     setLastSeenByRoom(updated);
-    localStorage.setItem('internalChatLastSeen', JSON.stringify(updated));
+    localStorage.setItem(storageKey, JSON.stringify(updated));
     
     // Refresh counts after marking as read
     setTimeout(() => refreshCounts(), 100);
-  }, [lastSeenByRoom, refreshCounts]);
+  }, [lastSeenByRoom, refreshCounts, storageKey]);
 
   // Mark notification as read
   const markAsRead = useCallback((notificationId: string) => {
@@ -231,6 +240,19 @@ export function useNotifications() {
       window.removeEventListener('internal-chat-read', handleInternalChatRead);
     };
   }, [refreshCounts]);
+
+  // Listen for WhatsApp conversation read events
+  useEffect(() => {
+    const handleWhatsAppRead = () => {
+      refreshCounts();
+      loadRecentNotifications();
+    };
+
+    window.addEventListener('whatsapp-conversation-read', handleWhatsAppRead);
+    return () => {
+      window.removeEventListener('whatsapp-conversation-read', handleWhatsAppRead);
+    };
+  }, [refreshCounts, loadRecentNotifications]);
 
   // Real-time subscription for WhatsApp messages
   useEffect(() => {
