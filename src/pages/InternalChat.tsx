@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Badge } from '@/components/ui/badge';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useInternalChat, ChatMessage } from '@/hooks/useInternalChat';
 import { useNavigate } from 'react-router-dom';
@@ -388,11 +389,21 @@ export default function InternalChat() {
                         <p className="font-medium text-sm truncate">
                           {room.type === 'general' ? '👥 Chat Geral' : room.name || 'Chat Direto'}
                         </p>
-                        {room.lastMessage && (
-                          <span className="text-xs text-muted-foreground">
-                            {formatMessageTime(room.lastMessage.createdAt)}
-                          </span>
-                        )}
+                        <div className="flex items-center gap-2">
+                          {room.lastMessage && (
+                            <span className="text-xs text-muted-foreground">
+                              {formatMessageTime(room.lastMessage.createdAt)}
+                            </span>
+                          )}
+                          {room.unreadCount && room.unreadCount > 0 && (
+                            <Badge 
+                              variant="default" 
+                              className="bg-emerald-600 hover:bg-emerald-600 text-white text-xs px-1.5 py-0 h-5 min-w-5 flex items-center justify-center"
+                            >
+                              {room.unreadCount > 99 ? '99+' : room.unreadCount}
+                            </Badge>
+                          )}
+                        </div>
                       </div>
                       {room.lastMessage && (
                         <p className="text-xs text-muted-foreground truncate">
