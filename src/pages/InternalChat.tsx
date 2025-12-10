@@ -1,13 +1,26 @@
 import { useState, useRef, useEffect } from 'react';
-import { X, MessageSquare, Users, Send, Circle } from 'lucide-react';
+import { X, MessageSquare, Users, Send, Circle, Mic, Paperclip, Image, Video, FileText, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { useInternalChat } from '@/hooks/useInternalChat';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { useInternalChat, ChatMessage } from '@/hooks/useInternalChat';
 import { useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { toast } from '@/hooks/use-toast';
+
+// Import media components
+import { AudioPlayer } from '@/components/inbox/AudioPlayer';
+import { AudioRecorder } from '@/components/inbox/AudioRecorder';
+import { ImageMessage } from '@/components/inbox/ImageMessage';
+import { VideoMessage } from '@/components/inbox/VideoMessage';
+import { DocumentMessage } from '@/components/inbox/DocumentMessage';
+import { ImagePreviewModal } from '@/components/inbox/ImagePreviewModal';
+import { VideoPreviewModal } from '@/components/inbox/VideoPreviewModal';
+import { DocumentPreviewModal } from '@/components/inbox/DocumentPreviewModal';
+import { AudioFilePreview } from '@/components/inbox/AudioFilePreview';
 
 export default function InternalChat() {
   const navigate = useNavigate();
@@ -20,13 +33,29 @@ export default function InternalChat() {
     isLoading,
     isLoadingMessages,
     sendMessage,
+    sendMediaMessage,
     getOrCreateDirectRoom,
     loadTeamMembers,
     loadRooms,
   } = useInternalChat();
 
   const [messageInput, setMessageInput] = useState('');
+  const [isSending, setIsSending] = useState(false);
+  const [isRecordingAudio, setIsRecordingAudio] = useState(false);
+  const [audioFile, setAudioFile] = useState<File | null>(null);
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [isImagePreviewOpen, setIsImagePreviewOpen] = useState(false);
+  const [videoFile, setVideoFile] = useState<File | null>(null);
+  const [isVideoPreviewOpen, setIsVideoPreviewOpen] = useState(false);
+  const [documentFile, setDocumentFile] = useState<File | null>(null);
+  const [isDocumentPreviewOpen, setIsDocumentPreviewOpen] = useState(false);
+  const [attachmentMenuOpen, setAttachmentMenuOpen] = useState(false);
+  
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
+  const videoInputRef = useRef<HTMLInputElement>(null);
+  const audioInputRef = useRef<HTMLInputElement>(null);
+  const documentInputRef = useRef<HTMLInputElement>(null);
 
   // Load data on mount
   useEffect(() => {
@@ -45,9 +74,12 @@ export default function InternalChat() {
   }, [messages]);
 
   const handleSendMessage = async () => {
-    if (!messageInput.trim()) return;
+    if (!messageInput.trim() || isSending) return;
 
+    setIsSending(true);
     const success = await sendMessage(messageInput.trim());
+    setIsSending(false);
+    
     if (success) {
       setMessageInput('');
     }
@@ -66,6 +98,104 @@ export default function InternalChat() {
 
   const handleClose = () => {
     navigate(-1);
+  };
+
+  // Audio handlers
+  const handleSendAudio = async (audioBlob: Blob, duration: number) => {
+    const file = new File([audioBlob], `audio_${Date.now()}.webm`, { type: audioBlob.type || 'audio/webm' });
+    const success = await sendMediaMessage(file, 'audio');
+    if (success) {
+      setIsRecordingAudio(false);
+      toast({ title: 'Áudio enviado', description: 'O áudio foi enviado com sucesso.' });
+    } else {
+      toast({ title: 'Erro ao enviar áudio', variant: 'destructive' });
+    }
+  };
+
+  const handleSendAudioFile = async (file: File) => {
+    const success = await sendMediaMessage(file, 'audio');
+    if (success) {
+      setAudioFile(null);
+      toast({ title: 'Áudio enviado', description: 'O áudio foi enviado com sucesso.' });
+    } else {
+      toast({ title: 'Erro ao enviar áudio', variant: 'destructive' });
+    }
+  };
+
+  // Image handlers
+  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setImageFile(file);
+      setIsImagePreviewOpen(true);
+      setAttachmentMenuOpen(false);
+    }
+    e.target.value = '';
+  };
+
+  const handleSendImage = async (file: File, caption: string) => {
+    const success = await sendMediaMessage(file, 'image', caption || undefined);
+    if (success) {
+      setImageFile(null);
+      setIsImagePreviewOpen(false);
+      toast({ title: 'Imagem enviada', description: 'A imagem foi enviada com sucesso.' });
+    } else {
+      throw new Error('Erro ao enviar imagem');
+    }
+  };
+
+  // Video handlers
+  const handleVideoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setVideoFile(file);
+      setIsVideoPreviewOpen(true);
+      setAttachmentMenuOpen(false);
+    }
+    e.target.value = '';
+  };
+
+  const handleSendVideo = async (file: File, text: string, duration: number) => {
+    const success = await sendMediaMessage(file, 'video', text || undefined);
+    if (success) {
+      setVideoFile(null);
+      setIsVideoPreviewOpen(false);
+      toast({ title: 'Vídeo enviado', description: 'O vídeo foi enviado com sucesso.' });
+    } else {
+      throw new Error('Erro ao enviar vídeo');
+    }
+  };
+
+  // Audio file select handler
+  const handleAudioFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setAudioFile(file);
+      setAttachmentMenuOpen(false);
+    }
+    e.target.value = '';
+  };
+
+  // Document handlers
+  const handleDocumentSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setDocumentFile(file);
+      setIsDocumentPreviewOpen(true);
+      setAttachmentMenuOpen(false);
+    }
+    e.target.value = '';
+  };
+
+  const handleSendDocument = async (file: File, text: string) => {
+    const success = await sendMediaMessage(file, 'document', text || undefined);
+    if (success) {
+      setDocumentFile(null);
+      setIsDocumentPreviewOpen(false);
+      toast({ title: 'Documento enviado', description: 'O documento foi enviado com sucesso.' });
+    } else {
+      throw new Error('Erro ao enviar documento');
+    }
   };
 
   const getInitials = (name: string) => {
@@ -99,6 +229,80 @@ export default function InternalChat() {
       return format(date, 'HH:mm', { locale: ptBR });
     }
     return format(date, 'dd/MM HH:mm', { locale: ptBR });
+  };
+
+  // Render message content based on type
+  const renderMessageContent = (msg: ChatMessage) => {
+    switch (msg.messageType) {
+      case 'audio':
+        if (msg.mediaUrl) {
+          return (
+            <AudioPlayer
+              src={msg.mediaUrl}
+              mimeType={msg.mediaMimeType || undefined}
+              isOutbound={msg.isOwnMessage}
+            />
+          );
+        }
+        return <p className="text-sm text-muted-foreground italic">[Áudio indisponível]</p>;
+
+      case 'image':
+        if (msg.mediaUrl) {
+          return (
+            <ImageMessage
+              src={msg.mediaUrl}
+              isOutbound={msg.isOwnMessage}
+              caption={msg.content}
+            />
+          );
+        }
+        return <p className="text-sm text-muted-foreground italic">[Imagem indisponível]</p>;
+
+      case 'video':
+        if (msg.mediaUrl) {
+          return (
+            <VideoMessage
+              src={msg.mediaUrl}
+              isOutbound={msg.isOwnMessage}
+              caption={msg.content}
+            />
+          );
+        }
+        return <p className="text-sm text-muted-foreground italic">[Vídeo indisponível]</p>;
+
+      case 'document':
+        if (msg.mediaUrl) {
+          // Extract filename from URL or use default
+          const fileName = msg.mediaUrl.split('/').pop() || 'Documento';
+          return (
+            <DocumentMessage
+              src={msg.mediaUrl}
+              isOutbound={msg.isOwnMessage}
+              fileName={fileName}
+              mimeType={msg.mediaMimeType || undefined}
+              caption={msg.content}
+            />
+          );
+        }
+        return <p className="text-sm text-muted-foreground italic">[Documento indisponível]</p>;
+
+      case 'text':
+      default:
+        return <p className="text-sm break-words whitespace-pre-wrap">{msg.content}</p>;
+    }
+  };
+
+  const getLastMessagePreview = (content: string | undefined, messageType: string | undefined) => {
+    if (!messageType || messageType === 'text') {
+      return content || '';
+    }
+    const typeLabels: Record<string, string> = {
+      audio: '🎤 Áudio',
+      image: '📷 Imagem',
+      video: '🎬 Vídeo',
+      document: '📄 Documento',
+    };
+    return typeLabels[messageType] || content || '';
   };
 
   // Sort rooms: general first, then direct rooms by last message
@@ -195,7 +399,7 @@ export default function InternalChat() {
                           {room.type === 'general' && (
                             <span className="font-medium">{room.lastMessage.senderName}: </span>
                           )}
-                          {room.lastMessage.content}
+                          {getLastMessagePreview(room.lastMessage.content, room.lastMessage.messageType)}
                         </p>
                       )}
                     </div>
@@ -311,7 +515,7 @@ export default function InternalChat() {
                               {msg.senderName}
                             </p>
                           )}
-                          <p className="text-sm break-words whitespace-pre-wrap">{msg.content}</p>
+                          {renderMessageContent(msg)}
                           <p
                             className={`text-xs mt-1 ${
                               msg.isOwnMessage ? 'text-emerald-100' : 'text-muted-foreground'
@@ -327,25 +531,145 @@ export default function InternalChat() {
                 )}
               </ScrollArea>
 
-              {/* Message input */}
+              {/* Message input area */}
               <div className="p-4 border-t bg-card">
-                <div className="flex gap-3 max-w-3xl mx-auto">
-                  <Input
-                    value={messageInput}
-                    onChange={(e) => setMessageInput(e.target.value)}
-                    onKeyDown={handleKeyDown}
-                    placeholder="Digite sua mensagem..."
-                    className="flex-1 internal-chat-input"
-                  />
-                  <Button
-                    onClick={handleSendMessage}
-                    disabled={!messageInput.trim()}
-                    className="internal-chat-send-button"
-                  >
-                    <Send className="w-4 h-4 mr-2" />
-                    Enviar
-                  </Button>
-                </div>
+                {/* Audio recorder */}
+                {isRecordingAudio && (
+                  <div className="mb-3 max-w-3xl mx-auto">
+                    <AudioRecorder
+                      onSend={handleSendAudio}
+                      onCancel={() => setIsRecordingAudio(false)}
+                    />
+                  </div>
+                )}
+
+                {/* Audio file preview */}
+                {audioFile && !isRecordingAudio && (
+                  <div className="mb-3 max-w-3xl mx-auto">
+                    <AudioFilePreview
+                      file={audioFile}
+                      onSend={handleSendAudioFile}
+                      onCancel={() => setAudioFile(null)}
+                    />
+                  </div>
+                )}
+
+                {/* Normal input when not recording */}
+                {!isRecordingAudio && !audioFile && (
+                  <div className="flex gap-3 max-w-3xl mx-auto">
+                    {/* Attachment menu */}
+                    <Popover open={attachmentMenuOpen} onOpenChange={setAttachmentMenuOpen}>
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="flex-shrink-0 text-muted-foreground hover:text-foreground"
+                        >
+                          <Paperclip className="w-5 h-5" />
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-48 p-2" align="start">
+                        <div className="space-y-1">
+                          <button
+                            onClick={() => imageInputRef.current?.click()}
+                            className="w-full flex items-center gap-3 px-3 py-2 text-sm rounded-md hover:bg-muted transition-colors"
+                          >
+                            <Image className="w-4 h-4 text-blue-500" />
+                            <span>Imagem</span>
+                          </button>
+                          <button
+                            onClick={() => videoInputRef.current?.click()}
+                            className="w-full flex items-center gap-3 px-3 py-2 text-sm rounded-md hover:bg-muted transition-colors"
+                          >
+                            <Video className="w-4 h-4 text-purple-500" />
+                            <span>Vídeo</span>
+                          </button>
+                          <button
+                            onClick={() => audioInputRef.current?.click()}
+                            className="w-full flex items-center gap-3 px-3 py-2 text-sm rounded-md hover:bg-muted transition-colors"
+                          >
+                            <Mic className="w-4 h-4 text-orange-500" />
+                            <span>Áudio</span>
+                          </button>
+                          <button
+                            onClick={() => documentInputRef.current?.click()}
+                            className="w-full flex items-center gap-3 px-3 py-2 text-sm rounded-md hover:bg-muted transition-colors"
+                          >
+                            <FileText className="w-4 h-4 text-green-500" />
+                            <span>Documento</span>
+                          </button>
+                        </div>
+                      </PopoverContent>
+                    </Popover>
+
+                    {/* Hidden file inputs */}
+                    <input
+                      ref={imageInputRef}
+                      type="file"
+                      accept="image/*"
+                      onChange={handleImageSelect}
+                      className="hidden"
+                    />
+                    <input
+                      ref={videoInputRef}
+                      type="file"
+                      accept="video/*"
+                      onChange={handleVideoSelect}
+                      className="hidden"
+                    />
+                    <input
+                      ref={audioInputRef}
+                      type="file"
+                      accept="audio/*"
+                      onChange={handleAudioFileSelect}
+                      className="hidden"
+                    />
+                    <input
+                      ref={documentInputRef}
+                      type="file"
+                      accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.md,.zip,.rar"
+                      onChange={handleDocumentSelect}
+                      className="hidden"
+                    />
+
+                    <Input
+                      value={messageInput}
+                      onChange={(e) => setMessageInput(e.target.value)}
+                      onKeyDown={handleKeyDown}
+                      placeholder="Digite sua mensagem..."
+                      className="flex-1 internal-chat-input"
+                      disabled={isSending}
+                    />
+
+                    {/* Mic button (when no text) */}
+                    {!messageInput.trim() && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => setIsRecordingAudio(true)}
+                        className="flex-shrink-0 text-muted-foreground hover:text-foreground"
+                      >
+                        <Mic className="w-5 h-5" />
+                      </Button>
+                    )}
+
+                    {/* Send button */}
+                    <Button
+                      onClick={handleSendMessage}
+                      disabled={!messageInput.trim() || isSending}
+                      className="internal-chat-send-button"
+                    >
+                      {isSending ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <>
+                          <Send className="w-4 h-4 mr-2" />
+                          Enviar
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                )}
               </div>
             </>
           ) : (
@@ -363,6 +687,42 @@ export default function InternalChat() {
           )}
         </div>
       </div>
+
+      {/* Image Preview Modal */}
+      <ImagePreviewModal
+        file={imageFile}
+        isOpen={isImagePreviewOpen}
+        onClose={() => {
+          setIsImagePreviewOpen(false);
+          setImageFile(null);
+        }}
+        onSend={handleSendImage}
+        onChangeFile={() => imageInputRef.current?.click()}
+      />
+
+      {/* Video Preview Modal */}
+      <VideoPreviewModal
+        file={videoFile}
+        isOpen={isVideoPreviewOpen}
+        onClose={() => {
+          setIsVideoPreviewOpen(false);
+          setVideoFile(null);
+        }}
+        onSend={handleSendVideo}
+        onChangeFile={() => videoInputRef.current?.click()}
+      />
+
+      {/* Document Preview Modal */}
+      <DocumentPreviewModal
+        file={documentFile}
+        isOpen={isDocumentPreviewOpen}
+        onClose={() => {
+          setIsDocumentPreviewOpen(false);
+          setDocumentFile(null);
+        }}
+        onSend={handleSendDocument}
+        onChangeFile={() => documentInputRef.current?.click()}
+      />
     </div>
   );
 }
