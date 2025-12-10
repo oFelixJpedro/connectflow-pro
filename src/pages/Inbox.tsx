@@ -40,6 +40,7 @@ export default function Inbox() {
     resendMessage,
     updateConversation,
     loadConversations,
+    sendReaction,
   } = useInboxData();
 
   const handleSendMessage = async (content: string, quotedMessageId?: string) => {
@@ -141,6 +142,7 @@ export default function Inbox() {
           onClose={handleCloseConversation}
           onRefresh={loadConversations}
           onOpenContactDetails={openContactPanel}
+          onSendReaction={sendReaction}
           isLoadingMessages={isLoadingMessages}
           isSendingMessage={isSendingMessage}
           isRestricted={isRestricted}
