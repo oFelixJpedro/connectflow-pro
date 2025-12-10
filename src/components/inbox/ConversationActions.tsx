@@ -9,7 +9,9 @@ import {
   Loader2,
   Contact,
   Download,
+  ImageIcon,
 } from 'lucide-react';
+import { MediaGalleryModal } from './MediaGalleryModal';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -70,6 +72,7 @@ export function ConversationActions({
   const [loadingAction, setLoadingAction] = useState<string | null>(null);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
+  const [mediaGalleryOpen, setMediaGalleryOpen] = useState(false);
   const [confirmDialog, setConfirmDialog] = useState<{
     open: boolean;
     action: string;
@@ -469,8 +472,23 @@ export function ConversationActions({
             <Download className="w-4 h-4 mr-2" />
             <span>Exportar conversa</span>
           </DropdownMenuItem>
+
+          <DropdownMenuSeparator />
+
+          {/* Mídias */}
+          <DropdownMenuItem onClick={() => setMediaGalleryOpen(true)}>
+            <ImageIcon className="w-4 h-4 mr-2" />
+            <span>Mídias</span>
+          </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
+
+      {/* Media Gallery Modal */}
+      <MediaGalleryModal
+        open={mediaGalleryOpen}
+        onOpenChange={setMediaGalleryOpen}
+        conversationId={conversation.id}
+      />
 
       {/* Dialog de confirmação */}
       <AlertDialog
