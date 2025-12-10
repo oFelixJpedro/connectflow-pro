@@ -103,14 +103,8 @@ serve(async (req: Request) => {
     console.log('   - whatsapp_message_id:', messageData.whatsapp_message_id);
     console.log('   - direction:', messageData.direction);
 
-    // Validate message is inbound (can only react to received messages)
-    if (messageData.direction !== 'inbound') {
-      console.log('❌ Só é possível reagir a mensagens recebidas');
-      return new Response(
-        JSON.stringify({ success: false, error: 'Só é possível reagir a mensagens recebidas' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
+    // Log message direction (reactions allowed on both inbound and outbound)
+    console.log('   - Direção da mensagem:', messageData.direction);
 
     if (!messageData.whatsapp_message_id) {
       console.log('❌ Mensagem sem ID do WhatsApp');
