@@ -135,11 +135,20 @@ serve(async (req) => {
 
     console.log('📤 Upload para Storage...');
 
+    // Convert unsupported mime types to application/octet-stream
+    // Supabase Storage doesn't support text/plain and some other text types
+    const unsupportedMimeTypes = ['text/plain', 'text/csv', 'text/markdown', 'text/x-markdown'];
+    const storageContentType = unsupportedMimeTypes.includes(mimeType) 
+      ? 'application/octet-stream' 
+      : (mimeType || 'application/octet-stream');
+
+    console.log(`📦 Content-Type para Storage: ${storageContentType} (original: ${mimeType})`);
+
     // Upload to storage
     const { error: uploadError } = await supabase.storage
       .from('whatsapp-media')
       .upload(storagePath, bytes, {
-        contentType: mimeType || 'application/octet-stream',
+        contentType: storageContentType,
         upsert: false
       });
 
