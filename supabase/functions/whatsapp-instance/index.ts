@@ -348,13 +348,16 @@ Deno.serve(async (req) => {
       console.log('🔍 [STATUS] data.number =', data.number)
 
       // Verificar conexão via múltiplos campos
-      const checkConnected1 = data.status?.connected === true
+      // IMPORTANTE: status.connected = socket conectado (NÃO significa WhatsApp autenticado)
+      // status.loggedIn = WhatsApp autenticado ✅
+      // instance.status === "open" = Sessão WhatsApp aberta ✅
+      const checkConnected1 = data.status?.loggedIn === true
       const checkConnected2 = data.instance?.status === 'connected'
       const checkConnected3 = data.instance?.status === 'open'
       
       console.log('')
       console.log('🔍 [STATUS] ===== VERIFICAÇÕES DE CONEXÃO =====')
-      console.log('🔍 [STATUS] Check 1: data.status?.connected === true ?', checkConnected1)
+      console.log('🔍 [STATUS] Check 1: data.status?.loggedIn === true ?', checkConnected1)
       console.log('🔍 [STATUS] Check 2: data.instance?.status === "connected" ?', checkConnected2)
       console.log('🔍 [STATUS] Check 3: data.instance?.status === "open" ?', checkConnected3)
       
