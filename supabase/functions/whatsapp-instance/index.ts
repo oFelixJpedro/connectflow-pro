@@ -267,6 +267,9 @@ Deno.serve(async (req) => {
 
     // ========== ACTION: STATUS ==========
     if (action === 'status') {
+      console.log('🔍 [STATUS] ========== VERIFICANDO STATUS ==========')
+      console.log('🔍 [STATUS] Instance name:', instanceName)
+      
       // Primeiro buscar instance_token do banco
       const { data: connection } = await supabaseClient
         .from('whatsapp_connections')
@@ -275,11 +278,12 @@ Deno.serve(async (req) => {
         .maybeSingle()
       
       const tokenToUse = connection?.instance_token || UAZAPI_API_KEY
-      console.log('Using token:', connection?.instance_token ? 'instance_token from DB' : 'UAZAPI_API_KEY')
+      console.log('🔍 [STATUS] Token source:', connection?.instance_token ? 'instance_token from DB' : 'UAZAPI_API_KEY')
+      console.log('🔍 [STATUS] Token (first 8 chars):', tokenToUse?.substring(0, 8))
 
       // Tentar com instance name na query string
       const statusUrl = `${UAZAPI_BASE_URL}/instance/status?name=${encodeURIComponent(instanceName)}`
-      console.log('Checking status with URL:', statusUrl)
+      console.log('📡 [API] Status URL:', statusUrl)
 
       const instanceHeaders = {
         'Accept': 'application/json',
@@ -291,17 +295,18 @@ Deno.serve(async (req) => {
         headers: instanceHeaders
       })
 
-      console.log('Status response code:', response.status)
+      console.log('📡 [API] Status HTTP code:', response.status)
       
       const responseText = await response.text()
-      console.log('Status response (raw):', responseText)
+      console.log('📡 [API] Status response RAW:', responseText)
 
       let data
       try {
         data = JSON.parse(responseText)
-        console.log('Status data:', JSON.stringify(data))
+        console.log('📡 [API] Status response PARSED:', JSON.stringify(data, null, 2))
       } catch (e) {
-        console.error('Failed to parse status response:', e)
+        console.error('❌ [STATUS] Failed to parse response:', e)
+        console.log('⚠️ [STATUS] Retornando disconnected (parse error)')
         return new Response(
           JSON.stringify({ 
             success: true,
@@ -314,7 +319,7 @@ Deno.serve(async (req) => {
 
       // Se retornou 401 e temos instance_token, já usamos. Se não, retornar disconnected
       if (response.status === 401) {
-        console.log('Status returned 401, assuming disconnected')
+        console.log('⚠️ [STATUS] HTTP 401 - Retornando disconnected')
         return new Response(
           JSON.stringify({
             success: true,
@@ -329,32 +334,56 @@ Deno.serve(async (req) => {
       let status = 'disconnected'
       let phoneNumber = null
 
-      console.log('Mapping status from response...')
-      console.log('instance.status:', data.instance?.status)
-      console.log('status.connected:', data.status?.connected)
-      console.log('status.loggedIn:', data.status?.loggedIn)
+      console.log('🔍 [STATUS] ===== ANALISANDO CAMPOS =====')
+      console.log('🔍 [STATUS] data.instance:', JSON.stringify(data.instance))
+      console.log('🔍 [STATUS] data.status:', JSON.stringify(data.status))
+      console.log('🔍 [STATUS] data.state:', data.state)
+      console.log('🔍 [STATUS] Todas as chaves:', Object.keys(data))
+      console.log('')
+      console.log('🔍 [STATUS] data.instance?.status =', data.instance?.status, '(tipo:', typeof data.instance?.status, ')')
+      console.log('🔍 [STATUS] data.status?.connected =', data.status?.connected, '(tipo:', typeof data.status?.connected, ')')
+      console.log('🔍 [STATUS] data.status?.loggedIn =', data.status?.loggedIn, '(tipo:', typeof data.status?.loggedIn, ')')
+      console.log('🔍 [STATUS] data.instance?.owner =', data.instance?.owner)
+      console.log('🔍 [STATUS] data.phone =', data.phone)
+      console.log('🔍 [STATUS] data.number =', data.number)
 
       // Verificar conexão via múltiplos campos
-      const isConnected = 
-        data.status?.connected === true || 
-        data.instance?.status === 'connected' ||
-        data.instance?.status === 'open'
+      const checkConnected1 = data.status?.connected === true
+      const checkConnected2 = data.instance?.status === 'connected'
+      const checkConnected3 = data.instance?.status === 'open'
+      
+      console.log('')
+      console.log('🔍 [STATUS] ===== VERIFICAÇÕES DE CONEXÃO =====')
+      console.log('🔍 [STATUS] Check 1: data.status?.connected === true ?', checkConnected1)
+      console.log('🔍 [STATUS] Check 2: data.instance?.status === "connected" ?', checkConnected2)
+      console.log('🔍 [STATUS] Check 3: data.instance?.status === "open" ?', checkConnected3)
+      
+      const isConnected = checkConnected1 || checkConnected2 || checkConnected3
+      console.log('🔍 [STATUS] isConnected (OR de todas):', isConnected)
 
       const isConnecting = 
         data.instance?.status === 'connecting' ||
         data.state === 'connecting'
+      console.log('🔍 [STATUS] isConnecting:', isConnecting)
 
       if (isConnected) {
         status = 'connected'
         phoneNumber = data.instance?.owner || data.phone || data.number
+        console.log('✅ [STATUS] DETECTADO COMO CONECTADO!')
+        console.log('✅ [STATUS] phoneNumber extraído:', phoneNumber)
       } else if (isConnecting) {
         status = 'connecting'
+        console.log('🔄 [STATUS] Status: connecting')
       } else {
         status = 'disconnected'
+        console.log('⏳ [STATUS] Status: disconnected (aguardando QR scan)')
       }
 
-      console.log('Final mapped status:', status)
-      console.log('Final phone number:', phoneNumber)
+      console.log('')
+      console.log('📤 [STATUS] ===== RESPOSTA FINAL =====')
+      console.log('📤 [STATUS] status:', status)
+      console.log('📤 [STATUS] phoneNumber:', phoneNumber)
+      console.log('🔍 [STATUS] ========== FIM STATUS ==========')
 
       return new Response(
         JSON.stringify({
