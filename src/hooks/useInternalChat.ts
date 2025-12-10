@@ -261,16 +261,19 @@ export function useInternalChat() {
         }
       }
 
-      console.log('[InternalChat] Criando nova sala direta...');
+      console.log('[InternalChat] Criando nova sala direta com company_id:', company.id, 'profile_id:', profile.id);
 
       // Create new direct room
+      const insertData = {
+        company_id: company.id,
+        type: 'direct',
+        name: null,
+      };
+      console.log('[InternalChat] Dados para inserção:', JSON.stringify(insertData));
+      
       const { data: newRoom, error: roomError } = await supabase
         .from('internal_chat_rooms')
-        .insert({
-          company_id: company.id,
-          type: 'direct',
-          name: null,
-        })
+        .insert(insertData)
         .select('id')
         .single();
 
