@@ -518,6 +518,34 @@ export function ContactPanel({ conversation, onClose, onContactUpdated, onScroll
 
           <Separator />
 
+          {/* Chat Notes */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <h5 className="text-sm font-medium text-foreground">Notas de Chat</h5>
+                {chatNotesCount > 0 && (
+                  <Badge variant="secondary" className="text-xs bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300">
+                    {chatNotesCount}
+                  </Badge>
+                )}
+              </div>
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                className="h-7 px-2"
+                onClick={() => setChatNotesModalOpen(true)}
+              >
+                <StickyNote className="w-3 h-3 mr-1 text-amber-500" />
+                Ver notas
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Notas feitas diretamente no chat para contexto rápido
+            </p>
+          </div>
+
+          <Separator />
+
           {/* Notes */}
           <Collapsible open={notesOpen} onOpenChange={setNotesOpen}>
             <CollapsibleTrigger className="flex items-center justify-between w-full">
@@ -626,6 +654,18 @@ export function ContactPanel({ conversation, onClose, onContactUpdated, onScroll
         tags={availableTags}
         onSave={handleSaveContact}
       />
+
+      {/* Chat Notes Modal */}
+      {conversation && (
+        <ChatNotesModal
+          open={chatNotesModalOpen}
+          onOpenChange={setChatNotesModalOpen}
+          conversationId={conversation.id}
+          onNoteClick={(noteId) => {
+            onScrollToMessage?.(noteId);
+          }}
+        />
+      )}
     </div>
   );
 }
