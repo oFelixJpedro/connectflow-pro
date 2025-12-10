@@ -356,19 +356,57 @@ export function useInboxData() {
       if (messageIds.length > 0) {
         const { data: reactionsData, error: reactionsError } = await supabase
           .from('message_reactions')
-          .select(`
-            *,
-            profiles:reactor_id (full_name),
-            contacts:reactor_id (name)
-          `)
+          .select('*')
           .in('message_id', messageIds);
 
         if (reactionsError) {
           console.error('[useInboxData] Erro ao carregar reações:', reactionsError);
-        } else if (reactionsData) {
-          // Group reactions by message_id
+        } else if (reactionsData && reactionsData.length > 0) {
+          console.log('[useInboxData] Reações encontradas:', reactionsData.length);
+          
+          // Get unique reactor IDs by type
+          const userReactorIds = [...new Set(reactionsData.filter(r => r.reactor_type === 'user').map(r => r.reactor_id))];
+          const contactReactorIds = [...new Set(reactionsData.filter(r => r.reactor_type === 'contact').map(r => r.reactor_id))];
+          
+          // Fetch names separately
+          let userNames: Record<string, string> = {};
+          let contactNames: Record<string, string> = {};
+          
+          if (userReactorIds.length > 0) {
+            const { data: usersData } = await supabase
+              .from('profiles')
+              .select('id, full_name')
+              .in('id', userReactorIds);
+            userNames = (usersData || []).reduce((acc, u) => ({ ...acc, [u.id]: u.full_name }), {});
+          }
+          
+          if (contactReactorIds.length > 0) {
+            const { data: contactsData } = await supabase
+              .from('contacts')
+              .select('id, name')
+              .in('id', contactReactorIds);
+            contactNames = (contactsData || []).reduce((acc, c) => ({ ...acc, [c.id]: c.name || 'Contato' }), {});
+          }
+          
+          // Group reactions by message_id with proper names
           reactionsMap = reactionsData.reduce((acc, r) => {
-            const reaction = transformReaction(r);
+            const reactorName = r.reactor_type === 'user' 
+              ? userNames[r.reactor_id] 
+              : contactNames[r.reactor_id];
+            
+            const reaction: MessageReaction = {
+              id: r.id,
+              messageId: r.message_id,
+              companyId: r.company_id,
+              reactorType: r.reactor_type as 'contact' | 'user',
+              reactorId: r.reactor_id,
+              emoji: r.emoji,
+              whatsappMessageId: r.whatsapp_message_id || undefined,
+              reactorName: reactorName || undefined,
+              createdAt: r.created_at,
+              updatedAt: r.updated_at,
+            };
+            
             if (!acc[r.message_id]) acc[r.message_id] = [];
             acc[r.message_id].push(reaction);
             return acc;
@@ -884,20 +922,59 @@ export function useInboxData() {
           // Reload reactions for this message
           const { data: reactionsData } = await supabase
             .from('message_reactions')
-            .select(`
-              *,
-              profiles:reactor_id (full_name),
-              contacts:reactor_id (name)
-            `)
+            .select('*')
             .eq('message_id', messageId);
           
-          const updatedReactions = (reactionsData || []).map(transformReaction);
-          
-          setMessages(prev => prev.map(m => 
-            m.id === messageId 
-              ? { ...m, reactions: updatedReactions }
-              : m
-          ));
+          if (reactionsData && reactionsData.length > 0) {
+            // Get reactor names
+            const userReactorIds = [...new Set(reactionsData.filter(r => r.reactor_type === 'user').map(r => r.reactor_id))];
+            const contactReactorIds = [...new Set(reactionsData.filter(r => r.reactor_type === 'contact').map(r => r.reactor_id))];
+            
+            let userNames: Record<string, string> = {};
+            let contactNames: Record<string, string> = {};
+            
+            if (userReactorIds.length > 0) {
+              const { data: usersData } = await supabase
+                .from('profiles')
+                .select('id, full_name')
+                .in('id', userReactorIds);
+              userNames = (usersData || []).reduce((acc: Record<string, string>, u: any) => ({ ...acc, [u.id]: u.full_name }), {});
+            }
+            
+            if (contactReactorIds.length > 0) {
+              const { data: contactsData } = await supabase
+                .from('contacts')
+                .select('id, name')
+                .in('id', contactReactorIds);
+              contactNames = (contactsData || []).reduce((acc: Record<string, string>, c: any) => ({ ...acc, [c.id]: c.name || 'Contato' }), {});
+            }
+            
+            const updatedReactions: MessageReaction[] = reactionsData.map(r => ({
+              id: r.id,
+              messageId: r.message_id,
+              companyId: r.company_id,
+              reactorType: r.reactor_type as 'contact' | 'user',
+              reactorId: r.reactor_id,
+              emoji: r.emoji,
+              whatsappMessageId: r.whatsapp_message_id || undefined,
+              reactorName: r.reactor_type === 'user' ? userNames[r.reactor_id] : contactNames[r.reactor_id],
+              createdAt: r.created_at,
+              updatedAt: r.updated_at,
+            }));
+            
+            setMessages(prev => prev.map(m => 
+              m.id === messageId 
+                ? { ...m, reactions: updatedReactions }
+                : m
+            ));
+          } else {
+            // No reactions - clear them
+            setMessages(prev => prev.map(m => 
+              m.id === messageId 
+                ? { ...m, reactions: [] }
+                : m
+            ));
+          }
         }
       )
       .subscribe((status) => {
