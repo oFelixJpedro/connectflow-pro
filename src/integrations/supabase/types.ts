@@ -853,6 +853,10 @@ export type Database = {
         Returns: boolean
       }
       is_admin_or_owner: { Args: never; Returns: boolean }
+      room_belongs_to_user_company: {
+        Args: { room_id: string }
+        Returns: boolean
+      }
     }
     Enums: {
       app_role: "owner" | "admin" | "supervisor" | "agent" | "viewer"
