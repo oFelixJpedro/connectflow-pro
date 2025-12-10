@@ -39,6 +39,7 @@ import { DocumentPreviewModal } from './DocumentPreviewModal';
 import { MessageReactions } from './MessageReactions';
 import { ReactionPicker } from './ReactionPicker';
 import { EmojiMessagePicker } from './EmojiMessagePicker';
+import { QuickRepliesPicker } from './QuickRepliesPicker';
 import { cn } from '@/lib/utils';
 import type { Conversation, Message, QuotedMessage } from '@/types';
 import { format } from 'date-fns';
@@ -109,6 +110,7 @@ export function ChatPanel({
   const [isDocumentPreviewOpen, setIsDocumentPreviewOpen] = useState(false);
   const [isSendingDocument, setIsSendingDocument] = useState(false);
   const [sendingReactionMessageId, setSendingReactionMessageId] = useState<string | null>(null);
+  const [showQuickReplies, setShowQuickReplies] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messageRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -505,10 +507,45 @@ export function ChatPanel({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    // Don't handle Enter/Escape if quick replies picker is open
+    if (showQuickReplies) {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setShowQuickReplies(false);
+      }
+      // Let QuickRepliesPicker handle Arrow keys and Enter
+      if (e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'Enter') {
+        return;
+      }
+    }
+    
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSend();
     }
+  };
+
+  // Handle input change to detect "/" trigger
+  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const value = e.target.value;
+    setInputValue(value);
+    
+    // Show quick replies when typing "/" at the start or alone
+    if (value.startsWith('/')) {
+      setShowQuickReplies(true);
+    } else {
+      setShowQuickReplies(false);
+    }
+  };
+
+  // Handle quick reply selection
+  const handleQuickReplySelect = (message: string, replyId: string) => {
+    console.log('📝 Resposta rápida selecionada:', replyId);
+    setShowQuickReplies(false);
+    setInputValue('');
+    onSendMessage(message, replyingTo?.id);
+    setReplyingTo(null);
+    textareaRef.current?.focus();
   };
 
   const getInitials = (name?: string) => {
@@ -1089,14 +1126,22 @@ export function ChatPanel({
             />
             
             <div className="flex-1 relative">
+              {/* Quick Replies Picker */}
+              <QuickRepliesPicker
+                inputValue={inputValue}
+                onSelect={handleQuickReplySelect}
+                onClose={() => setShowQuickReplies(false)}
+                isOpen={showQuickReplies && canReply}
+              />
+              
               <Textarea
                 ref={textareaRef}
                 value={inputValue}
-                onChange={(e) => setInputValue(e.target.value)}
+                onChange={handleInputChange}
                 onKeyDown={handleKeyDown}
                 placeholder={
                   canReply 
-                    ? "Digite uma mensagem... (Enter para enviar)" 
+                    ? "Digite / para respostas rápidas..." 
                     : blockInfo.message
                 }
                 className={cn(

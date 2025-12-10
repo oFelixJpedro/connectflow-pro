@@ -7,12 +7,13 @@ import {
   Trash2, 
   Copy,
   MoreHorizontal,
-  FolderOpen
+  FolderOpen,
+  Loader2
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import {
   Dialog,
   DialogContent,
@@ -29,9 +30,20 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
+import { Skeleton } from '@/components/ui/skeleton';
 import {
   Select,
   SelectContent,
@@ -39,23 +51,50 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { mockQuickReplies } from '@/data/mockData';
+import { useQuickRepliesData, QuickReply } from '@/hooks/useQuickRepliesData';
 import { toast } from '@/hooks/use-toast';
 
+const defaultCategories = ['Saudações', 'Geral', 'Encerramento', 'Informações', 'Vendas', 'Suporte'];
+
 export default function QuickReplies() {
-  const [quickReplies, setQuickReplies] = useState(mockQuickReplies);
+  const { 
+    quickReplies, 
+    loading, 
+    isAdminOrOwner,
+    createQuickReply, 
+    updateQuickReply, 
+    deleteQuickReply,
+    getCategories 
+  } = useQuickRepliesData();
+  
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
-  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   
-  // Form state
+  // Add dialog state
+  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [shortcut, setShortcut] = useState('');
   const [title, setTitle] = useState('');
   const [message, setMessage] = useState('');
   const [category, setCategory] = useState('');
   const [isGlobal, setIsGlobal] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const categories = ['Saudações', 'Geral', 'Encerramento', 'Informações', 'Vendas'];
+  // Edit dialog state
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [editingReply, setEditingReply] = useState<QuickReply | null>(null);
+  const [editShortcut, setEditShortcut] = useState('');
+  const [editTitle, setEditTitle] = useState('');
+  const [editMessage, setEditMessage] = useState('');
+  const [editCategory, setEditCategory] = useState('');
+  const [editIsGlobal, setEditIsGlobal] = useState(true);
+
+  // Delete confirmation state
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [replyToDelete, setReplyToDelete] = useState<QuickReply | null>(null);
+
+  // Get all categories (existing + defaults)
+  const existingCategories = getCategories();
+  const allCategories = [...new Set([...defaultCategories, ...existingCategories])].sort();
 
   const filteredReplies = quickReplies.filter((reply) => {
     if (searchQuery) {
@@ -79,39 +118,98 @@ export default function QuickReplies() {
     });
   };
 
-  const handleAdd = () => {
-    const newReply = {
-      id: `${Date.now()}`,
-      companyId: '1',
-      shortcut: shortcut.startsWith('/') ? shortcut : `/${shortcut}`,
-      title,
-      message,
-      category,
-      isGlobal,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-    setQuickReplies([...quickReplies, newReply]);
-    setIsAddDialogOpen(false);
+  const resetAddForm = () => {
     setShortcut('');
     setTitle('');
     setMessage('');
     setCategory('');
     setIsGlobal(true);
-    
-    toast({
-      title: 'Resposta criada!',
-      description: `Use "${newReply.shortcut}" no chat para usar esta resposta.`,
-    });
   };
 
-  const handleDelete = (id: string) => {
-    setQuickReplies(quickReplies.filter((r) => r.id !== id));
-    toast({
-      title: 'Resposta excluída',
-      description: 'A resposta rápida foi removida.',
+  const handleAdd = async () => {
+    if (!shortcut.trim() || !title.trim() || !message.trim()) return;
+    
+    setIsSubmitting(true);
+    const result = await createQuickReply({
+      shortcut,
+      title,
+      message,
+      category,
+      is_global: isGlobal,
     });
+    setIsSubmitting(false);
+
+    if (result) {
+      setIsAddDialogOpen(false);
+      resetAddForm();
+    }
   };
+
+  const handleOpenEdit = (reply: QuickReply) => {
+    setEditingReply(reply);
+    setEditShortcut(reply.shortcut);
+    setEditTitle(reply.title);
+    setEditMessage(reply.message);
+    setEditCategory(reply.category || '');
+    setEditIsGlobal(reply.is_global);
+    setIsEditDialogOpen(true);
+  };
+
+  const handleEdit = async () => {
+    if (!editingReply || !editShortcut.trim() || !editTitle.trim() || !editMessage.trim()) return;
+    
+    setIsSubmitting(true);
+    const success = await updateQuickReply(editingReply.id, {
+      shortcut: editShortcut,
+      title: editTitle,
+      message: editMessage,
+      category: editCategory,
+      is_global: editIsGlobal,
+    });
+    setIsSubmitting(false);
+
+    if (success) {
+      setIsEditDialogOpen(false);
+      setEditingReply(null);
+    }
+  };
+
+  const handleDeleteClick = (reply: QuickReply) => {
+    setReplyToDelete(reply);
+    setDeleteConfirmOpen(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!replyToDelete) return;
+    
+    await deleteQuickReply(replyToDelete.id);
+    setDeleteConfirmOpen(false);
+    setReplyToDelete(null);
+  };
+
+  if (loading) {
+    return (
+      <div className="h-full overflow-auto p-6 space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <Skeleton className="h-8 w-48 mb-2" />
+            <Skeleton className="h-4 w-64" />
+          </div>
+          <Skeleton className="h-10 w-36" />
+        </div>
+        <Skeleton className="h-24 w-full" />
+        <div className="flex gap-4">
+          <Skeleton className="h-10 flex-1 max-w-md" />
+          <Skeleton className="h-10 w-40" />
+        </div>
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {[1, 2, 3, 4, 5, 6].map((i) => (
+            <Skeleton key={i} className="h-40" />
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="h-full overflow-auto p-6 space-y-6">
@@ -123,7 +221,10 @@ export default function QuickReplies() {
             Crie atalhos para mensagens frequentes
           </p>
         </div>
-        <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
+        <Dialog open={isAddDialogOpen} onOpenChange={(open) => {
+          setIsAddDialogOpen(open);
+          if (!open) resetAddForm();
+        }}>
           <DialogTrigger asChild>
             <Button>
               <Plus className="w-4 h-4 mr-2" />
@@ -141,12 +242,13 @@ export default function QuickReplies() {
             <div className="space-y-4 py-4">
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="shortcut">Atalho</Label>
+                  <Label htmlFor="shortcut">Atalho *</Label>
                   <Input
                     id="shortcut"
                     value={shortcut}
                     onChange={(e) => setShortcut(e.target.value)}
                     placeholder="/ola"
+                    maxLength={20}
                   />
                   <p className="text-xs text-muted-foreground">
                     Digite este comando no chat
@@ -159,7 +261,7 @@ export default function QuickReplies() {
                       <SelectValue placeholder="Selecione" />
                     </SelectTrigger>
                     <SelectContent>
-                      {categories.map((cat) => (
+                      {allCategories.map((cat) => (
                         <SelectItem key={cat} value={cat}>
                           {cat}
                         </SelectItem>
@@ -170,24 +272,29 @@ export default function QuickReplies() {
               </div>
               
               <div className="space-y-2">
-                <Label htmlFor="title">Título</Label>
+                <Label htmlFor="title">Título *</Label>
                 <Input
                   id="title"
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
                   placeholder="Nome descritivo da resposta"
+                  maxLength={100}
                 />
               </div>
               
               <div className="space-y-2">
-                <Label htmlFor="message">Mensagem</Label>
+                <Label htmlFor="message">Mensagem *</Label>
                 <Textarea
                   id="message"
                   value={message}
                   onChange={(e) => setMessage(e.target.value)}
                   placeholder="Conteúdo da mensagem..."
                   className="min-h-[120px]"
+                  maxLength={2000}
                 />
+                <p className="text-xs text-muted-foreground text-right">
+                  {message.length}/2000
+                </p>
               </div>
               
               <div className="flex items-center justify-between">
@@ -205,11 +312,21 @@ export default function QuickReplies() {
             </div>
             
             <DialogFooter>
-              <Button variant="outline" onClick={() => setIsAddDialogOpen(false)}>
+              <Button variant="outline" onClick={() => setIsAddDialogOpen(false)} disabled={isSubmitting}>
                 Cancelar
               </Button>
-              <Button onClick={handleAdd} disabled={!shortcut || !title || !message}>
-                Criar Resposta
+              <Button 
+                onClick={handleAdd} 
+                disabled={!shortcut.trim() || !title.trim() || !message.trim() || isSubmitting}
+              >
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Criando...
+                  </>
+                ) : (
+                  'Criar Resposta'
+                )}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -226,9 +343,9 @@ export default function QuickReplies() {
             <div>
               <h3 className="font-medium text-foreground">Como usar?</h3>
               <p className="text-sm text-muted-foreground mt-1">
-                Durante um atendimento, digite o atalho (ex: /ola) no campo de mensagem 
-                para inserir rapidamente a resposta. Você também pode pressionar "/" para 
-                ver todas as respostas disponíveis.
+                Durante um atendimento, digite "/" no campo de mensagem para ver todas as 
+                respostas disponíveis. Continue digitando para filtrar por título ou atalho.
+                Use as setas ↑↓ para navegar e Enter para selecionar.
               </p>
             </div>
           </div>
@@ -252,7 +369,7 @@ export default function QuickReplies() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Todas</SelectItem>
-            {categories.map((cat) => (
+            {allCategories.map((cat) => (
               <SelectItem key={cat} value={cat}>
                 {cat}
               </SelectItem>
@@ -268,11 +385,11 @@ export default function QuickReplies() {
             <CardContent className="pt-6">
               <div className="flex items-start justify-between">
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <Badge variant="secondary" className="font-mono text-xs">
                       {reply.shortcut}
                     </Badge>
-                    {reply.isGlobal && (
+                    {reply.is_global && (
                       <Badge variant="outline" className="text-xs">
                         Global
                       </Badge>
@@ -301,14 +418,14 @@ export default function QuickReplies() {
                       <Copy className="w-4 h-4 mr-2" />
                       Copiar mensagem
                     </DropdownMenuItem>
-                    <DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => handleOpenEdit(reply)}>
                       <Edit2 className="w-4 h-4 mr-2" />
                       Editar
                     </DropdownMenuItem>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem 
                       className="text-destructive"
-                      onClick={() => handleDelete(reply.id)}
+                      onClick={() => handleDeleteClick(reply)}
                     >
                       <Trash2 className="w-4 h-4 mr-2" />
                       Excluir
@@ -320,6 +437,12 @@ export default function QuickReplies() {
               <p className="text-sm text-muted-foreground mt-3 line-clamp-2">
                 {reply.message}
               </p>
+
+              {reply.use_count > 0 && (
+                <p className="text-xs text-muted-foreground mt-2">
+                  Usada {reply.use_count}x
+                </p>
+              )}
               
               <Button 
                 variant="ghost" 
@@ -338,14 +461,145 @@ export default function QuickReplies() {
           <div className="col-span-full text-center py-12">
             <Zap className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
             <h3 className="text-lg font-medium text-foreground">
-              Nenhuma resposta encontrada
+              {searchQuery || selectedCategory !== 'all' 
+                ? 'Nenhuma resposta encontrada' 
+                : 'Nenhuma resposta criada'
+              }
             </h3>
             <p className="text-sm text-muted-foreground mt-1">
-              Tente ajustar os filtros ou crie uma nova resposta
+              {searchQuery || selectedCategory !== 'all'
+                ? 'Tente ajustar os filtros ou crie uma nova resposta'
+                : 'Crie sua primeira resposta rápida para agilizar os atendimentos'
+              }
             </p>
           </div>
         )}
       </div>
+
+      {/* Edit Dialog */}
+      <Dialog open={isEditDialogOpen} onOpenChange={(open) => {
+        setIsEditDialogOpen(open);
+        if (!open) setEditingReply(null);
+      }}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Editar Resposta Rápida</DialogTitle>
+            <DialogDescription>
+              Atualize as informações da resposta
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4 py-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="edit-shortcut">Atalho *</Label>
+                <Input
+                  id="edit-shortcut"
+                  value={editShortcut}
+                  onChange={(e) => setEditShortcut(e.target.value)}
+                  placeholder="/ola"
+                  maxLength={20}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-category">Categoria</Label>
+                <Select value={editCategory} onValueChange={setEditCategory}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {allCategories.map((cat) => (
+                      <SelectItem key={cat} value={cat}>
+                        {cat}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            
+            <div className="space-y-2">
+              <Label htmlFor="edit-title">Título *</Label>
+              <Input
+                id="edit-title"
+                value={editTitle}
+                onChange={(e) => setEditTitle(e.target.value)}
+                placeholder="Nome descritivo da resposta"
+                maxLength={100}
+              />
+            </div>
+            
+            <div className="space-y-2">
+              <Label htmlFor="edit-message">Mensagem *</Label>
+              <Textarea
+                id="edit-message"
+                value={editMessage}
+                onChange={(e) => setEditMessage(e.target.value)}
+                placeholder="Conteúdo da mensagem..."
+                className="min-h-[120px]"
+                maxLength={2000}
+              />
+              <p className="text-xs text-muted-foreground text-right">
+                {editMessage.length}/2000
+              </p>
+            </div>
+            
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label>Resposta Global</Label>
+                <p className="text-xs text-muted-foreground">
+                  Visível para toda a equipe
+                </p>
+              </div>
+              <Switch
+                checked={editIsGlobal}
+                onCheckedChange={setEditIsGlobal}
+              />
+            </div>
+          </div>
+          
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsEditDialogOpen(false)} disabled={isSubmitting}>
+              Cancelar
+            </Button>
+            <Button 
+              onClick={handleEdit} 
+              disabled={!editShortcut.trim() || !editTitle.trim() || !editMessage.trim() || isSubmitting}
+            >
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Salvando...
+                </>
+              ) : (
+                'Salvar'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir resposta rápida</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tem certeza que deseja excluir a resposta "{replyToDelete?.title}"?
+              Esta ação não pode ser desfeita.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleConfirmDelete}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Excluir
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
