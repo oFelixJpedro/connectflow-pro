@@ -511,6 +511,174 @@ serve(async (req) => {
       detectedSubtype = 'text'
       console.log(`✅ Tipo texto detectado`)
     }
+    // Check for ReactionMessage - handle separately
+    else if (rawMessageType === 'reaction' || messageType === 'ReactionMessage') {
+      console.log(`😀 [REAÇÃO DETECTADA]`)
+      console.log(`   - type: ${rawMessageType}`)
+      console.log(`   - messageType: ${messageType}`)
+      
+      // Extract reaction data
+      const reactionEmoji = payload.message?.text || payload.message?.content?.text || ''
+      const originalMessageId = payload.message?.content?.key?.ID || payload.message?.reaction || ''
+      const fromMe = payload.message?.fromMe || payload.message?.content?.key?.fromMe || false
+      const reactionMessageId = payload.message?.messageid
+      const reactionSender = payload.message?.sender
+      
+      console.log(`   - emoji: "${reactionEmoji}"`)
+      console.log(`   - originalMessageId: ${originalMessageId}`)
+      console.log(`   - fromMe: ${fromMe}`)
+      console.log(`   - reactionMessageId: ${reactionMessageId}`)
+      console.log(`   - sender: ${reactionSender}`)
+      
+      // Initialize Supabase for reaction processing
+      const supabaseUrl = Deno.env.get('SUPABASE_URL')!
+      const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+      const supabase = createClient(supabaseUrl, supabaseServiceKey)
+      
+      // Find connection by instanceName
+      const instanceName = payload.instanceName
+      const { data: connection, error: connError } = await supabase
+        .from('whatsapp_connections')
+        .select('id, company_id')
+        .eq('session_id', instanceName)
+        .maybeSingle()
+      
+      if (connError || !connection) {
+        console.log(`❌ Conexão não encontrada para instanceName: ${instanceName}`)
+        return new Response(
+          JSON.stringify({ success: true, message: 'Connection not found for reaction' }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+      
+      const companyId = connection.company_id
+      console.log(`✅ Conexão encontrada - company_id: ${companyId}`)
+      
+      // Find the original message by whatsapp_message_id
+      // Try multiple formats: short ID, full ID with phone prefix, and with :
+      const phoneOwner = payload.message?.owner || payload.chat?.owner || payload.owner || ''
+      const possibleIds = [
+        originalMessageId,
+        `${phoneOwner}:${originalMessageId}`,
+        originalMessageId.includes(':') ? originalMessageId.split(':')[1] : null
+      ].filter(Boolean)
+      
+      console.log(`🔍 Buscando mensagem com IDs: ${JSON.stringify(possibleIds)}`)
+      
+      let originalMessage = null
+      for (const searchId of possibleIds) {
+        const { data: msg, error: msgErr } = await supabase
+          .from('messages')
+          .select('id, conversation_id')
+          .eq('whatsapp_message_id', searchId)
+          .maybeSingle()
+        
+        if (msg && !msgErr) {
+          originalMessage = msg
+          console.log(`✅ Mensagem encontrada com ID: ${searchId}`)
+          break
+        }
+      }
+      
+      if (!originalMessage) {
+        console.log(`❌ Mensagem original não encontrada: ${originalMessageId}`)
+        console.log(`   IDs tentados: ${JSON.stringify(possibleIds)}`)
+        return new Response(
+          JSON.stringify({ success: true, message: 'Original message not found for reaction' }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+      
+      console.log(`✅ Mensagem original encontrada: ${originalMessage.id}`)
+      
+      // Determine reactor type and ID
+      let reactorType: 'contact' | 'user' = 'contact'
+      let reactorId: string | null = null
+      
+      if (fromMe) {
+        // Reaction is from a user (agent/admin) - try to find the user associated with this connection
+        // For now, we'll mark as user type but we may not have the exact user ID
+        reactorType = 'user'
+        // Try to find a user in the company
+        const { data: companyUser } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('company_id', companyId)
+          .limit(1)
+          .maybeSingle()
+        
+        if (companyUser) {
+          reactorId = companyUser.id
+        }
+      } else {
+        // Reaction is from a contact - find the contact
+        const phoneNumber = reactionSender?.split('@')[0] || payload.chat?.wa_chatid?.split('@')[0] || ''
+        
+        const { data: contact } = await supabase
+          .from('contacts')
+          .select('id')
+          .eq('company_id', companyId)
+          .eq('phone_number', phoneNumber)
+          .maybeSingle()
+        
+        if (contact) {
+          reactorId = contact.id
+        }
+      }
+      
+      if (!reactorId) {
+        console.log(`⚠️ Não foi possível identificar o reator`)
+        return new Response(
+          JSON.stringify({ success: true, message: 'Could not identify reactor' }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+      
+      console.log(`👤 Reator: ${reactorType} - ${reactorId}`)
+      
+      // Handle reaction: empty emoji means removal
+      if (!reactionEmoji || reactionEmoji.trim() === '') {
+        console.log(`🗑️ Removendo reação...`)
+        const { error: deleteError } = await supabase
+          .from('message_reactions')
+          .delete()
+          .eq('message_id', originalMessage.id)
+          .eq('reactor_type', reactorType)
+          .eq('reactor_id', reactorId)
+        
+        if (deleteError) {
+          console.log(`❌ Erro ao remover reação: ${deleteError.message}`)
+        } else {
+          console.log(`✅ Reação removida com sucesso!`)
+        }
+      } else {
+        console.log(`💾 Salvando/atualizando reação...`)
+        // Upsert reaction (update if same person already reacted, insert if new)
+        const { error: upsertError } = await supabase
+          .from('message_reactions')
+          .upsert({
+            message_id: originalMessage.id,
+            company_id: companyId,
+            reactor_type: reactorType,
+            reactor_id: reactorId,
+            emoji: reactionEmoji,
+            whatsapp_message_id: reactionMessageId,
+          }, {
+            onConflict: 'message_id,reactor_type,reactor_id',
+          })
+        
+        if (upsertError) {
+          console.log(`❌ Erro ao salvar reação: ${upsertError.message}`)
+        } else {
+          console.log(`✅ Reação salva com sucesso!`)
+        }
+      }
+      
+      return new Response(
+        JSON.stringify({ success: true, message: 'Reaction processed' }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
     // Other unsupported types
     else {
       console.log(`ℹ️ Mensagem tipo "${rawMessageType}" / messageType="${messageType}" ignorada`)

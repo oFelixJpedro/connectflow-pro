@@ -36,6 +36,8 @@ import { AudioFilePreview } from './AudioFilePreview';
 import { AttachmentMenu } from './AttachmentMenu';
 import { ImagePreviewModal } from './ImagePreviewModal';
 import { VideoPreviewModal } from './VideoPreviewModal';
+import { DocumentPreviewModal } from './DocumentPreviewModal';
+import { MessageReactions } from './MessageReactions';
 import { cn } from '@/lib/utils';
 import type { Conversation, Message, QuotedMessage } from '@/types';
 import { format } from 'date-fns';
@@ -100,6 +102,9 @@ export function ChatPanel({
   const [videoFile, setVideoFile] = useState<File | null>(null);
   const [isVideoPreviewOpen, setIsVideoPreviewOpen] = useState(false);
   const [isSendingVideo, setIsSendingVideo] = useState(false);
+  const [documentFile, setDocumentFile] = useState<File | null>(null);
+  const [isDocumentPreviewOpen, setIsDocumentPreviewOpen] = useState(false);
+  const [isSendingDocument, setIsSendingDocument] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messageRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -337,6 +342,69 @@ export function ChatPanel({
   const handleVideoSelect = (file: File) => {
     setVideoFile(file);
     setIsVideoPreviewOpen(true);
+  };
+
+  // Send document handler
+  const handleSendDocument = async (file: File, text: string) => {
+    if (!conversation) return;
+
+    setIsSendingDocument(true);
+    try {
+      // Convert file to base64
+      const reader = new FileReader();
+      const base64Promise = new Promise<string>((resolve, reject) => {
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = reject;
+      });
+      reader.readAsDataURL(file);
+      const base64Data = await base64Promise;
+
+      console.log('📤 Enviando documento para Edge Function...');
+
+      // Get contact phone from conversation
+      const contactPhone = conversation.contact?.phoneNumber || '';
+
+      const { data, error } = await supabase.functions.invoke('send-whatsapp-document', {
+        body: {
+          documentData: base64Data,
+          fileName: file.name,
+          mimeType: file.type || 'application/octet-stream',
+          conversationId: conversation.id,
+          connectionId: conversation.whatsappConnectionId,
+          contactPhoneNumber: contactPhone,
+          text: text || undefined,
+          quotedMessageId: replyingTo?.id,
+        }
+      });
+
+      if (error) throw error;
+
+      if (!data?.success) {
+        throw new Error(data?.error || 'Erro ao enviar documento');
+      }
+
+      console.log('✅ Documento enviado com sucesso!');
+      toast({
+        title: 'Documento enviado',
+        description: 'O documento foi enviado com sucesso.',
+      });
+
+      setDocumentFile(null);
+      setIsDocumentPreviewOpen(false);
+      setReplyingTo(null);
+      onRefresh?.();
+
+    } catch (error: any) {
+      console.error('❌ Erro ao enviar documento:', error);
+      throw error; // Re-throw to be handled by DocumentPreviewModal
+    } finally {
+      setIsSendingDocument(false);
+    }
+  };
+
+  const handleDocumentSelect = (file: File) => {
+    setDocumentFile(file);
+    setIsDocumentPreviewOpen(true);
   };
 
   // Scroll para o final
@@ -835,7 +903,14 @@ export function ChatPanel({
                                 )}
                               </div>
                             )}
-                            
+
+                            {/* Message reactions */}
+                            {message.reactions && message.reactions.length > 0 && (
+                              <MessageReactions
+                                reactions={message.reactions}
+                                isOutbound={isOutbound}
+                              />
+                            )}
                             {/* Resend button for failed messages */}
                             {isOutbound && isFailed && onResendMessage && (
                               <div className="mt-2 pt-2 border-t border-destructive/20">
@@ -946,6 +1021,7 @@ export function ChatPanel({
               onImageSelect={handleImageSelect}
               onVideoSelect={handleVideoSelect}
               onAudioSelect={handleAudioFileSelect}
+              onDocumentSelect={handleDocumentSelect}
               disabled={!canReply}
             />
             
@@ -1050,6 +1126,29 @@ export function ChatPanel({
             const file = (e.target as HTMLInputElement).files?.[0];
             if (file) {
               setVideoFile(file);
+            }
+          };
+          input.click();
+        }}
+      />
+
+      {/* Document Preview Modal */}
+      <DocumentPreviewModal
+        file={documentFile}
+        isOpen={isDocumentPreviewOpen}
+        onClose={() => {
+          setIsDocumentPreviewOpen(false);
+          setDocumentFile(null);
+        }}
+        onSend={handleSendDocument}
+        onChangeFile={() => {
+          const input = document.createElement('input');
+          input.type = 'file';
+          input.accept = '.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.md,.zip,.rar,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+          input.onchange = (e) => {
+            const file = (e.target as HTMLInputElement).files?.[0];
+            if (file) {
+              setDocumentFile(file);
             }
           };
           input.click();
