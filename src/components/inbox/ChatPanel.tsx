@@ -39,6 +39,8 @@ import { DocumentPreviewModal } from './DocumentPreviewModal';
 import { MessageReactions } from './MessageReactions';
 import { ReactionPicker } from './ReactionPicker';
 import { EmojiMessagePicker } from './EmojiMessagePicker';
+import { QuickRepliesPicker } from './QuickRepliesPicker';
+import { QuickReply } from '@/hooks/useQuickRepliesData';
 import { cn } from '@/lib/utils';
 import type { Conversation, Message, QuotedMessage } from '@/types';
 import { format } from 'date-fns';
@@ -109,6 +111,7 @@ export function ChatPanel({
   const [isDocumentPreviewOpen, setIsDocumentPreviewOpen] = useState(false);
   const [isSendingDocument, setIsSendingDocument] = useState(false);
   const [sendingReactionMessageId, setSendingReactionMessageId] = useState<string | null>(null);
+  const [showQuickReplies, setShowQuickReplies] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messageRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -505,10 +508,119 @@ export function ChatPanel({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    // Don't handle Enter/Escape if quick replies picker is open
+    if (showQuickReplies) {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setShowQuickReplies(false);
+      }
+      // Let QuickRepliesPicker handle Arrow keys and Enter
+      if (e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'Enter') {
+        return;
+      }
+    }
+    
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSend();
     }
+  };
+
+  // Handle input change to detect "/" trigger
+  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const value = e.target.value;
+    setInputValue(value);
+    
+    // Show quick replies when typing "/" at the start or alone
+    if (value.startsWith('/')) {
+      setShowQuickReplies(true);
+    } else {
+      setShowQuickReplies(false);
+    }
+  };
+
+  // Handle quick reply selection
+  const handleQuickReplySelect = async (reply: QuickReply) => {
+    console.log('📝 Resposta rápida selecionada:', reply.id, 'Tipo:', reply.media_type);
+    setShowQuickReplies(false);
+    setInputValue('');
+    
+    const mediaType = reply.media_type || 'text';
+    
+    // Handle different media types
+    if (mediaType === 'text' || !reply.media_url) {
+      // Send as text message
+      onSendMessage(reply.message, replyingTo?.id);
+    } else if (mediaType === 'image' && reply.media_url) {
+      // Send image with caption
+      try {
+        const response = await fetch(reply.media_url);
+        const blob = await response.blob();
+        const file = new File([blob], `quick-reply-image.${blob.type.split('/')[1] || 'jpg'}`, { type: blob.type });
+        setImageFile(file);
+        setIsImagePreviewOpen(true);
+        // Pre-fill caption with message if exists
+        // Note: ImagePreviewModal will handle the actual sending
+      } catch (error) {
+        console.error('Erro ao carregar imagem:', error);
+        toast({
+          title: 'Erro ao carregar imagem',
+          description: 'Não foi possível carregar a imagem da resposta rápida.',
+          variant: 'destructive',
+        });
+      }
+    } else if (mediaType === 'video' && reply.media_url) {
+      // Send video
+      try {
+        const response = await fetch(reply.media_url);
+        const blob = await response.blob();
+        const file = new File([blob], `quick-reply-video.${blob.type.split('/')[1] || 'mp4'}`, { type: blob.type });
+        setVideoFile(file);
+        setIsVideoPreviewOpen(true);
+      } catch (error) {
+        console.error('Erro ao carregar vídeo:', error);
+        toast({
+          title: 'Erro ao carregar vídeo',
+          description: 'Não foi possível carregar o vídeo da resposta rápida.',
+          variant: 'destructive',
+        });
+      }
+    } else if (mediaType === 'audio' && reply.media_url) {
+      // Send audio
+      try {
+        const response = await fetch(reply.media_url);
+        const blob = await response.blob();
+        const file = new File([blob], `quick-reply-audio.${blob.type.split('/')[1] || 'mp3'}`, { type: blob.type });
+        setAudioFile(file);
+      } catch (error) {
+        console.error('Erro ao carregar áudio:', error);
+        toast({
+          title: 'Erro ao carregar áudio',
+          description: 'Não foi possível carregar o áudio da resposta rápida.',
+          variant: 'destructive',
+        });
+      }
+    } else if (mediaType === 'document' && reply.media_url) {
+      // Send document
+      try {
+        const response = await fetch(reply.media_url);
+        const blob = await response.blob();
+        const fileName = reply.media_url.split('/').pop() || 'document';
+        const file = new File([blob], fileName, { type: blob.type || 'application/octet-stream' });
+        setDocumentFile(file);
+        setIsDocumentPreviewOpen(true);
+      } catch (error) {
+        console.error('Erro ao carregar documento:', error);
+        toast({
+          title: 'Erro ao carregar documento',
+          description: 'Não foi possível carregar o documento da resposta rápida.',
+          variant: 'destructive',
+        });
+      }
+    }
+    
+    setReplyingTo(null);
+    textareaRef.current?.focus();
   };
 
   const getInitials = (name?: string) => {
@@ -1089,14 +1201,22 @@ export function ChatPanel({
             />
             
             <div className="flex-1 relative">
+              {/* Quick Replies Picker */}
+              <QuickRepliesPicker
+                inputValue={inputValue}
+                onSelect={handleQuickReplySelect}
+                onClose={() => setShowQuickReplies(false)}
+                isOpen={showQuickReplies && canReply}
+              />
+              
               <Textarea
                 ref={textareaRef}
                 value={inputValue}
-                onChange={(e) => setInputValue(e.target.value)}
+                onChange={handleInputChange}
                 onKeyDown={handleKeyDown}
                 placeholder={
                   canReply 
-                    ? "Digite uma mensagem... (Enter para enviar)" 
+                    ? "Digite / para respostas rápidas..." 
                     : blockInfo.message
                 }
                 className={cn(
