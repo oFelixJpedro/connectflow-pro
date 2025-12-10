@@ -33,27 +33,28 @@ import {
 import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import { SettingsSubmenu } from './SettingsSubmenu';
+import { useNotifications } from '@/hooks/useNotifications';
 
-const menuItems = [
+const baseMenuItems = [
   { 
     icon: LayoutDashboard, 
     label: 'Dashboard', 
     path: '/dashboard',
-    badge: null,
+    badgeKey: null as string | null,
     adminOnly: false,
   },
   { 
     icon: MessageSquare, 
     label: 'Inbox', 
     path: '/inbox',
-    badge: 5,
+    badgeKey: 'whatsapp' as string | null,
     adminOnly: false,
   },
   { 
     icon: Users, 
     label: 'Contatos', 
     path: '/contacts',
-    badge: null,
+    badgeKey: null as string | null,
     adminOnly: false,
   },
 ];
@@ -62,6 +63,7 @@ export function AppSidebar() {
   const location = useLocation();
   const navigate = useNavigate();
   const { profile, company, userRole, signOut, updateStatus } = useAuth();
+  const { unreadCounts } = useNotifications();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
@@ -199,9 +201,14 @@ export function AppSidebar() {
 
         {/* Navigation */}
         <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-          {menuItems.map((item) => {
+          {baseMenuItems.map((item) => {
             const isActive = location.pathname === item.path || 
               (item.path === '/inbox' && location.pathname.startsWith('/inbox'));
+            
+            // Get badge count from unreadCounts
+            const badgeCount = item.badgeKey 
+              ? unreadCounts[item.badgeKey as keyof typeof unreadCounts] || 0
+              : 0;
             
             const NavItem = (
               <NavLink
@@ -216,12 +223,12 @@ export function AppSidebar() {
                 {!sidebarCollapsed && (
                   <>
                     <span className="flex-1">{item.label}</span>
-                    {item.badge && (
+                    {badgeCount > 0 && (
                       <Badge 
                         variant="secondary" 
                         className="bg-primary text-primary-foreground text-xs px-2 py-0.5"
                       >
-                        {item.badge}
+                        {badgeCount > 99 ? '99+' : badgeCount}
                       </Badge>
                     )}
                   </>
@@ -237,9 +244,9 @@ export function AppSidebar() {
                   </TooltipTrigger>
                   <TooltipContent side="right" className="flex items-center gap-2">
                     {item.label}
-                    {item.badge && (
+                    {badgeCount > 0 && (
                       <Badge variant="secondary" className="text-xs">
-                        {item.badge}
+                        {badgeCount > 99 ? '99+' : badgeCount}
                       </Badge>
                     )}
                   </TooltipContent>
