@@ -1095,6 +1095,140 @@ export function useInboxData() {
     };
   }, [profile?.company_id, selectedConnectionId, loadConversations]);
 
+  // ============================================================
+  // ENVIAR/REMOVER REAÇÃO
+  // ============================================================
+  const sendReaction = useCallback(async (
+    messageId: string,
+    emoji: string,
+    remove: boolean = false
+  ): Promise<boolean> => {
+    if (!selectedConversation || !user?.id) {
+      console.error('[useInboxData] Sem conversa selecionada ou usuário');
+      return false;
+    }
+
+    console.log(`[useInboxData] ${remove ? 'Removendo' : 'Enviando'} reação:`, emoji, 'para mensagem:', messageId);
+
+    // Get contact phone from conversation
+    const contactPhone = selectedConversation.contact?.phoneNumber || '';
+    if (!contactPhone) {
+      console.error('[useInboxData] Contato sem número de telefone');
+      toast({
+        title: 'Erro',
+        description: 'Contato sem número de telefone.',
+        variant: 'destructive',
+      });
+      return false;
+    }
+
+    // Optimistic update - update UI immediately
+    setMessages(prev => prev.map(m => {
+      if (m.id !== messageId) return m;
+      
+      const currentReactions = m.reactions || [];
+      
+      if (remove) {
+        // Remove user's reaction
+        return {
+          ...m,
+          reactions: currentReactions.filter(r => !(r.reactorId === user.id && r.reactorType === 'user'))
+        };
+      } else {
+        // Add or update user's reaction
+        const existingReactionIndex = currentReactions.findIndex(
+          r => r.reactorId === user.id && r.reactorType === 'user'
+        );
+        
+        const newReaction: MessageReaction = {
+          id: `temp-${Date.now()}`,
+          messageId,
+          companyId: profile?.company_id || '',
+          reactorType: 'user',
+          reactorId: user.id,
+          emoji,
+          reactorName: profile?.full_name || 'Você',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        
+        if (existingReactionIndex >= 0) {
+          // Update existing reaction
+          const updatedReactions = [...currentReactions];
+          updatedReactions[existingReactionIndex] = newReaction;
+          return { ...m, reactions: updatedReactions };
+        } else {
+          // Add new reaction
+          return { ...m, reactions: [...currentReactions, newReaction] };
+        }
+      }
+    }));
+
+    try {
+      const response = await supabase.functions.invoke('send-whatsapp-reaction', {
+        body: {
+          messageId,
+          emoji,
+          connectionId: selectedConversation.whatsappConnectionId,
+          contactPhoneNumber: contactPhone,
+          remove,
+        },
+      });
+
+      if (response.error) {
+        console.error('[useInboxData] Erro ao enviar reação:', response.error);
+        // Revert optimistic update - reload messages
+        if (selectedConversation?.id) {
+          loadMessages(selectedConversation.id);
+        }
+        toast({
+          title: 'Erro ao enviar reação',
+          description: response.data?.error || 'Tente novamente.',
+          variant: 'destructive',
+        });
+        return false;
+      }
+
+      if (!response.data?.success) {
+        console.error('[useInboxData] Falha ao enviar reação:', response.data?.error);
+        // Revert optimistic update
+        if (selectedConversation?.id) {
+          loadMessages(selectedConversation.id);
+        }
+        toast({
+          title: 'Erro ao enviar reação',
+          description: response.data?.error || 'Tente novamente.',
+          variant: 'destructive',
+        });
+        return false;
+      }
+
+      console.log('[useInboxData] Reação enviada com sucesso');
+      
+      // Show warning if there was an issue with WhatsApp but saved locally
+      if (response.data?.warning) {
+        toast({
+          title: 'Reação salva',
+          description: response.data.warning,
+        });
+      }
+
+      return true;
+    } catch (err) {
+      console.error('[useInboxData] Erro inesperado ao enviar reação:', err);
+      // Revert optimistic update
+      if (selectedConversation?.id) {
+        loadMessages(selectedConversation.id);
+      }
+      toast({
+        title: 'Erro ao enviar reação',
+        description: 'Ocorreu um erro inesperado.',
+        variant: 'destructive',
+      });
+      return false;
+    }
+  }, [selectedConversation, user?.id, profile?.company_id, profile?.full_name, loadMessages]);
+
   return {
     // Estado
     conversations,
@@ -1112,5 +1246,6 @@ export function useInboxData() {
     sendMessage,
     resendMessage,
     updateConversation,
+    sendReaction,
   };
 }
