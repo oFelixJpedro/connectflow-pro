@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { 
   X, 
   Phone, 
@@ -10,7 +10,9 @@ import {
   Clock,
   Plus,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  Loader2,
+  Check
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -23,26 +25,222 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
 import type { Conversation } from '@/types';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { supabase } from '@/integrations/supabase/client';
+import { useToast } from '@/hooks/use-toast';
 
 interface ContactPanelProps {
   conversation: Conversation | null;
   onClose: () => void;
 }
 
+interface Tag {
+  id: string;
+  name: string;
+  color: string;
+}
+
+interface ConversationHistory {
+  id: string;
+  status: string;
+  createdAt: string;
+  messageCount: number;
+}
+
 export function ContactPanel({ conversation, onClose }: ContactPanelProps) {
+  const { toast } = useToast();
   const [notesOpen, setNotesOpen] = useState(true);
   const [historyOpen, setHistoryOpen] = useState(true);
-  const [notes, setNotes] = useState(conversation?.contact?.notes || '');
+  const [notes, setNotes] = useState('');
+  const [isSavingNotes, setIsSavingNotes] = useState(false);
+  const [notesSaved, setNotesSaved] = useState(false);
+  
+  // Tags state
+  const [contactTags, setContactTags] = useState<string[]>([]);
+  const [availableTags, setAvailableTags] = useState<Tag[]>([]);
+  const [isLoadingTags, setIsLoadingTags] = useState(false);
+  const [tagPopoverOpen, setTagPopoverOpen] = useState(false);
+  
+  // Conversation history state
+  const [conversationHistory, setConversationHistory] = useState<ConversationHistory[]>([]);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+
+  const contact = conversation?.contact;
+
+  // Load initial data
+  useEffect(() => {
+    if (contact) {
+      setNotes(contact.notes || '');
+      setContactTags(contact.tags || []);
+      loadAvailableTags();
+      loadConversationHistory();
+    }
+  }, [contact?.id]);
+
+  const loadAvailableTags = async () => {
+    setIsLoadingTags(true);
+    try {
+      const { data, error } = await supabase
+        .from('tags')
+        .select('id, name, color')
+        .order('name');
+
+      if (error) throw error;
+      setAvailableTags(data || []);
+    } catch (error) {
+      console.error('[ContactPanel] Erro ao carregar tags:', error);
+    } finally {
+      setIsLoadingTags(false);
+    }
+  };
+
+  const loadConversationHistory = async () => {
+    if (!contact?.id) return;
+    
+    setIsLoadingHistory(true);
+    try {
+      // Buscar todas as conversas deste contato
+      const { data: conversations, error: convError } = await supabase
+        .from('conversations')
+        .select('id, status, created_at')
+        .eq('contact_id', contact.id)
+        .order('created_at', { ascending: false });
+
+      if (convError) throw convError;
+
+      // Para cada conversa, contar mensagens
+      const historyWithCounts = await Promise.all(
+        (conversations || []).map(async (conv) => {
+          const { count } = await supabase
+            .from('messages')
+            .select('*', { count: 'exact', head: true })
+            .eq('conversation_id', conv.id);
+
+          return {
+            id: conv.id,
+            status: conv.status,
+            createdAt: conv.created_at,
+            messageCount: count || 0,
+          };
+        })
+      );
+
+      setConversationHistory(historyWithCounts);
+    } catch (error) {
+      console.error('[ContactPanel] Erro ao carregar histórico:', error);
+    } finally {
+      setIsLoadingHistory(false);
+    }
+  };
+
+  // Auto-save notes with debounce
+  useEffect(() => {
+    if (!contact?.id) return;
+    
+    const timeoutId = setTimeout(() => {
+      if (notes !== (contact.notes || '')) {
+        saveNotes();
+      }
+    }, 1000);
+
+    return () => clearTimeout(timeoutId);
+  }, [notes]);
+
+  const saveNotes = async () => {
+    if (!contact?.id) return;
+    
+    setIsSavingNotes(true);
+    try {
+      const { error } = await supabase
+        .from('contacts')
+        .update({ notes })
+        .eq('id', contact.id);
+
+      if (error) throw error;
+      
+      setNotesSaved(true);
+      setTimeout(() => setNotesSaved(false), 2000);
+    } catch (error) {
+      console.error('[ContactPanel] Erro ao salvar notas:', error);
+      toast({
+        title: 'Erro ao salvar notas',
+        description: 'Não foi possível salvar as notas. Tente novamente.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSavingNotes(false);
+    }
+  };
+
+  const addTag = async (tagName: string) => {
+    if (!contact?.id || contactTags.includes(tagName)) return;
+
+    const newTags = [...contactTags, tagName];
+    setContactTags(newTags);
+
+    try {
+      const { error } = await supabase
+        .from('contacts')
+        .update({ tags: newTags })
+        .eq('id', contact.id);
+
+      if (error) throw error;
+      
+      toast({
+        title: 'Tag adicionada',
+        description: `A tag "${tagName}" foi adicionada ao contato.`,
+      });
+    } catch (error) {
+      console.error('[ContactPanel] Erro ao adicionar tag:', error);
+      setContactTags(contactTags); // Reverter
+      toast({
+        title: 'Erro ao adicionar tag',
+        variant: 'destructive',
+      });
+    }
+    
+    setTagPopoverOpen(false);
+  };
+
+  const removeTag = async (tagName: string) => {
+    if (!contact?.id) return;
+
+    const newTags = contactTags.filter(t => t !== tagName);
+    setContactTags(newTags);
+
+    try {
+      const { error } = await supabase
+        .from('contacts')
+        .update({ tags: newTags })
+        .eq('id', contact.id);
+
+      if (error) throw error;
+      
+      toast({
+        title: 'Tag removida',
+        description: `A tag "${tagName}" foi removida do contato.`,
+      });
+    } catch (error) {
+      console.error('[ContactPanel] Erro ao remover tag:', error);
+      setContactTags(contactTags); // Reverter
+      toast({
+        title: 'Erro ao remover tag',
+        variant: 'destructive',
+      });
+    }
+  };
 
   if (!conversation) {
     return null;
   }
-
-  const contact = conversation.contact;
 
   const getInitials = (name?: string) => {
     if (!name) return '?';
@@ -58,6 +256,35 @@ export function ContactPanel({ conversation, onClose }: ContactPanelProps) {
     if (!date) return '-';
     return format(new Date(date), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR });
   };
+
+  const formatShortDate = (date?: string) => {
+    if (!date) return '-';
+    return format(new Date(date), "dd/MM/yyyy", { locale: ptBR });
+  };
+
+  const getStatusBadge = (status: string, isCurrent: boolean) => {
+    const statusConfig: Record<string, { label: string; className: string }> = {
+      open: { label: 'Aberta', className: 'border-conv-open text-conv-open' },
+      in_progress: { label: 'Em atendimento', className: 'border-conv-in_progress text-conv-in_progress' },
+      pending: { label: 'Pendente', className: 'border-conv-pending text-conv-pending' },
+      waiting: { label: 'Aguardando', className: 'border-yellow-500 text-yellow-500' },
+      resolved: { label: 'Resolvida', className: 'border-conv-resolved text-conv-resolved' },
+      closed: { label: 'Fechada', className: 'border-muted-foreground text-muted-foreground' },
+    };
+
+    const config = statusConfig[status] || { label: status, className: '' };
+    
+    return (
+      <Badge variant="outline" className={cn('text-xs', config.className)}>
+        {config.label}
+      </Badge>
+    );
+  };
+
+  // Tags que ainda não foram adicionadas ao contato
+  const tagsNotInContact = availableTags.filter(
+    tag => !contactTags.includes(tag.name)
+  );
 
   return (
     <div className="w-80 border-l border-border bg-card flex flex-col h-full">
@@ -85,12 +312,6 @@ export function ContactPanel({ conversation, onClose }: ContactPanelProps) {
             <p className="text-sm text-muted-foreground">
               {contact?.phoneNumber}
             </p>
-            <div className="flex items-center gap-2 mt-3">
-              <Button variant="outline" size="sm">
-                <Edit2 className="w-4 h-4 mr-2" />
-                Editar
-              </Button>
-            </div>
           </div>
 
           <Separator />
@@ -150,21 +371,70 @@ export function ContactPanel({ conversation, onClose }: ContactPanelProps) {
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <h5 className="text-sm font-medium text-foreground">Tags</h5>
-              <Button variant="ghost" size="sm" className="h-7 px-2">
-                <Plus className="w-3 h-3 mr-1" />
-                Adicionar
-              </Button>
+              <Popover open={tagPopoverOpen} onOpenChange={setTagPopoverOpen}>
+                <PopoverTrigger asChild>
+                  <Button variant="ghost" size="sm" className="h-7 px-2">
+                    <Plus className="w-3 h-3 mr-1" />
+                    Adicionar
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-56 p-2" align="end">
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium text-muted-foreground px-2 py-1">
+                      Selecione uma tag
+                    </p>
+                    {isLoadingTags ? (
+                      <div className="flex items-center justify-center py-4">
+                        <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+                      </div>
+                    ) : tagsNotInContact.length === 0 ? (
+                      <p className="text-xs text-muted-foreground px-2 py-2">
+                        Todas as tags já foram adicionadas
+                      </p>
+                    ) : (
+                      tagsNotInContact.map((tag) => (
+                        <button
+                          key={tag.id}
+                          onClick={() => addTag(tag.name)}
+                          className="w-full flex items-center gap-2 px-2 py-1.5 text-sm rounded-md hover:bg-muted transition-colors text-left"
+                        >
+                          <div
+                            className="w-3 h-3 rounded-full"
+                            style={{ backgroundColor: tag.color }}
+                          />
+                          <span>{tag.name}</span>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                </PopoverContent>
+              </Popover>
             </div>
             <div className="flex flex-wrap gap-2">
-              {contact?.tags && contact.tags.length > 0 ? (
-                contact.tags.map((tag) => (
-                  <Badge key={tag} variant="secondary" className="text-xs">
-                    {tag}
-                    <button className="ml-1 hover:text-destructive">
-                      <X className="w-3 h-3" />
-                    </button>
-                  </Badge>
-                ))
+              {contactTags.length > 0 ? (
+                contactTags.map((tagName) => {
+                  const tagData = availableTags.find(t => t.name === tagName);
+                  return (
+                    <Badge 
+                      key={tagName} 
+                      variant="secondary" 
+                      className="text-xs"
+                      style={tagData ? { 
+                        backgroundColor: `${tagData.color}20`,
+                        borderColor: tagData.color,
+                        color: tagData.color
+                      } : undefined}
+                    >
+                      {tagName}
+                      <button 
+                        className="ml-1 hover:text-destructive"
+                        onClick={() => removeTag(tagName)}
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </Badge>
+                  );
+                })
               ) : (
                 <p className="text-sm text-muted-foreground">Nenhuma tag</p>
               )}
@@ -176,7 +446,15 @@ export function ContactPanel({ conversation, onClose }: ContactPanelProps) {
           {/* Notes */}
           <Collapsible open={notesOpen} onOpenChange={setNotesOpen}>
             <CollapsibleTrigger className="flex items-center justify-between w-full">
-              <h5 className="text-sm font-medium text-foreground">Notas Internas</h5>
+              <div className="flex items-center gap-2">
+                <h5 className="text-sm font-medium text-foreground">Notas Internas</h5>
+                {isSavingNotes && (
+                  <Loader2 className="w-3 h-3 animate-spin text-muted-foreground" />
+                )}
+                {notesSaved && (
+                  <Check className="w-3 h-3 text-green-500" />
+                )}
+              </div>
               {notesOpen ? (
                 <ChevronUp className="w-4 h-4 text-muted-foreground" />
               ) : (
@@ -191,7 +469,7 @@ export function ContactPanel({ conversation, onClose }: ContactPanelProps) {
                 className="min-h-[80px] resize-none"
               />
               <p className="text-xs text-muted-foreground mt-2">
-                Notas são visíveis apenas para a equipe
+                Notas são visíveis apenas para a equipe • Salvamento automático
               </p>
             </CollapsibleContent>
           </Collapsible>
@@ -201,7 +479,12 @@ export function ContactPanel({ conversation, onClose }: ContactPanelProps) {
           {/* History */}
           <Collapsible open={historyOpen} onOpenChange={setHistoryOpen}>
             <CollapsibleTrigger className="flex items-center justify-between w-full">
-              <h5 className="text-sm font-medium text-foreground">Histórico de Conversas</h5>
+              <div className="flex items-center gap-2">
+                <h5 className="text-sm font-medium text-foreground">Histórico de Conversas</h5>
+                {isLoadingHistory && (
+                  <Loader2 className="w-3 h-3 animate-spin text-muted-foreground" />
+                )}
+              </div>
               {historyOpen ? (
                 <ChevronUp className="w-4 h-4 text-muted-foreground" />
               ) : (
@@ -209,43 +492,39 @@ export function ContactPanel({ conversation, onClose }: ContactPanelProps) {
               )}
             </CollapsibleTrigger>
             <CollapsibleContent className="pt-3 space-y-2">
-              {/* Current conversation */}
-              <div className="p-3 bg-primary/5 rounded-lg border border-primary/20">
-                <div className="flex items-center justify-between">
-                  <p className="text-sm font-medium text-foreground">Conversa atual</p>
-                  <Badge variant="outline" className="text-xs border-conv-open text-conv-open">
-                    Aberta
-                  </Badge>
-                </div>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Iniciada em {formatDate(conversation.createdAt)}
+              {conversationHistory.length === 0 && !isLoadingHistory ? (
+                <p className="text-sm text-muted-foreground text-center py-4">
+                  Nenhuma conversa encontrada
                 </p>
-              </div>
-
-              {/* Previous conversations */}
-              <div className="p-3 bg-muted/50 rounded-lg">
-                <div className="flex items-center justify-between">
-                  <p className="text-sm text-foreground">Conversa anterior</p>
-                  <Badge variant="outline" className="text-xs">
-                    Resolvida
-                  </Badge>
-                </div>
-                <p className="text-xs text-muted-foreground mt-1">
-                  28/11/2024 - 12 mensagens
-                </p>
-              </div>
-
-              <div className="p-3 bg-muted/50 rounded-lg">
-                <div className="flex items-center justify-between">
-                  <p className="text-sm text-foreground">Conversa anterior</p>
-                  <Badge variant="outline" className="text-xs">
-                    Resolvida
-                  </Badge>
-                </div>
-                <p className="text-xs text-muted-foreground mt-1">
-                  15/11/2024 - 8 mensagens
-                </p>
-              </div>
+              ) : (
+                conversationHistory.map((conv, index) => {
+                  const isCurrent = conv.id === conversation.id;
+                  return (
+                    <div 
+                      key={conv.id}
+                      className={cn(
+                        "p-3 rounded-lg",
+                        isCurrent 
+                          ? "bg-primary/5 border border-primary/20" 
+                          : "bg-muted/50"
+                      )}
+                    >
+                      <div className="flex items-center justify-between">
+                        <p className={cn(
+                          "text-sm",
+                          isCurrent ? "font-medium text-foreground" : "text-foreground"
+                        )}>
+                          {isCurrent ? 'Conversa atual' : `Conversa ${index === 0 ? '' : 'anterior'}`}
+                        </p>
+                        {getStatusBadge(conv.status, isCurrent)}
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {formatShortDate(conv.createdAt)} - {conv.messageCount} mensage{conv.messageCount === 1 ? 'm' : 'ns'}
+                      </p>
+                    </div>
+                  );
+                })
+              )}
             </CollapsibleContent>
           </Collapsible>
         </div>
