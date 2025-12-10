@@ -1,6 +1,5 @@
-import { Bell, Search, Menu } from 'lucide-react';
+import { Bell, Menu } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
   DropdownMenu,
@@ -12,6 +11,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Badge } from '@/components/ui/badge';
 import { useAppStore } from '@/stores/appStore';
+import { InternalChatPopover } from '@/components/internal-chat/InternalChatPopover';
 
 interface AppHeaderProps {
   title?: string;
@@ -49,14 +49,8 @@ export function AppHeader({ title }: AppHeaderProps) {
         )}
       </div>
 
-      <div className="flex-1 max-w-md hidden md:block">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input 
-            placeholder="Buscar conversas, contatos..." 
-            className="pl-9 bg-muted/50 border-0 focus-visible:ring-1"
-          />
-        </div>
+      <div className="flex-1 flex justify-center">
+        <InternalChatPopover />
       </div>
 
       <div className="flex items-center gap-2">
