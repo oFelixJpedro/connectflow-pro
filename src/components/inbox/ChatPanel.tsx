@@ -38,6 +38,7 @@ import { ImagePreviewModal } from './ImagePreviewModal';
 import { VideoPreviewModal } from './VideoPreviewModal';
 import { DocumentPreviewModal } from './DocumentPreviewModal';
 import { MessageReactions } from './MessageReactions';
+import { ReactionPicker } from './ReactionPicker';
 import { cn } from '@/lib/utils';
 import type { Conversation, Message, QuotedMessage } from '@/types';
 import { format } from 'date-fns';
@@ -55,6 +56,7 @@ interface ChatPanelProps {
   onClose: () => void;
   onRefresh?: () => void;
   onOpenContactDetails?: () => void;
+  onSendReaction?: (messageId: string, emoji: string, remove?: boolean) => Promise<boolean>;
   isLoadingMessages?: boolean;
   isSendingMessage?: boolean;
   isRestricted?: boolean;
@@ -85,6 +87,7 @@ export function ChatPanel({
   onClose,
   onRefresh,
   onOpenContactDetails,
+  onSendReaction,
   isLoadingMessages = false,
   isSendingMessage = false,
   isRestricted = false,
@@ -105,6 +108,7 @@ export function ChatPanel({
   const [documentFile, setDocumentFile] = useState<File | null>(null);
   const [isDocumentPreviewOpen, setIsDocumentPreviewOpen] = useState(false);
   const [isSendingDocument, setIsSendingDocument] = useState(false);
+  const [sendingReactionMessageId, setSendingReactionMessageId] = useState<string | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messageRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -467,6 +471,27 @@ export function ChatPanel({
     textareaRef.current?.focus();
   };
 
+  const handleReaction = async (messageId: string, emoji: string, remove: boolean = false) => {
+    if (!onSendReaction) return;
+    
+    console.log(`😀 ${remove ? 'Removendo' : 'Enviando'} reação:`, emoji);
+    setSendingReactionMessageId(messageId);
+    
+    try {
+      await onSendReaction(messageId, emoji, remove);
+    } finally {
+      setSendingReactionMessageId(null);
+    }
+  };
+
+  const getUserReactionForMessage = (message: Message): string | undefined => {
+    if (!user?.id || !message.reactions) return undefined;
+    const userReaction = message.reactions.find(
+      r => r.reactorId === user.id && r.reactorType === 'user'
+    );
+    return userReaction?.emoji;
+  };
+
   const scrollToMessage = (messageId: string) => {
     const element = messageRefs.current[messageId];
     if (element) {
@@ -668,22 +693,41 @@ export function ChatPanel({
                             isOutbound ? 'justify-end' : 'justify-start'
                           )}
                         >
-                          {/* Reply button - LEFT side for outbound messages */}
-                          {canReply && isOutbound && (
-                            <div className="opacity-0 group-hover/message:opacity-100 transition-opacity duration-200">
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-7 w-7 rounded-full bg-muted/80 hover:bg-muted"
-                                    onClick={() => handleReply(message)}
-                                  >
-                                    <Reply className="w-3.5 h-3.5" />
-                                  </Button>
-                                </TooltipTrigger>
-                                <TooltipContent>Responder</TooltipContent>
-                              </Tooltip>
+                          {/* Action buttons - LEFT side for outbound messages */}
+                          {isOutbound && (
+                            <div className="flex items-center gap-1 opacity-0 group-hover/message:opacity-100 transition-opacity duration-200">
+                              {/* Reply button */}
+                              {canReply && (
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-7 w-7 rounded-full bg-muted/80 hover:bg-muted"
+                                      onClick={() => handleReply(message)}
+                                    >
+                                      <Reply className="w-3.5 h-3.5" />
+                                    </Button>
+                                  </TooltipTrigger>
+                                  <TooltipContent>Responder</TooltipContent>
+                                </Tooltip>
+                              )}
+                              
+                              {/* Reaction button */}
+                              {onSendReaction && message.whatsappMessageId && (
+                                <ReactionPicker
+                                  onSelect={(emoji) => handleReaction(message.id, emoji)}
+                                  onRemove={() => {
+                                    const currentEmoji = getUserReactionForMessage(message);
+                                    if (currentEmoji) {
+                                      handleReaction(message.id, currentEmoji, true);
+                                    }
+                                  }}
+                                  currentUserReaction={getUserReactionForMessage(message)}
+                                  isLoading={sendingReactionMessageId === message.id}
+                                  isOutbound={isOutbound}
+                                />
+                              )}
                             </div>
                           )}
                           
@@ -927,22 +971,41 @@ export function ChatPanel({
                             )}
                           </div>
                           
-                          {/* Reply button - RIGHT side for inbound messages */}
-                          {canReply && !isOutbound && (
-                            <div className="opacity-0 group-hover/message:opacity-100 transition-opacity duration-200">
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-7 w-7 rounded-full bg-muted/80 hover:bg-muted"
-                                    onClick={() => handleReply(message)}
-                                  >
-                                    <Reply className="w-3.5 h-3.5" />
-                                  </Button>
-                                </TooltipTrigger>
-                                <TooltipContent>Responder</TooltipContent>
-                              </Tooltip>
+                          {/* Action buttons - RIGHT side for inbound messages */}
+                          {!isOutbound && (
+                            <div className="flex items-center gap-1 opacity-0 group-hover/message:opacity-100 transition-opacity duration-200">
+                              {/* Reply button */}
+                              {canReply && (
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-7 w-7 rounded-full bg-muted/80 hover:bg-muted"
+                                      onClick={() => handleReply(message)}
+                                    >
+                                      <Reply className="w-3.5 h-3.5" />
+                                    </Button>
+                                  </TooltipTrigger>
+                                  <TooltipContent>Responder</TooltipContent>
+                                </Tooltip>
+                              )}
+                              
+                              {/* Reaction button - to the right of reply */}
+                              {onSendReaction && message.whatsappMessageId && (
+                                <ReactionPicker
+                                  onSelect={(emoji) => handleReaction(message.id, emoji)}
+                                  onRemove={() => {
+                                    const currentEmoji = getUserReactionForMessage(message);
+                                    if (currentEmoji) {
+                                      handleReaction(message.id, currentEmoji, true);
+                                    }
+                                  }}
+                                  currentUserReaction={getUserReactionForMessage(message)}
+                                  isLoading={sendingReactionMessageId === message.id}
+                                  isOutbound={isOutbound}
+                                />
+                              )}
                             </div>
                           )}
                         </div>
