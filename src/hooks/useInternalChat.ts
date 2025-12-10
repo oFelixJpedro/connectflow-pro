@@ -52,16 +52,35 @@ export function useInternalChat() {
 
   // Load team members
   const loadTeamMembers = useCallback(async () => {
-    if (!company?.id) return;
+    if (!company?.id) {
+      console.log('[InternalChat] company não disponível ainda');
+      return;
+    }
 
-    const { data, error } = await supabase
+    console.log('[InternalChat] Carregando membros da empresa:', company.id, 'user:', user?.id);
+
+    // Build query - fetch all active members from company
+    let query = supabase
       .from('profiles')
       .select('id, full_name, avatar_url, status, email')
       .eq('company_id', company.id)
-      .eq('active', true)
-      .neq('id', user?.id || '');
+      .eq('active', true);
 
-    if (!error && data) {
+    // Exclude current user if available
+    if (user?.id) {
+      query = query.neq('id', user.id);
+    }
+
+    const { data, error } = await query;
+
+    console.log('[InternalChat] Membros encontrados:', data?.length, 'erro:', error);
+
+    if (error) {
+      console.error('[InternalChat] Erro ao carregar membros:', error);
+      return;
+    }
+
+    if (data) {
       setTeamMembers(data.map(m => ({
         id: m.id,
         fullName: m.full_name,
@@ -310,15 +329,23 @@ export function useInternalChat() {
     }
   }, [selectedRoom, user?.id]);
 
-  // Initialize
+  // Initialize - Load team members immediately when company is available
+  useEffect(() => {
+    if (company?.id) {
+      console.log('[InternalChat] Inicializando - company disponível:', company.id);
+      loadTeamMembers();
+    }
+  }, [company?.id, loadTeamMembers]);
+
+  // Initialize rooms when user is also available
   useEffect(() => {
     if (company?.id && user?.id) {
+      console.log('[InternalChat] Carregando salas - user disponível:', user.id);
       ensureGeneralRoom().then(() => {
         loadRooms();
-        loadTeamMembers();
       });
     }
-  }, [company?.id, user?.id, ensureGeneralRoom, loadRooms, loadTeamMembers]);
+  }, [company?.id, user?.id, ensureGeneralRoom, loadRooms]);
 
   // Load messages when room changes
   useEffect(() => {
@@ -396,5 +423,6 @@ export function useInternalChat() {
     sendMessage,
     getOrCreateDirectRoom,
     loadRooms,
+    loadTeamMembers,
   };
 }
