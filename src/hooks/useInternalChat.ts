@@ -99,11 +99,14 @@ export function useInternalChat() {
     if (!company?.id || !profile?.id) return;
     setIsLoading(true);
 
+    // Storage key includes user ID to prevent cross-user data sharing
+    const storageKey = `internalChatLastSeen_${profile.id}`;
+
     try {
-      // Get last seen timestamps from localStorage
+      // Get last seen timestamps from localStorage (user-specific)
       let lastSeenByRoom: Record<string, string> = {};
       try {
-        const stored = localStorage.getItem('internalChatLastSeen');
+        const stored = localStorage.getItem(storageKey);
         lastSeenByRoom = stored ? JSON.parse(stored) : {};
       } catch { }
 
@@ -513,11 +516,15 @@ export function useInternalChat() {
 
   // Mark room as read when room changes
   const markRoomAsRead = useCallback((roomId: string) => {
+    if (!profile?.id) return;
+    
     try {
-      const stored = localStorage.getItem('internalChatLastSeen');
+      // Storage key includes user ID to prevent cross-user data sharing
+      const storageKey = `internalChatLastSeen_${profile.id}`;
+      const stored = localStorage.getItem(storageKey);
       const lastSeenByRoom = stored ? JSON.parse(stored) : {};
       lastSeenByRoom[roomId] = new Date().toISOString();
-      localStorage.setItem('internalChatLastSeen', JSON.stringify(lastSeenByRoom));
+      localStorage.setItem(storageKey, JSON.stringify(lastSeenByRoom));
       
       // Update local room state to show 0 unread
       setRooms(prev => prev.map(r => 
@@ -529,7 +536,7 @@ export function useInternalChat() {
     } catch (e) {
       console.error('[InternalChat] Erro ao marcar sala como lida:', e);
     }
-  }, []);
+  }, [profile?.id]);
 
   // Load messages when room changes
   useEffect(() => {
