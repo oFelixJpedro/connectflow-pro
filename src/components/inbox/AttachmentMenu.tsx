@@ -15,19 +15,20 @@ import { cn } from '@/lib/utils';
 
 interface AttachmentMenuProps {
   onImageSelect: (file: File) => void;
+  onVideoSelect: (file: File) => void;
   onAudioSelect: (file: File) => void;
   disabled?: boolean;
 }
 
-export function AttachmentMenu({ onImageSelect, onAudioSelect, disabled }: AttachmentMenuProps) {
+export function AttachmentMenu({ onImageSelect, onVideoSelect, onAudioSelect, disabled }: AttachmentMenuProps) {
   const [isOpen, setIsOpen] = useState(false);
-  const imageInputRef = useRef<HTMLInputElement>(null);
+  const mediaInputRef = useRef<HTMLInputElement>(null);
   const audioInputRef = useRef<HTMLInputElement>(null);
 
-  const handleImageClick = () => {
-    console.log('📎 Menu de anexos: Selecionando imagem...');
+  const handleMediaClick = () => {
+    console.log('📎 Menu de anexos: Selecionando foto ou vídeo...');
     setIsOpen(false);
-    imageInputRef.current?.click();
+    mediaInputRef.current?.click();
   };
 
   const handleAudioClick = () => {
@@ -36,11 +37,21 @@ export function AttachmentMenu({ onImageSelect, onAudioSelect, disabled }: Attac
     audioInputRef.current?.click();
   };
 
-  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleMediaChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      console.log(`✅ Imagem selecionada: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`);
-      onImageSelect(file);
+      const isVideo = file.type.startsWith('video/');
+      const isImage = file.type.startsWith('image/');
+      
+      if (isVideo) {
+        console.log(`🎬 Vídeo selecionado: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`);
+        onVideoSelect(file);
+      } else if (isImage) {
+        console.log(`📷 Imagem selecionada: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`);
+        onImageSelect(file);
+      } else {
+        console.log(`❓ Arquivo desconhecido: ${file.name} (${file.type})`);
+      }
     }
     // Reset input to allow selecting the same file again
     e.target.value = '';
@@ -62,7 +73,7 @@ export function AttachmentMenu({ onImageSelect, onAudioSelect, disabled }: Attac
       color: 'text-purple-500',
       bgColor: 'bg-purple-100',
       enabled: true,
-      onClick: handleImageClick,
+      onClick: handleMediaClick,
     },
     {
       icon: FileText,
@@ -87,11 +98,11 @@ export function AttachmentMenu({ onImageSelect, onAudioSelect, disabled }: Attac
     <>
       {/* Hidden file inputs */}
       <input
-        ref={imageInputRef}
+        ref={mediaInputRef}
         type="file"
-        accept="image/jpeg,image/png,image/gif,image/webp,.jpg,.jpeg,.png,.gif,.webp"
+        accept="image/jpeg,image/png,image/gif,image/webp,video/mp4,video/avi,video/x-msvideo,video/quicktime,video/x-matroska,video/webm,.jpg,.jpeg,.png,.gif,.webp,.mp4,.avi,.mov,.mkv,.webm"
         className="hidden"
-        onChange={handleImageChange}
+        onChange={handleMediaChange}
       />
       <input
         ref={audioInputRef}
