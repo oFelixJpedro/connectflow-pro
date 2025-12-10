@@ -1,0 +1,368 @@
+import { useState, useRef, useEffect } from 'react';
+import { X, MessageSquare, Users, Send, Circle } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { useInternalChat } from '@/hooks/useInternalChat';
+import { useNavigate } from 'react-router-dom';
+import { format } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
+
+export default function InternalChat() {
+  const navigate = useNavigate();
+  const {
+    rooms,
+    messages,
+    teamMembers,
+    selectedRoom,
+    setSelectedRoom,
+    isLoading,
+    isLoadingMessages,
+    sendMessage,
+    getOrCreateDirectRoom,
+    loadTeamMembers,
+    loadRooms,
+  } = useInternalChat();
+
+  const [messageInput, setMessageInput] = useState('');
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Load data on mount
+  useEffect(() => {
+    loadTeamMembers();
+    loadRooms();
+  }, [loadTeamMembers, loadRooms]);
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  useEffect(() => {
+    if (messages.length > 0) {
+      scrollToBottom();
+    }
+  }, [messages]);
+
+  const handleSendMessage = async () => {
+    if (!messageInput.trim()) return;
+
+    const success = await sendMessage(messageInput.trim());
+    if (success) {
+      setMessageInput('');
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSendMessage();
+    }
+  };
+
+  const handleSelectTeamMember = async (memberId: string) => {
+    await getOrCreateDirectRoom(memberId);
+  };
+
+  const handleClose = () => {
+    navigate(-1);
+  };
+
+  const getInitials = (name: string) => {
+    return name
+      .split(' ')
+      .map((n) => n[0])
+      .join('')
+      .toUpperCase()
+      .slice(0, 2);
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'online':
+        return 'text-green-500';
+      case 'away':
+        return 'text-yellow-500';
+      case 'busy':
+        return 'text-red-500';
+      default:
+        return 'text-gray-400';
+    }
+  };
+
+  const formatMessageTime = (dateString: string) => {
+    const date = new Date(dateString);
+    const today = new Date();
+    const isToday = date.toDateString() === today.toDateString();
+
+    if (isToday) {
+      return format(date, 'HH:mm', { locale: ptBR });
+    }
+    return format(date, 'dd/MM HH:mm', { locale: ptBR });
+  };
+
+  // Sort rooms: general first, then direct rooms by last message
+  const sortedRooms = [...rooms].sort((a, b) => {
+    if (a.type === 'general') return -1;
+    if (b.type === 'general') return 1;
+    
+    const aTime = a.lastMessage?.createdAt ? new Date(a.lastMessage.createdAt).getTime() : 0;
+    const bTime = b.lastMessage?.createdAt ? new Date(b.lastMessage.createdAt).getTime() : 0;
+    return bTime - aTime;
+  });
+
+  // Team members not in direct chat yet
+  const membersWithoutChat = teamMembers.filter(member => 
+    !rooms.some(room => 
+      room.type === 'direct' && 
+      room.participants?.some(p => p.id === member.id)
+    )
+  );
+
+  return (
+    <div className="fixed inset-0 z-50 bg-background flex flex-col">
+      {/* Header */}
+      <div className="internal-chat-header h-14 px-4 flex items-center justify-between shrink-0 border-b">
+        <div className="flex items-center gap-3">
+          <MessageSquare className="w-6 h-6 text-white" />
+          <h1 className="text-lg font-semibold text-white">Chat da Equipe</h1>
+        </div>
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={handleClose}
+          className="text-white hover:bg-white/20"
+        >
+          <X className="w-5 h-5" />
+        </Button>
+      </div>
+
+      {/* Main content - two columns */}
+      <div className="flex flex-1 min-h-0">
+        {/* Left column - Chat list */}
+        <div className="w-80 border-r bg-card flex flex-col">
+          <div className="p-3 border-b">
+            <h2 className="font-medium text-sm text-muted-foreground">Conversas</h2>
+          </div>
+          
+          <ScrollArea className="flex-1">
+            {isLoading ? (
+              <div className="flex items-center justify-center h-32">
+                <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-emerald-600" />
+              </div>
+            ) : (
+              <div className="divide-y">
+                {/* Sorted rooms list */}
+                {sortedRooms.map((room) => (
+                  <button
+                    key={room.id}
+                    className={`w-full p-3 text-left transition-colors flex items-center gap-3 ${
+                      selectedRoom?.id === room.id 
+                        ? 'bg-emerald-50 dark:bg-emerald-950/30 border-l-2 border-emerald-600' 
+                        : 'hover:bg-muted/50'
+                    }`}
+                    onClick={() => setSelectedRoom(room)}
+                  >
+                    <Avatar className="w-10 h-10">
+                      {room.type === 'general' ? (
+                        <AvatarFallback className="bg-emerald-100 text-emerald-700">
+                          <Users className="w-5 h-5" />
+                        </AvatarFallback>
+                      ) : (
+                        <>
+                          <AvatarImage
+                            src={room.participants?.find(p => p.id !== room.id)?.avatarUrl || undefined}
+                          />
+                          <AvatarFallback className="bg-emerald-100 text-emerald-700">
+                            {getInitials(room.name || 'CD')}
+                          </AvatarFallback>
+                        </>
+                      )}
+                    </Avatar>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between">
+                        <p className="font-medium text-sm truncate">
+                          {room.type === 'general' ? '👥 Chat Geral' : room.name || 'Chat Direto'}
+                        </p>
+                        {room.lastMessage && (
+                          <span className="text-xs text-muted-foreground">
+                            {formatMessageTime(room.lastMessage.createdAt)}
+                          </span>
+                        )}
+                      </div>
+                      {room.lastMessage && (
+                        <p className="text-xs text-muted-foreground truncate">
+                          {room.type === 'general' && (
+                            <span className="font-medium">{room.lastMessage.senderName}: </span>
+                          )}
+                          {room.lastMessage.content}
+                        </p>
+                      )}
+                    </div>
+                  </button>
+                ))}
+
+                {/* Section for team members without direct chat */}
+                {membersWithoutChat.length > 0 && (
+                  <>
+                    <div className="px-3 py-2 bg-muted/30">
+                      <p className="text-xs font-medium text-muted-foreground">Iniciar conversa</p>
+                    </div>
+                    {membersWithoutChat.map((member) => (
+                      <button
+                        key={member.id}
+                        className="w-full p-3 text-left hover:bg-muted/50 transition-colors flex items-center gap-3"
+                        onClick={() => handleSelectTeamMember(member.id)}
+                      >
+                        <div className="relative">
+                          <Avatar className="w-10 h-10">
+                            <AvatarImage src={member.avatarUrl || undefined} />
+                            <AvatarFallback className="bg-gray-100 text-gray-700">
+                              {getInitials(member.fullName)}
+                            </AvatarFallback>
+                          </Avatar>
+                          <Circle
+                            className={`absolute bottom-0 right-0 w-3 h-3 fill-current ${getStatusColor(member.status)}`}
+                          />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-sm truncate">{member.fullName}</p>
+                          <p className="text-xs text-muted-foreground truncate">{member.email}</p>
+                        </div>
+                      </button>
+                    ))}
+                  </>
+                )}
+              </div>
+            )}
+          </ScrollArea>
+        </div>
+
+        {/* Right column - Chat area */}
+        <div className="flex-1 flex flex-col bg-muted/20">
+          {selectedRoom ? (
+            <>
+              {/* Chat header */}
+              <div className="h-14 px-4 flex items-center gap-3 border-b bg-card">
+                <Avatar className="w-10 h-10">
+                  {selectedRoom.type === 'general' ? (
+                    <AvatarFallback className="bg-emerald-100 text-emerald-700">
+                      <Users className="w-5 h-5" />
+                    </AvatarFallback>
+                  ) : (
+                    <>
+                      <AvatarImage
+                        src={selectedRoom.participants?.find(p => p.id !== selectedRoom.id)?.avatarUrl || undefined}
+                      />
+                      <AvatarFallback className="bg-emerald-100 text-emerald-700">
+                        {getInitials(selectedRoom.name || 'CD')}
+                      </AvatarFallback>
+                    </>
+                  )}
+                </Avatar>
+                <div>
+                  <h2 className="font-semibold">
+                    {selectedRoom.type === 'general' ? 'Chat Geral' : selectedRoom.name || 'Chat Direto'}
+                  </h2>
+                  {selectedRoom.type === 'general' && (
+                    <p className="text-xs text-muted-foreground">
+                      {teamMembers.length + 1} membros
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {/* Messages area */}
+              <ScrollArea className="flex-1 p-4">
+                {isLoadingMessages ? (
+                  <div className="flex items-center justify-center h-full">
+                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-emerald-600" />
+                  </div>
+                ) : messages.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
+                    <MessageSquare className="w-12 h-12 mb-3 opacity-50" />
+                    <p className="text-sm">Nenhuma mensagem ainda</p>
+                    <p className="text-xs">Seja o primeiro a enviar!</p>
+                  </div>
+                ) : (
+                  <div className="space-y-4 max-w-3xl mx-auto">
+                    {messages.map((msg) => (
+                      <div
+                        key={msg.id}
+                        className={`flex gap-3 ${msg.isOwnMessage ? 'flex-row-reverse' : ''}`}
+                      >
+                        {!msg.isOwnMessage && (
+                          <Avatar className="w-9 h-9 flex-shrink-0">
+                            <AvatarImage src={msg.senderAvatar || undefined} />
+                            <AvatarFallback className="bg-emerald-100 text-emerald-700 text-xs">
+                              {getInitials(msg.senderName)}
+                            </AvatarFallback>
+                          </Avatar>
+                        )}
+                        <div
+                          className={`max-w-[70%] ${
+                            msg.isOwnMessage
+                              ? 'internal-chat-message-own'
+                              : 'internal-chat-message-other'
+                          }`}
+                        >
+                          {!msg.isOwnMessage && selectedRoom.type === 'general' && (
+                            <p className="text-xs font-medium text-emerald-700 mb-1">
+                              {msg.senderName}
+                            </p>
+                          )}
+                          <p className="text-sm break-words whitespace-pre-wrap">{msg.content}</p>
+                          <p
+                            className={`text-xs mt-1 ${
+                              msg.isOwnMessage ? 'text-emerald-100' : 'text-muted-foreground'
+                            }`}
+                          >
+                            {formatMessageTime(msg.createdAt)}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                    <div ref={messagesEndRef} />
+                  </div>
+                )}
+              </ScrollArea>
+
+              {/* Message input */}
+              <div className="p-4 border-t bg-card">
+                <div className="flex gap-3 max-w-3xl mx-auto">
+                  <Input
+                    value={messageInput}
+                    onChange={(e) => setMessageInput(e.target.value)}
+                    onKeyDown={handleKeyDown}
+                    placeholder="Digite sua mensagem..."
+                    className="flex-1 internal-chat-input"
+                  />
+                  <Button
+                    onClick={handleSendMessage}
+                    disabled={!messageInput.trim()}
+                    className="internal-chat-send-button"
+                  >
+                    <Send className="w-4 h-4 mr-2" />
+                    Enviar
+                  </Button>
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="flex-1 flex items-center justify-center">
+              <div className="text-center">
+                <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <MessageSquare className="w-8 h-8 text-emerald-600" />
+                </div>
+                <h3 className="font-medium text-foreground mb-2">Selecione uma conversa</h3>
+                <p className="text-sm text-muted-foreground">
+                  Escolha uma conversa da lista ao lado para começar
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}

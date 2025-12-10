@@ -155,20 +155,12 @@ export function useInternalChat() {
       );
 
       setRooms(roomsWithDetails);
-
-      // Auto-select general room if exists and no room selected
-      if (!selectedRoom) {
-        const generalRoom = roomsWithDetails.find(r => r.type === 'general');
-        if (generalRoom) {
-          setSelectedRoom(generalRoom);
-        }
-      }
     } catch (error) {
       console.error('[InternalChat] Erro ao carregar salas:', error);
     } finally {
       setIsLoading(false);
     }
-  }, [company?.id, profile?.id, selectedRoom]);
+  }, [company?.id, profile?.id]);
 
   // Create or get general room
   const ensureGeneralRoom = useCallback(async () => {
