@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { 
   Plus, 
   Search, 
@@ -14,7 +14,10 @@ import {
   Mic,
   FileText,
   X,
-  Upload
+  Upload,
+  Square,
+  Pause,
+  Play
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -58,18 +61,27 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useQuickRepliesData, QuickReply, QuickReplyMediaType } from '@/hooks/useQuickRepliesData';
+import { useAudioRecorder } from '@/hooks/useAudioRecorder';
 import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 
 const defaultCategories = ['Saudações', 'Geral', 'Encerramento', 'Informações', 'Vendas', 'Suporte'];
 
+// Expanded file types matching WhatsApp support and AttachmentMenu
 const mediaTypeOptions: { value: QuickReplyMediaType; label: string; icon: React.ReactNode; accept: string }[] = [
   { value: 'text', label: 'Texto', icon: <FileText className="w-4 h-4" />, accept: '' },
-  { value: 'image', label: 'Imagem', icon: <Image className="w-4 h-4" />, accept: 'image/jpeg,image/png,image/gif,image/webp' },
-  { value: 'video', label: 'Vídeo', icon: <Video className="w-4 h-4" />, accept: 'video/mp4,video/webm,video/quicktime' },
-  { value: 'audio', label: 'Áudio', icon: <Mic className="w-4 h-4" />, accept: 'audio/mpeg,audio/wav,audio/ogg,audio/webm' },
-  { value: 'document', label: 'Documento', icon: <FileText className="w-4 h-4" />, accept: '.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv' },
+  { value: 'image', label: 'Imagem', icon: <Image className="w-4 h-4" />, accept: 'image/jpeg,image/png,image/gif,image/webp,.jpg,.jpeg,.png,.gif,.webp' },
+  { value: 'video', label: 'Vídeo', icon: <Video className="w-4 h-4" />, accept: 'video/mp4,video/avi,video/x-msvideo,video/quicktime,video/x-matroska,video/webm,.mp4,.avi,.mov,.mkv,.webm' },
+  { value: 'audio', label: 'Áudio', icon: <Mic className="w-4 h-4" />, accept: 'audio/mp3,audio/mpeg,audio/ogg,audio/wav,audio/webm,audio/aac,audio/x-m4a,.mp3,.ogg,.wav,.webm,.aac,.m4a' },
+  { value: 'document', label: 'Documento', icon: <FileText className="w-4 h-4" />, accept: '*/*' }, // Accept all files for documents
 ];
+
+// Helper to format recording time
+const formatRecordingTime = (seconds: number): string => {
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+};
 
 export default function QuickReplies() {
   const { 
@@ -119,6 +131,15 @@ export default function QuickReplies() {
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [replyToDelete, setReplyToDelete] = useState<QuickReply | null>(null);
 
+  // Audio recording states
+  const [isRecordingMode, setIsRecordingMode] = useState(false);
+  const [editIsRecordingMode, setEditIsRecordingMode] = useState(false);
+  
+  // Audio recorder hook for Add dialog
+  const audioRecorder = useAudioRecorder();
+  // Audio recorder hook for Edit dialog
+  const editAudioRecorder = useAudioRecorder();
+
   // Get all categories (existing + defaults)
   const existingCategories = getCategories();
   const allCategories = [...new Set([...defaultCategories, ...existingCategories])].sort();
@@ -136,6 +157,26 @@ export default function QuickReplies() {
     }
     return true;
   });
+
+  // Convert recorded blob to File
+  const blobToFile = (blob: Blob, fileName: string): File => {
+    return new File([blob], fileName, { type: blob.type });
+  };
+
+  // Handle using recorded audio
+  const handleUseRecordedAudio = (isEdit: boolean = false) => {
+    const recorder = isEdit ? editAudioRecorder : audioRecorder;
+    if (recorder.audioBlob) {
+      const file = blobToFile(recorder.audioBlob, `audio_${Date.now()}.webm`);
+      handleFileSelect(file, isEdit);
+      recorder.clearRecording();
+      if (isEdit) {
+        setEditIsRecordingMode(false);
+      } else {
+        setIsRecordingMode(false);
+      }
+    }
+  };
 
   const handleCopy = (text: string) => {
     navigator.clipboard.writeText(text);
@@ -180,6 +221,8 @@ export default function QuickReplies() {
     setMediaType('text');
     setMediaFile(null);
     setMediaPreview(null);
+    setIsRecordingMode(false);
+    audioRecorder.cancelRecording();
   };
 
   const handleAdd = async () => {
@@ -231,6 +274,8 @@ export default function QuickReplies() {
     setEditMediaFile(null);
     setEditMediaPreview(null);
     setEditExistingMediaUrl(reply.media_url);
+    setEditIsRecordingMode(false);
+    editAudioRecorder.cancelRecording();
     setIsEditDialogOpen(true);
   };
 
@@ -480,7 +525,9 @@ export default function QuickReplies() {
               {/* Media upload for non-text types */}
               {mediaType !== 'text' && (
                 <div className="space-y-2">
-                  <Label>Arquivo {getMediaTypeLabel(mediaType)} *</Label>
+                  <Label>
+                    {mediaType === 'audio' ? 'Áudio (gravar ou selecionar arquivo) *' : `Arquivo ${getMediaTypeLabel(mediaType)} *`}
+                  </Label>
                   <input
                     ref={fileInputRef}
                     type="file"
@@ -492,7 +539,113 @@ export default function QuickReplies() {
                     className="hidden"
                   />
                   
-                  {!mediaPreview ? (
+                  {/* Audio type - show toggle between record and upload */}
+                  {mediaType === 'audio' && !mediaPreview && (
+                    <div className="flex gap-2 mb-2">
+                      <Button
+                        type="button"
+                        variant={isRecordingMode ? 'default' : 'outline'}
+                        size="sm"
+                        onClick={() => setIsRecordingMode(true)}
+                        className="flex-1"
+                      >
+                        <Mic className="w-4 h-4 mr-2" />
+                        Gravar
+                      </Button>
+                      <Button
+                        type="button"
+                        variant={!isRecordingMode ? 'default' : 'outline'}
+                        size="sm"
+                        onClick={() => {
+                          setIsRecordingMode(false);
+                          audioRecorder.cancelRecording();
+                        }}
+                        className="flex-1"
+                      >
+                        <Upload className="w-4 h-4 mr-2" />
+                        Arquivo
+                      </Button>
+                    </div>
+                  )}
+                  
+                  {/* Audio recording UI */}
+                  {mediaType === 'audio' && isRecordingMode && !mediaPreview && (
+                    <div className="border rounded-lg p-4 bg-muted/50">
+                      {!audioRecorder.isRecording && !audioRecorder.audioUrl && (
+                        <div className="text-center">
+                          <Button
+                            type="button"
+                            variant="default"
+                            size="lg"
+                            onClick={audioRecorder.startRecording}
+                            className="rounded-full w-16 h-16"
+                          >
+                            <Mic className="w-6 h-6" />
+                          </Button>
+                          <p className="text-sm text-muted-foreground mt-2">Clique para começar a gravar</p>
+                          {audioRecorder.error && (
+                            <p className="text-sm text-destructive mt-2">{audioRecorder.error}</p>
+                          )}
+                        </div>
+                      )}
+                      
+                      {audioRecorder.isRecording && (
+                        <div className="text-center space-y-3">
+                          <div className="flex items-center justify-center gap-2">
+                            <span className="w-3 h-3 bg-red-500 rounded-full animate-pulse" />
+                            <span className="text-lg font-mono">{formatRecordingTime(audioRecorder.recordingTime)}</span>
+                          </div>
+                          <div className="flex justify-center gap-2">
+                            {audioRecorder.isPaused ? (
+                              <Button type="button" variant="outline" size="icon" onClick={audioRecorder.resumeRecording}>
+                                <Play className="w-4 h-4" />
+                              </Button>
+                            ) : (
+                              <Button type="button" variant="outline" size="icon" onClick={audioRecorder.pauseRecording}>
+                                <Pause className="w-4 h-4" />
+                              </Button>
+                            )}
+                            <Button type="button" variant="destructive" size="icon" onClick={audioRecorder.stopRecording}>
+                              <Square className="w-4 h-4" />
+                            </Button>
+                            <Button type="button" variant="ghost" size="icon" onClick={audioRecorder.cancelRecording}>
+                              <X className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+                      
+                      {audioRecorder.audioUrl && !audioRecorder.isRecording && (
+                        <div className="space-y-3">
+                          <audio src={audioRecorder.audioUrl} controls className="w-full" />
+                          <div className="flex gap-2">
+                            <Button
+                              type="button"
+                              variant="default"
+                              size="sm"
+                              onClick={() => handleUseRecordedAudio(false)}
+                              className="flex-1"
+                            >
+                              Usar este áudio
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                audioRecorder.clearRecording();
+                              }}
+                            >
+                              Descartar
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  
+                  {/* File upload button - for non-audio or when not in recording mode */}
+                  {!mediaPreview && (mediaType !== 'audio' || !isRecordingMode) && (
                     <Button
                       type="button"
                       variant="outline"
@@ -506,9 +659,10 @@ export default function QuickReplies() {
                         </span>
                       </div>
                     </Button>
-                  ) : (
-                    renderMediaPreview(mediaPreview, mediaType)
                   )}
+                  
+                  {/* Media preview */}
+                  {mediaPreview && renderMediaPreview(mediaPreview, mediaType)}
 
                   {/* Optional caption for media */}
                   <div className="space-y-2 mt-2">
@@ -852,7 +1006,9 @@ export default function QuickReplies() {
             {/* Media upload for non-text types */}
             {editMediaType !== 'text' && (
               <div className="space-y-2">
-                <Label>Arquivo {getMediaTypeLabel(editMediaType)} *</Label>
+                <Label>
+                  {editMediaType === 'audio' ? 'Áudio (gravar ou selecionar arquivo) *' : `Arquivo ${getMediaTypeLabel(editMediaType)} *`}
+                </Label>
                 <input
                   ref={editFileInputRef}
                   type="file"
@@ -864,7 +1020,113 @@ export default function QuickReplies() {
                   className="hidden"
                 />
                 
-                {!editMediaPreview && !editExistingMediaUrl ? (
+                {/* Audio type - show toggle between record and upload */}
+                {editMediaType === 'audio' && !editMediaPreview && !editExistingMediaUrl && (
+                  <div className="flex gap-2 mb-2">
+                    <Button
+                      type="button"
+                      variant={editIsRecordingMode ? 'default' : 'outline'}
+                      size="sm"
+                      onClick={() => setEditIsRecordingMode(true)}
+                      className="flex-1"
+                    >
+                      <Mic className="w-4 h-4 mr-2" />
+                      Gravar
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={!editIsRecordingMode ? 'default' : 'outline'}
+                      size="sm"
+                      onClick={() => {
+                        setEditIsRecordingMode(false);
+                        editAudioRecorder.cancelRecording();
+                      }}
+                      className="flex-1"
+                    >
+                      <Upload className="w-4 h-4 mr-2" />
+                      Arquivo
+                    </Button>
+                  </div>
+                )}
+                
+                {/* Audio recording UI */}
+                {editMediaType === 'audio' && editIsRecordingMode && !editMediaPreview && !editExistingMediaUrl && (
+                  <div className="border rounded-lg p-4 bg-muted/50">
+                    {!editAudioRecorder.isRecording && !editAudioRecorder.audioUrl && (
+                      <div className="text-center">
+                        <Button
+                          type="button"
+                          variant="default"
+                          size="lg"
+                          onClick={editAudioRecorder.startRecording}
+                          className="rounded-full w-16 h-16"
+                        >
+                          <Mic className="w-6 h-6" />
+                        </Button>
+                        <p className="text-sm text-muted-foreground mt-2">Clique para começar a gravar</p>
+                        {editAudioRecorder.error && (
+                          <p className="text-sm text-destructive mt-2">{editAudioRecorder.error}</p>
+                        )}
+                      </div>
+                    )}
+                    
+                    {editAudioRecorder.isRecording && (
+                      <div className="text-center space-y-3">
+                        <div className="flex items-center justify-center gap-2">
+                          <span className="w-3 h-3 bg-red-500 rounded-full animate-pulse" />
+                          <span className="text-lg font-mono">{formatRecordingTime(editAudioRecorder.recordingTime)}</span>
+                        </div>
+                        <div className="flex justify-center gap-2">
+                          {editAudioRecorder.isPaused ? (
+                            <Button type="button" variant="outline" size="icon" onClick={editAudioRecorder.resumeRecording}>
+                              <Play className="w-4 h-4" />
+                            </Button>
+                          ) : (
+                            <Button type="button" variant="outline" size="icon" onClick={editAudioRecorder.pauseRecording}>
+                              <Pause className="w-4 h-4" />
+                            </Button>
+                          )}
+                          <Button type="button" variant="destructive" size="icon" onClick={editAudioRecorder.stopRecording}>
+                            <Square className="w-4 h-4" />
+                          </Button>
+                          <Button type="button" variant="ghost" size="icon" onClick={editAudioRecorder.cancelRecording}>
+                            <X className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                    
+                    {editAudioRecorder.audioUrl && !editAudioRecorder.isRecording && (
+                      <div className="space-y-3">
+                        <audio src={editAudioRecorder.audioUrl} controls className="w-full" />
+                        <div className="flex gap-2">
+                          <Button
+                            type="button"
+                            variant="default"
+                            size="sm"
+                            onClick={() => handleUseRecordedAudio(true)}
+                            className="flex-1"
+                          >
+                            Usar este áudio
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              editAudioRecorder.clearRecording();
+                            }}
+                          >
+                            Descartar
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+                
+                {/* File upload button - for non-audio or when not in recording mode */}
+                {!editMediaPreview && !editExistingMediaUrl && (editMediaType !== 'audio' || !editIsRecordingMode) && (
                   <Button
                     type="button"
                     variant="outline"
@@ -878,9 +1140,10 @@ export default function QuickReplies() {
                       </span>
                     </div>
                   </Button>
-                ) : (
-                  renderMediaPreview(editMediaPreview || editExistingMediaUrl, editMediaType, true)
                 )}
+                
+                {/* Media preview */}
+                {(editMediaPreview || editExistingMediaUrl) && renderMediaPreview(editMediaPreview || editExistingMediaUrl, editMediaType, true)}
 
                 {/* Optional caption for media */}
                 <div className="space-y-2 mt-2">
