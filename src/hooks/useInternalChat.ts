@@ -261,26 +261,21 @@ export function useInternalChat() {
         }
       }
 
-      console.log('[InternalChat] Criando nova sala direta com company_id:', company.id, 'profile_id:', profile.id);
+      console.log('[InternalChat] Criando nova sala direta via RPC com profile_id:', profile.id);
 
-      // Create new direct room
-      const insertData = {
-        company_id: company.id,
-        type: 'direct',
-        name: null,
-      };
-      console.log('[InternalChat] Dados para inserção:', JSON.stringify(insertData));
-      
-      const { data: newRoom, error: roomError } = await supabase
-        .from('internal_chat_rooms')
-        .insert(insertData)
-        .select('id')
-        .single();
+      // Create new direct room using SECURITY DEFINER function to bypass RLS
+      const { data: newRoomId, error: roomError } = await supabase
+        .rpc('create_internal_chat_room', {
+          p_type: 'direct',
+          p_name: null
+        });
 
-      if (roomError || !newRoom) {
+      if (roomError || !newRoomId) {
         console.error('[InternalChat] Erro ao criar sala direta:', roomError);
         return null;
       }
+
+      const newRoom = { id: newRoomId };
 
       console.log('[InternalChat] Sala criada:', newRoom.id, '- Adicionando participantes...');
 
