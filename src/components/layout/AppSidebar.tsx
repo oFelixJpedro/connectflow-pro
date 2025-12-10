@@ -272,7 +272,7 @@ export function AppSidebar() {
             <button
               onClick={handleSettingsClick}
               className={cn(
-                'sidebar-link w-full',
+                'sidebar-link w-full text-left',
                 isSettingsActive && 'active'
               )}
             >

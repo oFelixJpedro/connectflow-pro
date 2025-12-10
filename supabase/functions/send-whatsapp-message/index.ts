@@ -311,9 +311,10 @@ serve(async (req) => {
     const cleanPhoneNumber = phoneNumber.replace(/[^\d]/g, '')
 
     // Montar payload para UAZAPI - incluir replyid se estiver respondendo
-    const uazapiPayload: { number: string; text: string; replyid?: string } = {
+    const uazapiPayload: { number: string; text: string; linkPreview: boolean; replyid?: string } = {
       number: cleanPhoneNumber,
-      text: messageContent
+      text: messageContent,
+      linkPreview: true
     }
     
     if (replyId) {
