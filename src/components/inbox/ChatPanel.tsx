@@ -35,6 +35,7 @@ import { AudioRecorder } from './AudioRecorder';
 import { AudioFilePreview } from './AudioFilePreview';
 import { AttachmentMenu } from './AttachmentMenu';
 import { ImagePreviewModal } from './ImagePreviewModal';
+import { VideoPreviewModal } from './VideoPreviewModal';
 import { cn } from '@/lib/utils';
 import type { Conversation, Message, QuotedMessage } from '@/types';
 import { format } from 'date-fns';
@@ -96,6 +97,9 @@ export function ChatPanel({
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [isImagePreviewOpen, setIsImagePreviewOpen] = useState(false);
   const [isSendingImage, setIsSendingImage] = useState(false);
+  const [videoFile, setVideoFile] = useState<File | null>(null);
+  const [isVideoPreviewOpen, setIsVideoPreviewOpen] = useState(false);
+  const [isSendingVideo, setIsSendingVideo] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messageRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -269,6 +273,70 @@ export function ChatPanel({
   const handleImageSelect = (file: File) => {
     setImageFile(file);
     setIsImagePreviewOpen(true);
+  };
+
+  // Send video handler
+  const handleSendVideo = async (file: File, text: string, duration: number) => {
+    if (!conversation) return;
+
+    setIsSendingVideo(true);
+    try {
+      // Convert file to base64
+      const reader = new FileReader();
+      const base64Promise = new Promise<string>((resolve, reject) => {
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = reject;
+      });
+      reader.readAsDataURL(file);
+      const base64Data = await base64Promise;
+
+      console.log('📤 Enviando vídeo para Edge Function...');
+
+      // Get contact phone from conversation
+      const contactPhone = conversation.contact?.phoneNumber || '';
+
+      const { data, error } = await supabase.functions.invoke('send-whatsapp-video', {
+        body: {
+          videoData: base64Data,
+          fileName: file.name,
+          mimeType: file.type,
+          conversationId: conversation.id,
+          connectionId: conversation.whatsappConnectionId,
+          contactPhoneNumber: contactPhone,
+          text: text || undefined,
+          duration: duration || undefined,
+          quotedMessageId: replyingTo?.id,
+        }
+      });
+
+      if (error) throw error;
+
+      if (!data?.success) {
+        throw new Error(data?.error || 'Erro ao enviar vídeo');
+      }
+
+      console.log('✅ Vídeo enviado com sucesso!');
+      toast({
+        title: 'Vídeo enviado',
+        description: 'O vídeo foi enviado com sucesso.',
+      });
+
+      setVideoFile(null);
+      setIsVideoPreviewOpen(false);
+      setReplyingTo(null);
+      onRefresh?.();
+
+    } catch (error: any) {
+      console.error('❌ Erro ao enviar vídeo:', error);
+      throw error; // Re-throw to be handled by VideoPreviewModal
+    } finally {
+      setIsSendingVideo(false);
+    }
+  };
+
+  const handleVideoSelect = (file: File) => {
+    setVideoFile(file);
+    setIsVideoPreviewOpen(true);
   };
 
   // Scroll para o final
@@ -876,6 +944,7 @@ export function ChatPanel({
           <div className="flex items-end gap-2">
             <AttachmentMenu
               onImageSelect={handleImageSelect}
+              onVideoSelect={handleVideoSelect}
               onAudioSelect={handleAudioFileSelect}
               disabled={!canReply}
             />
@@ -950,6 +1019,30 @@ export function ChatPanel({
         }}
         onSend={handleSendImage}
         onChangeFile={() => imageInputRef.current?.click()}
+      />
+
+      {/* Video Preview Modal */}
+      <VideoPreviewModal
+        file={videoFile}
+        isOpen={isVideoPreviewOpen}
+        onClose={() => {
+          setIsVideoPreviewOpen(false);
+          setVideoFile(null);
+        }}
+        onSend={handleSendVideo}
+        onChangeFile={() => {
+          // Trigger file selection again
+          const input = document.createElement('input');
+          input.type = 'file';
+          input.accept = 'video/mp4,video/avi,video/x-msvideo,video/quicktime,video/x-matroska,video/webm,.mp4,.avi,.mov,.mkv,.webm';
+          input.onchange = (e) => {
+            const file = (e.target as HTMLInputElement).files?.[0];
+            if (file) {
+              setVideoFile(file);
+            }
+          };
+          input.click();
+        }}
       />
     </div>
   );

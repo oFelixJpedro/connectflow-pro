@@ -23,3 +23,6 @@ verify_jwt = true
 
 [functions.send-whatsapp-image]
 verify_jwt = true
+
+[functions.send-whatsapp-video]
+verify_jwt = true
