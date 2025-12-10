@@ -274,19 +274,30 @@ serve(async (req) => {
       throw new Error(`UAZAPI error: ${JSON.stringify(uazapiData)}`);
     }
 
-    // Extract whatsapp_message_id from response
-    const whatsappMessageId = uazapiData?.key?.id || uazapiData?.messageId || null;
-    console.log(`✅ WhatsApp Message ID: ${whatsappMessageId}`);
+    // Extract whatsapp_message_id from response - check multiple possible locations
+    const whatsappMessageId = uazapiData?.key?.id || 
+                              uazapiData?.messageId || 
+                              uazapiData?.id ||
+                              uazapiData?.message?.id ||
+                              null;
+    console.log(`📋 UAZAPI Response structure:`, JSON.stringify(uazapiData, null, 2));
+    console.log(`✅ WhatsApp Message ID extraído: ${whatsappMessageId}`);
 
-    // Update message status to sent
-    console.log('🔄 Atualizando status: sent');
-    await supabase
+    // Update message status to sent with whatsapp_message_id
+    console.log('🔄 Atualizando status: sent e whatsapp_message_id...');
+    const { error: updateError } = await supabase
       .from('messages')
       .update({
         status: 'sent',
         whatsapp_message_id: whatsappMessageId
       })
       .eq('id', message.id);
+
+    if (updateError) {
+      console.error('❌ Erro ao atualizar mensagem:', updateError);
+    } else {
+      console.log(`✅ Mensagem atualizada com whatsapp_message_id: ${whatsappMessageId}`);
+    }
 
     console.log('✅ Concluído!');
 
