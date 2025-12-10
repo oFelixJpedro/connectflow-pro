@@ -697,6 +697,84 @@ export function useInboxData() {
   }, [selectedConversation]);
 
   // ============================================================
+  // 4.2 ENVIAR NOTA INTERNA (SEM WHATSAPP)
+  // ============================================================
+  const sendInternalNote = useCallback(async (
+    content: string, 
+    messageType: 'text' | 'image' | 'video' | 'audio' | 'document' = 'text',
+    mediaUrl?: string,
+    mediaMimeType?: string,
+    metadata?: Record<string, unknown>
+  ): Promise<boolean> => {
+    if (!selectedConversation || !user?.id) {
+      console.error('[useInboxData] Sem conversa selecionada ou usuário');
+      return false;
+    }
+
+    const trimmedContent = content?.trim() || '';
+    if (!trimmedContent && !mediaUrl) return false;
+
+    console.log('[useInboxData] Salvando nota interna para conversa:', selectedConversation.id);
+    setIsSendingMessage(true);
+
+    try {
+      const now = new Date().toISOString();
+
+      // Inserir nota interna no banco - NÃO enviar para WhatsApp
+      const { data: newMessage, error: messageError } = await supabase
+        .from('messages')
+        .insert([{
+          conversation_id: selectedConversation.id,
+          content: trimmedContent || null,
+          direction: 'outbound' as const,
+          sender_type: 'user' as const,
+          sender_id: user.id,
+          message_type: messageType,
+          status: 'sent' as const,
+          metadata: (metadata || {}) as any,
+          is_internal_note: true,
+          media_url: mediaUrl || null,
+          media_mime_type: mediaMimeType || null,
+        }])
+        .select()
+        .single();
+
+      if (messageError) {
+        console.error('[useInboxData] Erro ao salvar nota interna:', messageError);
+        toast({
+          title: 'Erro ao salvar nota',
+          description: messageError.message,
+          variant: 'destructive',
+        });
+        return false;
+      }
+
+      console.log('[useInboxData] Nota interna salva:', newMessage.id);
+
+      // Adicionar mensagem ao estado local imediatamente
+      const transformedMessage: Message = transformMessage(newMessage);
+      setMessages(prev => [...prev, transformedMessage]);
+
+      toast({
+        title: 'Nota salva',
+        description: 'A nota interna foi adicionada ao chat.',
+      });
+
+      return true;
+    } catch (err) {
+      console.error('[useInboxData] Erro inesperado ao salvar nota:', err);
+      toast({
+        title: 'Erro ao salvar nota',
+        description: 'Ocorreu um erro inesperado. Tente novamente.',
+        variant: 'destructive',
+      });
+      return false;
+    } finally {
+      setIsSendingMessage(false);
+    }
+  }, [selectedConversation, user?.id]);
+
+  // ============================================================
   // 5. SELECIONAR CONVERSA
   // ============================================================
   const selectConversation = useCallback((conversation: Conversation | null) => {
@@ -1244,6 +1322,7 @@ export function useInboxData() {
     loadConversations,
     selectConversation,
     sendMessage,
+    sendInternalNote,
     resendMessage,
     updateConversation,
     sendReaction,

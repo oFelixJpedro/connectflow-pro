@@ -10,7 +10,8 @@ import {
   RotateCcw,
   ArrowDown,
   Reply,
-  Mic
+  Mic,
+  StickyNote
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -53,6 +54,7 @@ interface ChatPanelProps {
   conversation: Conversation | null;
   messages: Message[];
   onSendMessage: (content: string, quotedMessageId?: string) => void;
+  onSendInternalNote?: (content: string, messageType?: 'text' | 'image' | 'video' | 'audio' | 'document', mediaUrl?: string, mediaMimeType?: string, metadata?: Record<string, unknown>) => Promise<boolean>;
   onResendMessage?: (messageId: string) => void;
   onAssign: () => void;
   onClose: () => void;
@@ -84,6 +86,7 @@ export function ChatPanel({
   conversation,
   messages,
   onSendMessage,
+  onSendInternalNote,
   onResendMessage,
   onAssign,
   onClose,
@@ -112,6 +115,7 @@ export function ChatPanel({
   const [isSendingDocument, setIsSendingDocument] = useState(false);
   const [sendingReactionMessageId, setSendingReactionMessageId] = useState<string | null>(null);
   const [showQuickReplies, setShowQuickReplies] = useState(false);
+  const [isInternalNoteMode, setIsInternalNoteMode] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messageRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -461,11 +465,24 @@ export function ChatPanel({
     }
   }, [messages, scrollToBottom]);
 
-  const handleSend = () => {
-    if (!inputValue.trim() || isSendingMessage || !canReply) return;
-    onSendMessage(inputValue.trim(), replyingTo?.id);
-    setInputValue('');
-    setReplyingTo(null);
+  const handleSend = async () => {
+    if (!inputValue.trim() || isSendingMessage) return;
+    
+    if (isInternalNoteMode && onSendInternalNote) {
+      // Send as internal note
+      const success = await onSendInternalNote(inputValue.trim());
+      if (success) {
+        setInputValue('');
+        setReplyingTo(null);
+        // Keep internal note mode active for convenience
+      }
+    } else {
+      // Send as WhatsApp message
+      if (!canReply) return;
+      onSendMessage(inputValue.trim(), replyingTo?.id);
+      setInputValue('');
+      setReplyingTo(null);
+    }
     textareaRef.current?.focus();
   };
 
@@ -845,11 +862,24 @@ export function ChatPanel({
                           
                           <div
                             className={cn(
-                              'max-w-[70%] group',
-                              message.messageType !== 'audio' && (isOutbound ? 'message-bubble-outgoing' : 'message-bubble-incoming'),
+                              'max-w-[70%] group relative',
+                              message.messageType !== 'audio' && (
+                                message.isInternalNote 
+                                  ? 'message-bubble-internal-note'
+                                  : isOutbound 
+                                    ? 'message-bubble-outgoing' 
+                                    : 'message-bubble-incoming'
+                              ),
                               isFailed && 'opacity-80'
                             )}
                           >
+                            {/* Internal note indicator */}
+                            {message.isInternalNote && (
+                              <div className="flex items-center gap-1 mb-1 text-amber-600 dark:text-amber-400">
+                                <StickyNote className="w-3 h-3" />
+                                <span className="text-[10px] font-medium uppercase tracking-wide">Nota interna</span>
+                              </div>
+                            )}
                             {/* Quoted message preview */}
                             {message.quotedMessage && (
                               <QuotedMessagePreview
@@ -1209,30 +1239,58 @@ export function ChatPanel({
                 isOpen={showQuickReplies && canReply}
               />
               
+              {/* Internal Note Toggle Button */}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    variant={isInternalNoteMode ? "default" : "ghost"}
+                    size="icon"
+                    onClick={() => setIsInternalNoteMode(!isInternalNoteMode)}
+                    className={cn(
+                      "h-8 w-8 flex-shrink-0",
+                      isInternalNoteMode && "bg-amber-500 hover:bg-amber-600 text-white"
+                    )}
+                  >
+                    <StickyNote className="w-4 h-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  {isInternalNoteMode ? 'Desativar nota interna' : 'Ativar nota interna'}
+                </TooltipContent>
+              </Tooltip>
+
               <Textarea
                 ref={textareaRef}
                 value={inputValue}
                 onChange={handleInputChange}
                 onKeyDown={handleKeyDown}
                 placeholder={
-                  canReply 
-                    ? "Digite / para respostas rápidas..." 
-                    : blockInfo.message
+                  isInternalNoteMode
+                    ? "Digite sua nota interna (não será enviado ao cliente)..."
+                    : canReply 
+                      ? "Digite / para respostas rápidas..." 
+                      : blockInfo.message
                 }
                 className={cn(
                   "min-h-[44px] max-h-32 resize-none pr-12",
-                  !canReply && "bg-muted/50 cursor-not-allowed"
+                  !canReply && !isInternalNoteMode && "bg-muted/50 cursor-not-allowed",
+                  isInternalNoteMode && "internal-note-input"
                 )}
                 rows={1}
-                disabled={isSendingMessage || !canReply}
+                disabled={isSendingMessage || (!canReply && !isInternalNoteMode)}
               />
               <EmojiMessagePicker
                 onSelect={(emoji) => {
-                  console.log('📤 Enviando emoji como mensagem:', emoji);
-                  onSendMessage(emoji, replyingTo?.id);
-                  setReplyingTo(null);
+                  if (isInternalNoteMode && onSendInternalNote) {
+                    onSendInternalNote(emoji);
+                  } else {
+                    console.log('📤 Enviando emoji como mensagem:', emoji);
+                    onSendMessage(emoji, replyingTo?.id);
+                    setReplyingTo(null);
+                  }
                 }}
-                disabled={!canReply || isSendingMessage}
+                disabled={(!canReply && !isInternalNoteMode) || isSendingMessage}
               />
             </div>
 

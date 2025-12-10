@@ -12,7 +12,8 @@ import {
   ChevronDown,
   ChevronUp,
   Loader2,
-  Check
+  Check,
+  StickyNote
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -38,11 +39,13 @@ import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { ContactFormModal } from '@/components/contacts/ContactFormModal';
 import { ContactFormData } from '@/hooks/useContactsData';
+import { ChatNotesModal } from './ChatNotesModal';
 
 interface ContactPanelProps {
   conversation: Conversation | null;
   onClose: () => void;
   onContactUpdated?: () => void;
+  onScrollToMessage?: (messageId: string) => void;
 }
 
 interface Tag {
@@ -58,7 +61,7 @@ interface ConversationHistory {
   messageCount: number;
 }
 
-export function ContactPanel({ conversation, onClose, onContactUpdated }: ContactPanelProps) {
+export function ContactPanel({ conversation, onClose, onContactUpdated, onScrollToMessage }: ContactPanelProps) {
   const { toast } = useToast();
   const [notesOpen, setNotesOpen] = useState(true);
   const [historyOpen, setHistoryOpen] = useState(true);
@@ -78,6 +81,10 @@ export function ContactPanel({ conversation, onClose, onContactUpdated }: Contac
 
   // Edit modal state
   const [editModalOpen, setEditModalOpen] = useState(false);
+  
+  // Chat notes modal state
+  const [chatNotesModalOpen, setChatNotesModalOpen] = useState(false);
+  const [chatNotesCount, setChatNotesCount] = useState(0);
 
   const contact = conversation?.contact;
 
@@ -88,8 +95,23 @@ export function ContactPanel({ conversation, onClose, onContactUpdated }: Contac
       setContactTags(contact.tags || []);
       loadAvailableTags();
       loadConversationHistory();
+      loadChatNotesCount();
     }
   }, [contact?.id]);
+
+  const loadChatNotesCount = async () => {
+    if (!conversation?.id) return;
+    try {
+      const { count } = await supabase
+        .from('messages')
+        .select('*', { count: 'exact', head: true })
+        .eq('conversation_id', conversation.id)
+        .eq('is_internal_note', true);
+      setChatNotesCount(count || 0);
+    } catch (error) {
+      console.error('[ContactPanel] Erro ao contar notas:', error);
+    }
+  };
 
   const loadAvailableTags = async () => {
     setIsLoadingTags(true);
