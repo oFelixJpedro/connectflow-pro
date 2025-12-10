@@ -217,7 +217,31 @@ export function useInternalChat() {
     });
 
     if (directRoom) {
-      const room = rooms.find(r => r.id === directRoom.id);
+      // Room exists - check if it's in local state
+      let room = rooms.find(r => r.id === directRoom.id);
+      
+      if (!room) {
+        // Room exists in DB but not in state - reload and find it
+        await loadRooms();
+        // After reload, rooms state will update but we need to manually find and select
+        const { data: roomData } = await supabase
+          .from('internal_chat_rooms')
+          .select('id, type, name')
+          .eq('id', directRoom.id)
+          .single();
+        
+        if (roomData) {
+          // Get other participant's info for display name
+          const otherUser = teamMembers.find(m => m.id === otherUserId);
+          room = {
+            id: roomData.id,
+            type: roomData.type as 'general' | 'direct',
+            name: otherUser?.fullName || 'Chat Direto',
+            participants: [],
+          };
+        }
+      }
+      
       if (room) {
         setSelectedRoom(room);
         return room.id;
@@ -241,18 +265,49 @@ export function useInternalChat() {
     }
 
     // Add both participants
-    await supabase
+    const { error: participantsError } = await supabase
       .from('internal_chat_participants')
       .insert([
         { room_id: newRoom.id, user_id: profile.id },
         { room_id: newRoom.id, user_id: otherUserId },
       ]);
 
-    // Reload rooms
+    if (participantsError) {
+      console.error('[InternalChat] Erro ao adicionar participantes:', participantsError);
+    }
+
+    // Get other user info for display name
+    const otherUser = teamMembers.find(m => m.id === otherUserId);
+    
+    // Create room object and select it immediately
+    const createdRoom: ChatRoom = {
+      id: newRoom.id,
+      type: 'direct',
+      name: otherUser?.fullName || 'Chat Direto',
+      participants: [
+        {
+          id: profile.id,
+          fullName: profile.full_name || 'Você',
+          avatarUrl: profile.avatar_url || null,
+          status: profile.status || 'online',
+        },
+        {
+          id: otherUserId,
+          fullName: otherUser?.fullName || 'Usuário',
+          avatarUrl: otherUser?.avatarUrl || null,
+          status: otherUser?.status || 'offline',
+        },
+      ],
+    };
+
+    // Select the new room immediately
+    setSelectedRoom(createdRoom);
+    
+    // Reload rooms to update the list
     await loadRooms();
 
     return newRoom.id;
-  }, [company?.id, profile?.id, rooms, loadRooms]);
+  }, [company?.id, profile?.id, profile?.full_name, profile?.avatar_url, profile?.status, rooms, loadRooms, teamMembers]);
 
   // Load messages for selected room
   const loadMessages = useCallback(async (roomId: string) => {
