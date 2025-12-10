@@ -37,6 +37,7 @@ import { AttachmentMenu } from './AttachmentMenu';
 import { ImagePreviewModal } from './ImagePreviewModal';
 import { VideoPreviewModal } from './VideoPreviewModal';
 import { DocumentPreviewModal } from './DocumentPreviewModal';
+import { MessageReactions } from './MessageReactions';
 import { cn } from '@/lib/utils';
 import type { Conversation, Message, QuotedMessage } from '@/types';
 import { format } from 'date-fns';
@@ -902,7 +903,14 @@ export function ChatPanel({
                                 )}
                               </div>
                             )}
-                            
+
+                            {/* Message reactions */}
+                            {message.reactions && message.reactions.length > 0 && (
+                              <MessageReactions
+                                reactions={message.reactions}
+                                isOutbound={isOutbound}
+                              />
+                            )}
                             {/* Resend button for failed messages */}
                             {isOutbound && isFailed && onResendMessage && (
                               <div className="mt-2 pt-2 border-t border-destructive/20">
