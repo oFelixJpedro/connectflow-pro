@@ -102,16 +102,23 @@ export default function Connections() {
   }
 
   async function handleGenerateQR() {
+    console.log('🔍 [QR CODE] ========== INICIANDO GERAÇÃO DE QR CODE ==========');
+    console.log('🔍 [QR CODE] Company ID:', company?.id);
+    console.log('🔍 [QR CODE] Connection Name:', connectionName);
+    
     if (!company?.id || !connectionName.trim()) {
+      console.log('❌ [QR CODE] Validação falhou - company ou nome vazio');
       toast.error('Digite um nome para a conexão');
       return;
     }
 
     setIsProcessing(true);
     const sessionId = `${company.id.slice(0, 8)}-${Date.now()}`;
+    console.log('🔍 [QR CODE] Session ID gerado:', sessionId);
 
     try {
       // 1. Create connection record in database
+      console.log('📡 [API] Criando registro no banco de dados...');
       const { data: newConnection, error: insertError } = await supabase
         .from('whatsapp_connections')
         .insert({
@@ -124,12 +131,19 @@ export default function Connections() {
         .select()
         .single();
 
-      if (insertError) throw insertError;
+      if (insertError) {
+        console.log('❌ [API] Erro ao criar registro:', insertError);
+        throw insertError;
+      }
+      console.log('✅ [API] Registro criado:', newConnection);
 
       setCurrentConnectionId(newConnection.id);
       setCurrentSessionId(sessionId);
 
       // 2. Call edge function to init instance
+      console.log('📡 [API] Chamando edge function whatsapp-instance com action: init');
+      console.log('📡 [API] Payload:', { action: 'init', instanceName: sessionId });
+      
       const { data: initData, error: initError } = await supabase.functions.invoke('whatsapp-instance', {
         body: {
           action: 'init',
@@ -137,10 +151,20 @@ export default function Connections() {
         }
       });
 
-      if (initError) throw initError;
+      console.log('📡 [API] Response completo:', initData);
+      console.log('📡 [API] Error:', initError);
+
+      if (initError) {
+        console.log('❌ [API] Erro na edge function:', initError);
+        throw initError;
+      }
+
+      console.log('🔍 [QR CODE] QR Code recebido?', !!initData?.qrCode);
+      console.log('🔍 [QR CODE] QR Code (primeiros 100 chars):', initData?.qrCode?.substring(0, 100));
 
       if (initData.qrCode) {
         // Update connection with QR code
+        console.log('📡 [API] Atualizando conexão com QR code...');
         await supabase
           .from('whatsapp_connections')
           .update({ 
@@ -149,15 +173,19 @@ export default function Connections() {
           })
           .eq('id', newConnection.id);
 
+        console.log('✅ [QR CODE] QR Code salvo no state');
         setQrCode(initData.qrCode);
         setDialogStep('qr');
+        console.log('✅ [QR CODE] Dialog step alterado para: qr');
+        console.log('⏱️ [POLLING] Iniciando polling...');
         startPolling(newConnection.id, sessionId);
       } else {
+        console.log('❌ [QR CODE] QR code não recebido na resposta');
         throw new Error('QR code não recebido');
       }
 
     } catch (error: any) {
-      console.error('Error generating QR:', error);
+      console.error('❌ [QR CODE] Erro geral:', error);
       toast.error(error.message || 'Erro ao gerar QR Code');
       
       // Cleanup on error
@@ -169,52 +197,103 @@ export default function Connections() {
       }
     } finally {
       setIsProcessing(false);
+      console.log('🔍 [QR CODE] ========== FIM DA GERAÇÃO ==========');
     }
   }
 
   function startPolling(connectionId: string, sessionId: string) {
+    console.log('⏱️ [POLLING] ========== INICIANDO POLLING ==========');
+    console.log('⏱️ [POLLING] Connection ID:', connectionId);
+    console.log('⏱️ [POLLING] Session ID:', sessionId);
+    console.log('⏱️ [POLLING] Intervalo: 3 segundos');
+    
     // Clear any existing polling
-    if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
-    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    if (pollIntervalRef.current) {
+      console.log('⏱️ [POLLING] Limpando polling anterior');
+      clearInterval(pollIntervalRef.current);
+    }
+    if (timeoutRef.current) {
+      console.log('⏱️ [POLLING] Limpando timeout anterior');
+      clearTimeout(timeoutRef.current);
+    }
+
+    let pollCount = 0;
 
     // Poll every 3 seconds
     pollIntervalRef.current = setInterval(async () => {
+      pollCount++;
+      console.log(`⏱️ [POLLING] ===== Poll #${pollCount} =====`);
+      console.log('⏱️ [POLLING] Timestamp:', new Date().toISOString());
+      
       try {
         // Check status via edge function
-        const { data: statusData } = await supabase.functions.invoke('whatsapp-instance', {
+        console.log('📡 [API] Chamando status check...');
+        console.log('📡 [API] Payload:', { action: 'status', instanceName: sessionId });
+        
+        const { data: statusData, error: statusError } = await supabase.functions.invoke('whatsapp-instance', {
           body: {
             action: 'status',
             instanceName: sessionId
           }
         });
 
-        console.log('Polling status:', statusData);
+        console.log('📡 [API] Status Response COMPLETO:', JSON.stringify(statusData, null, 2));
+        console.log('📡 [API] Status Error:', statusError);
+        
+        if (statusData) {
+          console.log('🔍 [STATUS CHECK] Analisando resposta...');
+          console.log('🔍 [STATUS CHECK] statusData.status:', statusData.status);
+          console.log('🔍 [STATUS CHECK] statusData.connected:', statusData.connected);
+          console.log('🔍 [STATUS CHECK] statusData.phoneNumber:', statusData.phoneNumber);
+          console.log('🔍 [STATUS CHECK] statusData.instance:', statusData.instance);
+          console.log('🔍 [STATUS CHECK] Todas as chaves:', Object.keys(statusData));
+          
+          const isConnected = statusData?.status === 'open' || statusData?.status === 'connected';
+          console.log('🔍 [STATUS CHECK] Condição: status === "open" || status === "connected"');
+          console.log('🔍 [STATUS CHECK] Resultado isConnected:', isConnected);
+          
+          if (isConnected) {
+            console.log('✅ [STATUS CHECK] CONEXÃO DETECTADA!');
+            console.log('⚠️ [QR CODE] Vai esconder QR Code!');
+            console.log('⚠️ [QR CODE] Motivo: Status indica conexão estabelecida');
+            console.log('⚠️ [QR CODE] Status que causou:', statusData.status);
+            
+            // Connected! Update database
+            console.log('📡 [API] Atualizando banco de dados...');
+            await supabase
+              .from('whatsapp_connections')
+              .update({ 
+                status: 'connected',
+                phone_number: statusData.phoneNumber || 'Conectado',
+                qr_code: null,
+                last_connected_at: new Date().toISOString()
+              })
+              .eq('id', connectionId);
 
-        if (statusData?.status === 'open' || statusData?.status === 'connected') {
-          // Connected! Update database
-          await supabase
-            .from('whatsapp_connections')
-            .update({ 
-              status: 'connected',
-              phone_number: statusData.phoneNumber || 'Conectado',
-              qr_code: null,
-              last_connected_at: new Date().toISOString()
-            })
-            .eq('id', connectionId);
-
-          stopPolling();
-          setIsDialogOpen(false);
-          resetDialogState();
-          toast.success('WhatsApp conectado com sucesso!');
-          loadConnections();
+            console.log('✅ [API] Banco atualizado');
+            console.log('⏱️ [POLLING] Parando polling...');
+            stopPolling();
+            console.log('🔍 [QR CODE] Fechando dialog...');
+            setIsDialogOpen(false);
+            resetDialogState();
+            toast.success('WhatsApp conectado com sucesso!');
+            loadConnections();
+          } else {
+            console.log('🔄 [STATUS CHECK] Ainda não conectado, continuando polling...');
+            console.log('🔄 [STATUS CHECK] QR Code ainda deve estar visível');
+          }
+        } else {
+          console.log('⚠️ [STATUS CHECK] statusData é null/undefined');
         }
       } catch (error) {
-        console.error('Polling error:', error);
+        console.error('❌ [POLLING] Erro no polling:', error);
       }
     }, 3000);
 
     // Timeout after 5 minutes
+    console.log('⏱️ [POLLING] Timeout configurado para 5 minutos');
     timeoutRef.current = setTimeout(() => {
+      console.log('⏱️ [POLLING] TIMEOUT ATINGIDO - 5 minutos');
       stopPolling();
       toast.error('Tempo limite excedido. Tente novamente.');
       handleCancelConnection();
@@ -299,6 +378,9 @@ export default function Connections() {
   }
 
   async function handleReconnect(connection: WhatsAppConnection) {
+    console.log('🔍 [RECONNECT] ========== INICIANDO RECONEXÃO ==========');
+    console.log('🔍 [RECONNECT] Connection:', connection);
+    
     setCurrentConnectionId(connection.id);
     setCurrentSessionId(connection.session_id);
     setConnectionName(connection.name);
@@ -308,6 +390,9 @@ export default function Connections() {
 
     try {
       // Usar 'reconnect' para reutilizar instância existente
+      console.log('📡 [API] Chamando edge function com action: reconnect');
+      console.log('📡 [API] Payload:', { action: 'reconnect', instanceName: connection.session_id });
+      
       const { data: reconnectData, error: reconnectError } = await supabase.functions.invoke('whatsapp-instance', {
         body: {
           action: 'reconnect',
@@ -315,9 +400,19 @@ export default function Connections() {
         }
       });
 
-      if (reconnectError) throw reconnectError;
+      console.log('📡 [API] Response completo:', reconnectData);
+      console.log('📡 [API] Error:', reconnectError);
+
+      if (reconnectError) {
+        console.log('❌ [API] Erro na reconexão:', reconnectError);
+        throw reconnectError;
+      }
+
+      console.log('🔍 [QR CODE] QR Code recebido?', !!reconnectData?.qrCode);
+      console.log('🔍 [QR CODE] QR Code (primeiros 100 chars):', reconnectData?.qrCode?.substring(0, 100));
 
       if (reconnectData.qrCode) {
+        console.log('📡 [API] Atualizando conexão com QR code...');
         await supabase
           .from('whatsapp_connections')
           .update({ 
@@ -326,18 +421,22 @@ export default function Connections() {
           })
           .eq('id', connection.id);
 
+        console.log('✅ [QR CODE] QR Code salvo no state');
         setQrCode(reconnectData.qrCode);
+        console.log('⏱️ [POLLING] Iniciando polling...');
         startPolling(connection.id, connection.session_id);
       } else {
+        console.log('❌ [QR CODE] QR code não recebido na resposta');
         throw new Error('QR code não recebido');
       }
     } catch (error: any) {
-      console.error('Error reconnecting:', error);
+      console.error('❌ [RECONNECT] Erro geral:', error);
       toast.error(error.message || 'Erro ao reconectar');
       setIsDialogOpen(false);
       resetDialogState();
     } finally {
       setIsProcessing(false);
+      console.log('🔍 [RECONNECT] ========== FIM DA RECONEXÃO ==========');
     }
   }
 
