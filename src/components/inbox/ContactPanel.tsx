@@ -99,6 +99,34 @@ export function ContactPanel({ conversation, onClose, onContactUpdated, onScroll
     }
   }, [contact?.id]);
 
+  // Realtime subscription for chat notes count
+  useEffect(() => {
+    if (!conversation?.id) return;
+
+    const channel = supabase
+      .channel(`chat-notes-${conversation.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'messages',
+          filter: `conversation_id=eq.${conversation.id}`,
+        },
+        (payload: any) => {
+          // Check if it's an internal note
+          if (payload.new?.is_internal_note || payload.old?.is_internal_note) {
+            loadChatNotesCount();
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [conversation?.id]);
+
   const loadChatNotesCount = async () => {
     if (!conversation?.id) return;
     try {

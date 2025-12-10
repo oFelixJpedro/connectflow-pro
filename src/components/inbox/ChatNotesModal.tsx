@@ -47,22 +47,39 @@ export function ChatNotesModal({
   const loadNotes = async () => {
     setIsLoading(true);
     try {
+      console.log('[ChatNotesModal] Carregando notas para conversa:', conversationId);
+      
+      // First get notes without join
       const { data, error } = await supabase
         .from('messages')
-        .select(`
-          id,
-          content,
-          message_type,
-          media_url,
-          created_at,
-          sender_id,
-          profiles:sender_id(full_name)
-        `)
+        .select('id, content, message_type, media_url, created_at, sender_id')
         .eq('conversation_id', conversationId)
         .eq('is_internal_note', true)
         .order('created_at', { ascending: false });
 
-      if (error) throw error;
+      if (error) {
+        console.error('[ChatNotesModal] Erro na query:', error);
+        throw error;
+      }
+
+      console.log('[ChatNotesModal] Notas encontradas:', data?.length || 0);
+
+      // Get unique sender IDs
+      const senderIds = [...new Set((data || []).map(n => n.sender_id).filter(Boolean))];
+      
+      // Fetch profiles for senders
+      let profilesMap: Record<string, string> = {};
+      if (senderIds.length > 0) {
+        const { data: profiles } = await supabase
+          .from('profiles')
+          .select('id, full_name')
+          .in('id', senderIds);
+        
+        profilesMap = (profiles || []).reduce((acc, p) => {
+          acc[p.id] = p.full_name;
+          return acc;
+        }, {} as Record<string, string>);
+      }
 
       const transformedNotes: ChatNote[] = (data || []).map((note: any) => ({
         id: note.id,
@@ -70,7 +87,7 @@ export function ChatNotesModal({
         messageType: note.message_type,
         mediaUrl: note.media_url,
         createdAt: note.created_at,
-        senderName: note.profiles?.full_name || 'Sistema',
+        senderName: note.sender_id ? profilesMap[note.sender_id] || 'Sistema' : 'Sistema',
       }));
 
       setNotes(transformedNotes);
