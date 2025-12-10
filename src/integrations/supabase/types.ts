@@ -330,6 +330,128 @@ export type Database = {
           },
         ]
       }
+      internal_chat_messages: {
+        Row: {
+          content: string | null
+          created_at: string | null
+          id: string
+          media_mime_type: string | null
+          media_url: string | null
+          message_type: string
+          room_id: string
+          sender_id: string
+          updated_at: string | null
+        }
+        Insert: {
+          content?: string | null
+          created_at?: string | null
+          id?: string
+          media_mime_type?: string | null
+          media_url?: string | null
+          message_type?: string
+          room_id: string
+          sender_id: string
+          updated_at?: string | null
+        }
+        Update: {
+          content?: string | null
+          created_at?: string | null
+          id?: string
+          media_mime_type?: string | null
+          media_url?: string | null
+          message_type?: string
+          room_id?: string
+          sender_id?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "internal_chat_messages_room_id_fkey"
+            columns: ["room_id"]
+            isOneToOne: false
+            referencedRelation: "internal_chat_rooms"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "internal_chat_messages_sender_id_fkey"
+            columns: ["sender_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      internal_chat_participants: {
+        Row: {
+          created_at: string | null
+          id: string
+          room_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          room_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          room_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "internal_chat_participants_room_id_fkey"
+            columns: ["room_id"]
+            isOneToOne: false
+            referencedRelation: "internal_chat_rooms"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "internal_chat_participants_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      internal_chat_rooms: {
+        Row: {
+          company_id: string
+          created_at: string | null
+          id: string
+          name: string | null
+          type: string
+          updated_at: string | null
+        }
+        Insert: {
+          company_id: string
+          created_at?: string | null
+          id?: string
+          name?: string | null
+          type: string
+          updated_at?: string | null
+        }
+        Update: {
+          company_id?: string
+          created_at?: string | null
+          id?: string
+          name?: string | null
+          type?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "internal_chat_rooms_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       message_reactions: {
         Row: {
           company_id: string
@@ -714,6 +836,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      create_internal_chat_room: {
+        Args: { p_name?: string; p_type: string }
+        Returns: string
+      }
       get_connection_company_id: {
         Args: { connection_id: string }
         Returns: string
@@ -731,6 +857,10 @@ export type Database = {
         Returns: boolean
       }
       is_admin_or_owner: { Args: never; Returns: boolean }
+      room_belongs_to_user_company: {
+        Args: { room_id: string }
+        Returns: boolean
+      }
     }
     Enums: {
       app_role: "owner" | "admin" | "supervisor" | "agent" | "viewer"

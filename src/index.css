@@ -265,6 +265,31 @@
   .badge-busy {
     @apply bg-destructive/10 text-destructive border-destructive/20;
   }
+
+  /* Internal Team Chat Styles - Green Corporate Theme */
+  .internal-chat-popover {
+    @apply border-emerald-200 dark:border-emerald-800;
+  }
+
+  .internal-chat-header {
+    @apply bg-gradient-to-r from-emerald-600 to-emerald-500;
+  }
+
+  .internal-chat-message-own {
+    @apply bg-emerald-600 text-white rounded-2xl rounded-br-md px-3 py-2;
+  }
+
+  .internal-chat-message-other {
+    @apply bg-muted rounded-2xl rounded-bl-md px-3 py-2;
+  }
+
+  .internal-chat-input {
+    @apply focus-visible:ring-emerald-500 focus-visible:border-emerald-500;
+  }
+
+  .internal-chat-send-button {
+    @apply bg-emerald-600 hover:bg-emerald-700 text-white;
+  }
 }
 
 @layer utilities {
