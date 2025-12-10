@@ -836,6 +836,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      create_internal_chat_room: {
+        Args: { p_name?: string; p_type: string }
+        Returns: string
+      }
       get_connection_company_id: {
         Args: { connection_id: string }
         Returns: string
