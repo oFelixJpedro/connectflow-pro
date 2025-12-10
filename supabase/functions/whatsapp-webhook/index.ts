@@ -471,24 +471,31 @@ serve(async (req) => {
     }
     // Old detection for backward compatibility: rawMessageType = 'media' with media object
     else if (rawMessageType === 'media') {
-      isMediaMessage = true
-      const media = payload.message?.media || {}
-      const mediaMime = media.mimetype || media.mimeType || ''
-      
-      if (media.audio || (typeof mediaMime === 'string' && mediaMime.startsWith('audio/'))) {
-        isAudioMessage = true
-        detectedSubtype = 'audio (legacy media)'
-        audioContentData = media.audio || media
-        console.log(`🎵 [ÁUDIO via media object]`)
-      } else if (media.image || (typeof mediaMime === 'string' && mediaMime.startsWith('image/'))) {
-        detectedSubtype = 'image'
-      } else if (media.video || (typeof mediaMime === 'string' && mediaMime.startsWith('video/'))) {
-        detectedSubtype = 'video'
-      } else if (media.document || (typeof mediaMime === 'string' && mediaMime.startsWith('application/'))) {
-        detectedSubtype = 'document'
+      // Check if it's ExtendedTextMessage with URL (link with preview) - treat as text
+      if (messageType === 'ExtendedTextMessage' || mediaType === 'url') {
+        detectedSubtype = 'text'
+        isMediaMessage = false // This is text, not media
+        console.log(`✅ Tipo texto com link preview detectado (ExtendedTextMessage/url)`)
       } else {
-        detectedSubtype = 'unknown'
-        console.log(`❓ [MÍDIA DESCONHECIDA]`, JSON.stringify(media, null, 2))
+        isMediaMessage = true
+        const media = payload.message?.media || {}
+        const mediaMime = media.mimetype || media.mimeType || ''
+        
+        if (media.audio || (typeof mediaMime === 'string' && mediaMime.startsWith('audio/'))) {
+          isAudioMessage = true
+          detectedSubtype = 'audio (legacy media)'
+          audioContentData = media.audio || media
+          console.log(`🎵 [ÁUDIO via media object]`)
+        } else if (media.image || (typeof mediaMime === 'string' && mediaMime.startsWith('image/'))) {
+          detectedSubtype = 'image'
+        } else if (media.video || (typeof mediaMime === 'string' && mediaMime.startsWith('video/'))) {
+          detectedSubtype = 'video'
+        } else if (media.document || (typeof mediaMime === 'string' && mediaMime.startsWith('application/'))) {
+          detectedSubtype = 'document'
+        } else {
+          detectedSubtype = 'unknown'
+          console.log(`❓ [MÍDIA DESCONHECIDA]`, JSON.stringify(media, null, 2))
+        }
       }
     }
     // Direct audio/ptt types (backward compatibility)
@@ -503,13 +510,6 @@ serve(async (req) => {
     else if (rawMessageType === 'text' || rawMessageType === 'chat') {
       detectedSubtype = 'text'
       console.log(`✅ Tipo texto detectado`)
-    }
-    // ExtendedTextMessage is a text message with link preview (mediaType: 'url')
-    // Treat it as text, not media
-    else if (messageType === 'ExtendedTextMessage' || (rawMessageType === 'media' && mediaType === 'url')) {
-      detectedSubtype = 'text'
-      isMediaMessage = false // Override - this is text, not media
-      console.log(`✅ Tipo texto com link preview detectado (ExtendedTextMessage)`)
     }
     // Other unsupported types
     else {
