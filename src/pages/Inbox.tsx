@@ -37,6 +37,7 @@ export default function Inbox() {
     isSendingMessage,
     selectConversation,
     sendMessage,
+    sendInternalNote,
     resendMessage,
     updateConversation,
     loadConversations,
@@ -137,6 +138,7 @@ export default function Inbox() {
           conversation={selectedConversation}
           messages={messages}
           onSendMessage={handleSendMessage}
+          onSendInternalNote={sendInternalNote}
           onResendMessage={resendMessage}
           onAssign={handleAssign}
           onClose={handleCloseConversation}
