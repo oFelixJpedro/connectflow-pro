@@ -16,6 +16,7 @@ import Departments from "./pages/Departments";
 import Connections from "./pages/Connections";
 import SettingsGeneral from "./pages/SettingsGeneral";
 import Team from "./pages/Team";
+import InternalChat from "./pages/InternalChat";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -57,6 +58,13 @@ const App = () => (
               <Route path="/connections" element={<Navigate to="/settings/connections" replace />} />
               <Route path="/team" element={<Navigate to="/settings/team" replace />} />
             </Route>
+            
+            {/* Internal Chat - Full screen overlay */}
+            <Route path="/internal-chat" element={
+              <ProtectedRoute>
+                <InternalChat />
+              </ProtectedRoute>
+            } />
             
             {/* Redirects */}
             <Route path="/" element={<Navigate to="/dashboard" replace />} />

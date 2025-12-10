@@ -1,4 +1,4 @@
-import { Bell, Menu } from 'lucide-react';
+import { Bell, Menu, MessageSquare } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
@@ -11,7 +11,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Badge } from '@/components/ui/badge';
 import { useAppStore } from '@/stores/appStore';
-import { InternalChatPopover } from '@/components/internal-chat/InternalChatPopover';
+import { useNavigate } from 'react-router-dom';
 
 interface AppHeaderProps {
   title?: string;
@@ -19,6 +19,7 @@ interface AppHeaderProps {
 
 export function AppHeader({ title }: AppHeaderProps) {
   const { user, toggleSidebar, sidebarCollapsed } = useAppStore();
+  const navigate = useNavigate();
 
   const getInitials = (name: string) => {
     return name
@@ -50,7 +51,15 @@ export function AppHeader({ title }: AppHeaderProps) {
       </div>
 
       <div className="flex-1 flex justify-center">
-        <InternalChatPopover />
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => navigate('/internal-chat')}
+          className="flex items-center gap-2 text-muted-foreground hover:text-foreground hover:bg-muted/50"
+        >
+          <MessageSquare className="w-5 h-5 text-emerald-600" />
+          <span className="hidden md:inline text-sm">Chat Interno</span>
+        </Button>
       </div>
 
       <div className="flex items-center gap-2">
