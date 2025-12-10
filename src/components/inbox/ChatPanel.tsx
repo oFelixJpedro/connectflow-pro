@@ -955,29 +955,6 @@ export function ChatPanel({
                           {/* Action buttons - RIGHT side for inbound messages */}
                           {!isOutbound && (
                             <div className="flex items-center gap-1 opacity-0 group-hover/message:opacity-100 transition-opacity duration-200">
-                              {/* Reaction button - only for inbound messages */}
-                              {onSendReaction && message.whatsappMessageId && (
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <div>
-                                      <ReactionPicker
-                                        onSelect={(emoji) => handleReaction(message.id, emoji)}
-                                        onRemove={() => {
-                                          const currentEmoji = getUserReactionForMessage(message);
-                                          if (currentEmoji) {
-                                            handleReaction(message.id, currentEmoji, true);
-                                          }
-                                        }}
-                                        currentUserReaction={getUserReactionForMessage(message)}
-                                        isLoading={sendingReactionMessageId === message.id}
-                                        isOutbound={isOutbound}
-                                      />
-                                    </div>
-                                  </TooltipTrigger>
-                                  <TooltipContent>Reagir</TooltipContent>
-                                </Tooltip>
-                              )}
-                              
                               {/* Reply button */}
                               {canReply && (
                                 <Tooltip>
@@ -993,6 +970,22 @@ export function ChatPanel({
                                   </TooltipTrigger>
                                   <TooltipContent>Responder</TooltipContent>
                                 </Tooltip>
+                              )}
+                              
+                              {/* Reaction button - to the right of reply */}
+                              {onSendReaction && message.whatsappMessageId && (
+                                <ReactionPicker
+                                  onSelect={(emoji) => handleReaction(message.id, emoji)}
+                                  onRemove={() => {
+                                    const currentEmoji = getUserReactionForMessage(message);
+                                    if (currentEmoji) {
+                                      handleReaction(message.id, currentEmoji, true);
+                                    }
+                                  }}
+                                  currentUserReaction={getUserReactionForMessage(message)}
+                                  isLoading={sendingReactionMessageId === message.id}
+                                  isOutbound={isOutbound}
+                                />
                               )}
                             </div>
                           )}
