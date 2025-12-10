@@ -36,10 +36,13 @@ import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { ContactFormModal } from '@/components/contacts/ContactFormModal';
+import { ContactFormData } from '@/hooks/useContactsData';
 
 interface ContactPanelProps {
   conversation: Conversation | null;
   onClose: () => void;
+  onContactUpdated?: () => void;
 }
 
 interface Tag {
@@ -55,7 +58,7 @@ interface ConversationHistory {
   messageCount: number;
 }
 
-export function ContactPanel({ conversation, onClose }: ContactPanelProps) {
+export function ContactPanel({ conversation, onClose, onContactUpdated }: ContactPanelProps) {
   const { toast } = useToast();
   const [notesOpen, setNotesOpen] = useState(true);
   const [historyOpen, setHistoryOpen] = useState(true);
@@ -72,6 +75,9 @@ export function ContactPanel({ conversation, onClose }: ContactPanelProps) {
   // Conversation history state
   const [conversationHistory, setConversationHistory] = useState<ConversationHistory[]>([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+
+  // Edit modal state
+  const [editModalOpen, setEditModalOpen] = useState(false);
 
   const contact = conversation?.contact;
 
@@ -238,6 +244,47 @@ export function ContactPanel({ conversation, onClose }: ContactPanelProps) {
     }
   };
 
+  const handleSaveContact = async (data: ContactFormData): Promise<boolean> => {
+    if (!contact?.id) return false;
+
+    try {
+      const { error } = await supabase
+        .from('contacts')
+        .update({
+          name: data.name || null,
+          phone_number: data.phone_number.replace(/\D/g, ''),
+          email: data.email || null,
+          tags: data.tags,
+          notes: data.notes || null,
+        })
+        .eq('id', contact.id);
+
+      if (error) throw error;
+
+      // Atualizar estados locais
+      setContactTags(data.tags);
+      setNotes(data.notes || '');
+
+      toast({
+        title: 'Contato atualizado',
+        description: 'As informações do contato foram salvas com sucesso.',
+      });
+
+      // Notificar parent para refresh
+      onContactUpdated?.();
+
+      return true;
+    } catch (error) {
+      console.error('[ContactPanel] Erro ao salvar contato:', error);
+      toast({
+        title: 'Erro ao salvar',
+        description: 'Não foi possível salvar as alterações.',
+        variant: 'destructive',
+      });
+      return false;
+    }
+  };
+
   if (!conversation) {
     return null;
   }
@@ -312,6 +359,12 @@ export function ContactPanel({ conversation, onClose }: ContactPanelProps) {
             <p className="text-sm text-muted-foreground">
               {contact?.phoneNumber}
             </p>
+            <div className="flex items-center gap-2 mt-3">
+              <Button variant="outline" size="sm" onClick={() => setEditModalOpen(true)}>
+                <Edit2 className="w-4 h-4 mr-2" />
+                Editar
+              </Button>
+            </div>
           </div>
 
           <Separator />
@@ -529,6 +582,28 @@ export function ContactPanel({ conversation, onClose }: ContactPanelProps) {
           </Collapsible>
         </div>
       </ScrollArea>
+
+      {/* Edit Contact Modal */}
+      <ContactFormModal
+        open={editModalOpen}
+        onOpenChange={setEditModalOpen}
+        contact={contact ? {
+          id: contact.id,
+          company_id: contact.companyId || '',
+          phone_number: contact.phoneNumber || '',
+          name: contact.name || null,
+          email: contact.email || null,
+          avatar_url: contact.avatarUrl || null,
+          tags: contactTags,
+          notes: notes || null,
+          custom_fields: (contact.customFields as any) || null,
+          last_interaction_at: contact.lastInteractionAt || null,
+          created_at: contact.createdAt || null,
+          updated_at: contact.updatedAt || null,
+        } : null}
+        tags={availableTags}
+        onSave={handleSaveContact}
+      />
     </div>
   );
 }
