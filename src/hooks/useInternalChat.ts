@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { useAppStore } from '@/stores/appStore';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface ChatRoom {
   id: string;
@@ -42,7 +42,7 @@ interface TeamMember {
 }
 
 export function useInternalChat() {
-  const { user, company } = useAppStore();
+  const { profile, company } = useAuth();
   const [rooms, setRooms] = useState<ChatRoom[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
@@ -57,7 +57,7 @@ export function useInternalChat() {
       return;
     }
 
-    console.log('[InternalChat] Carregando membros da empresa:', company.id, 'user:', user?.id);
+    console.log('[InternalChat] Carregando membros da empresa:', company.id, 'profile:', profile?.id);
 
     // Build query - fetch all active members from company
     let query = supabase
@@ -67,8 +67,8 @@ export function useInternalChat() {
       .eq('active', true);
 
     // Exclude current user if available
-    if (user?.id) {
-      query = query.neq('id', user.id);
+    if (profile?.id) {
+      query = query.neq('id', profile.id);
     }
 
     const { data, error } = await query;
@@ -89,11 +89,11 @@ export function useInternalChat() {
         email: m.email,
       })));
     }
-  }, [company?.id, user?.id]);
+  }, [company?.id, profile?.id]);
 
   // Load chat rooms
   const loadRooms = useCallback(async () => {
-    if (!company?.id || !user?.id) return;
+    if (!company?.id || !profile?.id) return;
     setIsLoading(true);
 
     try {
@@ -136,7 +136,7 @@ export function useInternalChat() {
           // For direct chats, get the other participant's name
           let displayName = room.name;
           if (room.type === 'direct') {
-            const otherParticipant = participants.find(p => p.id !== user.id);
+            const otherParticipant = participants.find(p => p.id !== profile.id);
             displayName = otherParticipant?.fullName || 'Chat Direto';
           }
 
@@ -168,7 +168,7 @@ export function useInternalChat() {
     } finally {
       setIsLoading(false);
     }
-  }, [company?.id, user?.id, selectedRoom]);
+  }, [company?.id, profile?.id, selectedRoom]);
 
   // Create or get general room
   const ensureGeneralRoom = useCallback(async () => {
@@ -205,7 +205,7 @@ export function useInternalChat() {
 
   // Create or get direct room with another user
   const getOrCreateDirectRoom = useCallback(async (otherUserId: string) => {
-    if (!company?.id || !user?.id) return null;
+    if (!company?.id || !profile?.id) return null;
 
     // Check if direct room already exists between these users
     const { data: existingRooms } = await supabase
@@ -221,7 +221,7 @@ export function useInternalChat() {
     const directRoom = existingRooms?.find(room => {
       const participants = (room as any).internal_chat_participants || [];
       const userIds = participants.map((p: any) => p.user_id);
-      return userIds.includes(user.id) && userIds.includes(otherUserId);
+      return userIds.includes(profile.id) && userIds.includes(otherUserId);
     });
 
     if (directRoom) {
@@ -252,7 +252,7 @@ export function useInternalChat() {
     await supabase
       .from('internal_chat_participants')
       .insert([
-        { room_id: newRoom.id, user_id: user.id },
+        { room_id: newRoom.id, user_id: profile.id },
         { room_id: newRoom.id, user_id: otherUserId },
       ]);
 
@@ -260,11 +260,11 @@ export function useInternalChat() {
     await loadRooms();
 
     return newRoom.id;
-  }, [company?.id, user?.id, rooms, loadRooms]);
+  }, [company?.id, profile?.id, rooms, loadRooms]);
 
   // Load messages for selected room
   const loadMessages = useCallback(async (roomId: string) => {
-    if (!user?.id) return;
+    if (!profile?.id) return;
     setIsLoadingMessages(true);
 
     try {
@@ -295,7 +295,7 @@ export function useInternalChat() {
         messageType: msg.message_type,
         mediaUrl: msg.media_url,
         createdAt: msg.created_at,
-        isOwnMessage: msg.sender_id === user.id,
+        isOwnMessage: msg.sender_id === profile.id,
       }));
 
       setMessages(transformedMessages);
@@ -304,18 +304,18 @@ export function useInternalChat() {
     } finally {
       setIsLoadingMessages(false);
     }
-  }, [user?.id]);
+  }, [profile?.id]);
 
   // Send message
   const sendMessage = useCallback(async (content: string, messageType: string = 'text', mediaUrl?: string) => {
-    if (!selectedRoom || !user?.id) return false;
+    if (!selectedRoom || !profile?.id) return false;
 
     try {
       const { error } = await supabase
         .from('internal_chat_messages')
         .insert({
           room_id: selectedRoom.id,
-          sender_id: user.id,
+          sender_id: profile.id,
           content,
           message_type: messageType,
           media_url: mediaUrl,
@@ -327,7 +327,7 @@ export function useInternalChat() {
       console.error('[InternalChat] Erro ao enviar mensagem:', error);
       return false;
     }
-  }, [selectedRoom, user?.id]);
+  }, [selectedRoom, profile?.id]);
 
   // Initialize - Load team members immediately when company is available
   useEffect(() => {
@@ -337,15 +337,15 @@ export function useInternalChat() {
     }
   }, [company?.id, loadTeamMembers]);
 
-  // Initialize rooms when user is also available
+  // Initialize rooms when profile is also available
   useEffect(() => {
-    if (company?.id && user?.id) {
-      console.log('[InternalChat] Carregando salas - user disponível:', user.id);
+    if (company?.id && profile?.id) {
+      console.log('[InternalChat] Carregando salas - profile disponível:', profile.id);
       ensureGeneralRoom().then(() => {
         loadRooms();
       });
     }
-  }, [company?.id, user?.id, ensureGeneralRoom, loadRooms]);
+  }, [company?.id, profile?.id, ensureGeneralRoom, loadRooms]);
 
   // Load messages when room changes
   useEffect(() => {
@@ -398,7 +398,7 @@ export function useInternalChat() {
               messageType: newMsg.message_type,
               mediaUrl: newMsg.media_url,
               createdAt: newMsg.created_at,
-              isOwnMessage: newMsg.sender_id === user?.id,
+              isOwnMessage: newMsg.sender_id === profile?.id,
             };
 
             setMessages(prev => [...prev, transformedMsg]);
@@ -410,7 +410,7 @@ export function useInternalChat() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [selectedRoom?.id, user?.id]);
+  }, [selectedRoom?.id, profile?.id]);
 
   return {
     rooms,
