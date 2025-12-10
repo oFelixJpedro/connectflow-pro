@@ -16,11 +16,12 @@ interface ChatRoom {
     content: string;
     createdAt: string;
     senderName: string;
+    messageType?: string;
   };
   unreadCount?: number;
 }
 
-interface ChatMessage {
+export interface ChatMessage {
   id: string;
   roomId: string;
   senderId: string;
@@ -29,8 +30,10 @@ interface ChatMessage {
   content: string | null;
   messageType: string;
   mediaUrl: string | null;
+  mediaMimeType?: string | null;
   createdAt: string;
   isOwnMessage: boolean;
+  metadata?: Record<string, unknown>;
 }
 
 interface TeamMember {
@@ -346,6 +349,7 @@ export function useInternalChat() {
           content,
           message_type,
           media_url,
+          media_mime_type,
           created_at,
           profiles:sender_id(full_name, avatar_url)
         `)
@@ -363,6 +367,7 @@ export function useInternalChat() {
         content: msg.content,
         messageType: msg.message_type,
         mediaUrl: msg.media_url,
+        mediaMimeType: msg.media_mime_type,
         createdAt: msg.created_at,
         isOwnMessage: msg.sender_id === profile.id,
       }));
@@ -375,8 +380,8 @@ export function useInternalChat() {
     }
   }, [profile?.id]);
 
-  // Send message
-  const sendMessage = useCallback(async (content: string, messageType: string = 'text', mediaUrl?: string) => {
+  // Send text message
+  const sendMessage = useCallback(async (content: string, messageType: string = 'text', mediaUrl?: string, mediaMimeType?: string) => {
     if (!selectedRoom || !profile?.id) return false;
 
     try {
@@ -388,6 +393,7 @@ export function useInternalChat() {
           content,
           message_type: messageType,
           media_url: mediaUrl,
+          media_mime_type: mediaMimeType,
         });
 
       if (error) throw error;
@@ -397,6 +403,64 @@ export function useInternalChat() {
       return false;
     }
   }, [selectedRoom, profile?.id]);
+
+  // Send media message (upload file first, then save message)
+  const sendMediaMessage = useCallback(async (
+    file: File,
+    messageType: 'image' | 'video' | 'audio' | 'document',
+    caption?: string
+  ) => {
+    if (!selectedRoom || !profile?.id || !company?.id) return false;
+
+    try {
+      // Generate unique file path
+      const fileExt = file.name.split('.').pop() || 'bin';
+      const timestamp = Date.now();
+      const filePath = `internal-chat/${company.id}/${selectedRoom.id}/${timestamp}_${file.name}`;
+
+      console.log('[InternalChat] Uploading media:', filePath);
+
+      // Upload to Supabase Storage
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('whatsapp-media')
+        .upload(filePath, file, {
+          contentType: file.type,
+          cacheControl: '3600',
+        });
+
+      if (uploadError) {
+        console.error('[InternalChat] Upload error:', uploadError);
+        throw uploadError;
+      }
+
+      // Get public URL
+      const { data: { publicUrl } } = supabase.storage
+        .from('whatsapp-media')
+        .getPublicUrl(filePath);
+
+      console.log('[InternalChat] Media uploaded, URL:', publicUrl);
+
+      // Insert message with media URL
+      const { error: msgError } = await supabase
+        .from('internal_chat_messages')
+        .insert({
+          room_id: selectedRoom.id,
+          sender_id: profile.id,
+          content: caption || null,
+          message_type: messageType,
+          media_url: publicUrl,
+          media_mime_type: file.type,
+        });
+
+      if (msgError) throw msgError;
+
+      console.log('[InternalChat] Media message sent successfully');
+      return true;
+    } catch (error) {
+      console.error('[InternalChat] Erro ao enviar mídia:', error);
+      return false;
+    }
+  }, [selectedRoom, profile?.id, company?.id]);
 
   // Initialize - Load team members immediately when company is available
   useEffect(() => {
@@ -450,6 +514,7 @@ export function useInternalChat() {
               content,
               message_type,
               media_url,
+              media_mime_type,
               created_at,
               profiles:sender_id(full_name, avatar_url)
             `)
@@ -466,6 +531,7 @@ export function useInternalChat() {
               content: newMsg.content,
               messageType: newMsg.message_type,
               mediaUrl: newMsg.media_url,
+              mediaMimeType: newMsg.media_mime_type,
               createdAt: newMsg.created_at,
               isOwnMessage: newMsg.sender_id === profile?.id,
             };
@@ -490,6 +556,7 @@ export function useInternalChat() {
     isLoading,
     isLoadingMessages,
     sendMessage,
+    sendMediaMessage,
     getOrCreateDirectRoom,
     loadRooms,
     loadTeamMembers,
