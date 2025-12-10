@@ -1,7 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { 
   Send, 
-  Smile, 
   Check,
   CheckCheck,
   Clock,
@@ -39,6 +38,7 @@ import { VideoPreviewModal } from './VideoPreviewModal';
 import { DocumentPreviewModal } from './DocumentPreviewModal';
 import { MessageReactions } from './MessageReactions';
 import { ReactionPicker } from './ReactionPicker';
+import { EmojiMessagePicker } from './EmojiMessagePicker';
 import { cn } from '@/lib/utils';
 import type { Conversation, Message, QuotedMessage } from '@/types';
 import { format } from 'date-fns';
@@ -1106,14 +1106,14 @@ export function ChatPanel({
                 rows={1}
                 disabled={isSendingMessage || !canReply}
               />
-              <Button
-                variant="ghost"
-                size="icon"
-                className="absolute right-1 bottom-1"
-                disabled={!canReply}
-              >
-                <Smile className="w-5 h-5 text-muted-foreground" />
-              </Button>
+              <EmojiMessagePicker
+                onSelect={(emoji) => {
+                  console.log('📤 Enviando emoji como mensagem:', emoji);
+                  onSendMessage(emoji, replyingTo?.id);
+                  setReplyingTo(null);
+                }}
+                disabled={!canReply || isSendingMessage}
+              />
             </div>
 
             {/* Mic button - show when no text */}
