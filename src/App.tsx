@@ -14,7 +14,7 @@ import Tags from "./pages/Tags";
 import QuickReplies from "./pages/QuickReplies";
 import Departments from "./pages/Departments";
 import Connections from "./pages/Connections";
-import Settings from "./pages/Settings";
+import SettingsGeneral from "./pages/SettingsGeneral";
 import Team from "./pages/Team";
 import NotFound from "./pages/NotFound";
 
@@ -40,12 +40,22 @@ const App = () => (
               <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/inbox" element={<Inbox />} />
               <Route path="/contacts" element={<Contacts />} />
-              <Route path="/tags" element={<Tags />} />
-              <Route path="/quick-replies" element={<QuickReplies />} />
-              <Route path="/departments" element={<Departments />} />
-              <Route path="/connections" element={<Connections />} />
-              <Route path="/team" element={<Team />} />
-              <Route path="/settings" element={<Settings />} />
+              
+              {/* Settings Routes */}
+              <Route path="/settings" element={<Navigate to="/settings/general" replace />} />
+              <Route path="/settings/general" element={<SettingsGeneral />} />
+              <Route path="/settings/tags" element={<Tags />} />
+              <Route path="/settings/quick-replies" element={<QuickReplies />} />
+              <Route path="/settings/departments" element={<Departments />} />
+              <Route path="/settings/connections" element={<Connections />} />
+              <Route path="/settings/team" element={<Team />} />
+              
+              {/* Legacy redirects for old routes */}
+              <Route path="/tags" element={<Navigate to="/settings/tags" replace />} />
+              <Route path="/quick-replies" element={<Navigate to="/settings/quick-replies" replace />} />
+              <Route path="/departments" element={<Navigate to="/settings/departments" replace />} />
+              <Route path="/connections" element={<Navigate to="/settings/connections" replace />} />
+              <Route path="/team" element={<Navigate to="/settings/team" replace />} />
             </Route>
             
             {/* Redirects */}

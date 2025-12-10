@@ -25,7 +25,7 @@ import {
 import { useAppStore } from '@/stores/appStore';
 import { toast } from '@/hooks/use-toast';
 
-export default function Settings() {
+export default function SettingsGeneral() {
   const { company, user } = useAppStore();
   const [companyName, setCompanyName] = useState(company?.name || '');
 
@@ -41,7 +41,7 @@ export default function Settings() {
       <div className="max-w-4xl mx-auto p-6 space-y-6">
         {/* Page Header */}
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Configurações</h1>
+          <h1 className="text-2xl font-bold text-foreground">Configurações Gerais</h1>
           <p className="text-muted-foreground">
             Gerencie as configurações da sua conta e empresa
           </p>
