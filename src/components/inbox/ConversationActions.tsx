@@ -8,6 +8,7 @@ import {
   CheckCircle,
   Loader2,
   Contact,
+  Download,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -232,6 +233,91 @@ export function ConversationActions({
   // Pode mover departamento: sempre se não está fechada
   const canMoveDepartment = !isClosed;
 
+  const handleExportConversation = async () => {
+    setIsLoading(true);
+    setLoadingAction('export');
+
+    try {
+      // Buscar todas as mensagens da conversa
+      const { data: messages, error } = await supabase
+        .from('messages')
+        .select('*')
+        .eq('conversation_id', conversation.id)
+        .order('created_at', { ascending: true });
+
+      if (error) throw error;
+
+      const contactName = conversation.contact?.name || conversation.contact?.phoneNumber || 'Contato';
+      
+      // Formatar data para o nome do arquivo
+      const now = new Date();
+      const dateStr = now.toISOString().split('T')[0];
+      
+      // Criar conteúdo do arquivo
+      let content = `=== EXPORTAÇÃO DE CONVERSA ===\n`;
+      content += `Contato: ${contactName}\n`;
+      content += `Telefone: ${conversation.contact?.phoneNumber || 'N/A'}\n`;
+      content += `Status: ${conversation.status}\n`;
+      content += `Data de exportação: ${now.toLocaleString('pt-BR')}\n`;
+      content += `Total de mensagens: ${messages?.length || 0}\n`;
+      content += `${'='.repeat(40)}\n\n`;
+
+      messages?.forEach((msg) => {
+        const timestamp = new Date(msg.created_at).toLocaleString('pt-BR');
+        const senderName = msg.direction === 'inbound' 
+          ? contactName 
+          : 'Atendente';
+        const direction = msg.direction === 'inbound' ? '←' : '→';
+        
+        content += `[${timestamp}] ${direction} ${senderName}:\n`;
+        
+        if (msg.message_type === 'text') {
+          content += `${msg.content || ''}\n`;
+        } else if (msg.message_type === 'image') {
+          content += `[Imagem${msg.content ? `: ${msg.content}` : ''}]\n`;
+        } else if (msg.message_type === 'audio') {
+          content += `[Áudio]\n`;
+        } else if (msg.message_type === 'video') {
+          content += `[Vídeo${msg.content ? `: ${msg.content}` : ''}]\n`;
+        } else if (msg.message_type === 'document') {
+          content += `[Documento${msg.content ? `: ${msg.content}` : ''}]\n`;
+        } else if (msg.message_type === 'sticker') {
+          content += `[Figurinha]\n`;
+        } else {
+          content += `[${msg.message_type}]\n`;
+        }
+        
+        content += '\n';
+      });
+
+      // Criar e baixar arquivo
+      const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `conversa_${contactName.replace(/[^a-zA-Z0-9]/g, '_')}_${dateStr}.txt`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      toast({
+        title: 'Conversa exportada',
+        description: 'O arquivo foi baixado com sucesso.',
+      });
+    } catch (error: any) {
+      console.error('[ConversationActions] Erro ao exportar:', error);
+      toast({
+        title: 'Erro ao exportar',
+        description: error.message || 'Não foi possível exportar a conversa',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsLoading(false);
+      setLoadingAction(null);
+    }
+  };
+
   return (
     <>
       <DropdownMenu>
@@ -371,6 +457,17 @@ export function ConversationActions({
           >
             <CheckCircle className="w-4 h-4 mr-2" />
             <span>Concluir atendimento</span>
+          </DropdownMenuItem>
+
+          <DropdownMenuSeparator />
+
+          {/* Exportar conversa */}
+          <DropdownMenuItem
+            onClick={handleExportConversation}
+            disabled={loadingAction === 'export'}
+          >
+            <Download className="w-4 h-4 mr-2" />
+            <span>Exportar conversa</span>
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
