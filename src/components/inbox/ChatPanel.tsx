@@ -1018,7 +1018,18 @@ export function ChatPanel({
           setImageFile(null);
         }}
         onSend={handleSendImage}
-        onChangeFile={() => imageInputRef.current?.click()}
+        onChangeFile={() => {
+          const input = document.createElement('input');
+          input.type = 'file';
+          input.accept = 'image/jpeg,image/png,image/gif,image/webp,.jpg,.jpeg,.png,.gif,.webp';
+          input.onchange = (e) => {
+            const file = (e.target as HTMLInputElement).files?.[0];
+            if (file) {
+              setImageFile(file);
+            }
+          };
+          input.click();
+        }}
       />
 
       {/* Video Preview Modal */}
