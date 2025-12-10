@@ -275,21 +275,21 @@ serve(async (req) => {
     console.log(`📞 Número limpo: ${cleanPhoneNumber}`)
 
     // Prepare UAZAPI payload
-    const uazapiPayload: { number: string; type: string; file: string; caption?: string } = {
+    const uazapiPayload: { number: string; type: string; file: string; text?: string } = {
       number: cleanPhoneNumber,
       type: 'image',
       file: mediaUrl
     }
 
     if (caption && caption.trim()) {
-      uazapiPayload.caption = caption.trim()
+      uazapiPayload.text = caption.trim()
     }
 
     console.log(`📤 Payload UAZAPI:`)
     console.log(`   - number: ${uazapiPayload.number}`)
     console.log(`   - type: ${uazapiPayload.type}`)
     console.log(`   - file: ${uazapiPayload.file.substring(0, 50)}...`)
-    console.log(`   - caption: ${uazapiPayload.caption || '(sem legenda)'}`)
+    console.log(`   - text: ${uazapiPayload.text || '(sem legenda)'}`)
 
     const uazapiUrl = `${uazapiBaseUrl}/send/media`
     console.log(`📨 POST ${uazapiUrl}`)
