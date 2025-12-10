@@ -113,6 +113,20 @@ export type SenderType = 'user' | 'contact' | 'system' | 'bot';
 export type MessageType = 'text' | 'image' | 'video' | 'audio' | 'document' | 'location' | 'contact' | 'sticker';
 export type MessageStatus = 'pending' | 'sent' | 'delivered' | 'read' | 'failed';
 
+// Reaction types
+export interface MessageReaction {
+  id: string;
+  messageId: string;
+  companyId: string;
+  reactorType: 'contact' | 'user';
+  reactorId: string;
+  emoji: string;
+  whatsappMessageId?: string;
+  reactorName?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface Message {
   id: string;
   conversationId: string;
@@ -130,6 +144,7 @@ export interface Message {
   isInternalNote: boolean;
   quotedMessageId?: string;
   quotedMessage?: QuotedMessage;
+  reactions?: MessageReaction[];
   createdAt: string;
   updatedAt: string;
 }

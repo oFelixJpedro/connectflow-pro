@@ -330,6 +330,57 @@ export type Database = {
           },
         ]
       }
+      message_reactions: {
+        Row: {
+          company_id: string
+          created_at: string
+          emoji: string
+          id: string
+          message_id: string
+          reactor_id: string
+          reactor_type: string
+          updated_at: string
+          whatsapp_message_id: string | null
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          emoji: string
+          id?: string
+          message_id: string
+          reactor_id: string
+          reactor_type: string
+          updated_at?: string
+          whatsapp_message_id?: string | null
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          emoji?: string
+          id?: string
+          message_id?: string
+          reactor_id?: string
+          reactor_type?: string
+          updated_at?: string
+          whatsapp_message_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "message_reactions_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "message_reactions_message_id_fkey"
+            columns: ["message_id"]
+            isOneToOne: false
+            referencedRelation: "messages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       messages: {
         Row: {
           content: string | null
