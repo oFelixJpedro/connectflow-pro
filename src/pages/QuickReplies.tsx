@@ -67,13 +67,14 @@ import { cn } from '@/lib/utils';
 
 const defaultCategories = ['Saudações', 'Geral', 'Encerramento', 'Informações', 'Vendas', 'Suporte'];
 
-// Expanded file types matching WhatsApp support and AttachmentMenu
+// File types matching exactly what AttachmentMenu accepts for WhatsApp sending
 const mediaTypeOptions: { value: QuickReplyMediaType; label: string; icon: React.ReactNode; accept: string }[] = [
   { value: 'text', label: 'Texto', icon: <FileText className="w-4 h-4" />, accept: '' },
   { value: 'image', label: 'Imagem', icon: <Image className="w-4 h-4" />, accept: 'image/jpeg,image/png,image/gif,image/webp,.jpg,.jpeg,.png,.gif,.webp' },
   { value: 'video', label: 'Vídeo', icon: <Video className="w-4 h-4" />, accept: 'video/mp4,video/avi,video/x-msvideo,video/quicktime,video/x-matroska,video/webm,.mp4,.avi,.mov,.mkv,.webm' },
   { value: 'audio', label: 'Áudio', icon: <Mic className="w-4 h-4" />, accept: 'audio/mp3,audio/mpeg,audio/ogg,audio/wav,audio/webm,audio/aac,audio/x-m4a,.mp3,.ogg,.wav,.webm,.aac,.m4a' },
-  { value: 'document', label: 'Documento', icon: <FileText className="w-4 h-4" />, accept: '*/*' }, // Accept all files for documents
+  // Document accepts ALL file types - using empty string to allow any file (same as AttachmentMenu behavior)
+  { value: 'document', label: 'Documento', icon: <FileText className="w-4 h-4" />, accept: '.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.md,.zip,.rar,.json,.xml,.html,.css,.js,.ts,.tsx,.jsx,.py,.java,.c,.cpp,.h,.sql,.sh,.bat,.log,.ini,.cfg,.yaml,.yml,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,text/plain,text/csv,text/markdown,text/html,text/css,text/javascript,application/json,application/xml,application/zip,application/x-rar-compressed,application/octet-stream' },
 ];
 
 // Helper to format recording time
