@@ -555,14 +555,34 @@ serve(async (req) => {
       console.log(`✅ Conexão encontrada - company_id: ${companyId}`)
       
       // Find the original message by whatsapp_message_id
-      const { data: originalMessage, error: msgError } = await supabase
-        .from('messages')
-        .select('id, conversation_id')
-        .eq('whatsapp_message_id', originalMessageId)
-        .maybeSingle()
+      // Try multiple formats: short ID, full ID with phone prefix, and with :
+      const phoneOwner = payload.message?.owner || payload.chat?.owner || payload.owner || ''
+      const possibleIds = [
+        originalMessageId,
+        `${phoneOwner}:${originalMessageId}`,
+        originalMessageId.includes(':') ? originalMessageId.split(':')[1] : null
+      ].filter(Boolean)
       
-      if (msgError || !originalMessage) {
+      console.log(`🔍 Buscando mensagem com IDs: ${JSON.stringify(possibleIds)}`)
+      
+      let originalMessage = null
+      for (const searchId of possibleIds) {
+        const { data: msg, error: msgErr } = await supabase
+          .from('messages')
+          .select('id, conversation_id')
+          .eq('whatsapp_message_id', searchId)
+          .maybeSingle()
+        
+        if (msg && !msgErr) {
+          originalMessage = msg
+          console.log(`✅ Mensagem encontrada com ID: ${searchId}`)
+          break
+        }
+      }
+      
+      if (!originalMessage) {
         console.log(`❌ Mensagem original não encontrada: ${originalMessageId}`)
+        console.log(`   IDs tentados: ${JSON.stringify(possibleIds)}`)
         return new Response(
           JSON.stringify({ success: true, message: 'Original message not found for reaction' }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
