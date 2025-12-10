@@ -40,6 +40,7 @@ import { MessageReactions } from './MessageReactions';
 import { ReactionPicker } from './ReactionPicker';
 import { EmojiMessagePicker } from './EmojiMessagePicker';
 import { QuickRepliesPicker } from './QuickRepliesPicker';
+import { QuickReply } from '@/hooks/useQuickRepliesData';
 import { cn } from '@/lib/utils';
 import type { Conversation, Message, QuotedMessage } from '@/types';
 import { format } from 'date-fns';
@@ -539,11 +540,85 @@ export function ChatPanel({
   };
 
   // Handle quick reply selection
-  const handleQuickReplySelect = (message: string, replyId: string) => {
-    console.log('📝 Resposta rápida selecionada:', replyId);
+  const handleQuickReplySelect = async (reply: QuickReply) => {
+    console.log('📝 Resposta rápida selecionada:', reply.id, 'Tipo:', reply.media_type);
     setShowQuickReplies(false);
     setInputValue('');
-    onSendMessage(message, replyingTo?.id);
+    
+    const mediaType = reply.media_type || 'text';
+    
+    // Handle different media types
+    if (mediaType === 'text' || !reply.media_url) {
+      // Send as text message
+      onSendMessage(reply.message, replyingTo?.id);
+    } else if (mediaType === 'image' && reply.media_url) {
+      // Send image with caption
+      try {
+        const response = await fetch(reply.media_url);
+        const blob = await response.blob();
+        const file = new File([blob], `quick-reply-image.${blob.type.split('/')[1] || 'jpg'}`, { type: blob.type });
+        setImageFile(file);
+        setIsImagePreviewOpen(true);
+        // Pre-fill caption with message if exists
+        // Note: ImagePreviewModal will handle the actual sending
+      } catch (error) {
+        console.error('Erro ao carregar imagem:', error);
+        toast({
+          title: 'Erro ao carregar imagem',
+          description: 'Não foi possível carregar a imagem da resposta rápida.',
+          variant: 'destructive',
+        });
+      }
+    } else if (mediaType === 'video' && reply.media_url) {
+      // Send video
+      try {
+        const response = await fetch(reply.media_url);
+        const blob = await response.blob();
+        const file = new File([blob], `quick-reply-video.${blob.type.split('/')[1] || 'mp4'}`, { type: blob.type });
+        setVideoFile(file);
+        setIsVideoPreviewOpen(true);
+      } catch (error) {
+        console.error('Erro ao carregar vídeo:', error);
+        toast({
+          title: 'Erro ao carregar vídeo',
+          description: 'Não foi possível carregar o vídeo da resposta rápida.',
+          variant: 'destructive',
+        });
+      }
+    } else if (mediaType === 'audio' && reply.media_url) {
+      // Send audio
+      try {
+        const response = await fetch(reply.media_url);
+        const blob = await response.blob();
+        const file = new File([blob], `quick-reply-audio.${blob.type.split('/')[1] || 'mp3'}`, { type: blob.type });
+        setAudioFile(file);
+      } catch (error) {
+        console.error('Erro ao carregar áudio:', error);
+        toast({
+          title: 'Erro ao carregar áudio',
+          description: 'Não foi possível carregar o áudio da resposta rápida.',
+          variant: 'destructive',
+        });
+      }
+    } else if (mediaType === 'document' && reply.media_url) {
+      // Send document
+      try {
+        const response = await fetch(reply.media_url);
+        const blob = await response.blob();
+        const fileName = reply.media_url.split('/').pop() || 'document';
+        const file = new File([blob], fileName, { type: blob.type || 'application/octet-stream' });
+        setDocumentFile(file);
+        setIsDocumentPreviewOpen(true);
+      } catch (error) {
+        console.error('Erro ao carregar documento:', error);
+        toast({
+          title: 'Erro ao carregar documento',
+          description: 'Não foi possível carregar o documento da resposta rápida.',
+          variant: 'destructive',
+        });
+      }
+    }
+    
     setReplyingTo(null);
     textareaRef.current?.focus();
   };

@@ -1,16 +1,32 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Zap, Search, FolderOpen } from 'lucide-react';
+import { Zap, Search, FolderOpen, Image, Video, Mic, FileText } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
-import { useQuickRepliesData, QuickReply } from '@/hooks/useQuickRepliesData';
+import { useQuickRepliesData, QuickReply, QuickReplyMediaType } from '@/hooks/useQuickRepliesData';
 
 interface QuickRepliesPickerProps {
   inputValue: string;
-  onSelect: (message: string, replyId: string) => void;
+  onSelect: (reply: QuickReply) => void;
   onClose: () => void;
   isOpen: boolean;
 }
+
+const mediaTypeIcons: Record<QuickReplyMediaType, React.ReactNode> = {
+  text: <FileText className="w-3 h-3" />,
+  image: <Image className="w-3 h-3" />,
+  video: <Video className="w-3 h-3" />,
+  audio: <Mic className="w-3 h-3" />,
+  document: <FileText className="w-3 h-3" />,
+};
+
+const mediaTypeLabels: Record<QuickReplyMediaType, string> = {
+  text: 'Texto',
+  image: 'Imagem',
+  video: 'Vídeo',
+  audio: 'Áudio',
+  document: 'Documento',
+};
 
 export function QuickRepliesPicker({
   inputValue,
@@ -51,7 +67,7 @@ export function QuickRepliesPicker({
 
   const handleSelect = useCallback((reply: QuickReply) => {
     incrementUseCount(reply.id);
-    onSelect(reply.message, reply.id);
+    onSelect(reply);
   }, [incrementUseCount, onSelect]);
 
   // Handle keyboard navigation
@@ -124,35 +140,44 @@ export function QuickRepliesPicker({
           </div>
         ) : (
           <div className="py-1">
-            {filteredReplies.map((reply, index) => (
-              <div
-                key={reply.id}
-                ref={(el) => (itemRefs.current[index] = el)}
-                onClick={() => handleSelect(reply)}
-                className={cn(
-                  "px-3 py-2 cursor-pointer transition-colors",
-                  index === selectedIndex 
-                    ? "bg-accent text-accent-foreground" 
-                    : "hover:bg-muted/50"
-                )}
-              >
-                <div className="flex items-center gap-2">
-                  <Badge variant="secondary" className="font-mono text-xs flex-shrink-0">
-                    {reply.shortcut}
-                  </Badge>
-                  <span className="font-medium text-sm truncate">{reply.title}</span>
-                  {reply.category && (
-                    <div className="flex items-center gap-1 text-xs text-muted-foreground ml-auto flex-shrink-0">
-                      <FolderOpen className="w-3 h-3" />
-                      {reply.category}
-                    </div>
+            {filteredReplies.map((reply, index) => {
+              const mediaType = reply.media_type || 'text';
+              return (
+                <div
+                  key={reply.id}
+                  ref={(el) => (itemRefs.current[index] = el)}
+                  onClick={() => handleSelect(reply)}
+                  className={cn(
+                    "px-3 py-2 cursor-pointer transition-colors",
+                    index === selectedIndex 
+                      ? "bg-accent text-accent-foreground" 
+                      : "hover:bg-muted/50"
                   )}
+                >
+                  <div className="flex items-center gap-2">
+                    <Badge variant="secondary" className="font-mono text-xs flex-shrink-0">
+                      {reply.shortcut}
+                    </Badge>
+                    <span className="font-medium text-sm truncate">{reply.title}</span>
+                    {mediaType !== 'text' && (
+                      <Badge variant="outline" className="text-xs flex items-center gap-1 flex-shrink-0">
+                        {mediaTypeIcons[mediaType]}
+                        {mediaTypeLabels[mediaType]}
+                      </Badge>
+                    )}
+                    {reply.category && (
+                      <div className="flex items-center gap-1 text-xs text-muted-foreground ml-auto flex-shrink-0">
+                        <FolderOpen className="w-3 h-3" />
+                        {reply.category}
+                      </div>
+                    )}
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
+                    {reply.message || (mediaType !== 'text' ? `[${mediaTypeLabels[mediaType]}]` : '')}
+                  </p>
                 </div>
-                <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
-                  {reply.message}
-                </p>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </ScrollArea>

@@ -533,6 +533,8 @@ export type Database = {
           created_by_user_id: string | null
           id: string
           is_global: boolean | null
+          media_type: string | null
+          media_url: string | null
           message: string
           shortcut: string
           title: string
@@ -546,6 +548,8 @@ export type Database = {
           created_by_user_id?: string | null
           id?: string
           is_global?: boolean | null
+          media_type?: string | null
+          media_url?: string | null
           message: string
           shortcut: string
           title: string
@@ -559,6 +563,8 @@ export type Database = {
           created_by_user_id?: string | null
           id?: string
           is_global?: boolean | null
+          media_type?: string | null
+          media_url?: string | null
           message?: string
           shortcut?: string
           title?: string

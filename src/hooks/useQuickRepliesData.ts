@@ -3,6 +3,8 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from '@/hooks/use-toast';
 
+export type QuickReplyMediaType = 'text' | 'image' | 'video' | 'audio' | 'document';
+
 export interface QuickReply {
   id: string;
   company_id: string;
@@ -13,6 +15,8 @@ export interface QuickReply {
   is_global: boolean;
   category: string | null;
   use_count: number;
+  media_url: string | null;
+  media_type: QuickReplyMediaType | null;
   created_at: string;
   updated_at: string;
 }
@@ -23,6 +27,8 @@ export interface QuickReplyFormData {
   message: string;
   category?: string;
   is_global: boolean;
+  media_url?: string | null;
+  media_type?: QuickReplyMediaType;
 }
 
 export function useQuickRepliesData() {
@@ -46,7 +52,13 @@ export function useQuickRepliesData() {
 
       if (error) throw error;
 
-      setQuickReplies(data || []);
+      // Cast media_type to the correct type
+      const typedData = (data || []).map(item => ({
+        ...item,
+        media_type: (item.media_type || 'text') as QuickReplyMediaType,
+      }));
+
+      setQuickReplies(typedData);
     } catch (error) {
       console.error('Erro ao carregar respostas rápidas:', error);
       toast({
@@ -62,6 +74,53 @@ export function useQuickRepliesData() {
   useEffect(() => {
     loadQuickReplies();
   }, [loadQuickReplies]);
+
+  const uploadMedia = async (file: File): Promise<string | null> => {
+    if (!profile?.company_id) return null;
+
+    try {
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${profile.company_id}/quick-replies/${Date.now()}.${fileExt}`;
+
+      const { data, error } = await supabase.storage
+        .from('whatsapp-media')
+        .upload(fileName, file, {
+          cacheControl: '3600',
+          upsert: false,
+        });
+
+      if (error) throw error;
+
+      const { data: publicUrl } = supabase.storage
+        .from('whatsapp-media')
+        .getPublicUrl(data.path);
+
+      return publicUrl.publicUrl;
+    } catch (error) {
+      console.error('Erro ao fazer upload:', error);
+      toast({
+        title: 'Erro ao fazer upload',
+        description: 'Não foi possível enviar o arquivo.',
+        variant: 'destructive',
+      });
+      return null;
+    }
+  };
+
+  const deleteMedia = async (mediaUrl: string): Promise<void> => {
+    if (!mediaUrl) return;
+
+    try {
+      // Extract path from URL
+      const urlParts = mediaUrl.split('/whatsapp-media/');
+      if (urlParts.length < 2) return;
+
+      const path = urlParts[1];
+      await supabase.storage.from('whatsapp-media').remove([path]);
+    } catch (error) {
+      console.error('Erro ao deletar mídia:', error);
+    }
+  };
 
   const createQuickReply = async (data: QuickReplyFormData): Promise<QuickReply | null> => {
     if (!profile?.company_id || !user?.id) return null;
@@ -80,6 +139,8 @@ export function useQuickRepliesData() {
           message: data.message.trim(),
           category: data.category?.trim() || null,
           is_global: data.is_global,
+          media_url: data.media_url || null,
+          media_type: data.media_type || 'text',
         })
         .select()
         .single();
@@ -96,14 +157,20 @@ export function useQuickRepliesData() {
         throw error;
       }
 
-      setQuickReplies(prev => [newReply, ...prev]);
+      // Cast media_type to the correct type
+      const typedReply: QuickReply = {
+        ...newReply,
+        media_type: (newReply.media_type || 'text') as QuickReplyMediaType,
+      };
+
+      setQuickReplies(prev => [typedReply, ...prev]);
 
       toast({
         title: 'Resposta criada!',
-        description: `Use "${newReply.shortcut}" no chat para usar esta resposta.`,
+        description: `Use "${typedReply.shortcut}" no chat para usar esta resposta.`,
       });
 
-      return newReply;
+      return typedReply;
     } catch (error) {
       console.error('Erro ao criar resposta rápida:', error);
       toast({
@@ -129,6 +196,8 @@ export function useQuickRepliesData() {
           message: data.message.trim(),
           category: data.category?.trim() || null,
           is_global: data.is_global,
+          media_url: data.media_url || null,
+          media_type: data.media_type || 'text',
         })
         .eq('id', id);
 
@@ -154,6 +223,8 @@ export function useQuickRepliesData() {
                 message: data.message.trim(),
                 category: data.category?.trim() || null,
                 is_global: data.is_global,
+                media_url: data.media_url || null,
+                media_type: data.media_type || 'text',
               }
             : reply
         )
@@ -182,6 +253,11 @@ export function useQuickRepliesData() {
     const replyToDelete = quickReplies.find(r => r.id === id);
 
     try {
+      // Delete media file if exists
+      if (replyToDelete?.media_url) {
+        await deleteMedia(replyToDelete.media_url);
+      }
+
       const { error } = await supabase
         .from('quick_replies')
         .delete()
@@ -250,6 +326,8 @@ export function useQuickRepliesData() {
     updateQuickReply,
     deleteQuickReply,
     incrementUseCount,
+    uploadMedia,
+    deleteMedia,
     getCategories,
     refresh: loadQuickReplies,
   };
