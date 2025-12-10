@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { ConversationList } from '@/components/inbox/ConversationList';
 import { ChatPanel } from '@/components/inbox/ChatPanel';
 import { ContactPanel } from '@/components/inbox/ContactPanel';
@@ -27,7 +27,15 @@ export default function Inbox() {
   } = useAppStore();
 
   const [hasNoConnections, setHasNoConnections] = useState(false);
+  const scrollToMessageRef = useRef<((messageId: string) => void) | null>(null);
 
+  const handleRegisterScrollToMessage = useCallback((fn: (messageId: string) => void) => {
+    scrollToMessageRef.current = fn;
+  }, []);
+
+  const handleScrollToMessage = useCallback((messageId: string) => {
+    scrollToMessageRef.current?.(messageId);
+  }, []);
   const {
     conversations,
     selectedConversation,
@@ -145,6 +153,7 @@ export default function Inbox() {
           onRefresh={loadConversations}
           onOpenContactDetails={openContactPanel}
           onSendReaction={sendReaction}
+          onRegisterScrollToMessage={handleRegisterScrollToMessage}
           isLoadingMessages={isLoadingMessages}
           isSendingMessage={isSendingMessage}
           isRestricted={isRestricted}
@@ -172,6 +181,7 @@ export default function Inbox() {
         <ContactPanel
           conversation={selectedConversation}
           onClose={toggleContactPanel}
+          onScrollToMessage={handleScrollToMessage}
         />
       )}
       </div>

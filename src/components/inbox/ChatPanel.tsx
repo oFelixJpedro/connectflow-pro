@@ -61,6 +61,7 @@ interface ChatPanelProps {
   onRefresh?: () => void;
   onOpenContactDetails?: () => void;
   onSendReaction?: (messageId: string, emoji: string, remove?: boolean) => Promise<boolean>;
+  onRegisterScrollToMessage?: (fn: (messageId: string) => void) => void;
   isLoadingMessages?: boolean;
   isSendingMessage?: boolean;
   isRestricted?: boolean;
@@ -93,6 +94,7 @@ export function ChatPanel({
   onRefresh,
   onOpenContactDetails,
   onSendReaction,
+  onRegisterScrollToMessage,
   isLoadingMessages = false,
   isSendingMessage = false,
   isRestricted = false,
@@ -523,6 +525,11 @@ export function ChatPanel({
       }, 1500);
     }
   };
+
+  // Register scrollToMessage with parent
+  useEffect(() => {
+    onRegisterScrollToMessage?.(scrollToMessage);
+  }, [onRegisterScrollToMessage]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     // Don't handle Enter/Escape if quick replies picker is open
