@@ -1,11 +1,48 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import * as bcrypt from "https://deno.land/x/bcrypt@v0.4.1/mod.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
+
+// Convert Uint8Array to hex string
+function toHex(arr: Uint8Array): string {
+  return Array.from(arr).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+// Verify password against stored hash (salt:hash format)
+async function verifyPassword(password: string, storedHash: string): Promise<boolean> {
+  const [saltHex, originalHash] = storedHash.split(':');
+  
+  if (!saltHex || !originalHash) {
+    return false;
+  }
+  
+  const encoder = new TextEncoder();
+  const data = encoder.encode(password + saltHex);
+  
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const hashArray = new Uint8Array(hashBuffer);
+  const hashHex = toHex(hashArray);
+  
+  return hashHex === originalHash;
+}
+
+// Hash password for setup
+async function hashPassword(password: string): Promise<string> {
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const saltHex = toHex(salt);
+  
+  const encoder = new TextEncoder();
+  const data = encoder.encode(password + saltHex);
+  
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const hashArray = new Uint8Array(hashBuffer);
+  const hashHex = toHex(hashArray);
+  
+  return `${saltHex}:${hashHex}`;
+}
 
 serve(async (req) => {
   // Handle CORS preflight requests
@@ -45,8 +82,8 @@ serve(async (req) => {
         );
       }
 
-      // Verify password with bcrypt
-      const passwordValid = await bcrypt.compare(password, developer.password_hash);
+      // Verify password
+      const passwordValid = await verifyPassword(password, developer.password_hash);
       
       if (!passwordValid) {
         console.log('Invalid password for developer:', email);
@@ -155,7 +192,7 @@ serve(async (req) => {
         );
       }
 
-      const hash = await bcrypt.hash(new_password);
+      const hash = await hashPassword(new_password);
       
       await supabase
         .from('developer_auth')
