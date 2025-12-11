@@ -880,12 +880,9 @@ export function useKanbanData(connectionId: string | null) {
     loadTeamMembers();
   }, [loadBoard, loadTeamMembers]);
 
-  // Initialize cards when board and columns are loaded
-  useEffect(() => {
-    if (board && columns.length > 0) {
-      initializeCardsForContacts();
-    }
-  }, [board?.id, columns.length]);
+  // Note: Removed automatic card initialization on every load
+  // Cards should only be created manually via "Adicionar Card" button
+  // This prevents deleted cards from reappearing
 
   return {
     board,
