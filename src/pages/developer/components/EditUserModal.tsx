@@ -56,23 +56,33 @@ export default function EditUserModal({ user, company, onClose, onSuccess }: Edi
   const [active, setActive] = useState(user.active);
   const [isLoading, setIsLoading] = useState(false);
   const [pendingRequestId, setPendingRequestId] = useState<string | null>(null);
-  const [pendingUpdates, setPendingUpdates] = useState<any>(null);
+  
+  // Store pending updates in ref to persist across re-renders
+  const pendingUpdatesRef = React.useRef<any>(null);
 
   const { requestPermission, cancelRequest, isRequesting } = useDeveloperPermissions();
 
   // Handle permission approved callback
   const handlePermissionApproved = async () => {
+    console.log('User edit - handlePermissionApproved called');
     await executeUpdate();
   };
 
   const handlePermissionDenied = () => {
     toast.error('Permissão negada pelo usuário');
     setPendingRequestId(null);
-    setPendingUpdates(null);
+    pendingUpdatesRef.current = null;
   };
 
   const executeUpdate = async () => {
-    if (!pendingUpdates) return;
+    const updates = pendingUpdatesRef.current;
+    console.log('User edit - executeUpdate with updates:', updates);
+    
+    if (!updates) {
+      console.error('No pending updates found');
+      toast.error('Erro: dados pendentes não encontrados');
+      return;
+    }
     
     setIsLoading(true);
     try {
@@ -82,7 +92,7 @@ export default function EditUserModal({ user, company, onClose, onSuccess }: Edi
           action: 'update_user', 
           user_id: user.id,
           company_id: company.id,
-          updates: pendingUpdates,
+          updates: updates,
           permission_request_id: pendingRequestId
         },
         headers: { Authorization: `Bearer ${token}` }
@@ -93,7 +103,7 @@ export default function EditUserModal({ user, company, onClose, onSuccess }: Edi
 
       toast.success('Usuário atualizado com sucesso');
       setPendingRequestId(null);
-      setPendingUpdates(null);
+      pendingUpdatesRef.current = null;
       onSuccess();
     } catch (err) {
       console.error('Error updating user:', err);
@@ -126,8 +136,9 @@ export default function EditUserModal({ user, company, onClose, onSuccess }: Edi
     );
 
     if (result) {
+      pendingUpdatesRef.current = updates;
+      console.log('User edit - Setting pendingUpdatesRef:', updates);
       setPendingRequestId(result.requestId);
-      setPendingUpdates(updates);
     }
   };
 
@@ -135,7 +146,7 @@ export default function EditUserModal({ user, company, onClose, onSuccess }: Edi
     if (pendingRequestId) {
       await cancelRequest(pendingRequestId);
       setPendingRequestId(null);
-      setPendingUpdates(null);
+      pendingUpdatesRef.current = null;
     }
   };
 
