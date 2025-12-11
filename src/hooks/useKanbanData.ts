@@ -728,10 +728,19 @@ export function useKanbanData(connectionId: string | null) {
 
   // Upload attachment
   const uploadAttachment = async (cardId: string, file: File) => {
-    const fileName = `${Date.now()}_${file.name}`;
+    // Sanitize filename - remove accents and special characters
+    const sanitizeFileName = (name: string) => {
+      return name
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '') // Remove accents
+        .replace(/[^a-zA-Z0-9._-]/g, '_'); // Replace other special chars with underscore
+    };
+    
+    const sanitizedName = sanitizeFileName(file.name);
+    const fileName = `${Date.now()}_${sanitizedName}`;
     const filePath = `${company?.id}/${cardId}/${fileName}`;
 
-    console.log('Storage upload attempt:', { filePath, fileType: file.type, fileSize: file.size });
+    console.log('Storage upload attempt:', { filePath, fileType: file.type, fileSize: file.size, originalName: file.name });
 
     const { error: uploadError, data: uploadData } = await supabase.storage
       .from('kanban-attachments')
