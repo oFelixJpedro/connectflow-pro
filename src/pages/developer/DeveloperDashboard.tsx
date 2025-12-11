@@ -249,6 +249,57 @@ export default function DeveloperDashboard() {
     }
   };
 
+  const handleDeleteUserByEmail = async (email: string) => {
+    setActionLoading(true);
+    try {
+      const token = getDeveloperToken();
+      const { data, error } = await supabase.functions.invoke('developer-actions', {
+        body: { action: 'delete_user_by_email', email },
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      if (error || data?.error) {
+        toast.error(data?.error || 'Erro ao deletar usuário');
+        return;
+      }
+
+      toast.success(`Usuário ${email} deletado permanentemente`);
+      loadCompanies();
+    } catch (err) {
+      console.error('Delete user error:', err);
+      toast.error('Erro ao deletar usuário');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleCleanupBannedUsers = async () => {
+    // Delete known banned users
+    const bannedEmails = ['teste@teste.com', 'teste2@teste.com'];
+    
+    setActionLoading(true);
+    let deletedCount = 0;
+    
+    for (const email of bannedEmails) {
+      try {
+        const token = getDeveloperToken();
+        const { data, error } = await supabase.functions.invoke('developer-actions', {
+          body: { action: 'delete_user_by_email', email },
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        
+        if (!error && !data?.error) {
+          deletedCount++;
+        }
+      } catch (err) {
+        console.error('Error deleting:', email, err);
+      }
+    }
+    
+    toast.success(`${deletedCount} usuários banidos removidos`);
+    setActionLoading(false);
+  };
+
   // Action handlers
   const handleResetPassword = async () => {
     if (!resetPasswordUser) return;
@@ -457,12 +508,22 @@ export default function DeveloperDashboard() {
             <Button 
               variant="outline" 
               size="sm" 
+              onClick={handleCleanupBannedUsers}
+              disabled={actionLoading}
+              title="Deletar usuários banidos (teste@teste.com, etc)"
+            >
+              <Trash2 className={`h-4 w-4 mr-1 ${actionLoading ? 'animate-pulse' : ''}`} />
+              Limpar Banidos
+            </Button>
+            <Button 
+              variant="outline" 
+              size="sm" 
               onClick={handleCleanupDeletedCompanies}
               disabled={actionLoading}
-              title="Banir usuários de empresas já excluídas"
+              title="Deletar permanentemente empresas inativas"
             >
               <RefreshCw className={`h-4 w-4 mr-1 ${actionLoading ? 'animate-spin' : ''}`} />
-              Limpar
+              Limpar Empresas
             </Button>
             <span className="text-xs text-muted-foreground">{developer?.email}</span>
             <Button variant="ghost" size="sm" onClick={handleLogout}>
