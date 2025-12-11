@@ -200,16 +200,185 @@ serve(async (req) => {
       );
     }
 
+  if (action === 'cleanup_deleted_companies') {
+      // HARD DELETE all inactive companies and their data
+      const { data: inactiveCompanies } = await supabase
+        .from('companies')
+        .select('id')
+        .eq('active', false);
+
+      let deletedCount = 0;
+      
+      if (inactiveCompanies) {
+        for (const company of inactiveCompanies) {
+          // Get all users from this company
+          const { data: users } = await supabase
+            .from('profiles')
+            .select('id')
+            .eq('company_id', company.id);
+
+          // Delete each user from auth
+          if (users) {
+            for (const user of users) {
+              try {
+                await supabase.auth.admin.deleteUser(user.id);
+              } catch (e) {
+                console.error('Error deleting auth user:', user.id, e);
+              }
+            }
+          }
+
+          // Delete company (cascade will handle profiles, roles, etc.)
+          const { error } = await supabase
+            .from('companies')
+            .delete()
+            .eq('id', company.id);
+
+          if (!error) {
+            deletedCount++;
+          } else {
+            console.error('Error deleting company:', company.id, error);
+          }
+        }
+      }
+
+      return new Response(
+        JSON.stringify({ success: true, deletedCompanies: deletedCount }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    if (action === 'cleanup_banned_users') {
+      // Delete all banned users from auth.users that don't have a valid company
+      // This cleans up orphaned banned users
+      let deletedCount = 0;
+      
+      // Get list of banned user IDs that we should clean up
+      // We'll look for profiles that belong to inactive companies or have no company
+      const { data: orphanedProfiles } = await supabase
+        .from('profiles')
+        .select('id, company_id, companies!inner(active)')
+        .eq('companies.active', false);
+
+      if (orphanedProfiles) {
+        for (const profile of orphanedProfiles) {
+          try {
+            console.log('Deleting orphaned user:', profile.id);
+            await supabase.auth.admin.deleteUser(profile.id);
+            deletedCount++;
+          } catch (e) {
+            console.error('Error deleting user:', profile.id, e);
+          }
+        }
+      }
+
+      return new Response(
+        JSON.stringify({ success: true, deletedUsers: deletedCount }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    if (action === 'delete_user_by_email') {
+      const { email } = params;
+      
+      console.log('Deleting user by email:', email);
+
+      // Find the user in auth.users
+      const { data: { users }, error: listError } = await supabase.auth.admin.listUsers();
+      
+      if (listError) {
+        return new Response(
+          JSON.stringify({ error: listError.message }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      const userToDelete = users?.find(u => u.email === email);
+      
+      if (!userToDelete) {
+        return new Response(
+          JSON.stringify({ error: 'Usuário não encontrado' }),
+          { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      // Clean up FK references BEFORE deleting
+      // Delete developer_permission_requests where user is approver or target
+      await supabase
+        .from('developer_permission_requests')
+        .delete()
+        .eq('approver_id', userToDelete.id);
+      
+      await supabase
+        .from('developer_permission_requests')
+        .delete()
+        .eq('target_user_id', userToDelete.id);
+
+      // Delete user_roles
+      await supabase
+        .from('user_roles')
+        .delete()
+        .eq('user_id', userToDelete.id);
+
+      // Delete profile
+      await supabase
+        .from('profiles')
+        .delete()
+        .eq('id', userToDelete.id);
+
+      // Delete from auth.users
+      const { error } = await supabase.auth.admin.deleteUser(userToDelete.id);
+
+      if (error) {
+        console.error('Error deleting user:', error);
+        return new Response(
+          JSON.stringify({ error: error.message }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      await logAction('delete_user', undefined, userToDelete.id, { email });
+
+      return new Response(
+        JSON.stringify({ success: true, deleted_user_id: userToDelete.id }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     if (action === 'delete_company') {
       const { company_id } = params;
 
-      // Soft delete - set active to false
+      console.log('Deleting company:', company_id);
+
+      // 1. Get all users from this company
+      const { data: companyUsers } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('company_id', company_id);
+
+      // 2. Delete all users from auth.users
+      if (companyUsers && companyUsers.length > 0) {
+        for (const user of companyUsers) {
+          try {
+            console.log('Deleting auth user:', user.id);
+            const { error: authDeleteError } = await supabase.auth.admin.deleteUser(user.id);
+            if (authDeleteError) {
+              console.error('Error deleting auth user:', user.id, authDeleteError);
+            }
+          } catch (e) {
+            console.error('Error deleting auth user:', user.id, e);
+          }
+        }
+      }
+
+      // 3. HARD DELETE company (cascade will handle related records)
       const { error } = await supabase
         .from('companies')
-        .update({ active: false })
+        .delete()
         .eq('id', company_id);
 
       if (error) {
+        console.error('Error deleting company:', error);
         return new Response(
           JSON.stringify({ error: error.message }),
           { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -226,6 +395,8 @@ serve(async (req) => {
 
     if (action === 'delete_user') {
       const { user_id, company_id } = params;
+
+      console.log('Deleting user:', user_id);
 
       // Check if user is owner
       const { data: userRole } = await supabase
@@ -257,10 +428,11 @@ serve(async (req) => {
         }
       }
 
-      // Delete user via admin API
+      // HARD DELETE user from auth.users (cascade deletes profile and roles)
       const { error } = await supabase.auth.admin.deleteUser(user_id);
 
       if (error) {
+        console.error('Error deleting user:', error);
         return new Response(
           JSON.stringify({ error: error.message }),
           { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -439,24 +611,14 @@ serve(async (req) => {
           .single();
 
         if (existingRole) {
-          // Update existing role
-          const { error: roleError } = await supabase
+          await supabase
             .from('user_roles')
             .update({ role: updates.role })
             .eq('user_id', user_id);
-
-          if (roleError) {
-            console.error('Update role error:', roleError);
-          }
         } else {
-          // Insert new role
-          const { error: roleError } = await supabase
+          await supabase
             .from('user_roles')
-            .insert({ user_id, role: updates.role });
-
-          if (roleError) {
-            console.error('Insert role error:', roleError);
-          }
+            .insert([{ user_id, role: updates.role }]);
         }
       }
 

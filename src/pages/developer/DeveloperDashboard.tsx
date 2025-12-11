@@ -18,7 +18,8 @@ import {
   Eye,
   Trash2,
   Key,
-  UserCog
+  UserCog,
+  RefreshCw
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -224,6 +225,81 @@ export default function DeveloperDashboard() {
     navigate('/developer');
   };
 
+  const handleCleanupDeletedCompanies = async () => {
+    setActionLoading(true);
+    try {
+      const token = getDeveloperToken();
+      const { data, error } = await supabase.functions.invoke('developer-actions', {
+        body: { action: 'cleanup_deleted_companies' },
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      if (error || data?.error) {
+        toast.error(data?.error || 'Erro ao limpar empresas excluídas');
+        return;
+      }
+
+      toast.success(`Limpeza concluída: ${data.deletedCompanies} empresas removidas permanentemente`);
+      loadCompanies();
+    } catch (err) {
+      console.error('Cleanup error:', err);
+      toast.error('Erro ao limpar empresas excluídas');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleDeleteUserByEmail = async (email: string) => {
+    setActionLoading(true);
+    try {
+      const token = getDeveloperToken();
+      const { data, error } = await supabase.functions.invoke('developer-actions', {
+        body: { action: 'delete_user_by_email', email },
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      if (error || data?.error) {
+        toast.error(data?.error || 'Erro ao deletar usuário');
+        return;
+      }
+
+      toast.success(`Usuário ${email} deletado permanentemente`);
+      loadCompanies();
+    } catch (err) {
+      console.error('Delete user error:', err);
+      toast.error('Erro ao deletar usuário');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleCleanupBannedUsers = async () => {
+    // Delete known banned users
+    const bannedEmails = ['teste@teste.com', 'teste2@teste.com'];
+    
+    setActionLoading(true);
+    let deletedCount = 0;
+    
+    for (const email of bannedEmails) {
+      try {
+        const token = getDeveloperToken();
+        const { data, error } = await supabase.functions.invoke('developer-actions', {
+          body: { action: 'delete_user_by_email', email },
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        
+        if (!error && !data?.error) {
+          deletedCount++;
+        }
+      } catch (err) {
+        console.error('Error deleting:', email, err);
+      }
+    }
+    
+    toast.success(`${deletedCount} usuários banidos removidos`);
+    setActionLoading(false);
+  };
+
   // Action handlers
   const handleResetPassword = async () => {
     if (!resetPasswordUser) return;
@@ -330,13 +406,6 @@ export default function DeveloperDashboard() {
   };
 
   const handleAccessAsUser = async (user: User, company: Company) => {
-    // Find company owner to request permission
-    const owner = companyUsers[company.id]?.find(u => u.role === 'owner');
-    if (!owner) {
-      toast.error('Proprietário da empresa não encontrado');
-      return;
-    }
-
     const result = await requestPermission('access_user', company.id, user.id, user.id);
     if (!result) return;
 
@@ -345,7 +414,7 @@ export default function DeveloperDashboard() {
       type: 'access_user',
       targetName: user.full_name,
       onApproved: async () => {
-        // After approval, get impersonation token
+        // After approval, get magic link
         const token = getDeveloperToken();
         const { data, error } = await supabase.functions.invoke('developer-impersonate', {
           body: { action: 'impersonate', target_user_id: user.id },
@@ -358,12 +427,15 @@ export default function DeveloperDashboard() {
           return;
         }
 
-        // Store impersonation token and redirect
-        localStorage.setItem('impersonation_token', data.impersonation_token);
-        localStorage.setItem('impersonation_user', JSON.stringify(data.user));
-        toast.success(`Acessando como ${user.full_name}`);
-        setPermissionRequest(null);
-        window.open('/dashboard', '_blank');
+        if (data?.magic_link) {
+          toast.success(`Abrindo sessão como ${user.full_name}`);
+          setPermissionRequest(null);
+          // Open magic link in new tab - this will log the user in
+          window.open(data.magic_link, '_blank');
+        } else {
+          toast.error('Link de acesso não gerado');
+          setPermissionRequest(null);
+        }
       }
     });
   };
@@ -433,6 +505,26 @@ export default function DeveloperDashboard() {
             <span className="font-semibold text-sm">Developer Panel</span>
           </div>
           <div className="flex items-center gap-4">
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={handleCleanupBannedUsers}
+              disabled={actionLoading}
+              title="Deletar usuários banidos (teste@teste.com, etc)"
+            >
+              <Trash2 className={`h-4 w-4 mr-1 ${actionLoading ? 'animate-pulse' : ''}`} />
+              Limpar Banidos
+            </Button>
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={handleCleanupDeletedCompanies}
+              disabled={actionLoading}
+              title="Deletar permanentemente empresas inativas"
+            >
+              <RefreshCw className={`h-4 w-4 mr-1 ${actionLoading ? 'animate-spin' : ''}`} />
+              Limpar Empresas
+            </Button>
             <span className="text-xs text-muted-foreground">{developer?.email}</span>
             <Button variant="ghost" size="sm" onClick={handleLogout}>
               <LogOut className="h-4 w-4 mr-1" />

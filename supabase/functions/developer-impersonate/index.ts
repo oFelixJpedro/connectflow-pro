@@ -49,6 +49,8 @@ serve(async (req) => {
     const userAgent = req.headers.get('user-agent') || 'unknown';
 
     if (action === 'impersonate') {
+      console.log('Impersonation request for user:', target_user_id);
+
       // Check for approved permission request
       const { data: permissionRequest, error: permError } = await supabase
         .from('developer_permission_requests')
@@ -63,13 +65,14 @@ serve(async (req) => {
         .single();
 
       if (permError || !permissionRequest) {
+        console.error('Permission not found:', permError);
         return new Response(
           JSON.stringify({ error: 'Permissão não encontrada ou expirada. Solicite novamente.' }),
           { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
 
-      // Get user profile
+      // Get user profile and email
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
         .select('*, user_roles(role)')
@@ -77,6 +80,7 @@ serve(async (req) => {
         .single();
 
       if (profileError || !profile) {
+        console.error('User profile not found:', profileError);
         return new Response(
           JSON.stringify({ error: 'Usuário não encontrado' }),
           { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -89,19 +93,26 @@ serve(async (req) => {
         .update({ status: 'used' })
         .eq('id', permissionRequest.id);
 
-      // Generate impersonation token (30 min expiry)
-      const impersonationPayload = {
-        user_id: target_user_id,
-        company_id: profile.company_id,
-        email: profile.email,
-        full_name: profile.full_name,
-        role: profile.user_roles?.[0]?.role || 'agent',
-        impersonated_by: developerId,
-        is_impersonation: true,
-        exp: Date.now() + (30 * 60 * 1000) // 30 minutes
-      };
+      // Generate a magic link for the user using Supabase Admin API
+      const redirectUrl = `${supabaseUrl.replace('.supabase.co', '.lovable.app')}/dashboard`;
+      
+      console.log('Generating magic link for:', profile.email, 'redirect:', redirectUrl);
 
-      const impersonationToken = btoa(JSON.stringify(impersonationPayload));
+      const { data: linkData, error: linkError } = await supabase.auth.admin.generateLink({
+        type: 'magiclink',
+        email: profile.email,
+        options: {
+          redirectTo: redirectUrl
+        }
+      });
+
+      if (linkError || !linkData) {
+        console.error('Error generating magic link:', linkError);
+        return new Response(
+          JSON.stringify({ error: 'Erro ao gerar link de acesso: ' + (linkError?.message || 'Erro desconhecido') }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
 
       // Log the action
       await supabase.from('developer_audit_logs').insert({
@@ -114,14 +125,12 @@ serve(async (req) => {
         user_agent: userAgent
       });
 
-      // Create a real Supabase session for the user
-      // Using signInWithPassword would require the user's password
-      // Instead, we'll use a custom approach with the impersonation token
-      
+      console.log('Magic link generated successfully');
+
       return new Response(
         JSON.stringify({ 
           success: true, 
-          impersonation_token: impersonationToken,
+          magic_link: linkData.properties?.action_link,
           user: {
             id: profile.id,
             email: profile.email,

@@ -51,7 +51,9 @@ export default function EditCompanyModal({ company, onClose, onSuccess }: EditCo
   const [isLoading, setIsLoading] = useState(false);
   const [pendingRequestId, setPendingRequestId] = useState<string | null>(null);
   const [companyOwner, setCompanyOwner] = useState<{ id: string; full_name: string } | null>(null);
-  const [pendingUpdates, setPendingUpdates] = useState<any>(null);
+  
+  // Store pending updates in ref to persist across re-renders
+  const pendingUpdatesRef = React.useRef<any>(null);
 
   const { requestPermission, cancelRequest, isRequesting } = useDeveloperPermissions();
 
@@ -72,17 +74,25 @@ export default function EditCompanyModal({ company, onClose, onSuccess }: EditCo
 
   // Handle permission approved callback
   const handlePermissionApproved = async () => {
+    console.log('handlePermissionApproved called, pendingUpdatesRef:', pendingUpdatesRef.current);
     await executeUpdate();
   };
 
   const handlePermissionDenied = () => {
     toast.error('Permissão negada pelo usuário');
     setPendingRequestId(null);
-    setPendingUpdates(null);
+    pendingUpdatesRef.current = null;
   };
 
   const executeUpdate = async () => {
-    if (!pendingUpdates) return;
+    const updates = pendingUpdatesRef.current;
+    console.log('executeUpdate called with updates:', updates);
+    
+    if (!updates) {
+      console.error('No pending updates found');
+      toast.error('Erro: dados pendentes não encontrados');
+      return;
+    }
     
     setIsLoading(true);
     try {
@@ -91,7 +101,7 @@ export default function EditCompanyModal({ company, onClose, onSuccess }: EditCo
         body: { 
           action: 'update_company', 
           company_id: company.id,
-          updates: pendingUpdates,
+          updates: updates,
           permission_request_id: pendingRequestId
         },
         headers: { Authorization: `Bearer ${token}` }
@@ -102,7 +112,7 @@ export default function EditCompanyModal({ company, onClose, onSuccess }: EditCo
 
       toast.success('Empresa atualizada com sucesso');
       setPendingRequestId(null);
-      setPendingUpdates(null);
+      pendingUpdatesRef.current = null;
       onSuccess();
     } catch (err) {
       console.error('Error updating company:', err);
@@ -132,6 +142,10 @@ export default function EditCompanyModal({ company, onClose, onSuccess }: EditCo
       trial_ends_at: trialEndsAt || null
     };
 
+    // Store in ref for later use
+    pendingUpdatesRef.current = updates;
+    console.log('Setting pendingUpdatesRef:', updates);
+
     // Request permission from company owner
     const result = await requestPermission(
       'edit_company',
@@ -142,7 +156,6 @@ export default function EditCompanyModal({ company, onClose, onSuccess }: EditCo
 
     if (result) {
       setPendingRequestId(result.requestId);
-      setPendingUpdates(updates);
     }
   };
 
@@ -150,7 +163,7 @@ export default function EditCompanyModal({ company, onClose, onSuccess }: EditCo
     if (pendingRequestId) {
       await cancelRequest(pendingRequestId);
       setPendingRequestId(null);
-      setPendingUpdates(null);
+      pendingUpdatesRef.current = null;
     }
   };
 
