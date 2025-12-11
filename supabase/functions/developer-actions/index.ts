@@ -302,6 +302,30 @@ serve(async (req) => {
         );
       }
 
+      // Clean up FK references BEFORE deleting
+      // Delete developer_permission_requests where user is approver or target
+      await supabase
+        .from('developer_permission_requests')
+        .delete()
+        .eq('approver_id', userToDelete.id);
+      
+      await supabase
+        .from('developer_permission_requests')
+        .delete()
+        .eq('target_user_id', userToDelete.id);
+
+      // Delete user_roles
+      await supabase
+        .from('user_roles')
+        .delete()
+        .eq('user_id', userToDelete.id);
+
+      // Delete profile
+      await supabase
+        .from('profiles')
+        .delete()
+        .eq('id', userToDelete.id);
+
       // Delete from auth.users
       const { error } = await supabase.auth.admin.deleteUser(userToDelete.id);
 
