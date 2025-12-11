@@ -238,6 +238,12 @@ export default function CRM() {
           <ConnectionSelector
             selectedConnectionId={selectedConnectionId}
             onConnectionChange={setSelectedConnectionId}
+            overrideConnections={connections.map(c => ({
+              id: c.id,
+              name: c.name,
+              phoneNumber: c.phone_number,
+              status: c.status as 'connected' | 'disconnected' | 'qr_ready' | 'connecting' | 'error',
+            }))}
           />
         </div>
         <Button onClick={() => setAddCardOpen(true)}>
