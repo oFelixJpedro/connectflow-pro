@@ -1215,6 +1215,7 @@ export type Database = {
       }
       get_board_company_id: { Args: { board_id: string }; Returns: string }
       get_card_company_id: { Args: { card_id: string }; Returns: string }
+      get_column_company_id: { Args: { p_column_id: string }; Returns: string }
       get_connection_company_id: {
         Args: { connection_id: string }
         Returns: string
