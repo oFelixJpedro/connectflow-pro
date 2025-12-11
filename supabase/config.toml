@@ -12,6 +12,9 @@ verify_jwt = false
 [functions.developer-impersonate]
 verify_jwt = false
 
+[functions.developer-data]
+verify_jwt = false
+
 [functions.register]
 verify_jwt = false
 
