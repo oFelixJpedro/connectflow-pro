@@ -127,6 +127,10 @@ export default function EditUserModal({ user, company, onClose, onSuccess }: Edi
       active
     };
 
+    // Store in ref BEFORE requesting permission to avoid race conditions
+    pendingUpdatesRef.current = updates;
+    console.log('User edit - Setting pendingUpdatesRef BEFORE request:', updates);
+
     // Request permission from the user being edited
     const result = await requestPermission(
       'edit_user',
@@ -136,9 +140,10 @@ export default function EditUserModal({ user, company, onClose, onSuccess }: Edi
     );
 
     if (result) {
-      pendingUpdatesRef.current = updates;
-      console.log('User edit - Setting pendingUpdatesRef:', updates);
       setPendingRequestId(result.requestId);
+    } else {
+      // Clear ref if request failed
+      pendingUpdatesRef.current = null;
     }
   };
 
