@@ -1233,6 +1233,10 @@ export type Database = {
         Returns: Database["public"]["Enums"]["app_role"]
       }
       has_crm_access: { Args: never; Returns: boolean }
+      has_crm_access_for_connection: {
+        Args: { p_connection_id: string }
+        Returns: boolean
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
