@@ -19,6 +19,12 @@ interface UnreadCounts {
   total: number;
 }
 
+interface UserAccessPermissions {
+  isAdminOrOwner: boolean;
+  allowedConnectionIds: string[] | null; // null = all connections
+  allowedDepartmentIds: string[] | null; // null = all departments
+}
+
 // Simple notification sound using Web Audio API
 const playNotificationSound = () => {
   try {
@@ -43,7 +49,7 @@ const playNotificationSound = () => {
 };
 
 export function useNotifications() {
-  const { profile, company } = useAuth();
+  const { profile, company, userRole } = useAuth();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCounts, setUnreadCounts] = useState<UnreadCounts>({ whatsapp: 0, internalChat: 0, total: 0 });
   const [isLoading, setIsLoading] = useState(true);
@@ -69,23 +75,110 @@ export function useNotifications() {
   const processedMessageIds = useRef<Set<string>>(new Set());
   const isInitialLoad = useRef(true);
 
-  // Load WhatsApp unread count from conversations
-  const loadWhatsAppUnread = useCallback(async () => {
-    if (!company?.id) return 0;
+  // Get user's access permissions for connections and departments
+  const getUserAccessPermissions = useCallback(async (): Promise<UserAccessPermissions> => {
+    if (!profile?.id || !company?.id) {
+      return { isAdminOrOwner: false, allowedConnectionIds: [], allowedDepartmentIds: [] };
+    }
 
-    const { data, error } = await supabase
+    const isAdminOrOwner = userRole?.role === 'owner' || userRole?.role === 'admin';
+
+    // Owner/Admin see everything
+    if (isAdminOrOwner) {
+      return { isAdminOrOwner: true, allowedConnectionIds: null, allowedDepartmentIds: null };
+    }
+
+    // For non-admin users, check connection_users assignments
+    const { data: connectionAssignments } = await supabase
+      .from('connection_users')
+      .select('connection_id, department_access_mode')
+      .eq('user_id', profile.id);
+
+    if (!connectionAssignments || connectionAssignments.length === 0) {
+      // Check if any connections have assignments - if not, allow all (legacy behavior)
+      const { data: anyAssignments } = await supabase
+        .from('connection_users')
+        .select('id')
+        .limit(1);
+
+      if (!anyAssignments || anyAssignments.length === 0) {
+        // No assignments exist at all - legacy behavior, allow all
+        return { isAdminOrOwner: false, allowedConnectionIds: null, allowedDepartmentIds: null };
+      }
+
+      // Assignments exist but user has none - no access
+      return { isAdminOrOwner: false, allowedConnectionIds: [], allowedDepartmentIds: [] };
+    }
+
+    // User has specific connection assignments
+    const allowedConnectionIds = connectionAssignments.map(ca => ca.connection_id);
+    
+    // Check department access for each connection
+    let allowedDepartmentIds: string[] | null = null;
+    const hasSpecificDeptAccess = connectionAssignments.some(ca => ca.department_access_mode === 'specific');
+    const hasNoDeptAccess = connectionAssignments.every(ca => ca.department_access_mode === 'none');
+
+    if (hasNoDeptAccess) {
+      // User has no department access on any connection
+      allowedDepartmentIds = [];
+    } else if (hasSpecificDeptAccess) {
+      // User has specific department access on some connections - fetch department_users
+      const { data: departmentAssignments } = await supabase
+        .from('department_users')
+        .select('department_id')
+        .eq('user_id', profile.id);
+
+      if (departmentAssignments && departmentAssignments.length > 0) {
+        allowedDepartmentIds = departmentAssignments.map(da => da.department_id);
+      } else {
+        // User has 'specific' mode but no departments assigned
+        allowedDepartmentIds = [];
+      }
+    }
+    // If all connections have 'all' department access, allowedDepartmentIds stays null (all departments)
+
+    return { isAdminOrOwner: false, allowedConnectionIds, allowedDepartmentIds };
+  }, [profile?.id, company?.id, userRole?.role]);
+
+  // Load WhatsApp unread count from conversations (filtered by permissions)
+  const loadWhatsAppUnread = useCallback(async () => {
+    if (!company?.id || !profile?.id) return 0;
+
+    const permissions = await getUserAccessPermissions();
+
+    // If no connection access, return 0
+    if (permissions.allowedConnectionIds !== null && permissions.allowedConnectionIds.length === 0) {
+      return 0;
+    }
+
+    let query = supabase
       .from('conversations')
-      .select('unread_count')
+      .select('unread_count, whatsapp_connection_id, department_id')
       .eq('company_id', company.id)
       .gt('unread_count', 0);
+
+    // Filter by allowed connections (if not admin/owner)
+    if (permissions.allowedConnectionIds !== null) {
+      query = query.in('whatsapp_connection_id', permissions.allowedConnectionIds);
+    }
+
+    const { data, error } = await query;
 
     if (error) {
       console.error('[Notifications] Error loading WhatsApp unread:', error);
       return 0;
     }
 
-    return data?.reduce((sum, conv) => sum + (conv.unread_count || 0), 0) || 0;
-  }, [company?.id]);
+    // Further filter by department if needed
+    let filteredData = data || [];
+    if (permissions.allowedDepartmentIds !== null) {
+      filteredData = filteredData.filter(conv => 
+        conv.department_id === null || permissions.allowedDepartmentIds!.includes(conv.department_id)
+      );
+    }
+
+    return filteredData.reduce((sum, conv) => sum + (conv.unread_count || 0), 0);
+  }, [company?.id, profile?.id, getUserAccessPermissions]);
 
   // Load internal chat unread count
   const loadInternalChatUnread = useCallback(async () => {
@@ -128,28 +221,56 @@ export function useNotifications() {
     return totalUnread;
   }, [company?.id, profile?.id, storageKey]);
 
-  // Load recent notifications
+  // Load recent notifications (filtered by permissions)
   const loadRecentNotifications = useCallback(async () => {
     if (!company?.id || !profile?.id) return;
 
-    // Get recent conversations with new messages
-    const { data: conversations } = await supabase
+    const permissions = await getUserAccessPermissions();
+
+    // If no connection access, no notifications
+    if (permissions.allowedConnectionIds !== null && permissions.allowedConnectionIds.length === 0) {
+      setNotifications([]);
+      return;
+    }
+
+    // Build query for recent conversations with new messages
+    let query = supabase
       .from('conversations')
       .select(`
         id,
         unread_count,
         last_message_at,
+        whatsapp_connection_id,
+        department_id,
         contact:contacts(name, phone_number)
       `)
       .eq('company_id', company.id)
       .gt('unread_count', 0)
       .order('last_message_at', { ascending: false })
-      .limit(10);
+      .limit(20); // Fetch more to account for filtering
+
+    // Filter by allowed connections (if not admin/owner)
+    if (permissions.allowedConnectionIds !== null) {
+      query = query.in('whatsapp_connection_id', permissions.allowedConnectionIds);
+    }
+
+    const { data: conversations } = await query;
+
+    // Further filter by department if needed
+    let filteredConversations = conversations || [];
+    if (permissions.allowedDepartmentIds !== null) {
+      filteredConversations = filteredConversations.filter(conv => 
+        conv.department_id === null || permissions.allowedDepartmentIds!.includes(conv.department_id)
+      );
+    }
+
+    // Limit to 10 after filtering
+    filteredConversations = filteredConversations.slice(0, 10);
 
     const recentNotifications: Notification[] = [];
 
     // Add WhatsApp notifications
-    conversations?.forEach(conv => {
+    filteredConversations.forEach(conv => {
       if (conv.unread_count > 0) {
         recentNotifications.push({
           id: `whatsapp-${conv.id}`,
@@ -166,7 +287,7 @@ export function useNotifications() {
     });
 
     setNotifications(recentNotifications);
-  }, [company?.id, profile?.id]);
+  }, [company?.id, profile?.id, getUserAccessPermissions]);
 
   // Refresh all counts
   const refreshCounts = useCallback(async () => {
