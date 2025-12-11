@@ -431,6 +431,52 @@ export function useKanbanData(connectionId: string | null) {
     return true;
   };
 
+  // Create card from existing contact
+  const createCard = async (contactId: string) => {
+    if (!board || !columns.length) return false;
+
+    const firstColumn = columns.reduce((min, col) => 
+      col.position < min.position ? col : min, columns[0]
+    );
+
+    const columnCards = cards.filter(c => c.column_id === firstColumn.id);
+    const maxPosition = columnCards.reduce((max, c) => Math.max(max, c.position), -1);
+
+    const { data, error } = await supabase
+      .from('kanban_cards')
+      .insert({
+        column_id: firstColumn.id,
+        contact_id: contactId,
+        priority: 'medium' as const,
+        position: maxPosition + 1,
+      })
+      .select(`
+        *,
+        contact:contacts(id, name, phone_number, avatar_url, email),
+        assigned_user:profiles!assigned_user_id(id, full_name, avatar_url),
+        tags:kanban_card_tags(*),
+        checklist_items:kanban_card_checklist_items(*)
+      `)
+      .single();
+
+    if (error) {
+      toast.error('Erro ao criar card');
+      return false;
+    }
+
+    // Add history
+    await supabase.from('kanban_card_history').insert([{
+      card_id: data.id,
+      user_id: profile?.id || null,
+      action_type: 'created',
+      new_value: { column: firstColumn.name } as Json,
+    }]);
+
+    setCards([...cards, data as KanbanCard]);
+    toast.success('Card adicionado');
+    return true;
+  };
+
   // Delete card
   const deleteCard = async (cardId: string) => {
     const { error } = await supabase
@@ -853,6 +899,7 @@ export function useKanbanData(connectionId: string | null) {
     updateColumn,
     deleteColumn,
     reorderColumns,
+    createCard,
     moveCard,
     updateCard,
     deleteCard,
