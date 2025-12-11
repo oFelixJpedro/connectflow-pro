@@ -330,6 +330,100 @@ serve(async (req) => {
       );
     }
 
+    if (action === 'update_company') {
+      const { company_id, updates } = params;
+
+      console.log('Updating company:', company_id, updates);
+
+      const { error } = await supabase
+        .from('companies')
+        .update({
+          name: updates.name,
+          plan: updates.plan,
+          active: updates.active,
+          trial_ends_at: updates.trial_ends_at,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', company_id);
+
+      if (error) {
+        console.error('Update company error:', error);
+        return new Response(
+          JSON.stringify({ error: error.message }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      await logAction('edit_company', company_id, undefined, { updates });
+
+      return new Response(
+        JSON.stringify({ success: true }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    if (action === 'update_user') {
+      const { user_id, company_id, updates } = params;
+
+      console.log('Updating user:', user_id, updates);
+
+      // Update profile
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .update({
+          full_name: updates.full_name,
+          active: updates.active,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', user_id);
+
+      if (profileError) {
+        console.error('Update profile error:', profileError);
+        return new Response(
+          JSON.stringify({ error: profileError.message }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      // Update role if provided
+      if (updates.role) {
+        // First check if role exists
+        const { data: existingRole } = await supabase
+          .from('user_roles')
+          .select('id')
+          .eq('user_id', user_id)
+          .single();
+
+        if (existingRole) {
+          // Update existing role
+          const { error: roleError } = await supabase
+            .from('user_roles')
+            .update({ role: updates.role })
+            .eq('user_id', user_id);
+
+          if (roleError) {
+            console.error('Update role error:', roleError);
+          }
+        } else {
+          // Insert new role
+          const { error: roleError } = await supabase
+            .from('user_roles')
+            .insert({ user_id, role: updates.role });
+
+          if (roleError) {
+            console.error('Insert role error:', roleError);
+          }
+        }
+      }
+
+      await logAction('edit_user', company_id, user_id, { updates });
+
+      return new Response(
+        JSON.stringify({ success: true }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     return new Response(
       JSON.stringify({ error: 'Ação inválida' }),
       { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
