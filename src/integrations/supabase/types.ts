@@ -1209,6 +1209,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      can_user_access_column: {
+        Args: { p_column_id: string }
+        Returns: boolean
+      }
       create_internal_chat_room: {
         Args: { p_name?: string; p_type: string }
         Returns: string
