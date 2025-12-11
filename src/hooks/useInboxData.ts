@@ -455,6 +455,9 @@ export function useInboxData() {
       setConversations(prev => 
         prev.map(c => c.id === conversationId ? { ...c, unreadCount: 0 } : c)
       );
+
+      // Disparar evento para atualizar notificações globais
+      window.dispatchEvent(new CustomEvent('whatsapp-conversation-read'));
       
       if (selectedConversation?.id === conversationId) {
         setSelectedConversation(prev => prev ? { ...prev, unreadCount: 0 } : null);

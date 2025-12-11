@@ -94,12 +94,22 @@ export function useInternalChat() {
     }
   }, [company?.id, profile?.id]);
 
-  // Load chat rooms
+  // Load chat rooms with unread counts
   const loadRooms = useCallback(async () => {
     if (!company?.id || !profile?.id) return;
     setIsLoading(true);
 
+    // Storage key includes user ID to prevent cross-user data sharing
+    const storageKey = `internalChatLastSeen_${profile.id}`;
+
     try {
+      // Get last seen timestamps from localStorage (user-specific)
+      let lastSeenByRoom: Record<string, string> = {};
+      try {
+        const stored = localStorage.getItem(storageKey);
+        lastSeenByRoom = stored ? JSON.parse(stored) : {};
+      } catch { }
+
       // Get all rooms for the company
       const { data: roomsData, error: roomsError } = await supabase
         .from('internal_chat_rooms')
@@ -116,16 +126,38 @@ export function useInternalChat() {
         .select('room_id, user_id, profiles:user_id(id, full_name, avatar_url, status)')
         .in('room_id', roomIds);
 
-      // Get last message for each room
+      // Get last message and unread count for each room
       const roomsWithDetails: ChatRoom[] = await Promise.all(
         (roomsData || []).map(async (room) => {
           const { data: lastMsg } = await supabase
             .from('internal_chat_messages')
-            .select('content, created_at, sender_id, profiles:sender_id(full_name)')
+            .select('content, created_at, sender_id, message_type, profiles:sender_id(full_name)')
             .eq('room_id', room.id)
             .order('created_at', { ascending: false })
             .limit(1)
             .single();
+
+          // Calculate unread count
+          const lastSeen = lastSeenByRoom[room.id];
+          let unreadCount = 0;
+          
+          if (lastSeen) {
+            const { count } = await supabase
+              .from('internal_chat_messages')
+              .select('id', { count: 'exact', head: true })
+              .eq('room_id', room.id)
+              .neq('sender_id', profile.id)
+              .gt('created_at', lastSeen);
+            unreadCount = count || 0;
+          } else {
+            // If never seen, count all messages not from self
+            const { count } = await supabase
+              .from('internal_chat_messages')
+              .select('id', { count: 'exact', head: true })
+              .eq('room_id', room.id)
+              .neq('sender_id', profile.id);
+            unreadCount = count || 0;
+          }
 
           const participants = (participantsData || [])
             .filter(p => p.room_id === room.id)
@@ -152,7 +184,9 @@ export function useInternalChat() {
               content: lastMsg.content || '[Mídia]',
               createdAt: lastMsg.created_at,
               senderName: (lastMsg.profiles as any)?.full_name || 'Usuário',
+              messageType: lastMsg.message_type,
             } : undefined,
+            unreadCount,
           };
         })
       );
@@ -480,14 +514,40 @@ export function useInternalChat() {
     }
   }, [company?.id, profile?.id, ensureGeneralRoom, loadRooms]);
 
+  // Mark room as read when room changes
+  const markRoomAsRead = useCallback((roomId: string) => {
+    if (!profile?.id) return;
+    
+    try {
+      // Storage key includes user ID to prevent cross-user data sharing
+      const storageKey = `internalChatLastSeen_${profile.id}`;
+      const stored = localStorage.getItem(storageKey);
+      const lastSeenByRoom = stored ? JSON.parse(stored) : {};
+      lastSeenByRoom[roomId] = new Date().toISOString();
+      localStorage.setItem(storageKey, JSON.stringify(lastSeenByRoom));
+      
+      // Update local room state to show 0 unread
+      setRooms(prev => prev.map(r => 
+        r.id === roomId ? { ...r, unreadCount: 0 } : r
+      ));
+
+      // Dispatch event to notify notifications hook
+      window.dispatchEvent(new CustomEvent('internal-chat-read'));
+    } catch (e) {
+      console.error('[InternalChat] Erro ao marcar sala como lida:', e);
+    }
+  }, [profile?.id]);
+
   // Load messages when room changes
   useEffect(() => {
     if (selectedRoom?.id) {
       loadMessages(selectedRoom.id);
+      // Mark as read when selecting room
+      markRoomAsRead(selectedRoom.id);
     } else {
       setMessages([]);
     }
-  }, [selectedRoom?.id, loadMessages]);
+  }, [selectedRoom?.id, loadMessages, markRoomAsRead]);
 
   // Realtime subscription for messages
   useEffect(() => {
@@ -560,5 +620,6 @@ export function useInternalChat() {
     getOrCreateDirectRoom,
     loadRooms,
     loadTeamMembers,
+    markRoomAsRead,
   };
 }
