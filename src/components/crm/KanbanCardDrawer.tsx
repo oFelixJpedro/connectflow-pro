@@ -15,6 +15,7 @@ import { Phone, Mail, MessageSquare, Plus, Trash2, Upload, Paperclip, Send, Hist
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { toast } from 'sonner';
+import { supabase } from '@/integrations/supabase/client';
 import type { KanbanCard, KanbanColumn, KanbanCardComment, KanbanCardHistory, KanbanCardAttachment } from '@/hooks/useKanbanData';
 
 interface KanbanCardDrawerProps {
@@ -252,7 +253,6 @@ export function KanbanCardDrawer({ card, columns, teamMembers, open, onOpenChang
                   type="file" 
                   className="hidden" 
                   onChange={handleFileUpload}
-                  accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.rtf,.odt,.ods,.odp,.zip,.rar,.7z,.tar,.gz,.xml,.json,.vcf,.apk,.exe,.html,.css,.js,.ts,.py,.java,.c,.cpp,.h,.hpp,.md,.markdown"
                 />
               </label>
               {attachments.map(a => (
@@ -263,11 +263,11 @@ export function KanbanCardDrawer({ card, columns, teamMembers, open, onOpenChang
                       try {
                         // Extract the file path from the URL
                         const urlParts = a.file_url.split('/kanban-attachments/');
-                        const filePath = urlParts[1];
+                        const filePath = urlParts[1] ? decodeURIComponent(urlParts[1]) : null;
                         if (filePath) {
-                          const { data, error } = await import('@/integrations/supabase/client').then(m => 
-                            m.supabase.storage.from('kanban-attachments').createSignedUrl(filePath, 3600)
-                          );
+                          const { data, error } = await supabase.storage
+                            .from('kanban-attachments')
+                            .createSignedUrl(filePath, 3600);
                           if (error) throw error;
                           if (data?.signedUrl) {
                             window.open(data.signedUrl, '_blank');
