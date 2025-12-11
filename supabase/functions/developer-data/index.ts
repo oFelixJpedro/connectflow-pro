@@ -333,6 +333,54 @@ serve(async (req) => {
       );
     }
 
+    if (action === 'check_permission_status') {
+      console.log('\n┌─────────────────────────────────────────────────────────────────┐');
+      console.log('│ 5️⃣  VERIFICANDO STATUS DA PERMISSÃO                            │');
+      console.log('└─────────────────────────────────────────────────────────────────┘');
+      
+      const request_id = body.request_id;
+      if (!request_id) {
+        return new Response(
+          JSON.stringify({ error: 'request_id é obrigatório' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      const { data: request, error: reqError } = await supabase
+        .from('developer_permission_requests')
+        .select('id, status, request_type, responded_at, expires_at')
+        .eq('id', request_id)
+        .eq('requester_id', developerId)
+        .single();
+
+      if (reqError) {
+        console.log('❌ Erro ao buscar permissão:', reqError);
+        return new Response(
+          JSON.stringify({ error: 'Permissão não encontrada' }),
+          { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      // Check if expired
+      if (request.expires_at && new Date(request.expires_at) < new Date()) {
+        // Update status to expired if still pending
+        if (request.status === 'pending') {
+          await supabase
+            .from('developer_permission_requests')
+            .update({ status: 'expired' })
+            .eq('id', request_id);
+          request.status = 'expired';
+        }
+      }
+
+      console.log('✅ Status da permissão:', request.status);
+
+      return new Response(
+        JSON.stringify({ permission: request }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     if (action === 'list_users') {
       console.log('\n┌─────────────────────────────────────────────────────────────────┐');
       console.log('│ 5️⃣  BUSCANDO USUÁRIOS DA EMPRESA                               │');

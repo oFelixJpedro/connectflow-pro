@@ -60,43 +60,16 @@ export default function EditUserModal({ user, company, onClose, onSuccess }: Edi
 
   const { requestPermission, cancelRequest, isRequesting } = useDeveloperPermissions();
 
-  // Listen for permission approval
-  useEffect(() => {
-    if (!pendingRequestId) return;
+  // Handle permission approved callback
+  const handlePermissionApproved = async () => {
+    await executeUpdate();
+  };
 
-    const channel = supabase
-      .channel(`permission-${pendingRequestId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'developer_permission_requests',
-          filter: `id=eq.${pendingRequestId}`
-        },
-        async (payload: any) => {
-          const newStatus = payload.new?.status;
-          
-          if (newStatus === 'approved') {
-            // Execute the actual update
-            await executeUpdate();
-          } else if (newStatus === 'denied') {
-            toast.error('Permissão negada pelo usuário');
-            setPendingRequestId(null);
-            setPendingUpdates(null);
-          } else if (newStatus === 'expired') {
-            toast.error('Solicitação expirou');
-            setPendingRequestId(null);
-            setPendingUpdates(null);
-          }
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [pendingRequestId, pendingUpdates]);
+  const handlePermissionDenied = () => {
+    toast.error('Permissão negada pelo usuário');
+    setPendingRequestId(null);
+    setPendingUpdates(null);
+  };
 
   const executeUpdate = async () => {
     if (!pendingUpdates) return;
@@ -177,6 +150,8 @@ export default function EditUserModal({ user, company, onClose, onSuccess }: Edi
           handleCancelRequest();
           onClose();
         }}
+        onApproved={handlePermissionApproved}
+        onDenied={handlePermissionDenied}
       />
     );
   }
