@@ -71,6 +71,7 @@ interface ConnectionAccess {
   accessLevel: 'full' | 'assigned_only';
   departmentAccess: 'all' | 'specific' | 'none';
   selectedDepartmentIds: Set<string>;
+  crmAccess: boolean; // NEW: CRM access per connection
 }
 
 interface UserConfigDrawerProps {
@@ -174,7 +175,7 @@ export function UserConfigDrawer({ open, onClose, member, onSaveSuccess, isOwner
       // Load user's connection assignments
       const { data: connectionAssignments, error: connectionAssignmentsError } = await supabase
         .from('connection_users')
-        .select('connection_id, access_level, department_access_mode')
+        .select('connection_id, access_level, department_access_mode, crm_access')
         .eq('user_id', member.id);
 
       if (connectionAssignmentsError) throw connectionAssignmentsError;
@@ -206,6 +207,7 @@ export function UserConfigDrawer({ open, onClose, member, onSaveSuccess, isOwner
           accessLevel: (assignment?.access_level as 'full' | 'assigned_only') || 'full',
           departmentAccess: deptAccessMode,
           selectedDepartmentIds: new Set(userDepartmentsInConn),
+          crmAccess: assignment?.crm_access ?? false,
         };
       });
 
@@ -223,7 +225,7 @@ export function UserConfigDrawer({ open, onClose, member, onSaveSuccess, isOwner
     setConnectionAccess(prev => 
       prev.map(ca => 
         ca.connectionId === connectionId 
-          ? { ...ca, enabled, accessLevel: enabled ? ca.accessLevel : 'full', departmentAccess: 'all', selectedDepartmentIds: new Set() } 
+          ? { ...ca, enabled, accessLevel: enabled ? ca.accessLevel : 'full', departmentAccess: 'all', selectedDepartmentIds: new Set(), crmAccess: false } 
           : ca
       )
     );
@@ -273,6 +275,16 @@ export function UserConfigDrawer({ open, onClose, member, onSaveSuccess, isOwner
         }
         return { ...ca, selectedDepartmentIds: newSet };
       })
+    );
+  };
+
+  const handleCrmAccessToggle = (connectionId: string, enabled: boolean) => {
+    setConnectionAccess(prev => 
+      prev.map(ca => 
+        ca.connectionId === connectionId 
+          ? { ...ca, crmAccess: enabled } 
+          : ca
+      )
     );
   };
 
@@ -326,7 +338,8 @@ export function UserConfigDrawer({ open, onClose, member, onSaveSuccess, isOwner
             connection_id: ca.connectionId,
             user_id: member.id,
             access_level: ca.accessLevel,
-            department_access_mode: ca.departmentAccess, // 'all', 'specific', or 'none'
+            department_access_mode: ca.departmentAccess,
+            crm_access: ca.crmAccess,
           }));
 
         if (connectionAssignmentsToInsert.length > 0) {
@@ -603,6 +616,22 @@ export function UserConfigDrawer({ open, onClose, member, onSaveSuccess, isOwner
                                       )}
                                     </div>
                                   )}
+
+                                  {/* CRM Access */}
+                                  <div className="space-y-2 pt-2 border-t">
+                                    <div className="flex items-center justify-between">
+                                      <div>
+                                        <Label className="text-xs text-muted-foreground">Acesso ao CRM (Kanban)</Label>
+                                        <p className="text-xs text-muted-foreground mt-0.5">
+                                          Permite visualizar e gerenciar o quadro Kanban desta conexão
+                                        </p>
+                                      </div>
+                                      <Switch
+                                        checked={access.crmAccess}
+                                        onCheckedChange={(checked) => handleCrmAccessToggle(conn.id, checked)}
+                                      />
+                                    </div>
+                                  </div>
                                 </div>
                               )}
                         </div>
