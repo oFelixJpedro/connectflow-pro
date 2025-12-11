@@ -20,6 +20,7 @@ import {
   Trash2
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
+import { getDeveloperToken } from '@/contexts/DeveloperAuthContext';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -44,9 +45,11 @@ interface CompanyModalProps {
   company: Company;
   onClose: () => void;
   onRefresh: () => void;
+  onEdit?: () => void;
+  onDelete?: () => void;
 }
 
-export default function CompanyModal({ company, onClose, onRefresh }: CompanyModalProps) {
+export default function CompanyModal({ company, onClose, onRefresh, onEdit, onDelete }: CompanyModalProps) {
   const [details, setDetails] = useState<CompanyDetails | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -58,39 +61,20 @@ export default function CompanyModal({ company, onClose, onRefresh }: CompanyMod
     try {
       setIsLoading(true);
 
-      // Get counts in parallel
-      const [
-        { count: usersCount },
-        { count: connectionsCount },
-        { count: conversationsCount }
-      ] = await Promise.all([
-        supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('company_id', company.id),
-        supabase.from('whatsapp_connections').select('*', { count: 'exact', head: true }).eq('company_id', company.id),
-        supabase.from('conversations').select('*', { count: 'exact', head: true }).eq('company_id', company.id)
-      ]);
+      const token = getDeveloperToken();
+      const { data, error } = await supabase.functions.invoke('developer-data', {
+        body: { action: 'get_company_details', company_id: company.id },
+        headers: { Authorization: `Bearer ${token}` }
+      });
 
-      // Get departments count through connections
-      const { data: connections } = await supabase
-        .from('whatsapp_connections')
-        .select('id')
-        .eq('company_id', company.id);
-
-      let departmentsCount = 0;
-      if (connections && connections.length > 0) {
-        const connectionIds = connections.map(c => c.id);
-        const { count } = await supabase
-          .from('departments')
-          .select('*', { count: 'exact', head: true })
-          .in('whatsapp_connection_id', connectionIds);
-        departmentsCount = count || 0;
-      }
+      if (error) throw error;
 
       setDetails({
         ...company,
-        users_count: usersCount || 0,
-        connections_count: connectionsCount || 0,
-        departments_count: departmentsCount,
-        conversations_count: conversationsCount || 0
+        users_count: data.users_count || 0,
+        connections_count: data.connections_count || 0,
+        departments_count: data.departments_count || 0,
+        conversations_count: data.conversations_count || 0
       });
     } catch (err) {
       console.error('Error loading company details:', err);
@@ -211,11 +195,11 @@ export default function CompanyModal({ company, onClose, onRefresh }: CompanyMod
 
             {/* Actions */}
             <div className="flex items-center justify-end gap-2">
-              <Button variant="outline" size="sm">
+              <Button variant="outline" size="sm" onClick={onEdit}>
                 <Pencil className="h-4 w-4 mr-1" />
                 Editar
               </Button>
-              <Button variant="destructive" size="sm">
+              <Button variant="destructive" size="sm" onClick={onDelete}>
                 <Trash2 className="h-4 w-4 mr-1" />
                 Excluir
               </Button>

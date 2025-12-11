@@ -639,6 +639,14 @@ export default function DeveloperDashboard() {
           company={selectedCompany}
           onClose={() => setSelectedCompany(null)}
           onRefresh={loadCompanies}
+          onEdit={() => {
+            // TODO: Implement edit company
+            setSelectedCompany(null);
+          }}
+          onDelete={() => {
+            setDeleteCompany(selectedCompany);
+            setSelectedCompany(null);
+          }}
         />
       )}
 
@@ -652,12 +660,31 @@ export default function DeveloperDashboard() {
           }}
           onRefresh={() => {
             loadCompanies();
-            // Clear cached users to force reload
             setCompanyUsers(prev => {
               const newState = { ...prev };
               delete newState[selectedUserCompany.id];
               return newState;
             });
+          }}
+          onAccessAsUser={() => {
+            handleAccessAsUser(selectedUser, selectedUserCompany);
+            setSelectedUser(null);
+            setSelectedUserCompany(null);
+          }}
+          onResetPassword={() => {
+            setResetPasswordUser(selectedUser);
+            setSelectedUser(null);
+            setSelectedUserCompany(null);
+          }}
+          onEdit={() => {
+            // TODO: Implement edit user
+            setSelectedUser(null);
+            setSelectedUserCompany(null);
+          }}
+          onDelete={() => {
+            setDeleteUser({ user: selectedUser, company: selectedUserCompany });
+            setSelectedUser(null);
+            setSelectedUserCompany(null);
           }}
         />
       )}

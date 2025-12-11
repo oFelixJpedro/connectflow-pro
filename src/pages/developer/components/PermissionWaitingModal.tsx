@@ -77,10 +77,10 @@ export default function PermissionWaitingModal({
 
   const handleCancel = async () => {
     const token = getDeveloperToken();
-    await supabase
-      .from('developer_permission_requests')
-      .update({ status: 'cancelled' })
-      .eq('id', requestId);
+    await supabase.functions.invoke('developer-actions', {
+      body: { action: 'cancel_permission_request', request_id: requestId },
+      headers: { Authorization: `Bearer ${token}` }
+    });
     
     onCancelled();
   };
