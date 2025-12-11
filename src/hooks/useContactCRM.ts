@@ -44,20 +44,47 @@ export function useContactCRM(contactId: string | null) {
 
   // Load connections and their boards
   const loadData = useCallback(async () => {
-    if (!company?.id) return;
+    if (!company?.id || !profile?.id) return;
 
     setLoading(true);
     try {
-      // Load all WhatsApp connections
-      const { data: connectionsData, error: connError } = await supabase
-        .from('whatsapp_connections')
-        .select('id, name, phone_number')
-        .eq('company_id', company.id)
-        .eq('status', 'connected');
+      let connectionsData: CRMConnection[] = [];
 
-      if (connError) throw connError;
+      if (isAdminOrOwner) {
+        // Admin/Owner: Load all WhatsApp connections
+        const { data, error } = await supabase
+          .from('whatsapp_connections')
+          .select('id, name, phone_number')
+          .eq('company_id', company.id)
+          .eq('status', 'connected');
 
-      setConnections(connectionsData || []);
+        if (error) throw error;
+        connectionsData = data || [];
+      } else {
+        // Other roles: Only load connections with crm_access = true
+        const { data: connectionUsers, error: cuError } = await supabase
+          .from('connection_users')
+          .select('connection_id')
+          .eq('user_id', profile.id)
+          .eq('crm_access', true);
+
+        if (cuError) throw cuError;
+
+        if (connectionUsers?.length) {
+          const allowedIds = connectionUsers.map(cu => cu.connection_id);
+          const { data, error } = await supabase
+            .from('whatsapp_connections')
+            .select('id, name, phone_number')
+            .eq('company_id', company.id)
+            .eq('status', 'connected')
+            .in('id', allowedIds);
+
+          if (error) throw error;
+          connectionsData = data || [];
+        }
+      }
+
+      setConnections(connectionsData);
 
       // Load boards for each connection
       const boardsMap = new Map<string, CRMBoard>();
@@ -95,7 +122,7 @@ export function useContactCRM(contactId: string | null) {
     } finally {
       setLoading(false);
     }
-  }, [company?.id, contactId]);
+  }, [company?.id, profile?.id, isAdminOrOwner, contactId]);
 
   // Load current card position for contact
   const loadCurrentPosition = async (
