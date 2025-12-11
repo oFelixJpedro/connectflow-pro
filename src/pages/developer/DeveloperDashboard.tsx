@@ -239,7 +239,8 @@ export default function DeveloperDashboard() {
         return;
       }
 
-      toast.success(`Limpeza concluída: ${data.bannedUsers} usuários banidos`);
+      toast.success(`Limpeza concluída: ${data.deletedCompanies} empresas removidas permanentemente`);
+      loadCompanies();
     } catch (err) {
       console.error('Cleanup error:', err);
       toast.error('Erro ao limpar empresas excluídas');
@@ -354,13 +355,6 @@ export default function DeveloperDashboard() {
   };
 
   const handleAccessAsUser = async (user: User, company: Company) => {
-    // Find company owner to request permission
-    const owner = companyUsers[company.id]?.find(u => u.role === 'owner');
-    if (!owner) {
-      toast.error('Proprietário da empresa não encontrado');
-      return;
-    }
-
     const result = await requestPermission('access_user', company.id, user.id, user.id);
     if (!result) return;
 
@@ -369,7 +363,7 @@ export default function DeveloperDashboard() {
       type: 'access_user',
       targetName: user.full_name,
       onApproved: async () => {
-        // After approval, get impersonation token
+        // After approval, get magic link
         const token = getDeveloperToken();
         const { data, error } = await supabase.functions.invoke('developer-impersonate', {
           body: { action: 'impersonate', target_user_id: user.id },
@@ -382,12 +376,15 @@ export default function DeveloperDashboard() {
           return;
         }
 
-        // Store impersonation token and redirect
-        localStorage.setItem('impersonation_token', data.impersonation_token);
-        localStorage.setItem('impersonation_user', JSON.stringify(data.user));
-        toast.success(`Acessando como ${user.full_name}`);
-        setPermissionRequest(null);
-        window.open('/dashboard', '_blank');
+        if (data?.magic_link) {
+          toast.success(`Abrindo sessão como ${user.full_name}`);
+          setPermissionRequest(null);
+          // Open magic link in new tab - this will log the user in
+          window.open(data.magic_link, '_blank');
+        } else {
+          toast.error('Link de acesso não gerado');
+          setPermissionRequest(null);
+        }
       }
     });
   };
