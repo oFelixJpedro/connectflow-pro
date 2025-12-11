@@ -19,6 +19,7 @@ interface AuthContextType {
   signOut: () => Promise<void>;
   resetPassword: (email: string) => Promise<{ error: Error | null }>;
   updateProfile: (updates: Partial<Profile>) => Promise<{ error: Error | null }>;
+  updateCompany: (updates: Partial<Company>) => Promise<{ error: Error | null }>;
   updateStatus: (status: Profile['status']) => Promise<void>;
   clearPasswordChangeFlag: () => void;
 }
@@ -166,6 +167,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { error: error as Error | null };
   }
 
+  async function updateCompany(updates: Partial<Company>) {
+    if (!company) return { error: new Error('Company not found') };
+
+    const { error } = await supabase
+      .from('companies')
+      .update(updates)
+      .eq('id', company.id);
+
+    if (!error) {
+      setCompany({ ...company, ...updates } as Company);
+    }
+
+    return { error: error as Error | null };
+  }
+
   async function updateStatus(status: Profile['status']) {
     if (!user) return;
 
@@ -202,6 +218,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       signOut,
       resetPassword,
       updateProfile,
+      updateCompany,
       updateStatus,
       clearPasswordChangeFlag
     }}>
