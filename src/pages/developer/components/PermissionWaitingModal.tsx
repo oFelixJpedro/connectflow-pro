@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -35,39 +35,50 @@ export default function PermissionWaitingModal({
   const [status, setStatus] = useState<'pending' | 'approved' | 'denied' | 'expired'>('pending');
   const [timeLeft, setTimeLeft] = useState(300); // 5 minutes in seconds
 
-  useEffect(() => {
-    // Subscribe to permission request changes
-    const channel = supabase
-      .channel(`permission-${requestId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'developer_permission_requests',
-          filter: `id=eq.${requestId}`
-        },
-        (payload: any) => {
-          const newStatus = payload.new?.status;
-          if (newStatus === 'approved') {
-            setStatus('approved');
-            if (onApproved) {
-              setTimeout(onApproved, 1000);
-            }
-          } else if (newStatus === 'denied') {
-            setStatus('denied');
-            if (onDenied) {
-              setTimeout(onDenied, 2000);
-            } else {
-              setTimeout(onClose, 2000);
-            }
-          } else if (newStatus === 'expired' || newStatus === 'cancelled') {
-            setStatus('expired');
-            setTimeout(onClose, 2000);
-          }
+  // Poll for permission status using Edge Function
+  const checkPermissionStatus = useCallback(async () => {
+    try {
+      const token = getDeveloperToken();
+      const { data, error } = await supabase.functions.invoke('developer-data', {
+        body: { action: 'check_permission_status', request_id: requestId },
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      if (error) {
+        console.error('Error checking permission status:', error);
+        return;
+      }
+
+      const permission = data?.permission;
+      if (!permission) return;
+
+      if (permission.status === 'approved' && status !== 'approved') {
+        setStatus('approved');
+        if (onApproved) {
+          setTimeout(onApproved, 1000);
         }
-      )
-      .subscribe();
+      } else if (permission.status === 'denied' && status !== 'denied') {
+        setStatus('denied');
+        if (onDenied) {
+          setTimeout(onDenied, 2000);
+        } else {
+          setTimeout(onClose, 2000);
+        }
+      } else if ((permission.status === 'expired' || permission.status === 'cancelled') && status !== 'expired') {
+        setStatus('expired');
+        setTimeout(onClose, 2000);
+      }
+    } catch (err) {
+      console.error('Error polling permission:', err);
+    }
+  }, [requestId, status, onApproved, onDenied, onClose]);
+
+  useEffect(() => {
+    // Initial check
+    checkPermissionStatus();
+
+    // Poll every 2 seconds
+    const pollInterval = setInterval(checkPermissionStatus, 2000);
 
     // Timer countdown
     const timer = setInterval(() => {
@@ -75,6 +86,7 @@ export default function PermissionWaitingModal({
         if (prev <= 1) {
           setStatus('expired');
           clearInterval(timer);
+          clearInterval(pollInterval);
           setTimeout(onClose, 2000);
           return 0;
         }
@@ -83,10 +95,10 @@ export default function PermissionWaitingModal({
     }, 1000);
 
     return () => {
-      supabase.removeChannel(channel);
+      clearInterval(pollInterval);
       clearInterval(timer);
     };
-  }, [requestId, onApproved, onDenied, onClose]);
+  }, [checkPermissionStatus, onClose]);
 
   const handleCancel = async () => {
     const token = getDeveloperToken();
