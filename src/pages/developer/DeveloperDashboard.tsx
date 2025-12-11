@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useDeveloperAuth, getDeveloperToken } from '@/contexts/DeveloperAuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -16,7 +16,6 @@ import {
   Users, 
   Plus,
   Eye,
-  Pencil,
   Trash2,
   Key,
   UserCog
@@ -27,6 +26,10 @@ import { toast } from 'sonner';
 import CompanyModal from './components/CompanyModal';
 import UserModal from './components/UserModal';
 import CreateCompanyModal from './components/CreateCompanyModal';
+import DeleteConfirmModal from './components/DeleteConfirmModal';
+import ResetPasswordModal from './components/ResetPasswordModal';
+import PermissionWaitingModal from './components/PermissionWaitingModal';
+import { useDeveloperPermissions } from '@/hooks/useDeveloperPermissions';
 
 interface Company {
   id: string;
@@ -54,6 +57,7 @@ interface User {
 export default function DeveloperDashboard() {
   const navigate = useNavigate();
   const { developer, isAuthenticated, isLoading: authLoading, logout } = useDeveloperAuth();
+  const { requestPermission, isRequesting } = useDeveloperPermissions();
   const [companies, setCompanies] = useState<Company[]>([]);
   const [expandedCompanies, setExpandedCompanies] = useState<Set<string>>(new Set());
   const [companyUsers, setCompanyUsers] = useState<Record<string, User[]>>({});
@@ -65,6 +69,18 @@ export default function DeveloperDashboard() {
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [selectedUserCompany, setSelectedUserCompany] = useState<Company | null>(null);
   const [showCreateCompany, setShowCreateCompany] = useState(false);
+  
+  // Action modal states
+  const [deleteCompany, setDeleteCompany] = useState<Company | null>(null);
+  const [deleteUser, setDeleteUser] = useState<{ user: User; company: Company } | null>(null);
+  const [resetPasswordUser, setResetPasswordUser] = useState<User | null>(null);
+  const [permissionRequest, setPermissionRequest] = useState<{
+    requestId: string;
+    type: 'edit_company' | 'edit_user' | 'access_user' | 'delete_company' | 'delete_user';
+    targetName: string;
+    onApproved: () => void;
+  } | null>(null);
+  const [actionLoading, setActionLoading] = useState(false);
 
   useEffect(() => {
     if (!authLoading && !isAuthenticated) {
@@ -184,6 +200,150 @@ export default function DeveloperDashboard() {
   const handleLogout = () => {
     logout();
     navigate('/developer');
+  };
+
+  // Action handlers
+  const handleResetPassword = async () => {
+    if (!resetPasswordUser) return;
+    
+    setActionLoading(true);
+    try {
+      const token = getDeveloperToken();
+      const { data, error } = await supabase.functions.invoke('developer-actions', {
+        body: { action: 'reset_password', user_id: resetPasswordUser.id },
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      if (error || data?.error) {
+        toast.error(data?.error || 'Erro ao resetar senha');
+        return;
+      }
+
+      toast.success('Senha resetada com sucesso');
+      setResetPasswordUser(null);
+      
+      // Refresh users
+      const companyId = Object.keys(companyUsers).find(cId => 
+        companyUsers[cId]?.some(u => u.id === resetPasswordUser.id)
+      );
+      if (companyId) {
+        setCompanyUsers(prev => {
+          const newState = { ...prev };
+          delete newState[companyId];
+          return newState;
+        });
+        await loadCompanyUsers(companyId);
+      }
+    } catch (err) {
+      console.error('Reset password error:', err);
+      toast.error('Erro ao resetar senha');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleDeleteCompany = async () => {
+    if (!deleteCompany) return;
+    
+    setActionLoading(true);
+    try {
+      const token = getDeveloperToken();
+      const { data, error } = await supabase.functions.invoke('developer-actions', {
+        body: { action: 'delete_company', company_id: deleteCompany.id },
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      if (error || data?.error) {
+        toast.error(data?.error || 'Erro ao excluir empresa');
+        return;
+      }
+
+      toast.success('Empresa excluída com sucesso');
+      setDeleteCompany(null);
+      loadCompanies();
+    } catch (err) {
+      console.error('Delete company error:', err);
+      toast.error('Erro ao excluir empresa');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleDeleteUser = async () => {
+    if (!deleteUser) return;
+    
+    setActionLoading(true);
+    try {
+      const token = getDeveloperToken();
+      const { data, error } = await supabase.functions.invoke('developer-actions', {
+        body: { 
+          action: 'delete_user', 
+          user_id: deleteUser.user.id,
+          company_id: deleteUser.company.id 
+        },
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      if (error || data?.error) {
+        toast.error(data?.error || 'Erro ao excluir usuário');
+        return;
+      }
+
+      toast.success('Usuário excluído com sucesso');
+      setDeleteUser(null);
+      
+      // Refresh
+      setCompanyUsers(prev => {
+        const newState = { ...prev };
+        delete newState[deleteUser.company.id];
+        return newState;
+      });
+      loadCompanies();
+    } catch (err) {
+      console.error('Delete user error:', err);
+      toast.error('Erro ao excluir usuário');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleAccessAsUser = async (user: User, company: Company) => {
+    // Find company owner to request permission
+    const owner = companyUsers[company.id]?.find(u => u.role === 'owner');
+    if (!owner) {
+      toast.error('Proprietário da empresa não encontrado');
+      return;
+    }
+
+    const result = await requestPermission('access_user', company.id, user.id, user.id);
+    if (!result) return;
+
+    setPermissionRequest({
+      requestId: result.requestId,
+      type: 'access_user',
+      targetName: user.full_name,
+      onApproved: async () => {
+        // After approval, get impersonation token
+        const token = getDeveloperToken();
+        const { data, error } = await supabase.functions.invoke('developer-impersonate', {
+          body: { action: 'impersonate', target_user_id: user.id },
+          headers: { Authorization: `Bearer ${token}` }
+        });
+
+        if (error || data?.error) {
+          toast.error(data?.error || 'Erro ao acessar como usuário');
+          setPermissionRequest(null);
+          return;
+        }
+
+        // Store impersonation token and redirect
+        localStorage.setItem('impersonation_token', data.impersonation_token);
+        localStorage.setItem('impersonation_user', JSON.stringify(data.user));
+        toast.success(`Acessando como ${user.full_name}`);
+        setPermissionRequest(null);
+        window.open('/dashboard', '_blank');
+      }
+    });
   };
 
   const getPlanBadge = (plan: string) => {
@@ -356,6 +516,7 @@ export default function DeveloperDashboard() {
                               variant="ghost"
                               size="sm"
                               className="h-8 w-8 p-0 text-destructive hover:text-destructive"
+                              onClick={() => setDeleteCompany(company)}
                             >
                               <Trash2 className="h-4 w-4" />
                             </Button>
@@ -412,6 +573,7 @@ export default function DeveloperDashboard() {
                                               size="sm"
                                               className="h-8 w-8 p-0"
                                               title="Acessar como usuário"
+                                              onClick={() => handleAccessAsUser(user, company)}
                                             >
                                               <UserCog className="h-4 w-4" />
                                             </Button>
@@ -420,8 +582,18 @@ export default function DeveloperDashboard() {
                                               size="sm"
                                               className="h-8 w-8 p-0"
                                               title="Resetar senha"
+                                              onClick={() => setResetPasswordUser(user)}
                                             >
                                               <Key className="h-4 w-4" />
+                                            </Button>
+                                            <Button
+                                              variant="ghost"
+                                              size="sm"
+                                              className="h-8 w-8 p-0 text-destructive hover:text-destructive"
+                                              title="Excluir usuário"
+                                              onClick={() => setDeleteUser({ user, company })}
+                                            >
+                                              <Trash2 className="h-4 w-4" />
                                             </Button>
                                           </div>
                                         </TableCell>
@@ -479,6 +651,62 @@ export default function DeveloperDashboard() {
             setShowCreateCompany(false);
             loadCompanies();
           }}
+        />
+      )}
+
+      {/* Delete Company Modal */}
+      {deleteCompany && (
+        <DeleteConfirmModal
+          type="company"
+          name={deleteCompany.name}
+          details={[
+            'Todos os usuários',
+            'Todas as conexões WhatsApp',
+            'Todas as conversas e mensagens',
+            'Todos os contatos',
+            'Todas as configurações'
+          ]}
+          isLoading={actionLoading}
+          onConfirm={handleDeleteCompany}
+          onCancel={() => setDeleteCompany(null)}
+        />
+      )}
+
+      {/* Delete User Modal */}
+      {deleteUser && (
+        <DeleteConfirmModal
+          type="user"
+          name={deleteUser.user.full_name}
+          details={[
+            'Perfil do usuário',
+            'Histórico de atividades',
+            'Configurações pessoais'
+          ]}
+          isLoading={actionLoading}
+          onConfirm={handleDeleteUser}
+          onCancel={() => setDeleteUser(null)}
+        />
+      )}
+
+      {/* Reset Password Modal */}
+      {resetPasswordUser && (
+        <ResetPasswordModal
+          userName={resetPasswordUser.full_name}
+          isLoading={actionLoading}
+          onConfirm={handleResetPassword}
+          onCancel={() => setResetPasswordUser(null)}
+        />
+      )}
+
+      {/* Permission Waiting Modal */}
+      {permissionRequest && (
+        <PermissionWaitingModal
+          requestId={permissionRequest.requestId}
+          requestType={permissionRequest.type}
+          targetName={permissionRequest.targetName}
+          onApproved={permissionRequest.onApproved}
+          onDenied={() => setPermissionRequest(null)}
+          onCancelled={() => setPermissionRequest(null)}
         />
       )}
     </div>

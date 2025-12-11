@@ -275,6 +275,61 @@ serve(async (req) => {
       );
     }
 
+    if (action === 'create_permission_request') {
+      const { request_type, target_company_id, target_user_id, approver_id } = params;
+
+      const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString(); // 5 minutes
+
+      const { data: request, error } = await supabase
+        .from('developer_permission_requests')
+        .insert([{
+          request_type,
+          target_company_id,
+          target_user_id,
+          requester_id: developerId,
+          approver_id,
+          status: 'pending',
+          expires_at: expiresAt
+        }])
+        .select()
+        .single();
+
+      if (error) {
+        console.error('Permission request error:', error);
+        return new Response(
+          JSON.stringify({ error: error.message }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      return new Response(
+        JSON.stringify({ success: true, request_id: request.id }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    if (action === 'cancel_permission_request') {
+      const { request_id } = params;
+
+      const { error } = await supabase
+        .from('developer_permission_requests')
+        .update({ status: 'cancelled' })
+        .eq('id', request_id)
+        .eq('requester_id', developerId);
+
+      if (error) {
+        return new Response(
+          JSON.stringify({ error: error.message }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      return new Response(
+        JSON.stringify({ success: true }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     return new Response(
       JSON.stringify({ error: 'Ação inválida' }),
       { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
