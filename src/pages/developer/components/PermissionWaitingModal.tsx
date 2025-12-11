@@ -13,20 +13,24 @@ import { getDeveloperToken } from '@/contexts/DeveloperAuthContext';
 
 interface PermissionWaitingModalProps {
   requestId: string;
-  requestType: 'edit_company' | 'edit_user' | 'access_user' | 'delete_company' | 'delete_user';
   targetName: string;
-  onApproved: () => void;
-  onDenied: () => void;
-  onCancelled: () => void;
+  actionDescription?: string;
+  requestType?: 'edit_company' | 'edit_user' | 'access_user' | 'delete_company' | 'delete_user';
+  onCancel: () => void;
+  onClose: () => void;
+  onApproved?: () => void;
+  onDenied?: () => void;
 }
 
 export default function PermissionWaitingModal({
   requestId,
-  requestType,
   targetName,
+  actionDescription,
+  requestType,
+  onCancel,
+  onClose,
   onApproved,
-  onDenied,
-  onCancelled
+  onDenied
 }: PermissionWaitingModalProps) {
   const [status, setStatus] = useState<'pending' | 'approved' | 'denied' | 'expired'>('pending');
   const [timeLeft, setTimeLeft] = useState(300); // 5 minutes in seconds
@@ -43,14 +47,23 @@ export default function PermissionWaitingModal({
           table: 'developer_permission_requests',
           filter: `id=eq.${requestId}`
         },
-        (payload) => {
-          const newStatus = payload.new.status;
+        (payload: any) => {
+          const newStatus = payload.new?.status;
           if (newStatus === 'approved') {
             setStatus('approved');
-            setTimeout(onApproved, 1000);
+            if (onApproved) {
+              setTimeout(onApproved, 1000);
+            }
           } else if (newStatus === 'denied') {
             setStatus('denied');
-            setTimeout(onDenied, 2000);
+            if (onDenied) {
+              setTimeout(onDenied, 2000);
+            } else {
+              setTimeout(onClose, 2000);
+            }
+          } else if (newStatus === 'expired' || newStatus === 'cancelled') {
+            setStatus('expired');
+            setTimeout(onClose, 2000);
           }
         }
       )
@@ -62,7 +75,7 @@ export default function PermissionWaitingModal({
         if (prev <= 1) {
           setStatus('expired');
           clearInterval(timer);
-          setTimeout(onCancelled, 2000);
+          setTimeout(onClose, 2000);
           return 0;
         }
         return prev - 1;
@@ -73,7 +86,7 @@ export default function PermissionWaitingModal({
       supabase.removeChannel(channel);
       clearInterval(timer);
     };
-  }, [requestId, onApproved, onDenied, onCancelled]);
+  }, [requestId, onApproved, onDenied, onClose]);
 
   const handleCancel = async () => {
     const token = getDeveloperToken();
@@ -82,7 +95,7 @@ export default function PermissionWaitingModal({
       headers: { Authorization: `Bearer ${token}` }
     });
     
-    onCancelled();
+    onCancel();
   };
 
   const formatTime = (seconds: number) => {
@@ -92,6 +105,8 @@ export default function PermissionWaitingModal({
   };
 
   const getRequestTypeText = () => {
+    if (actionDescription) return actionDescription;
+    
     switch (requestType) {
       case 'edit_company':
         return 'editar a empresa';

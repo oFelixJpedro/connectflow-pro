@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -18,10 +18,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { User as UserIcon, Loader2 } from 'lucide-react';
+import { User as UserIcon, Loader2, ShieldAlert } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { getDeveloperToken } from '@/contexts/DeveloperAuthContext';
 import { toast } from 'sonner';
+import { useDeveloperPermissions } from '@/hooks/useDeveloperPermissions';
+import PermissionWaitingModal from './PermissionWaitingModal';
 
 interface User {
   id: string;
@@ -53,6 +55,80 @@ export default function EditUserModal({ user, company, onClose, onSuccess }: Edi
   const [role, setRole] = useState(user.role || 'agent');
   const [active, setActive] = useState(user.active);
   const [isLoading, setIsLoading] = useState(false);
+  const [pendingRequestId, setPendingRequestId] = useState<string | null>(null);
+  const [pendingUpdates, setPendingUpdates] = useState<any>(null);
+
+  const { requestPermission, cancelRequest, isRequesting } = useDeveloperPermissions();
+
+  // Listen for permission approval
+  useEffect(() => {
+    if (!pendingRequestId) return;
+
+    const channel = supabase
+      .channel(`permission-${pendingRequestId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'developer_permission_requests',
+          filter: `id=eq.${pendingRequestId}`
+        },
+        async (payload: any) => {
+          const newStatus = payload.new?.status;
+          
+          if (newStatus === 'approved') {
+            // Execute the actual update
+            await executeUpdate();
+          } else if (newStatus === 'denied') {
+            toast.error('Permissão negada pelo usuário');
+            setPendingRequestId(null);
+            setPendingUpdates(null);
+          } else if (newStatus === 'expired') {
+            toast.error('Solicitação expirou');
+            setPendingRequestId(null);
+            setPendingUpdates(null);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [pendingRequestId, pendingUpdates]);
+
+  const executeUpdate = async () => {
+    if (!pendingUpdates) return;
+    
+    setIsLoading(true);
+    try {
+      const token = getDeveloperToken();
+      const { data, error } = await supabase.functions.invoke('developer-actions', {
+        body: { 
+          action: 'update_user', 
+          user_id: user.id,
+          company_id: company.id,
+          updates: pendingUpdates,
+          permission_request_id: pendingRequestId
+        },
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+
+      toast.success('Usuário atualizado com sucesso');
+      setPendingRequestId(null);
+      setPendingUpdates(null);
+      onSuccess();
+    } catch (err) {
+      console.error('Error updating user:', err);
+      toast.error('Erro ao atualizar usuário');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -62,35 +138,48 @@ export default function EditUserModal({ user, company, onClose, onSuccess }: Edi
       return;
     }
 
-    setIsLoading(true);
-    try {
-      const token = getDeveloperToken();
-      const { data, error } = await supabase.functions.invoke('developer-actions', {
-        body: { 
-          action: 'update_user', 
-          user_id: user.id,
-          company_id: company.id,
-          updates: {
-            full_name: fullName.trim(),
-            role,
-            active
-          }
-        },
-        headers: { Authorization: `Bearer ${token}` }
-      });
+    const updates = {
+      full_name: fullName.trim(),
+      role,
+      active
+    };
 
-      if (error) throw error;
-      if (data?.error) throw new Error(data.error);
+    // Request permission from the user being edited
+    const result = await requestPermission(
+      'edit_user',
+      company.id,
+      user.id,
+      user.id // The user being edited is the approver
+    );
 
-      toast.success('Usuário atualizado com sucesso');
-      onSuccess();
-    } catch (err) {
-      console.error('Error updating user:', err);
-      toast.error('Erro ao atualizar usuário');
-    } finally {
-      setIsLoading(false);
+    if (result) {
+      setPendingRequestId(result.requestId);
+      setPendingUpdates(updates);
     }
   };
+
+  const handleCancelRequest = async () => {
+    if (pendingRequestId) {
+      await cancelRequest(pendingRequestId);
+      setPendingRequestId(null);
+      setPendingUpdates(null);
+    }
+  };
+
+  if (pendingRequestId) {
+    return (
+      <PermissionWaitingModal
+        requestId={pendingRequestId}
+        targetName={user.full_name}
+        actionDescription={`editar o usuário "${user.full_name}"`}
+        onCancel={handleCancelRequest}
+        onClose={() => {
+          handleCancelRequest();
+          onClose();
+        }}
+      />
+    );
+  }
 
   return (
     <Dialog open onOpenChange={onClose}>
@@ -104,6 +193,18 @@ export default function EditUserModal({ user, company, onClose, onSuccess }: Edi
             Atualize as informações de {user.full_name}
           </DialogDescription>
         </DialogHeader>
+
+        <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg p-3 mb-4">
+          <div className="flex items-start gap-2">
+            <ShieldAlert className="h-5 w-5 text-amber-600 dark:text-amber-400 mt-0.5" />
+            <div className="text-sm">
+              <p className="font-medium text-amber-800 dark:text-amber-200">Aprovação Necessária</p>
+              <p className="text-amber-700 dark:text-amber-300">
+                Esta ação requer aprovação do usuário ({user.full_name})
+              </p>
+            </div>
+          </div>
+        </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
@@ -163,12 +264,12 @@ export default function EditUserModal({ user, company, onClose, onSuccess }: Edi
           </div>
 
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={onClose} disabled={isLoading}>
+            <Button type="button" variant="outline" onClick={onClose} disabled={isLoading || isRequesting}>
               Cancelar
             </Button>
-            <Button type="submit" disabled={isLoading}>
-              {isLoading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              Salvar
+            <Button type="submit" disabled={isLoading || isRequesting}>
+              {(isLoading || isRequesting) && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Solicitar Aprovação
             </Button>
           </DialogFooter>
         </form>
