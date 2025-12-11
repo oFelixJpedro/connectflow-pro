@@ -144,6 +144,7 @@ serve(async (req) => {
       const { data: companies, error } = await supabase
         .from('companies')
         .select('id, name, slug, plan, active, created_at, trial_ends_at')
+        .eq('active', true)
         .order('created_at', { ascending: false });
 
       if (error) {

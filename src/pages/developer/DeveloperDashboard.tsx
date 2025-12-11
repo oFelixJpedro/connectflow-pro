@@ -18,7 +18,8 @@ import {
   Eye,
   Trash2,
   Key,
-  UserCog
+  UserCog,
+  RefreshCw
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -222,6 +223,29 @@ export default function DeveloperDashboard() {
   const handleLogout = () => {
     logout();
     navigate('/developer');
+  };
+
+  const handleCleanupDeletedCompanies = async () => {
+    setActionLoading(true);
+    try {
+      const token = getDeveloperToken();
+      const { data, error } = await supabase.functions.invoke('developer-actions', {
+        body: { action: 'cleanup_deleted_companies' },
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      if (error || data?.error) {
+        toast.error(data?.error || 'Erro ao limpar empresas excluídas');
+        return;
+      }
+
+      toast.success(`Limpeza concluída: ${data.bannedUsers} usuários banidos`);
+    } catch (err) {
+      console.error('Cleanup error:', err);
+      toast.error('Erro ao limpar empresas excluídas');
+    } finally {
+      setActionLoading(false);
+    }
   };
 
   // Action handlers
@@ -433,6 +457,16 @@ export default function DeveloperDashboard() {
             <span className="font-semibold text-sm">Developer Panel</span>
           </div>
           <div className="flex items-center gap-4">
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={handleCleanupDeletedCompanies}
+              disabled={actionLoading}
+              title="Banir usuários de empresas já excluídas"
+            >
+              <RefreshCw className={`h-4 w-4 mr-1 ${actionLoading ? 'animate-spin' : ''}`} />
+              Limpar
+            </Button>
             <span className="text-xs text-muted-foreground">{developer?.email}</span>
             <Button variant="ghost" size="sm" onClick={handleLogout}>
               <LogOut className="h-4 w-4 mr-1" />

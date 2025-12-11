@@ -200,10 +200,75 @@ serve(async (req) => {
       );
     }
 
+    if (action === 'cleanup_deleted_companies') {
+      // Find all inactive companies and ban their users
+      const { data: inactiveCompanies } = await supabase
+        .from('companies')
+        .select('id')
+        .eq('active', false);
+
+      let bannedCount = 0;
+      
+      if (inactiveCompanies) {
+        for (const company of inactiveCompanies) {
+          const { data: users } = await supabase
+            .from('profiles')
+            .select('id')
+            .eq('company_id', company.id);
+
+          if (users) {
+            for (const user of users) {
+              try {
+                await supabase.from('profiles').update({ active: false }).eq('id', user.id);
+                await supabase.auth.admin.updateUserById(user.id, { ban_duration: '876000h' });
+                bannedCount++;
+              } catch (e) {
+                console.error('Error banning user:', user.id, e);
+              }
+            }
+          }
+        }
+      }
+
+      return new Response(
+        JSON.stringify({ success: true, bannedUsers: bannedCount }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     if (action === 'delete_company') {
       const { company_id } = params;
 
-      // Soft delete - set active to false
+      // 1. Get all users from this company
+      const { data: companyUsers } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('company_id', company_id);
+
+      // 2. Disable all users in this company
+      if (companyUsers && companyUsers.length > 0) {
+        const { error: profilesError } = await supabase
+          .from('profiles')
+          .update({ active: false })
+          .eq('company_id', company_id);
+
+        if (profilesError) {
+          console.error('Error disabling users:', profilesError);
+        }
+
+        // 3. Also disable auth users so they can't log in
+        for (const user of companyUsers) {
+          try {
+            await supabase.auth.admin.updateUserById(user.id, {
+              ban_duration: '876000h' // ~100 years ban
+            });
+          } catch (e) {
+            console.error('Error banning user:', user.id, e);
+          }
+        }
+      }
+
+      // 4. Soft delete company - set active to false
       const { error } = await supabase
         .from('companies')
         .update({ active: false })
