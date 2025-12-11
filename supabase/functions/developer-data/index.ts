@@ -266,6 +266,73 @@ serve(async (req) => {
       );
     }
 
+    if (action === 'get_company_owner') {
+      console.log('\n┌─────────────────────────────────────────────────────────────────┐');
+      console.log('│ 5️⃣  BUSCANDO PROPRIETÁRIO DA EMPRESA                           │');
+      console.log('└─────────────────────────────────────────────────────────────────┘');
+      
+      if (!company_id) {
+        return new Response(
+          JSON.stringify({ error: 'company_id é obrigatório' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      // Get all users from the company
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('id, full_name')
+        .eq('company_id', company_id);
+
+      if (!profiles || profiles.length === 0) {
+        return new Response(
+          JSON.stringify({ error: 'Nenhum usuário encontrado na empresa' }),
+          { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      // Find owner among users
+      const profileIds = profiles.map((p: any) => p.id);
+      const { data: ownerRole } = await supabase
+        .from('user_roles')
+        .select('user_id')
+        .eq('role', 'owner')
+        .in('user_id', profileIds)
+        .single();
+
+      let owner = null;
+      if (ownerRole) {
+        owner = profiles.find((p: any) => p.id === ownerRole.user_id);
+      }
+
+      // If no owner found, use first admin or first user
+      if (!owner) {
+        const { data: adminRole } = await supabase
+          .from('user_roles')
+          .select('user_id')
+          .eq('role', 'admin')
+          .in('user_id', profileIds)
+          .limit(1)
+          .single();
+        
+        if (adminRole) {
+          owner = profiles.find((p: any) => p.id === adminRole.user_id);
+        }
+      }
+
+      // Fallback to first user
+      if (!owner && profiles.length > 0) {
+        owner = profiles[0];
+      }
+
+      console.log('✅ Proprietário encontrado:', owner?.full_name);
+
+      return new Response(
+        JSON.stringify({ owner }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     if (action === 'list_users') {
       console.log('\n┌─────────────────────────────────────────────────────────────────┐');
       console.log('│ 5️⃣  BUSCANDO USUÁRIOS DA EMPRESA                               │');

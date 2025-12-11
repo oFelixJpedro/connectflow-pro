@@ -785,7 +785,8 @@ export default function DeveloperDashboard() {
           targetName={permissionRequest.targetName}
           onApproved={permissionRequest.onApproved}
           onDenied={() => setPermissionRequest(null)}
-          onCancelled={() => setPermissionRequest(null)}
+          onCancel={() => setPermissionRequest(null)}
+          onClose={() => setPermissionRequest(null)}
         />
       )}
     </div>

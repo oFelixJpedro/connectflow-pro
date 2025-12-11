@@ -331,9 +331,31 @@ serve(async (req) => {
     }
 
     if (action === 'update_company') {
-      const { company_id, updates } = params;
+      const { company_id, updates, permission_request_id } = params;
 
       console.log('Updating company:', company_id, updates);
+
+      // Verify permission was approved (if request_id provided)
+      if (permission_request_id) {
+        const { data: permRequest, error: permError } = await supabase
+          .from('developer_permission_requests')
+          .select('status')
+          .eq('id', permission_request_id)
+          .single();
+
+        if (permError || permRequest?.status !== 'approved') {
+          return new Response(
+            JSON.stringify({ error: 'Permissão não aprovada' }),
+            { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        // Mark permission as used
+        await supabase
+          .from('developer_permission_requests')
+          .update({ status: 'used' })
+          .eq('id', permission_request_id);
+      }
 
       const { error } = await supabase
         .from('companies')
@@ -363,9 +385,31 @@ serve(async (req) => {
     }
 
     if (action === 'update_user') {
-      const { user_id, company_id, updates } = params;
+      const { user_id, company_id, updates, permission_request_id } = params;
 
       console.log('Updating user:', user_id, updates);
+
+      // Verify permission was approved (if request_id provided)
+      if (permission_request_id) {
+        const { data: permRequest, error: permError } = await supabase
+          .from('developer_permission_requests')
+          .select('status')
+          .eq('id', permission_request_id)
+          .single();
+
+        if (permError || permRequest?.status !== 'approved') {
+          return new Response(
+            JSON.stringify({ error: 'Permissão não aprovada' }),
+            { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        // Mark permission as used
+        await supabase
+          .from('developer_permission_requests')
+          .update({ status: 'used' })
+          .eq('id', permission_request_id);
+      }
 
       // Update profile
       const { error: profileError } = await supabase
