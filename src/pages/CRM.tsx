@@ -4,8 +4,10 @@ import { useKanbanData } from '@/hooks/useKanbanData';
 import { supabase } from '@/integrations/supabase/client';
 import { KanbanBoard } from '@/components/crm/KanbanBoard';
 import { KanbanFilters } from '@/components/crm/KanbanFilters';
+import { AddCardDialog } from '@/components/crm/AddCardDialog';
 import { ConnectionSelector } from '@/components/inbox/ConnectionSelector';
-import { Loader2, LayoutGrid } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Loader2, LayoutGrid, Plus } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface Connection {
@@ -21,6 +23,7 @@ export default function CRM() {
   const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(null);
   const [loadingConnections, setLoadingConnections] = useState(true);
   const [hasCRMAccess, setHasCRMAccess] = useState<boolean | null>(null);
+  const [addCardOpen, setAddCardOpen] = useState(false);
 
   // Filters
   const [searchQuery, setSearchQuery] = useState('');
@@ -40,6 +43,7 @@ export default function CRM() {
     updateColumn,
     deleteColumn,
     reorderColumns,
+    createCard,
     moveCard,
     updateCard,
     deleteCard,
@@ -238,7 +242,19 @@ export default function CRM() {
             onConnectionChange={setSelectedConnectionId}
           />
         </div>
+        <Button onClick={() => setAddCardOpen(true)}>
+          <Plus className="w-4 h-4 mr-2" />
+          Adicionar Card
+        </Button>
       </div>
+
+      {/* Add Card Dialog */}
+      <AddCardDialog
+        open={addCardOpen}
+        onOpenChange={setAddCardOpen}
+        existingContactIds={cards.map(c => c.contact_id)}
+        onAddCard={createCard}
+      />
 
       {/* Filters */}
       <KanbanFilters
