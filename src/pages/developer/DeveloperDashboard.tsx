@@ -91,8 +91,50 @@ export default function DeveloperDashboard() {
   useEffect(() => {
     if (isAuthenticated) {
       loadCompanies();
+
+      // Real-time subscription for companies
+      const companiesChannel = supabase
+        .channel('developer-companies')
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'companies' },
+          () => {
+            console.log('Companies changed, reloading...');
+            loadCompanies();
+          }
+        )
+        .subscribe();
+
+      // Real-time subscription for profiles (users)
+      const profilesChannel = supabase
+        .channel('developer-profiles')
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'profiles' },
+          (payload) => {
+            console.log('Profiles changed:', payload);
+            // Refresh specific company's users if expanded
+            const companyId = (payload.new as any)?.company_id || (payload.old as any)?.company_id;
+            if (companyId && expandedCompanies.has(companyId)) {
+              setCompanyUsers(prev => {
+                const newState = { ...prev };
+                delete newState[companyId];
+                return newState;
+              });
+              loadCompanyUsers(companyId);
+            }
+            // Also refresh company counts
+            loadCompanies();
+          }
+        )
+        .subscribe();
+
+      return () => {
+        supabase.removeChannel(companiesChannel);
+        supabase.removeChannel(profilesChannel);
+      };
     }
-  }, [isAuthenticated]);
+  }, [isAuthenticated, expandedCompanies]);
 
   const loadCompanies = async () => {
     try {
