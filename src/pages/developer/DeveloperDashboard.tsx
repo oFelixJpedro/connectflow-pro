@@ -140,38 +140,16 @@ export default function DeveloperDashboard() {
     try {
       setIsLoading(true);
       
-      // Fetch companies with user count
-      const { data: companiesData, error } = await supabase
-        .from('companies')
-        .select(`
-          id,
-          name,
-          slug,
-          plan,
-          active,
-          created_at,
-          trial_ends_at
-        `)
-        .order('created_at', { ascending: false });
+      const token = getDeveloperToken();
+      const { data, error } = await supabase.functions.invoke('developer-data', {
+        body: { action: 'list_companies' },
+        headers: { Authorization: `Bearer ${token}` }
+      });
 
       if (error) throw error;
+      if (data?.error) throw new Error(data.error);
 
-      // Get user counts for each company
-      const companiesWithCounts = await Promise.all(
-        (companiesData || []).map(async (company) => {
-          const { count } = await supabase
-            .from('profiles')
-            .select('*', { count: 'exact', head: true })
-            .eq('company_id', company.id);
-          
-          return {
-            ...company,
-            users_count: count || 0
-          };
-        })
-      );
-
-      setCompanies(companiesWithCounts);
+      setCompanies(data.companies || []);
     } catch (err) {
       console.error('Error loading companies:', err);
       toast.error('Erro ao carregar empresas');
@@ -186,33 +164,18 @@ export default function DeveloperDashboard() {
     setLoadingUsers(prev => new Set([...prev, companyId]));
     
     try {
-      const { data: users, error } = await supabase
-        .from('profiles')
-        .select('id, full_name, email, avatar_url, active, needs_password_change, created_at, last_seen_at')
-        .eq('company_id', companyId)
-        .order('created_at', { ascending: true });
+      const token = getDeveloperToken();
+      const { data, error } = await supabase.functions.invoke('developer-data', {
+        body: { action: 'list_users', company_id: companyId },
+        headers: { Authorization: `Bearer ${token}` }
+      });
 
       if (error) throw error;
-
-      // Get roles for each user
-      const usersWithRoles = await Promise.all(
-        (users || []).map(async (user) => {
-          const { data: roleData } = await supabase
-            .from('user_roles')
-            .select('role')
-            .eq('user_id', user.id)
-            .single();
-          
-          return {
-            ...user,
-            role: roleData?.role || 'agent'
-          };
-        })
-      );
+      if (data?.error) throw new Error(data.error);
 
       setCompanyUsers(prev => ({
         ...prev,
-        [companyId]: usersWithRoles
+        [companyId]: data.users || []
       }));
     } catch (err) {
       console.error('Error loading users:', err);
