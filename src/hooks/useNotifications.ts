@@ -54,22 +54,7 @@ export function useNotifications() {
   const [unreadCounts, setUnreadCounts] = useState<UnreadCounts>({ whatsapp: 0, internalChat: 0, total: 0 });
   const [isLoading, setIsLoading] = useState(true);
   
-  // Storage key includes user ID to prevent cross-user data sharing
-  const storageKey = profile?.id ? `internalChatLastSeen_${profile.id}` : null;
-  
-  // Track last seen message per internal chat room (stored in localStorage per user)
-  const [lastSeenByRoom, setLastSeenByRoom] = useState<Record<string, string>>({});
-
-  // Load last seen from localStorage when user changes
-  useEffect(() => {
-    if (!storageKey) return;
-    try {
-      const stored = localStorage.getItem(storageKey);
-      setLastSeenByRoom(stored ? JSON.parse(stored) : {});
-    } catch {
-      setLastSeenByRoom({});
-    }
-  }, [storageKey]);
+  // Track last seen message per internal chat room (stored in database)
 
   // Track processed message IDs to avoid duplicate sounds
   const processedMessageIds = useRef<Set<string>>(new Set());
@@ -182,14 +167,18 @@ export function useNotifications() {
 
   // Load internal chat unread count
   const loadInternalChatUnread = useCallback(async () => {
-    if (!company?.id || !profile?.id || !storageKey) return 0;
+    if (!company?.id || !profile?.id) return 0;
 
-    // Always read fresh from localStorage with user-specific key
-    let currentLastSeenByRoom: Record<string, string> = {};
-    try {
-      const stored = localStorage.getItem(storageKey);
-      currentLastSeenByRoom = stored ? JSON.parse(stored) : {};
-    } catch { }
+    // Get last seen timestamps from database
+    const { data: readStates } = await supabase
+      .from('internal_chat_read_states')
+      .select('room_id, last_seen_at')
+      .eq('user_id', profile.id);
+
+    const lastSeenByRoom: Record<string, string> = {};
+    (readStates || []).forEach(rs => {
+      lastSeenByRoom[rs.room_id] = rs.last_seen_at;
+    });
 
     // Get all rooms the user has access to
     const { data: rooms, error: roomsError } = await supabase
@@ -202,7 +191,7 @@ export function useNotifications() {
     let totalUnread = 0;
 
     for (const room of rooms) {
-      const lastSeen = currentLastSeenByRoom[room.id];
+      const lastSeen = lastSeenByRoom[room.id];
       
       let query = supabase
         .from('internal_chat_messages')
@@ -219,7 +208,7 @@ export function useNotifications() {
     }
 
     return totalUnread;
-  }, [company?.id, profile?.id, storageKey]);
+  }, [company?.id, profile?.id]);
 
   // Load recent notifications (filtered by permissions)
   const loadRecentNotifications = useCallback(async () => {
@@ -304,17 +293,27 @@ export function useNotifications() {
   }, [loadWhatsAppUnread, loadInternalChatUnread]);
 
   // Mark internal chat room as read
-  const markRoomAsRead = useCallback((roomId: string) => {
-    if (!storageKey) return;
+  const markRoomAsRead = useCallback(async (roomId: string) => {
+    if (!profile?.id) return;
     
-    const now = new Date().toISOString();
-    const updated = { ...lastSeenByRoom, [roomId]: now };
-    setLastSeenByRoom(updated);
-    localStorage.setItem(storageKey, JSON.stringify(updated));
-    
-    // Refresh counts after marking as read
-    setTimeout(() => refreshCounts(), 100);
-  }, [lastSeenByRoom, refreshCounts, storageKey]);
+    try {
+      await supabase
+        .from('internal_chat_read_states')
+        .upsert({
+          user_id: profile.id,
+          room_id: roomId,
+          last_seen_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }, {
+          onConflict: 'user_id,room_id'
+        });
+      
+      // Refresh counts after marking as read
+      setTimeout(() => refreshCounts(), 100);
+    } catch (e) {
+      console.error('Error marking room as read:', e);
+    }
+  }, [profile?.id, refreshCounts]);
 
   // Mark notification as read
   const markAsRead = useCallback((notificationId: string) => {
