@@ -22,6 +22,8 @@ interface ConnectionSelectorProps {
   selectedConnectionId: string | null;
   onConnectionChange: (connectionId: string) => void;
   onNoConnections?: () => void;
+  /** If provided, uses these connections instead of loading from database */
+  overrideConnections?: WhatsAppConnectionItem[];
 }
 
 function formatPhoneNumber(phone: string): string {
@@ -41,16 +43,40 @@ export function ConnectionSelector({
   selectedConnectionId,
   onConnectionChange,
   onNoConnections,
+  overrideConnections,
 }: ConnectionSelectorProps) {
   console.log('🔵 ConnectionSelector - MONTOU');
   
   const { profile } = useAuth();
   const [connections, setConnections] = useState<WhatsAppConnectionItem[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(!overrideConnections);
   const [isOpen, setIsOpen] = useState(false);
   const [userRole, setUserRole] = useState<string | null>(null);
 
+  // If overrideConnections is provided, use it instead of loading
   useEffect(() => {
+    if (overrideConnections) {
+      setConnections(overrideConnections);
+      setIsLoading(false);
+      
+      if (overrideConnections.length === 0) {
+        onNoConnections?.();
+        return;
+      }
+
+      const currentConnectionExists = selectedConnectionId && 
+        overrideConnections.find(c => c.id === selectedConnectionId);
+      
+      if (!currentConnectionExists && overrideConnections.length > 0) {
+        onConnectionChange(overrideConnections[0].id);
+      }
+    }
+  }, [overrideConnections, selectedConnectionId, onConnectionChange, onNoConnections]);
+
+  useEffect(() => {
+    // Skip loading if overrideConnections is provided
+    if (overrideConnections) return;
+
     console.log('🔵 ConnectionSelector - useEffect EXECUTANDO', { 
       companyId: profile?.company_id,
       selectedConnectionId 
