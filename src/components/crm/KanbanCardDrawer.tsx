@@ -259,39 +259,55 @@ export function KanbanCardDrawer({ card, columns, teamMembers, open, onOpenChang
                   onChange={handleFileUpload}
                 />
               </label>
-              {attachments.map(a => (
-                <div key={a.id} className="flex items-center gap-2 p-2 border rounded">
-                  <Paperclip className="w-4 h-4" />
-                  <button 
-                    onClick={async () => {
-                      try {
-                        console.log('Download clicked, file_url:', a.file_url);
-                        // Extract the file path from the URL
-                        const urlParts = a.file_url.split('/kanban-attachments/');
-                        console.log('URL parts:', urlParts);
-                        const filePath = urlParts[1] ? decodeURIComponent(urlParts[1]) : null;
-                        console.log('File path:', filePath);
-                        if (filePath) {
-                          const { data, error } = await supabase.storage
-                            .from('kanban-attachments')
-                            .createSignedUrl(filePath, 3600);
-                          console.log('Signed URL result:', { data, error });
-                          if (error) throw error;
-                          if (data?.signedUrl) {
-                            window.open(data.signedUrl, '_blank');
+              {attachments.map(a => {
+                const getFilePath = () => {
+                  const urlParts = a.file_url.split('/kanban-attachments/');
+                  return urlParts[1] ? decodeURIComponent(urlParts[1]) : null;
+                };
+                return (
+                  <div key={a.id} className="flex items-center gap-2 p-2 border rounded">
+                    <Paperclip className="w-4 h-4 flex-shrink-0" />
+                    <button 
+                      onClick={async () => {
+                        try {
+                          const filePath = getFilePath();
+                          if (filePath) {
+                            const { data, error } = await supabase.storage
+                              .from('kanban-attachments')
+                              .createSignedUrl(filePath, 3600);
+                            if (error) throw error;
+                            if (data?.signedUrl) {
+                              window.open(data.signedUrl, '_blank');
+                            }
+                          }
+                        } catch (error) {
+                          console.error('Error downloading file:', error);
+                          toast.error('Erro ao baixar arquivo');
+                        }
+                      }}
+                      className="flex-1 text-sm truncate hover:underline text-left"
+                    >
+                      {a.file_name}
+                    </button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6 flex-shrink-0 text-destructive hover:text-destructive"
+                      onClick={async () => {
+                        const filePath = getFilePath();
+                        if (filePath && card) {
+                          const success = await onDeleteAttachment(card.id, a.id, filePath);
+                          if (success) {
+                            setAttachments(attachments.filter(att => att.id !== a.id));
                           }
                         }
-                      } catch (error) {
-                        console.error('Error downloading file:', error);
-                        toast.error('Erro ao baixar arquivo');
-                      }
-                    }}
-                    className="flex-1 text-sm truncate hover:underline text-left"
-                  >
-                    {a.file_name}
-                  </button>
-                </div>
-              ))}
+                      }}
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </Button>
+                  </div>
+                );
+              })}
             </TabsContent>
 
             <TabsContent value="history">
