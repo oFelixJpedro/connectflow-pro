@@ -14,6 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Phone, Mail, MessageSquare, Plus, Trash2, Upload, Paperclip, Send, History, X } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { toast } from 'sonner';
 import type { KanbanCard, KanbanColumn, KanbanCardComment, KanbanCardHistory, KanbanCardAttachment } from '@/hooks/useKanbanData';
 
 interface KanbanCardDrawerProps {
@@ -247,12 +248,40 @@ export function KanbanCardDrawer({ card, columns, teamMembers, open, onOpenChang
               <label className="flex items-center gap-2 cursor-pointer border rounded p-2 hover:bg-muted">
                 <Upload className="w-4 h-4" />
                 <span className="text-sm">Fazer upload</span>
-                <input type="file" className="hidden" onChange={handleFileUpload} />
+                <input 
+                  type="file" 
+                  className="hidden" 
+                  onChange={handleFileUpload}
+                  accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.rtf,.odt,.ods,.odp,.zip,.rar,.7z,.tar,.gz,.xml,.json,.vcf,.apk,.exe,.html,.css,.js,.ts,.py,.java,.c,.cpp,.h,.hpp,.md,.markdown"
+                />
               </label>
               {attachments.map(a => (
                 <div key={a.id} className="flex items-center gap-2 p-2 border rounded">
                   <Paperclip className="w-4 h-4" />
-                  <a href={a.file_url} target="_blank" rel="noopener noreferrer" className="flex-1 text-sm truncate hover:underline">{a.file_name}</a>
+                  <button 
+                    onClick={async () => {
+                      try {
+                        // Extract the file path from the URL
+                        const urlParts = a.file_url.split('/kanban-attachments/');
+                        const filePath = urlParts[1];
+                        if (filePath) {
+                          const { data, error } = await import('@/integrations/supabase/client').then(m => 
+                            m.supabase.storage.from('kanban-attachments').createSignedUrl(filePath, 3600)
+                          );
+                          if (error) throw error;
+                          if (data?.signedUrl) {
+                            window.open(data.signedUrl, '_blank');
+                          }
+                        }
+                      } catch (error) {
+                        console.error('Error downloading file:', error);
+                        toast.error('Erro ao baixar arquivo');
+                      }
+                    }}
+                    className="flex-1 text-sm truncate hover:underline text-left"
+                  >
+                    {a.file_name}
+                  </button>
                 </div>
               ))}
             </TabsContent>

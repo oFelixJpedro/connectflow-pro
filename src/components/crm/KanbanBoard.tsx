@@ -82,8 +82,11 @@ export function KanbanBoard({
 }: KanbanBoardProps) {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [activeType, setActiveType] = useState<'column' | 'card' | null>(null);
-  const [selectedCard, setSelectedCard] = useState<KanbanCard | null>(null);
+  const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
   const [addColumnOpen, setAddColumnOpen] = useState(false);
+
+  // Derive selected card from cards array to always get the latest state
+  const selectedCard = selectedCardId ? cards.find(c => c.id === selectedCardId) || null : null;
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -218,7 +221,7 @@ export function KanbanBoard({
                   isAdminOrOwner={isAdminOrOwner}
                   onUpdateColumn={onUpdateColumn}
                   onDeleteColumn={onDeleteColumn}
-                  onCardClick={setSelectedCard}
+                  onCardClick={(card) => setSelectedCardId(card.id)}
                 />
               ))}
             </SortableContext>
@@ -266,8 +269,8 @@ export function KanbanBoard({
         card={selectedCard}
         columns={columns}
         teamMembers={teamMembers}
-        open={!!selectedCard}
-        onOpenChange={(open) => !open && setSelectedCard(null)}
+        open={!!selectedCardId}
+        onOpenChange={(open) => !open && setSelectedCardId(null)}
         onUpdateCard={onUpdateCard}
         onDeleteCard={onDeleteCard}
         onAddTag={onAddTag}
