@@ -7,76 +7,156 @@ const corsHeaders = {
 };
 
 // Verify developer JWT token
-async function verifyDeveloperToken(token: string, supabase: any): Promise<{ valid: boolean; developerId?: string }> {
+async function verifyDeveloperToken(token: string, supabase: any): Promise<{ valid: boolean; developerId?: string; reason?: string }> {
   try {
-    const [headerB64, payloadB64] = token.split('.');
-    if (!headerB64 || !payloadB64) return { valid: false };
+    console.log('🔐 Verificando token...');
+    console.log('   Token length:', token?.length);
     
-    const payload = JSON.parse(atob(payloadB64));
+    const parts = token.split('.');
+    console.log('   Token parts:', parts.length);
     
-    if (payload.type !== 'developer' || !payload.developerId) {
-      return { valid: false };
+    if (parts.length < 2) {
+      console.log('❌ Token mal formatado - menos de 2 partes');
+      return { valid: false, reason: 'Token mal formatado' };
+    }
+    
+    const [headerB64, payloadB64] = parts;
+    
+    let payload;
+    try {
+      payload = JSON.parse(atob(payloadB64));
+      console.log('   Payload parsed:', JSON.stringify(payload, null, 2));
+    } catch (parseErr) {
+      console.log('❌ Erro ao parsear payload:', parseErr);
+      return { valid: false, reason: 'Erro ao parsear payload' };
+    }
+    
+    if (payload.type !== 'developer') {
+      console.log('❌ Token type não é developer:', payload.type);
+      return { valid: false, reason: 'Tipo de token inválido' };
+    }
+    
+    if (!payload.developerId) {
+      console.log('❌ developerId não encontrado no payload');
+      return { valid: false, reason: 'developerId ausente' };
     }
     
     if (payload.exp && Date.now() > payload.exp) {
-      return { valid: false };
+      console.log('❌ Token expirado. Exp:', payload.exp, 'Now:', Date.now());
+      return { valid: false, reason: 'Token expirado' };
     }
     
     // Verify developer exists
-    const { data: developer } = await supabase
+    console.log('🔍 Buscando developer no banco:', payload.developerId);
+    const { data: developer, error: devError } = await supabase
       .from('developer_auth')
-      .select('id')
+      .select('id, email')
       .eq('id', payload.developerId)
       .single();
     
-    if (!developer) return { valid: false };
+    if (devError) {
+      console.log('❌ Erro ao buscar developer:', devError);
+      return { valid: false, reason: 'Erro ao buscar developer' };
+    }
     
+    if (!developer) {
+      console.log('❌ Developer não encontrado no banco');
+      return { valid: false, reason: 'Developer não encontrado' };
+    }
+    
+    console.log('✅ Token válido! Developer:', developer.email);
     return { valid: true, developerId: payload.developerId };
-  } catch {
-    return { valid: false };
+  } catch (err) {
+    console.log('❌ Erro geral na verificação:', err);
+    return { valid: false, reason: 'Erro geral: ' + String(err) };
   }
 }
 
 serve(async (req) => {
+  console.log('\n╔══════════════════════════════════════════════════════════════════╗');
+  console.log('║              📊 DEVELOPER-DATA FUNCTION CALLED                   ║');
+  console.log('╚══════════════════════════════════════════════════════════════════╝');
+  console.log('⏰ Timestamp:', new Date().toISOString());
+  console.log('📝 Method:', req.method);
+  console.log('📍 URL:', req.url);
+  
   if (req.method === 'OPTIONS') {
+    console.log('✅ CORS preflight - retornando 200');
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    const supabase = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-    );
+    console.log('\n┌─────────────────────────────────────────────────────────────────┐');
+    console.log('│ 1️⃣  INICIALIZANDO SUPABASE CLIENT                              │');
+    console.log('└─────────────────────────────────────────────────────────────────┘');
+    
+    const supabaseUrl = Deno.env.get('SUPABASE_URL');
+    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    
+    console.log('   SUPABASE_URL:', supabaseUrl ? '✅ Definido' : '❌ NÃO DEFINIDO');
+    console.log('   SUPABASE_SERVICE_ROLE_KEY:', supabaseKey ? '✅ Definido (' + supabaseKey.substring(0, 20) + '...)' : '❌ NÃO DEFINIDO');
+    
+    const supabase = createClient(supabaseUrl ?? '', supabaseKey ?? '');
 
-    // Verify developer token
+    console.log('\n┌─────────────────────────────────────────────────────────────────┐');
+    console.log('│ 2️⃣  VERIFICANDO AUTHORIZATION HEADER                           │');
+    console.log('└─────────────────────────────────────────────────────────────────┘');
+    
     const authHeader = req.headers.get('Authorization');
+    console.log('   Authorization header:', authHeader ? `"${authHeader.substring(0, 50)}..."` : '❌ AUSENTE');
+    
     if (!authHeader?.startsWith('Bearer ')) {
+      console.log('❌ Header não começa com "Bearer "');
       return new Response(
-        JSON.stringify({ error: 'Token não fornecido' }),
+        JSON.stringify({ error: 'Token não fornecido', detail: 'Authorization header ausente ou mal formatado' }),
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
     const token = authHeader.split(' ')[1];
-    const { valid, developerId } = await verifyDeveloperToken(token, supabase);
+    console.log('   Token extraído:', token ? `${token.substring(0, 30)}... (${token.length} chars)` : '❌ VAZIO');
+    
+    console.log('\n┌─────────────────────────────────────────────────────────────────┐');
+    console.log('│ 3️⃣  VALIDANDO TOKEN DO DEVELOPER                               │');
+    console.log('└─────────────────────────────────────────────────────────────────┘');
+    
+    const { valid, developerId, reason } = await verifyDeveloperToken(token, supabase);
     
     if (!valid) {
+      console.log('❌ Token inválido. Razão:', reason);
       return new Response(
-        JSON.stringify({ error: 'Token inválido' }),
+        JSON.stringify({ error: 'Token inválido', detail: reason }),
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
+    
+    console.log('✅ Developer autenticado:', developerId);
 
-    const { action, company_id } = await req.json();
+    console.log('\n┌─────────────────────────────────────────────────────────────────┐');
+    console.log('│ 4️⃣  PROCESSANDO REQUEST BODY                                   │');
+    console.log('└─────────────────────────────────────────────────────────────────┘');
+    
+    const body = await req.json();
+    const { action, company_id } = body;
+    console.log('   Action:', action);
+    console.log('   Company ID:', company_id || 'N/A');
 
     if (action === 'list_companies') {
-      // Fetch all companies with user counts
+      console.log('\n┌─────────────────────────────────────────────────────────────────┐');
+      console.log('│ 5️⃣  BUSCANDO EMPRESAS                                          │');
+      console.log('└─────────────────────────────────────────────────────────────────┘');
+      
       const { data: companies, error } = await supabase
         .from('companies')
         .select('id, name, slug, plan, active, created_at, trial_ends_at')
         .order('created_at', { ascending: false });
 
-      if (error) throw error;
+      if (error) {
+        console.log('❌ Erro ao buscar empresas:', error);
+        throw error;
+      }
+      
+      console.log('✅ Empresas encontradas:', companies?.length || 0);
 
       // Get user counts for each company
       const companiesWithCounts = await Promise.all(
@@ -92,6 +172,8 @@ serve(async (req) => {
           };
         })
       );
+      
+      console.log('✅ Retornando', companiesWithCounts.length, 'empresas com contagem de usuários');
 
       return new Response(
         JSON.stringify({ companies: companiesWithCounts }),
@@ -100,21 +182,30 @@ serve(async (req) => {
     }
 
     if (action === 'list_users') {
+      console.log('\n┌─────────────────────────────────────────────────────────────────┐');
+      console.log('│ 5️⃣  BUSCANDO USUÁRIOS DA EMPRESA                               │');
+      console.log('└─────────────────────────────────────────────────────────────────┘');
+      
       if (!company_id) {
+        console.log('❌ company_id não fornecido');
         return new Response(
           JSON.stringify({ error: 'company_id é obrigatório' }),
           { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
 
-      // Fetch users for company
       const { data: users, error } = await supabase
         .from('profiles')
         .select('id, full_name, email, avatar_url, active, needs_password_change, created_at, last_seen_at')
         .eq('company_id', company_id)
         .order('created_at', { ascending: true });
 
-      if (error) throw error;
+      if (error) {
+        console.log('❌ Erro ao buscar usuários:', error);
+        throw error;
+      }
+      
+      console.log('✅ Usuários encontrados:', users?.length || 0);
 
       // Get roles for each user
       const usersWithRoles = await Promise.all(
@@ -131,6 +222,8 @@ serve(async (req) => {
           };
         })
       );
+      
+      console.log('✅ Retornando', usersWithRoles.length, 'usuários com roles');
 
       return new Response(
         JSON.stringify({ users: usersWithRoles }),
@@ -138,15 +231,16 @@ serve(async (req) => {
       );
     }
 
+    console.log('❌ Ação inválida:', action);
     return new Response(
       JSON.stringify({ error: 'Ação inválida' }),
       { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
 
   } catch (err) {
-    console.error('Developer data error:', err);
+    console.error('💥 ERRO CRÍTICO:', err);
     return new Response(
-      JSON.stringify({ error: 'Erro interno do servidor' }),
+      JSON.stringify({ error: 'Erro interno do servidor', detail: String(err) }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }

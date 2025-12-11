@@ -141,15 +141,28 @@ export default function DeveloperDashboard() {
       setIsLoading(true);
       
       const token = getDeveloperToken();
+      console.log('🔐 Developer token:', token ? `${token.substring(0, 30)}... (${token.length} chars)` : '❌ NULL');
+      
+      if (!token) {
+        console.error('❌ Token não encontrado no localStorage');
+        toast.error('Sessão expirada. Faça login novamente.');
+        navigate('/developer');
+        return;
+      }
+      
+      console.log('📡 Chamando developer-data com token...');
       const { data, error } = await supabase.functions.invoke('developer-data', {
         body: { action: 'list_companies' },
         headers: { Authorization: `Bearer ${token}` }
       });
+      
+      console.log('📨 Resposta:', { data, error });
 
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
 
       setCompanies(data.companies || []);
+      console.log('✅ Empresas carregadas:', data.companies?.length || 0);
     } catch (err) {
       console.error('Error loading companies:', err);
       toast.error('Erro ao carregar empresas');
