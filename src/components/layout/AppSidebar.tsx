@@ -10,7 +10,8 @@ import {
   LogOut,
   Building2,
   User,
-  Circle
+  Circle,
+  LayoutGrid
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
@@ -54,6 +55,13 @@ const baseMenuItems = [
     icon: Users, 
     label: 'Contatos', 
     path: '/contacts',
+    badgeKey: null as string | null,
+    adminOnly: false,
+  },
+  { 
+    icon: LayoutGrid, 
+    label: 'CRM', 
+    path: '/crm',
     badgeKey: null as string | null,
     adminOnly: false,
   },

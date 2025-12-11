@@ -10,6 +10,7 @@ import Auth from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
 import Inbox from "./pages/Inbox";
 import Contacts from "./pages/Contacts";
+import CRM from "./pages/CRM";
 import Tags from "./pages/Tags";
 import QuickReplies from "./pages/QuickReplies";
 import Departments from "./pages/Departments";
@@ -41,6 +42,7 @@ const App = () => (
               <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/inbox" element={<Inbox />} />
               <Route path="/contacts" element={<Contacts />} />
+              <Route path="/crm" element={<CRM />} />
               
               {/* Settings Routes */}
               <Route path="/settings" element={<Navigate to="/settings/general" replace />} />
