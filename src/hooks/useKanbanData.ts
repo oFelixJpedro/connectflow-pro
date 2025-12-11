@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
+import type { Json } from '@/integrations/supabase/types';
 
 export interface KanbanBoard {
   id: string;
@@ -360,13 +361,13 @@ export function useKanbanData(connectionId: string | null) {
       const oldColumn = columns.find(c => c.id === oldColumnId);
       const newColumn = columns.find(c => c.id === toColumnId);
       
-      await supabase.from('kanban_card_history').insert({
+      await supabase.from('kanban_card_history').insert([{
         card_id: cardId,
-        user_id: profile?.id,
+        user_id: profile?.id || null,
         action_type: 'moved',
-        old_value: { column: oldColumn?.name },
-        new_value: { column: newColumn?.name },
-      });
+        old_value: { column: oldColumn?.name } as Json,
+        new_value: { column: newColumn?.name } as Json,
+      }]);
     }
 
     setCards(cards.map(c => 
@@ -396,13 +397,14 @@ export function useKanbanData(connectionId: string | null) {
 
     // Add history entry
     if (historyAction) {
-      await supabase.from('kanban_card_history').insert({
+      const historyEntry = {
         card_id: cardId,
-        user_id: profile?.id,
+        user_id: profile?.id || null,
         action_type: historyAction,
-        old_value: oldValue || null,
-        new_value: newValue || null,
-      });
+        old_value: (oldValue || null) as Json,
+        new_value: (newValue || null) as Json,
+      };
+      await supabase.from('kanban_card_history').insert([historyEntry]);
     }
 
     // Update local state
@@ -460,12 +462,12 @@ export function useKanbanData(connectionId: string | null) {
     }
 
     // Add history
-    await supabase.from('kanban_card_history').insert({
+    await supabase.from('kanban_card_history').insert([{
       card_id: cardId,
-      user_id: profile?.id,
+      user_id: profile?.id || null,
       action_type: 'tag_added',
-      new_value: { tag: name },
-    });
+      new_value: { tag: name } as Json,
+    }]);
 
     setCards(cards.map(c => 
       c.id === cardId 
@@ -493,12 +495,12 @@ export function useKanbanData(connectionId: string | null) {
 
     // Add history
     if (tag) {
-      await supabase.from('kanban_card_history').insert({
+      await supabase.from('kanban_card_history').insert([{
         card_id: cardId,
-        user_id: profile?.id,
+        user_id: profile?.id || null,
         action_type: 'tag_removed',
-        old_value: { tag: tag.name },
-      });
+        old_value: { tag: tag.name } as Json,
+      }]);
     }
 
     setCards(cards.map(c => 
@@ -554,13 +556,13 @@ export function useKanbanData(connectionId: string | null) {
     }
 
     // Add history
-    await supabase.from('kanban_card_history').insert({
+    await supabase.from('kanban_card_history').insert([{
       card_id: cardId,
-      user_id: profile?.id,
+      user_id: profile?.id || null,
       action_type: 'checklist_updated',
-      old_value: { item: item.text, completed: item.completed },
-      new_value: { item: item.text, completed: newCompleted },
-    });
+      old_value: { item: item.text, completed: item.completed } as Json,
+      new_value: { item: item.text, completed: newCompleted } as Json,
+    }]);
 
     setCards(cards.map(c => 
       c.id === cardId 
@@ -614,12 +616,12 @@ export function useKanbanData(connectionId: string | null) {
     }
 
     // Add history
-    await supabase.from('kanban_card_history').insert({
+    await supabase.from('kanban_card_history').insert([{
       card_id: cardId,
-      user_id: profile?.id,
+      user_id: profile?.id || null,
       action_type: 'comment_added',
-      new_value: { comment: content.substring(0, 100) },
-    });
+      new_value: { comment: content.substring(0, 100) } as Json,
+    }]);
 
     return data as KanbanCardComment;
   };
@@ -715,12 +717,12 @@ export function useKanbanData(connectionId: string | null) {
     }
 
     // Add history
-    await supabase.from('kanban_card_history').insert({
+    await supabase.from('kanban_card_history').insert([{
       card_id: cardId,
-      user_id: profile?.id,
+      user_id: profile?.id || null,
       action_type: 'attachment_added',
-      new_value: { file: file.name },
-    });
+      new_value: { file: file.name } as Json,
+    }]);
 
     toast.success('Arquivo anexado');
     return data as KanbanCardAttachment;
@@ -782,25 +784,14 @@ export function useKanbanData(connectionId: string | null) {
       await supabase.from('kanban_cards').insert({
         column_id: firstColumn.id,
         contact_id: newContactIds[i],
-        priority: 'medium',
+        priority: 'medium' as const,
         position: maxPosition + 1 + i,
       });
     }
 
-    const columnIds = columns.map(c => c.id);
-    const { data: newCards, error } = await supabase
-      .from('kanban_cards')
-      .insert(cardsToInsert)
-      .select(`
-        *,
-        contact:contacts(id, name, phone_number, avatar_url, email),
-        assigned_user:profiles!assigned_user_id(id, full_name, avatar_url),
-        tags:kanban_card_tags(*),
-        checklist_items:kanban_card_checklist_items(*)
-      `);
-
-    if (!error && newCards) {
-      setCards([...cards, ...newCards as KanbanCard[]]);
+    // Reload cards after insertion
+    if (board) {
+      await loadCards(board.id);
     }
   };
 

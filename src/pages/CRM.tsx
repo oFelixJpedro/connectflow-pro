@@ -189,8 +189,8 @@ export default function CRM() {
     setFilterTags([]);
   };
 
-  const hasActiveFilters = searchQuery || filterResponsible.length > 0 || 
-    filterPriority.length > 0 || filterTags.length > 0;
+  const hasActiveFilters = !!(searchQuery || filterResponsible.length > 0 || 
+    filterPriority.length > 0 || filterTags.length > 0);
 
   // Loading state
   if (loadingConnections || hasCRMAccess === null) {
