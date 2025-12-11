@@ -200,7 +200,7 @@ serve(async (req) => {
       );
     }
 
-    if (action === 'cleanup_deleted_companies') {
+  if (action === 'cleanup_deleted_companies') {
       // HARD DELETE all inactive companies and their data
       const { data: inactiveCompanies } = await supabase
         .from('companies')
@@ -244,6 +244,79 @@ serve(async (req) => {
 
       return new Response(
         JSON.stringify({ success: true, deletedCompanies: deletedCount }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    if (action === 'cleanup_banned_users') {
+      // Delete all banned users from auth.users that don't have a valid company
+      // This cleans up orphaned banned users
+      let deletedCount = 0;
+      
+      // Get list of banned user IDs that we should clean up
+      // We'll look for profiles that belong to inactive companies or have no company
+      const { data: orphanedProfiles } = await supabase
+        .from('profiles')
+        .select('id, company_id, companies!inner(active)')
+        .eq('companies.active', false);
+
+      if (orphanedProfiles) {
+        for (const profile of orphanedProfiles) {
+          try {
+            console.log('Deleting orphaned user:', profile.id);
+            await supabase.auth.admin.deleteUser(profile.id);
+            deletedCount++;
+          } catch (e) {
+            console.error('Error deleting user:', profile.id, e);
+          }
+        }
+      }
+
+      return new Response(
+        JSON.stringify({ success: true, deletedUsers: deletedCount }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    if (action === 'delete_user_by_email') {
+      const { email } = params;
+      
+      console.log('Deleting user by email:', email);
+
+      // Find the user in auth.users
+      const { data: { users }, error: listError } = await supabase.auth.admin.listUsers();
+      
+      if (listError) {
+        return new Response(
+          JSON.stringify({ error: listError.message }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      const userToDelete = users?.find(u => u.email === email);
+      
+      if (!userToDelete) {
+        return new Response(
+          JSON.stringify({ error: 'Usuário não encontrado' }),
+          { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      // Delete from auth.users
+      const { error } = await supabase.auth.admin.deleteUser(userToDelete.id);
+
+      if (error) {
+        console.error('Error deleting user:', error);
+        return new Response(
+          JSON.stringify({ error: error.message }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      await logAction('delete_user', undefined, userToDelete.id, { email });
+
+      return new Response(
+        JSON.stringify({ success: true, deleted_user_id: userToDelete.id }),
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
