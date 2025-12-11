@@ -6,52 +6,47 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Verify developer JWT token
+// Verify developer token (simple base64 JSON, not JWT)
+// Token format: btoa(JSON.stringify({ developer_id, email, is_developer, exp }))
 async function verifyDeveloperToken(token: string, supabase: any): Promise<{ valid: boolean; developerId?: string; reason?: string }> {
   try {
     console.log('🔐 Verificando token...');
     console.log('   Token length:', token?.length);
     
-    const parts = token.split('.');
-    console.log('   Token parts:', parts.length);
-    
-    if (parts.length < 2) {
-      console.log('❌ Token mal formatado - menos de 2 partes');
+    // Token is simple base64(JSON) - decode directly (no signature)
+    let payload;
+    try {
+      payload = JSON.parse(atob(token));
+      console.log('   Payload parsed:', JSON.stringify(payload, null, 2));
+    } catch (parseErr) {
+      console.log('❌ Erro ao parsear token base64:', parseErr);
       return { valid: false, reason: 'Token mal formatado' };
     }
     
-    const [headerB64, payloadB64] = parts;
-    
-    let payload;
-    try {
-      payload = JSON.parse(atob(payloadB64));
-      console.log('   Payload parsed:', JSON.stringify(payload, null, 2));
-    } catch (parseErr) {
-      console.log('❌ Erro ao parsear payload:', parseErr);
-      return { valid: false, reason: 'Erro ao parsear payload' };
+    // Check is_developer flag (not "type")
+    if (!payload.is_developer) {
+      console.log('❌ Token não é de developer (is_developer =', payload.is_developer, ')');
+      return { valid: false, reason: 'Token não é de desenvolvedor' };
     }
     
-    if (payload.type !== 'developer') {
-      console.log('❌ Token type não é developer:', payload.type);
-      return { valid: false, reason: 'Tipo de token inválido' };
+    // Check developer_id (with underscore, not camelCase)
+    if (!payload.developer_id) {
+      console.log('❌ developer_id não encontrado no payload');
+      return { valid: false, reason: 'developer_id ausente' };
     }
     
-    if (!payload.developerId) {
-      console.log('❌ developerId não encontrado no payload');
-      return { valid: false, reason: 'developerId ausente' };
-    }
-    
+    // Check expiration
     if (payload.exp && Date.now() > payload.exp) {
-      console.log('❌ Token expirado. Exp:', payload.exp, 'Now:', Date.now());
+      console.log('❌ Token expirado. Exp:', new Date(payload.exp).toISOString(), 'Now:', new Date().toISOString());
       return { valid: false, reason: 'Token expirado' };
     }
     
-    // Verify developer exists
-    console.log('🔍 Buscando developer no banco:', payload.developerId);
+    // Verify developer exists in database
+    console.log('🔍 Buscando developer no banco:', payload.developer_id);
     const { data: developer, error: devError } = await supabase
       .from('developer_auth')
       .select('id, email')
-      .eq('id', payload.developerId)
+      .eq('id', payload.developer_id)
       .single();
     
     if (devError) {
@@ -65,7 +60,7 @@ async function verifyDeveloperToken(token: string, supabase: any): Promise<{ val
     }
     
     console.log('✅ Token válido! Developer:', developer.email);
-    return { valid: true, developerId: payload.developerId };
+    return { valid: true, developerId: payload.developer_id };
   } catch (err) {
     console.log('❌ Erro geral na verificação:', err);
     return { valid: false, reason: 'Erro geral: ' + String(err) };
