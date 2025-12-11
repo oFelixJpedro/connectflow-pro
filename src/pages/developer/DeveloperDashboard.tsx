@@ -26,6 +26,8 @@ import { toast } from 'sonner';
 import CompanyModal from './components/CompanyModal';
 import UserModal from './components/UserModal';
 import CreateCompanyModal from './components/CreateCompanyModal';
+import EditCompanyModal from './components/EditCompanyModal';
+import EditUserModal from './components/EditUserModal';
 import DeleteConfirmModal from './components/DeleteConfirmModal';
 import ResetPasswordModal from './components/ResetPasswordModal';
 import PermissionWaitingModal from './components/PermissionWaitingModal';
@@ -74,6 +76,8 @@ export default function DeveloperDashboard() {
   const [deleteCompany, setDeleteCompany] = useState<Company | null>(null);
   const [deleteUser, setDeleteUser] = useState<{ user: User; company: Company } | null>(null);
   const [resetPasswordUser, setResetPasswordUser] = useState<User | null>(null);
+  const [editCompany, setEditCompany] = useState<Company | null>(null);
+  const [editUser, setEditUser] = useState<{ user: User; company: Company } | null>(null);
   const [permissionRequest, setPermissionRequest] = useState<{
     requestId: string;
     type: 'edit_company' | 'edit_user' | 'access_user' | 'delete_company' | 'delete_user';
@@ -640,7 +644,7 @@ export default function DeveloperDashboard() {
           onClose={() => setSelectedCompany(null)}
           onRefresh={loadCompanies}
           onEdit={() => {
-            // TODO: Implement edit company
+            setEditCompany(selectedCompany);
             setSelectedCompany(null);
           }}
           onDelete={() => {
@@ -677,7 +681,7 @@ export default function DeveloperDashboard() {
             setSelectedUserCompany(null);
           }}
           onEdit={() => {
-            // TODO: Implement edit user
+            setEditUser({ user: selectedUser, company: selectedUserCompany });
             setSelectedUser(null);
             setSelectedUserCompany(null);
           }}
@@ -695,6 +699,36 @@ export default function DeveloperDashboard() {
           onSuccess={() => {
             setShowCreateCompany(false);
             loadCompanies();
+          }}
+        />
+      )}
+
+      {/* Edit Company Modal */}
+      {editCompany && (
+        <EditCompanyModal
+          company={editCompany}
+          onClose={() => setEditCompany(null)}
+          onSuccess={() => {
+            setEditCompany(null);
+            loadCompanies();
+          }}
+        />
+      )}
+
+      {/* Edit User Modal */}
+      {editUser && (
+        <EditUserModal
+          user={editUser.user}
+          company={editUser.company}
+          onClose={() => setEditUser(null)}
+          onSuccess={() => {
+            setEditUser(null);
+            loadCompanies();
+            setCompanyUsers(prev => {
+              const newState = { ...prev };
+              delete newState[editUser.company.id];
+              return newState;
+            });
           }}
         />
       )}
