@@ -104,10 +104,14 @@ export function KanbanCardDrawer({ card, columns, teamMembers, open, onOpenChang
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!card || !e.target.files?.length) return;
     const file = e.target.files[0];
+    console.log('Uploading file:', { name: file.name, type: file.type, size: file.size });
     const attachment = await onUploadAttachment(card.id, file);
+    console.log('Upload result:', attachment);
     if (attachment) {
       setAttachments([attachment, ...attachments]);
     }
+    // Reset input
+    e.target.value = '';
   };
 
   const getInitials = (name: string) => name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
@@ -261,13 +265,17 @@ export function KanbanCardDrawer({ card, columns, teamMembers, open, onOpenChang
                   <button 
                     onClick={async () => {
                       try {
+                        console.log('Download clicked, file_url:', a.file_url);
                         // Extract the file path from the URL
                         const urlParts = a.file_url.split('/kanban-attachments/');
+                        console.log('URL parts:', urlParts);
                         const filePath = urlParts[1] ? decodeURIComponent(urlParts[1]) : null;
+                        console.log('File path:', filePath);
                         if (filePath) {
                           const { data, error } = await supabase.storage
                             .from('kanban-attachments')
                             .createSignedUrl(filePath, 3600);
+                          console.log('Signed URL result:', { data, error });
                           if (error) throw error;
                           if (data?.signedUrl) {
                             window.open(data.signedUrl, '_blank');

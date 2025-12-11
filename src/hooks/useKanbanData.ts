@@ -731,12 +731,17 @@ export function useKanbanData(connectionId: string | null) {
     const fileName = `${Date.now()}_${file.name}`;
     const filePath = `${company?.id}/${cardId}/${fileName}`;
 
-    const { error: uploadError } = await supabase.storage
+    console.log('Storage upload attempt:', { filePath, fileType: file.type, fileSize: file.size });
+
+    const { error: uploadError, data: uploadData } = await supabase.storage
       .from('kanban-attachments')
       .upload(filePath, file);
 
+    console.log('Storage upload result:', { uploadError, uploadData });
+
     if (uploadError) {
-      toast.error('Erro ao fazer upload do arquivo');
+      console.error('Storage upload error details:', uploadError);
+      toast.error('Erro ao fazer upload do arquivo: ' + uploadError.message);
       return null;
     }
 
