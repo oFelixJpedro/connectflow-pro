@@ -176,6 +176,96 @@ serve(async (req) => {
       );
     }
 
+    if (action === 'get_company_details') {
+      console.log('\n┌─────────────────────────────────────────────────────────────────┐');
+      console.log('│ 5️⃣  BUSCANDO DETALHES DA EMPRESA                               │');
+      console.log('└─────────────────────────────────────────────────────────────────┘');
+      
+      if (!company_id) {
+        return new Response(
+          JSON.stringify({ error: 'company_id é obrigatório' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      // Get counts in parallel
+      const [
+        { count: usersCount },
+        { count: connectionsCount },
+        { count: conversationsCount }
+      ] = await Promise.all([
+        supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('company_id', company_id),
+        supabase.from('whatsapp_connections').select('*', { count: 'exact', head: true }).eq('company_id', company_id),
+        supabase.from('conversations').select('*', { count: 'exact', head: true }).eq('company_id', company_id)
+      ]);
+
+      // Get departments count through connections
+      const { data: connections } = await supabase
+        .from('whatsapp_connections')
+        .select('id')
+        .eq('company_id', company_id);
+
+      let departmentsCount = 0;
+      if (connections && connections.length > 0) {
+        const connectionIds = connections.map((c: any) => c.id);
+        const { count } = await supabase
+          .from('departments')
+          .select('*', { count: 'exact', head: true })
+          .in('whatsapp_connection_id', connectionIds);
+        departmentsCount = count || 0;
+      }
+
+      console.log('✅ Detalhes obtidos:', { usersCount, connectionsCount, departmentsCount, conversationsCount });
+
+      return new Response(
+        JSON.stringify({
+          users_count: usersCount || 0,
+          connections_count: connectionsCount || 0,
+          departments_count: departmentsCount,
+          conversations_count: conversationsCount || 0
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    if (action === 'get_user_details') {
+      console.log('\n┌─────────────────────────────────────────────────────────────────┐');
+      console.log('│ 5️⃣  BUSCANDO DETALHES DO USUÁRIO                               │');
+      console.log('└─────────────────────────────────────────────────────────────────┘');
+      
+      const user_id = body.user_id;
+      if (!user_id) {
+        return new Response(
+          JSON.stringify({ error: 'user_id é obrigatório' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      // Get user departments
+      const { data: departmentUsers } = await supabase
+        .from('department_users')
+        .select('department_id')
+        .eq('user_id', user_id);
+
+      let departments: string[] = [];
+      if (departmentUsers && departmentUsers.length > 0) {
+        const deptIds = departmentUsers.map((du: any) => du.department_id);
+        const { data: depts } = await supabase
+          .from('departments')
+          .select('name')
+          .in('id', deptIds);
+        
+        departments = depts?.map((d: any) => d.name) || [];
+      }
+
+      console.log('✅ Departamentos do usuário:', departments);
+
+      return new Response(
+        JSON.stringify({ departments }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     if (action === 'list_users') {
       console.log('\n┌─────────────────────────────────────────────────────────────────┐');
       console.log('│ 5️⃣  BUSCANDO USUÁRIOS DA EMPRESA                               │');

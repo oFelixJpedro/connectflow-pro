@@ -22,6 +22,7 @@ import {
   Folder
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
+import { getDeveloperToken } from '@/contexts/DeveloperAuthContext';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -52,9 +53,22 @@ interface UserModalProps {
   company: Company;
   onClose: () => void;
   onRefresh: () => void;
+  onAccessAsUser?: () => void;
+  onResetPassword?: () => void;
+  onEdit?: () => void;
+  onDelete?: () => void;
 }
 
-export default function UserModal({ user, company, onClose, onRefresh }: UserModalProps) {
+export default function UserModal({ 
+  user, 
+  company, 
+  onClose, 
+  onRefresh,
+  onAccessAsUser,
+  onResetPassword,
+  onEdit,
+  onDelete 
+}: UserModalProps) {
   const [details, setDetails] = useState<UserDetails | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -66,29 +80,25 @@ export default function UserModal({ user, company, onClose, onRefresh }: UserMod
     try {
       setIsLoading(true);
 
-      // Get user departments
-      const { data: departmentUsers } = await supabase
-        .from('department_users')
-        .select('department_id')
-        .eq('user_id', user.id);
+      const token = getDeveloperToken();
+      const { data, error } = await supabase.functions.invoke('developer-data', {
+        body: { action: 'get_user_details', user_id: user.id },
+        headers: { Authorization: `Bearer ${token}` }
+      });
 
-      let departments: string[] = [];
-      if (departmentUsers && departmentUsers.length > 0) {
-        const deptIds = departmentUsers.map(du => du.department_id);
-        const { data: depts } = await supabase
-          .from('departments')
-          .select('name')
-          .in('id', deptIds);
-        
-        departments = depts?.map(d => d.name) || [];
-      }
+      if (error) throw error;
 
       setDetails({
         ...user,
-        departments
+        departments: data.departments || []
       });
     } catch (err) {
       console.error('Error loading user details:', err);
+      // Still show user info even if departments fail
+      setDetails({
+        ...user,
+        departments: []
+      });
     } finally {
       setIsLoading(false);
     }
@@ -202,19 +212,19 @@ export default function UserModal({ user, company, onClose, onRefresh }: UserMod
 
             {/* Actions */}
             <div className="flex flex-wrap items-center justify-end gap-2">
-              <Button variant="outline" size="sm">
+              <Button variant="outline" size="sm" onClick={onAccessAsUser}>
                 <UserCog className="h-4 w-4 mr-1" />
                 Acessar
               </Button>
-              <Button variant="outline" size="sm">
+              <Button variant="outline" size="sm" onClick={onResetPassword}>
                 <Key className="h-4 w-4 mr-1" />
                 Resetar Senha
               </Button>
-              <Button variant="outline" size="sm">
+              <Button variant="outline" size="sm" onClick={onEdit}>
                 <Pencil className="h-4 w-4 mr-1" />
                 Editar
               </Button>
-              <Button variant="destructive" size="sm">
+              <Button variant="destructive" size="sm" onClick={onDelete}>
                 <Trash2 className="h-4 w-4 mr-1" />
                 Excluir
               </Button>
