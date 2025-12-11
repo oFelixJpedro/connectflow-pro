@@ -362,6 +362,7 @@ serve(async (req) => {
       }
 
       // Check if expired
+      let currentStatus = request.status;
       if (request.expires_at && new Date(request.expires_at) < new Date()) {
         // Update status to expired if still pending
         if (request.status === 'pending') {
@@ -369,14 +370,15 @@ serve(async (req) => {
             .from('developer_permission_requests')
             .update({ status: 'expired' })
             .eq('id', request_id);
-          request.status = 'expired';
+          currentStatus = 'expired';
         }
       }
 
-      console.log('✅ Status da permissão:', request.status);
+      console.log('✅ Status da permissão:', currentStatus);
 
+      // Return status directly for easier access
       return new Response(
-        JSON.stringify({ permission: request }),
+        JSON.stringify({ status: currentStatus, permission: request }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
