@@ -99,16 +99,17 @@ export function useInternalChat() {
     if (!company?.id || !profile?.id) return;
     setIsLoading(true);
 
-    // Storage key includes user ID to prevent cross-user data sharing
-    const storageKey = `internalChatLastSeen_${profile.id}`;
-
     try {
-      // Get last seen timestamps from localStorage (user-specific)
-      let lastSeenByRoom: Record<string, string> = {};
-      try {
-        const stored = localStorage.getItem(storageKey);
-        lastSeenByRoom = stored ? JSON.parse(stored) : {};
-      } catch { }
+      // Get last seen timestamps from database
+      const { data: readStates } = await supabase
+        .from('internal_chat_read_states')
+        .select('room_id, last_seen_at')
+        .eq('user_id', profile.id);
+
+      const lastSeenByRoom: Record<string, string> = {};
+      (readStates || []).forEach(rs => {
+        lastSeenByRoom[rs.room_id] = rs.last_seen_at;
+      });
 
       // Get all rooms for the company
       const { data: roomsData, error: roomsError } = await supabase
@@ -524,16 +525,23 @@ export function useInternalChat() {
   }, [company?.id, profile?.id, ensureGeneralRoom, loadRooms]);
 
   // Mark room as read when room changes
-  const markRoomAsRead = useCallback((roomId: string) => {
+  const markRoomAsRead = useCallback(async (roomId: string) => {
     if (!profile?.id) return;
     
     try {
-      // Storage key includes user ID to prevent cross-user data sharing
-      const storageKey = `internalChatLastSeen_${profile.id}`;
-      const stored = localStorage.getItem(storageKey);
-      const lastSeenByRoom = stored ? JSON.parse(stored) : {};
-      lastSeenByRoom[roomId] = new Date().toISOString();
-      localStorage.setItem(storageKey, JSON.stringify(lastSeenByRoom));
+      // Upsert read state in database
+      const { error } = await supabase
+        .from('internal_chat_read_states')
+        .upsert({
+          user_id: profile.id,
+          room_id: roomId,
+          last_seen_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }, {
+          onConflict: 'user_id,room_id'
+        });
+
+      if (error) throw error;
       
       // Update local room state to show 0 unread
       setRooms(prev => prev.map(r => 

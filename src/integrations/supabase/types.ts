@@ -462,6 +462,48 @@ export type Database = {
           },
         ]
       }
+      internal_chat_read_states: {
+        Row: {
+          created_at: string
+          id: string
+          last_seen_at: string
+          room_id: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          last_seen_at?: string
+          room_id: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          last_seen_at?: string
+          room_id?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "internal_chat_read_states_room_id_fkey"
+            columns: ["room_id"]
+            isOneToOne: false
+            referencedRelation: "internal_chat_rooms"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "internal_chat_read_states_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       internal_chat_rooms: {
         Row: {
           company_id: string
