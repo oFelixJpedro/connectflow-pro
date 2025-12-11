@@ -447,10 +447,19 @@ export function useInternalChat() {
     if (!selectedRoom || !profile?.id || !company?.id) return false;
 
     try {
+      // Sanitize filename - remove accents and special characters
+      const sanitizeFileName = (name: string) => {
+        return name
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '') // Remove accents
+          .replace(/[^a-zA-Z0-9._-]/g, '_'); // Replace other special chars with underscore
+      };
+
       // Generate unique file path
       const fileExt = file.name.split('.').pop() || 'bin';
       const timestamp = Date.now();
-      const filePath = `internal-chat/${company.id}/${selectedRoom.id}/${timestamp}_${file.name}`;
+      const sanitizedName = sanitizeFileName(file.name);
+      const filePath = `internal-chat/${company.id}/${selectedRoom.id}/${timestamp}_${sanitizedName}`;
 
       console.log('[InternalChat] Uploading media:', filePath);
 

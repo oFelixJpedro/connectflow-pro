@@ -60,74 +60,72 @@ export default function CRM() {
     deleteAttachment,
   } = useKanbanData(selectedConnectionId);
 
-  // Check CRM access
+  // Load connections with CRM access check
   useEffect(() => {
-    const checkAccess = async () => {
-      if (!profile?.id || !userRole) return;
-
-      // Owner and admin always have access
-      if (userRole.role === 'owner' || userRole.role === 'admin') {
-        setHasCRMAccess(true);
-        return;
-      }
-
-      // Check crm_user_access table
-      const { data } = await supabase
-        .from('crm_user_access')
-        .select('enabled')
-        .eq('user_id', profile.id)
-        .maybeSingle();
-
-      setHasCRMAccess(data?.enabled ?? false);
-    };
-
-    checkAccess();
-  }, [profile?.id, userRole]);
-
-  // Load connections
-  useEffect(() => {
-    const loadConnections = async () => {
-      if (!company?.id) return;
+    const loadConnectionsWithCRMAccess = async () => {
+      if (!company?.id || !profile?.id || !userRole) return;
 
       setLoadingConnections(true);
 
       try {
-        // Get user's allowed connections if not admin/owner
-        let allowedConnectionIds: string[] | null = null;
+        // Owner and admin always have access to all connections
+        if (userRole.role === 'owner' || userRole.role === 'admin') {
+          const { data, error } = await supabase
+            .from('whatsapp_connections')
+            .select('id, name, phone_number, status')
+            .eq('company_id', company.id)
+            .eq('active', true)
+            .eq('status', 'connected');
 
-        if (userRole && userRole.role !== 'owner' && userRole.role !== 'admin') {
-          const { data: connectionUsers } = await supabase
+          if (error) throw error;
+
+          setConnections(data || []);
+          setHasCRMAccess((data?.length || 0) > 0);
+
+          // Auto-select first connection
+          if (data?.length && !selectedConnectionId) {
+            const savedId = localStorage.getItem('crm_selectedConnectionId');
+            const validSaved = savedId && data.find(c => c.id === savedId);
+            setSelectedConnectionId(validSaved ? savedId : data[0].id);
+          }
+        } else {
+          // For other roles, get only connections where user has crm_access = true
+          const { data: connectionUsers, error: cuError } = await supabase
             .from('connection_users')
             .select('connection_id')
-            .eq('user_id', profile?.id);
+            .eq('user_id', profile.id)
+            .eq('crm_access', true);
 
-          if (connectionUsers?.length) {
-            allowedConnectionIds = connectionUsers.map(cu => cu.connection_id);
+          if (cuError) throw cuError;
+
+          if (!connectionUsers?.length) {
+            setConnections([]);
+            setHasCRMAccess(false);
+            setLoadingConnections(false);
+            return;
           }
-        }
 
-        let query = supabase
-          .from('whatsapp_connections')
-          .select('id, name, phone_number, status')
-          .eq('company_id', company.id)
-          .eq('active', true)
-          .eq('status', 'connected');
+          const allowedConnectionIds = connectionUsers.map(cu => cu.connection_id);
 
-        if (allowedConnectionIds) {
-          query = query.in('id', allowedConnectionIds);
-        }
+          const { data, error } = await supabase
+            .from('whatsapp_connections')
+            .select('id, name, phone_number, status')
+            .eq('company_id', company.id)
+            .eq('active', true)
+            .eq('status', 'connected')
+            .in('id', allowedConnectionIds);
 
-        const { data, error } = await query;
+          if (error) throw error;
 
-        if (error) throw error;
+          setConnections(data || []);
+          setHasCRMAccess((data?.length || 0) > 0);
 
-        setConnections(data || []);
-
-        // Auto-select first connection
-        if (data?.length && !selectedConnectionId) {
-          const savedId = localStorage.getItem('crm_selectedConnectionId');
-          const validSaved = savedId && data.find(c => c.id === savedId);
-          setSelectedConnectionId(validSaved ? savedId : data[0].id);
+          // Auto-select first connection
+          if (data?.length && !selectedConnectionId) {
+            const savedId = localStorage.getItem('crm_selectedConnectionId');
+            const validSaved = savedId && data.find(c => c.id === savedId);
+            setSelectedConnectionId(validSaved ? savedId : data[0].id);
+          }
         }
       } catch (error) {
         console.error('Error loading connections:', error);
@@ -137,7 +135,7 @@ export default function CRM() {
       }
     };
 
-    loadConnections();
+    loadConnectionsWithCRMAccess();
   }, [company?.id, profile?.id, userRole]);
 
   // Persist selected connection
@@ -240,6 +238,12 @@ export default function CRM() {
           <ConnectionSelector
             selectedConnectionId={selectedConnectionId}
             onConnectionChange={setSelectedConnectionId}
+            overrideConnections={connections.map(c => ({
+              id: c.id,
+              name: c.name,
+              phoneNumber: c.phone_number,
+              status: c.status as 'connected' | 'disconnected' | 'qr_ready' | 'connecting' | 'error',
+            }))}
           />
         </div>
         <Button onClick={() => setAddCardOpen(true)}>

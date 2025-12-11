@@ -14,6 +14,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Phone, Mail, MessageSquare, Plus, Trash2, Upload, Paperclip, Send, History, X } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { toast } from 'sonner';
+import { supabase } from '@/integrations/supabase/client';
 import type { KanbanCard, KanbanColumn, KanbanCardComment, KanbanCardHistory, KanbanCardAttachment } from '@/hooks/useKanbanData';
 
 interface KanbanCardDrawerProps {
@@ -102,10 +104,14 @@ export function KanbanCardDrawer({ card, columns, teamMembers, open, onOpenChang
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!card || !e.target.files?.length) return;
     const file = e.target.files[0];
+    console.log('Uploading file:', { name: file.name, type: file.type, size: file.size });
     const attachment = await onUploadAttachment(card.id, file);
+    console.log('Upload result:', attachment);
     if (attachment) {
       setAttachments([attachment, ...attachments]);
     }
+    // Reset input
+    e.target.value = '';
   };
 
   const getInitials = (name: string) => name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
@@ -247,14 +253,61 @@ export function KanbanCardDrawer({ card, columns, teamMembers, open, onOpenChang
               <label className="flex items-center gap-2 cursor-pointer border rounded p-2 hover:bg-muted">
                 <Upload className="w-4 h-4" />
                 <span className="text-sm">Fazer upload</span>
-                <input type="file" className="hidden" onChange={handleFileUpload} />
+                <input 
+                  type="file" 
+                  className="hidden" 
+                  onChange={handleFileUpload}
+                />
               </label>
-              {attachments.map(a => (
-                <div key={a.id} className="flex items-center gap-2 p-2 border rounded">
-                  <Paperclip className="w-4 h-4" />
-                  <a href={a.file_url} target="_blank" rel="noopener noreferrer" className="flex-1 text-sm truncate hover:underline">{a.file_name}</a>
-                </div>
-              ))}
+              {attachments.map(a => {
+                const getFilePath = () => {
+                  const urlParts = a.file_url.split('/kanban-attachments/');
+                  return urlParts[1] ? decodeURIComponent(urlParts[1]) : null;
+                };
+                return (
+                  <div key={a.id} className="flex items-center gap-2 p-2 border rounded">
+                    <Paperclip className="w-4 h-4 flex-shrink-0" />
+                    <button 
+                      onClick={async () => {
+                        try {
+                          const filePath = getFilePath();
+                          if (filePath) {
+                            const { data, error } = await supabase.storage
+                              .from('kanban-attachments')
+                              .createSignedUrl(filePath, 3600);
+                            if (error) throw error;
+                            if (data?.signedUrl) {
+                              window.open(data.signedUrl, '_blank');
+                            }
+                          }
+                        } catch (error) {
+                          console.error('Error downloading file:', error);
+                          toast.error('Erro ao baixar arquivo');
+                        }
+                      }}
+                      className="flex-1 text-sm truncate hover:underline text-left"
+                    >
+                      {a.file_name}
+                    </button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6 flex-shrink-0 text-destructive hover:text-destructive"
+                      onClick={async () => {
+                        const filePath = getFilePath();
+                        if (filePath && card) {
+                          const success = await onDeleteAttachment(card.id, a.id, filePath);
+                          if (success) {
+                            setAttachments(attachments.filter(att => att.id !== a.id));
+                          }
+                        }
+                      }}
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </Button>
+                  </div>
+                );
+              })}
             </TabsContent>
 
             <TabsContent value="history">
