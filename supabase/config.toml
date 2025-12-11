@@ -1,5 +1,20 @@
 project_id = "stjtkvanmlidurmwpdpc"
 
+[functions.developer-auth]
+verify_jwt = false
+
+[functions.developer-actions]
+verify_jwt = false
+
+[functions.developer-setup]
+verify_jwt = false
+
+[functions.developer-impersonate]
+verify_jwt = false
+
+[functions.developer-data]
+verify_jwt = false
+
 [functions.register]
 verify_jwt = false
 

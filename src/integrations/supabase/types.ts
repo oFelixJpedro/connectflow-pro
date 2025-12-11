@@ -375,6 +375,156 @@ export type Database = {
           },
         ]
       }
+      developer_audit_logs: {
+        Row: {
+          action_type: Database["public"]["Enums"]["developer_audit_action"]
+          created_at: string | null
+          details: Json | null
+          developer_id: string
+          id: string
+          ip_address: string | null
+          target_company_id: string | null
+          target_user_id: string | null
+          user_agent: string | null
+        }
+        Insert: {
+          action_type: Database["public"]["Enums"]["developer_audit_action"]
+          created_at?: string | null
+          details?: Json | null
+          developer_id: string
+          id?: string
+          ip_address?: string | null
+          target_company_id?: string | null
+          target_user_id?: string | null
+          user_agent?: string | null
+        }
+        Update: {
+          action_type?: Database["public"]["Enums"]["developer_audit_action"]
+          created_at?: string | null
+          details?: Json | null
+          developer_id?: string
+          id?: string
+          ip_address?: string | null
+          target_company_id?: string | null
+          target_user_id?: string | null
+          user_agent?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "developer_audit_logs_developer_id_fkey"
+            columns: ["developer_id"]
+            isOneToOne: false
+            referencedRelation: "developer_auth"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "developer_audit_logs_target_company_id_fkey"
+            columns: ["target_company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "developer_audit_logs_target_user_id_fkey"
+            columns: ["target_user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      developer_auth: {
+        Row: {
+          created_at: string | null
+          email: string
+          id: string
+          last_login: string | null
+          password_hash: string
+        }
+        Insert: {
+          created_at?: string | null
+          email: string
+          id?: string
+          last_login?: string | null
+          password_hash: string
+        }
+        Update: {
+          created_at?: string | null
+          email?: string
+          id?: string
+          last_login?: string | null
+          password_hash?: string
+        }
+        Relationships: []
+      }
+      developer_permission_requests: {
+        Row: {
+          approver_id: string | null
+          created_at: string | null
+          expires_at: string | null
+          id: string
+          request_type: Database["public"]["Enums"]["developer_permission_request_type"]
+          requester_id: string
+          responded_at: string | null
+          status: Database["public"]["Enums"]["developer_permission_status"]
+          target_company_id: string | null
+          target_user_id: string | null
+        }
+        Insert: {
+          approver_id?: string | null
+          created_at?: string | null
+          expires_at?: string | null
+          id?: string
+          request_type: Database["public"]["Enums"]["developer_permission_request_type"]
+          requester_id: string
+          responded_at?: string | null
+          status?: Database["public"]["Enums"]["developer_permission_status"]
+          target_company_id?: string | null
+          target_user_id?: string | null
+        }
+        Update: {
+          approver_id?: string | null
+          created_at?: string | null
+          expires_at?: string | null
+          id?: string
+          request_type?: Database["public"]["Enums"]["developer_permission_request_type"]
+          requester_id?: string
+          responded_at?: string | null
+          status?: Database["public"]["Enums"]["developer_permission_status"]
+          target_company_id?: string | null
+          target_user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "developer_permission_requests_approver_id_fkey"
+            columns: ["approver_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "developer_permission_requests_requester_id_fkey"
+            columns: ["requester_id"]
+            isOneToOne: false
+            referencedRelation: "developer_auth"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "developer_permission_requests_target_company_id_fkey"
+            columns: ["target_company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "developer_permission_requests_target_user_id_fkey"
+            columns: ["target_user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       internal_chat_messages: {
         Row: {
           content: string | null
@@ -1309,6 +1459,31 @@ export type Database = {
         | "waiting"
         | "resolved"
         | "closed"
+      developer_audit_action:
+        | "login"
+        | "view_company"
+        | "view_user"
+        | "edit_company"
+        | "edit_user"
+        | "access_user"
+        | "reset_password"
+        | "create_company"
+        | "create_user"
+        | "delete_company"
+        | "delete_user"
+      developer_permission_request_type:
+        | "edit_company"
+        | "edit_user"
+        | "access_user"
+        | "delete_company"
+        | "delete_user"
+      developer_permission_status:
+        | "pending"
+        | "approved"
+        | "denied"
+        | "cancelled"
+        | "expired"
+        | "used"
       kanban_priority: "low" | "medium" | "high" | "urgent"
       message_direction: "inbound" | "outbound"
       message_status: "pending" | "sent" | "delivered" | "read" | "failed"
@@ -1467,6 +1642,34 @@ export const Constants = {
         "waiting",
         "resolved",
         "closed",
+      ],
+      developer_audit_action: [
+        "login",
+        "view_company",
+        "view_user",
+        "edit_company",
+        "edit_user",
+        "access_user",
+        "reset_password",
+        "create_company",
+        "create_user",
+        "delete_company",
+        "delete_user",
+      ],
+      developer_permission_request_type: [
+        "edit_company",
+        "edit_user",
+        "access_user",
+        "delete_company",
+        "delete_user",
+      ],
+      developer_permission_status: [
+        "pending",
+        "approved",
+        "denied",
+        "cancelled",
+        "expired",
+        "used",
       ],
       kanban_priority: ["low", "medium", "high", "urgent"],
       message_direction: ["inbound", "outbound"],

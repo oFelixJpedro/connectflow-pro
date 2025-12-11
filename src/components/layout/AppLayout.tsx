@@ -1,6 +1,7 @@
 import { Outlet } from 'react-router-dom';
 import { AppSidebar } from './AppSidebar';
 import { AppHeader } from './AppHeader';
+import PermissionRequestListener from '@/components/developer/PermissionRequestListener';
 
 interface AppLayoutProps {
   showHeader?: boolean;
@@ -17,6 +18,8 @@ export function AppLayout({ showHeader = true, headerTitle }: AppLayoutProps) {
           <Outlet />
         </main>
       </div>
+      {/* Global listener for developer permission requests */}
+      <PermissionRequestListener />
     </div>
   );
 }
