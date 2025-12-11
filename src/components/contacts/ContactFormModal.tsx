@@ -12,16 +12,32 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
-import { X, Loader2 } from 'lucide-react';
+import { Separator } from '@/components/ui/separator';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { X, Loader2, LayoutGrid, Trash2 } from 'lucide-react';
 import { Contact, ContactFormData } from '@/hooks/useContactsData';
+import { useContactCRM } from '@/hooks/useContactCRM';
 
 interface ContactFormModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   contact?: Contact | null;
   tags: { id: string; name: string; color: string }[];
-  onSave: (data: ContactFormData) => Promise<boolean>;
+  onSave: (data: ContactFormData) => Promise<boolean | string>; // string = new contact ID
 }
+
+const PRIORITY_OPTIONS = [
+  { value: 'low', label: 'Baixa', color: 'bg-gray-100 text-gray-700' },
+  { value: 'medium', label: 'Média', color: 'bg-blue-100 text-blue-700' },
+  { value: 'high', label: 'Alta', color: 'bg-orange-100 text-orange-700' },
+  { value: 'urgent', label: 'Urgente', color: 'bg-red-100 text-red-700' },
+];
 
 export function ContactFormModal({
   open,
@@ -39,6 +55,22 @@ export function ContactFormModal({
     notes: ''
   });
 
+  // CRM state
+  const {
+    connections,
+    boards,
+    currentPosition,
+    loading: crmLoading,
+    setCardPosition,
+    removeFromCRM
+  } = useContactCRM(contact?.id || null);
+
+  const [selectedConnection, setSelectedConnection] = useState<string>('');
+  const [selectedColumn, setSelectedColumn] = useState<string>('');
+  const [selectedPriority, setSelectedPriority] = useState<'low' | 'medium' | 'high' | 'urgent'>('medium');
+  const [crmEnabled, setCrmEnabled] = useState(false);
+
+  // Initialize form data when contact changes
   useEffect(() => {
     if (contact) {
       setFormData({
@@ -59,6 +91,37 @@ export function ContactFormModal({
     }
   }, [contact, open]);
 
+  // Initialize CRM selection when position loads
+  useEffect(() => {
+    if (currentPosition) {
+      setSelectedConnection(currentPosition.connection_id);
+      setSelectedColumn(currentPosition.column_id);
+      setSelectedPriority(currentPosition.priority);
+      setCrmEnabled(true);
+    } else {
+      // Set defaults for new card
+      if (connections.length > 0 && !selectedConnection) {
+        const firstConn = connections[0].id;
+        setSelectedConnection(firstConn);
+        const board = boards.get(firstConn);
+        if (board && board.columns.length > 0) {
+          setSelectedColumn(board.columns[0].id);
+        }
+      }
+      setCrmEnabled(false);
+    }
+  }, [currentPosition, connections, boards]);
+
+  // Update columns when connection changes
+  useEffect(() => {
+    if (selectedConnection && !currentPosition) {
+      const board = boards.get(selectedConnection);
+      if (board && board.columns.length > 0) {
+        setSelectedColumn(board.columns[0].id);
+      }
+    }
+  }, [selectedConnection, boards]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -67,7 +130,17 @@ export function ContactFormModal({
     }
 
     setLoading(true);
-    const success = await onSave(formData);
+    const result = await onSave(formData);
+    const success = result === true || typeof result === 'string';
+    const contactId = contact?.id || (typeof result === 'string' ? result : null);
+    
+    // Handle CRM after save
+    if (success && contactId && crmEnabled && selectedConnection && selectedColumn) {
+      await setCardPosition(contactId, selectedConnection, selectedColumn, selectedPriority);
+    } else if (success && contactId && !crmEnabled && currentPosition) {
+      await removeFromCRM(contactId);
+    }
+
     setLoading(false);
 
     if (success) {
@@ -92,9 +165,12 @@ export function ContactFormModal({
     return `+${digits.slice(0, 2)} (${digits.slice(2, 4)}) ${digits.slice(4, 9)}-${digits.slice(9, 13)}`;
   };
 
+  const selectedBoard = boards.get(selectedConnection);
+  const availableColumns = selectedBoard?.columns || [];
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[500px]">
+      <DialogContent className="sm:max-w-[550px] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>
             {contact ? 'Editar Contato' : 'Novo Contato'}
@@ -174,7 +250,130 @@ export function ContactFormModal({
             />
           </div>
 
-          <DialogFooter>
+          {/* CRM Section */}
+          {connections.length > 0 && (
+            <>
+              <Separator className="my-4" />
+              
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <LayoutGrid className="w-4 h-4 text-muted-foreground" />
+                    <Label className="text-base font-medium">Posição no CRM</Label>
+                  </div>
+                  {crmLoading ? (
+                    <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+                  ) : currentPosition ? (
+                    <Badge variant="secondary" className="text-xs">
+                      {currentPosition.column_name}
+                    </Badge>
+                  ) : null}
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="crm-enabled"
+                    checked={crmEnabled}
+                    onChange={(e) => setCrmEnabled(e.target.checked)}
+                    className="h-4 w-4 rounded border-input"
+                  />
+                  <Label htmlFor="crm-enabled" className="text-sm font-normal cursor-pointer">
+                    {currentPosition ? 'Manter no Kanban do CRM' : 'Adicionar ao Kanban do CRM'}
+                  </Label>
+                </div>
+
+                {crmEnabled && (
+                  <div className="space-y-3 pl-6 border-l-2 border-muted">
+                    <div className="space-y-2">
+                      <Label htmlFor="connection" className="text-sm">Conexão</Label>
+                      <Select
+                        value={selectedConnection}
+                        onValueChange={setSelectedConnection}
+                      >
+                        <SelectTrigger id="connection">
+                          <SelectValue placeholder="Selecione a conexão" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {connections.map((conn) => (
+                            <SelectItem key={conn.id} value={conn.id}>
+                              {conn.name} ({conn.phone_number})
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {availableColumns.length > 0 && (
+                      <div className="space-y-2">
+                        <Label htmlFor="column" className="text-sm">Coluna</Label>
+                        <Select
+                          value={selectedColumn}
+                          onValueChange={setSelectedColumn}
+                        >
+                          <SelectTrigger id="column">
+                            <SelectValue placeholder="Selecione a coluna" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {availableColumns.map((col) => (
+                              <SelectItem key={col.id} value={col.id}>
+                                <div className="flex items-center gap-2">
+                                  <div 
+                                    className="w-3 h-3 rounded-full" 
+                                    style={{ backgroundColor: col.color }}
+                                  />
+                                  {col.name}
+                                </div>
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
+
+                    <div className="space-y-2">
+                      <Label htmlFor="priority" className="text-sm">Prioridade</Label>
+                      <Select
+                        value={selectedPriority}
+                        onValueChange={(v) => setSelectedPriority(v as typeof selectedPriority)}
+                      >
+                        <SelectTrigger id="priority">
+                          <SelectValue placeholder="Selecione a prioridade" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {PRIORITY_OPTIONS.map((opt) => (
+                            <SelectItem key={opt.value} value={opt.value}>
+                              <div className="flex items-center gap-2">
+                                <Badge variant="secondary" className={opt.color}>
+                                  {opt.label}
+                                </Badge>
+                              </div>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {availableColumns.length === 0 && selectedConnection && (
+                      <p className="text-sm text-muted-foreground">
+                        Nenhum quadro CRM encontrado para esta conexão. 
+                        Um novo quadro será criado automaticamente.
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {currentPosition && !crmEnabled && (
+                  <p className="text-sm text-destructive flex items-center gap-1">
+                    <Trash2 className="w-3 h-3" />
+                    O card será removido do CRM ao salvar
+                  </p>
+                )}
+              </div>
+            </>
+          )}
+
+          <DialogFooter className="pt-4">
             <Button
               type="button"
               variant="outline"

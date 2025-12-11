@@ -294,7 +294,7 @@ export function ContactPanel({ conversation, onClose, onContactUpdated, onScroll
     }
   };
 
-  const handleSaveContact = async (data: ContactFormData): Promise<boolean> => {
+  const handleSaveContact = async (data: ContactFormData): Promise<boolean | string> => {
     if (!contact?.id) return false;
 
     try {

@@ -180,12 +180,12 @@ export default function Contacts() {
     setConversationModalOpen(true);
   };
 
-  const handleSaveContact = async (data: Parameters<typeof createContact>[0]) => {
+  const handleSaveContact = async (data: Parameters<typeof createContact>[0]): Promise<boolean | string> => {
     if (editingContact) {
       return await updateContact(editingContact.id, data);
     } else {
       const result = await createContact(data);
-      return result !== null;
+      return result ? result.id : false; // Return the new contact ID
     }
   };
 
