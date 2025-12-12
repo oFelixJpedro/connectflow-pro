@@ -53,7 +53,7 @@ import { toast } from '@/hooks/use-toast';
 interface ChatPanelProps {
   conversation: Conversation | null;
   messages: Message[];
-  onSendMessage: (content: string, quotedMessageId?: string) => void;
+  onSendMessage: (content: string, quotedMessageId?: string) => void | Promise<void>;
   onSendInternalNote?: (content: string, messageType?: 'text' | 'image' | 'video' | 'audio' | 'document', mediaUrl?: string, mediaMimeType?: string, metadata?: Record<string, unknown>) => Promise<boolean>;
   onResendMessage?: (messageId: string) => void;
   onAssign: () => void;
@@ -483,10 +483,17 @@ export function ChatPanel({
     } else {
       // Send as WhatsApp message
       if (!canReply) return;
-      onSendMessage(inputValue.trim(), replyingTo?.id);
+      const contentToSend = inputValue.trim();
+      const quotedId = replyingTo?.id;
+      
+      // Clear input and reply immediately for better UX
       setInputValue('');
       setReplyingTo(null);
-      // Restore focus after state update
+      
+      // Await the send operation
+      await onSendMessage(contentToSend, quotedId);
+      
+      // Restore focus after send completes
       setTimeout(() => textareaRef.current?.focus(), 0);
     }
   };
