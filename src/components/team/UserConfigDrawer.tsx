@@ -42,7 +42,6 @@ interface TeamMember {
   email: string;
   full_name: string;
   avatar_url: string | null;
-  status: string;
   active: boolean;
   created_at: string;
   role: string;

@@ -17,7 +17,6 @@ interface TeamMember {
   email: string;
   full_name: string;
   avatar_url: string | null;
-  status: string;
   active: boolean;
   created_at: string;
   role: string;
@@ -34,7 +33,7 @@ const ROLE_CONFIG: Record<string, { label: string; color: string; icon: typeof S
 };
 
 export default function Team() {
-  const { profile, userRole, teamProfiles } = useAuth();
+  const { profile, userRole } = useAuth();
   const navigate = useNavigate();
   const [members, setMembers] = useState<TeamMember[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -53,21 +52,6 @@ export default function Team() {
     }
     loadMembers();
   }, [canManageTeam, navigate]);
-
-  // Update member statuses in real-time from teamProfiles
-  useEffect(() => {
-    if (teamProfiles.length > 0 && members.length > 0) {
-      setMembers((prev) =>
-        prev.map((member) => {
-          const updatedProfile = teamProfiles.find((p) => p.id === member.id);
-          if (updatedProfile && updatedProfile.status !== member.status) {
-            return { ...member, status: updatedProfile.status! };
-          }
-          return member;
-        })
-      );
-    }
-  }, [teamProfiles]);
 
   const loadMembers = async () => {
     if (!profile?.company_id) return;
@@ -108,7 +92,6 @@ export default function Team() {
           email: p.email,
           full_name: p.full_name,
           avatar_url: p.avatar_url,
-          status: p.status!,
           active: p.active ?? true,
           created_at: p.created_at || '',
           role: userRole?.role || 'agent',
@@ -221,21 +204,12 @@ export default function Team() {
                   className="flex items-center justify-between p-4 hover:bg-muted/50 transition-colors"
                 >
                   <div className="flex items-center gap-4">
-                    <div className="relative">
-                      <Avatar className="w-10 h-10">
-                        <AvatarImage src={member.avatar_url || undefined} className="object-cover object-top" />
-                        <AvatarFallback className="bg-muted text-muted-foreground">
-                          {getInitials(member.full_name)}
-                        </AvatarFallback>
-                      </Avatar>
-                      <span
-                        className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-background ${
-                          member.status === 'online' ? 'bg-green-500' :
-                          member.status === 'away' ? 'bg-yellow-500' :
-                          member.status === 'busy' ? 'bg-red-500' : 'bg-gray-400'
-                        }`}
-                      />
-                    </div>
+                    <Avatar className="w-10 h-10">
+                      <AvatarImage src={member.avatar_url || undefined} className="object-cover object-top" />
+                      <AvatarFallback className="bg-muted text-muted-foreground">
+                        {getInitials(member.full_name)}
+                      </AvatarFallback>
+                    </Avatar>
 
                     <div>
                       <p className="font-medium">{member.full_name}</p>

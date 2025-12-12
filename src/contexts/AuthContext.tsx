@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState, ReactNode, useCallback, useRef } from 'react';
+import { createContext, useContext, useEffect, useState, ReactNode, useCallback } from 'react';
 import { User, Session, RealtimeChannel } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import type { Tables } from '@/integrations/supabase/types';
@@ -21,7 +21,6 @@ interface AuthContextType {
   resetPassword: (email: string) => Promise<{ error: Error | null }>;
   updateProfile: (updates: Partial<Profile>) => Promise<{ error: Error | null }>;
   updateCompany: (updates: Partial<Company>) => Promise<{ error: Error | null }>;
-  updateStatus: (status: Profile['status']) => Promise<void>;
   clearPasswordChangeFlag: () => void;
 }
 
@@ -36,10 +35,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [needsPasswordChange, setNeedsPasswordChange] = useState(false);
   const [teamProfiles, setTeamProfiles] = useState<Profile[]>([]);
-  // Flag to ignore realtime updates temporarily after loadUserData
-  const ignoreRealtimeUntil = useRef<number>(0);
 
-  // Load team profiles for realtime status updates
+  // Load team profiles
   const loadTeamProfiles = useCallback(async (companyId: string) => {
     const { data, error } = await supabase
       .from('profiles')
@@ -56,14 +53,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Set up auth state listener FIRST
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event, session) => {
-        console.log('[AuthContext] onAuthStateChange event:', event);
         setSession(session);
         setUser(session?.user ?? null);
         
         // Defer Supabase calls with setTimeout to prevent deadlock
         if (session?.user) {
           setTimeout(() => {
-            console.log('[AuthContext] Calling loadUserData from onAuthStateChange');
             loadUserData(session.user.id);
           }, 0);
         } else {
@@ -78,11 +73,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     // THEN check for existing session
     supabase.auth.getSession().then(({ data: { session } }) => {
-      console.log('[AuthContext] getSession result:', session ? 'has session' : 'no session');
       setSession(session);
       setUser(session?.user ?? null);
       if (session?.user) {
-        console.log('[AuthContext] Calling loadUserData from getSession');
         loadUserData(session.user.id);
       } else {
         setLoading(false);
@@ -92,11 +85,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => subscription.unsubscribe();
   }, []);
 
-  // Realtime subscription for team profiles (status updates)
+  // Realtime subscription for team profiles
   useEffect(() => {
     if (!profile?.company_id) return;
-
-    console.log('[Realtime] Iniciando subscription de profiles para empresa:', profile.company_id);
 
     // Load initial team profiles
     loadTeamProfiles(profile.company_id);
@@ -112,13 +103,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         },
         (payload) => {
           const updatedProfile = payload.new as Profile;
-          console.log('[Realtime] Profile atualizado - id:', updatedProfile.id, 'status:', updatedProfile.status);
-          
-          // Ignore realtime updates temporarily after loadUserData to avoid race conditions
-          if (Date.now() < ignoreRealtimeUntil.current) {
-            console.log('[Realtime] Ignorando update - dentro do período de proteção');
-            return;
-          }
           
           // Only process if it's from the same company
           if (updatedProfile.company_id !== profile.company_id) return;
@@ -130,25 +114,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           
           // If it's the current user's profile, update that too
           if (updatedProfile.id === profile.id) {
-            console.log('[Realtime] Atualizando profile do usuário atual com status:', updatedProfile.status);
             setProfile(updatedProfile);
           }
         }
       )
-      .subscribe((status) => {
-        console.log('[Realtime] Status subscription profiles:', status);
-      });
+      .subscribe();
 
     return () => {
-      console.log('[Realtime] Cancelando subscription de profiles');
       supabase.removeChannel(channel);
     };
   }, [profile?.company_id, profile?.id, loadTeamProfiles]);
 
   async function loadUserData(userId: string) {
     try {
-      console.log('[AuthContext] loadUserData chamado para userId:', userId);
-      
       // Load profile
       const { data: profileData, error: profileError } = await supabase
         .from('profiles')
@@ -161,11 +139,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setLoading(false);
         return;
       }
-      
-      console.log('[AuthContext] Profile carregado do banco - status:', profileData.status);
-      
-      // Ignore realtime updates for 3 seconds to avoid race conditions
-      ignoreRealtimeUntil.current = Date.now() + 3000;
       
       setProfile(profileData as Profile);
       setNeedsPasswordChange(profileData.needs_password_change ?? false);
@@ -212,11 +185,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   async function signOut() {
-    // Update status to offline before signing out
+    // Update last_seen_at before signing out
     if (user) {
       await supabase
         .from('profiles')
-        .update({ status: 'offline', last_seen_at: new Date().toISOString() })
+        .update({ last_seen_at: new Date().toISOString() })
         .eq('id', user.id);
     }
     
@@ -236,9 +209,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   async function updateProfile(updates: Partial<Profile>) {
     if (!user) return { error: new Error('User not authenticated') };
-
-    console.log('[AuthContext] updateProfile chamado com:', updates);
-    console.trace('[AuthContext] Stack trace:');
 
     const { error } = await supabase
       .from('profiles')
@@ -267,25 +237,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { error: error as Error | null };
   }
 
-  async function updateStatus(status: Profile['status']) {
-    if (!user) return;
-
-    console.log('[AuthContext] updateStatus chamado com:', status);
-    console.trace('[AuthContext] Stack trace:');
-
-    await supabase
-      .from('profiles')
-      .update({ 
-        status, 
-        last_seen_at: status === 'offline' ? new Date().toISOString() : null 
-      })
-      .eq('id', user.id);
-
-    if (profile) {
-      setProfile({ ...profile, status });
-    }
-  }
-
   function clearPasswordChangeFlag() {
     setNeedsPasswordChange(false);
     if (profile) {
@@ -308,7 +259,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       resetPassword,
       updateProfile,
       updateCompany,
-      updateStatus,
       clearPasswordChangeFlag
     }}>
       {children}

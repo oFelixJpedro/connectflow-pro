@@ -10,7 +10,6 @@ import {
   LogOut,
   Building2,
   User,
-  Circle,
   LayoutGrid
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -71,7 +70,7 @@ const baseMenuItems = [
 export function AppSidebar() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { profile, company, userRole, signOut, updateStatus } = useAuth();
+  const { profile, company, userRole, signOut } = useAuth();
   const { unreadCounts } = useNotifications();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -102,31 +101,12 @@ export function AppSidebar() {
       .slice(0, 2);
   };
 
-  const statusColors: Record<string, string> = {
-    online: 'bg-green-500',
-    offline: 'bg-gray-400',
-    away: 'bg-yellow-500',
-    busy: 'bg-red-500',
-  };
-
-  const statusLabels: Record<string, string> = {
-    online: 'Online',
-    offline: 'Offline',
-    away: 'Ausente',
-    busy: 'Ocupado',
-  };
-
   const roleLabels: Record<string, string> = {
     owner: 'Proprietário',
     admin: 'Administrador',
     supervisor: 'Supervisor',
     agent: 'Agente',
     viewer: 'Visualizador',
-  };
-
-  const handleStatusChange = async (newStatus: 'online' | 'offline' | 'away' | 'busy') => {
-    await updateStatus(newStatus);
-    toast.success(`Status alterado para ${statusLabels[newStatus]}`);
   };
 
   const handleSignOut = async () => {
@@ -325,27 +305,19 @@ export function AppSidebar() {
                   "flex items-center gap-3 w-full rounded-lg p-2 hover:bg-sidebar-accent transition-colors",
                   sidebarCollapsed && "justify-center p-1"
                 )}>
-                  <div className="relative">
-                    <Avatar className="w-9 h-9">
-                      <AvatarImage src={profile.avatar_url || undefined} className="object-cover object-top" />
-                      <AvatarFallback className="bg-sidebar-accent text-sidebar-foreground text-sm">
-                        {getInitials(profile.full_name)}
-                      </AvatarFallback>
-                    </Avatar>
-                    <span 
-                      className={cn(
-                        "absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-sidebar",
-                        statusColors[profile.status!]
-                      )} 
-                    />
-                  </div>
+                  <Avatar className="w-9 h-9">
+                    <AvatarImage src={profile.avatar_url || undefined} className="object-cover object-top" />
+                    <AvatarFallback className="bg-sidebar-accent text-sidebar-foreground text-sm">
+                      {getInitials(profile.full_name)}
+                    </AvatarFallback>
+                  </Avatar>
                   {!sidebarCollapsed && (
                     <div className="flex-1 min-w-0 text-left">
                       <p className="text-sm font-medium text-sidebar-foreground truncate">
                         {profile.full_name}
                       </p>
                       <p className="text-xs text-sidebar-foreground/60">
-                        {userRole ? roleLabels[userRole.role] : statusLabels[profile.status!]}
+                        {userRole ? roleLabels[userRole.role] : ''}
                       </p>
                     </div>
                   )}
@@ -358,28 +330,6 @@ export function AppSidebar() {
                     <p className="text-xs text-muted-foreground">{profile.email}</p>
                   </div>
                 </DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                
-                <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
-                  Status
-                </DropdownMenuLabel>
-                <DropdownMenuItem onClick={() => handleStatusChange('online')}>
-                  <Circle className="w-3 h-3 mr-2 fill-green-500 text-green-500" />
-                  Online
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => handleStatusChange('away')}>
-                  <Circle className="w-3 h-3 mr-2 fill-yellow-500 text-yellow-500" />
-                  Ausente
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => handleStatusChange('busy')}>
-                  <Circle className="w-3 h-3 mr-2 fill-red-500 text-red-500" />
-                  Ocupado
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => handleStatusChange('offline')}>
-                  <Circle className="w-3 h-3 mr-2 fill-gray-400 text-gray-400" />
-                  Offline
-                </DropdownMenuItem>
-                
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={() => setProfileModalOpen(true)}>
                   <User className="w-4 h-4 mr-2" />
