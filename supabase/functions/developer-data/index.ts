@@ -1,35 +1,85 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+const COOKIE_NAME = 'developer_token';
+
+// Get allowed origins from environment or use default
+const getAllowedOrigin = (req: Request): string => {
+  const origin = req.headers.get('origin');
+  return origin || '*';
 };
 
-// Verify developer token (simple base64 JSON, not JWT)
-// Token format: btoa(JSON.stringify({ developer_id, email, is_developer, exp }))
-async function verifyDeveloperToken(token: string, supabase: any): Promise<{ valid: boolean; developerId?: string; reason?: string }> {
+const getCorsHeaders = (req: Request) => ({
+  'Access-Control-Allow-Origin': getAllowedOrigin(req),
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Credentials': 'true',
+});
+
+// Parse cookies from header
+function parseCookies(cookieHeader: string | null): Record<string, string> {
+  if (!cookieHeader) return {};
+  return Object.fromEntries(
+    cookieHeader.split('; ').map(cookie => {
+      const [key, ...values] = cookie.split('=');
+      return [key, values.join('=')];
+    })
+  );
+}
+
+// Verify developer token from cookie ONLY (not Authorization header)
+// The Authorization header contains the Supabase Auth JWT which is NOT the developer token
+async function verifyDeveloperToken(req: Request, supabase: any): Promise<{ valid: boolean; developerId?: string; reason?: string }> {
   try {
     console.log('🔐 Verificando token...');
-    console.log('   Token length:', token?.length);
     
-    // Token is simple base64(JSON) - decode directly (no signature)
+    // ONLY read from cookie - ignore Authorization header completely
+    const cookieHeader = req.headers.get('cookie');
+    console.log('🍪 Cookie header presente:', !!cookieHeader);
+    
+    if (!cookieHeader) {
+      console.log('❌ Nenhum cookie foi enviado');
+      return { valid: false, reason: 'Cookie não fornecido - faça login novamente' };
+    }
+    
+    const cookies = parseCookies(cookieHeader);
+    console.log('🔍 Cookies encontrados:', Object.keys(cookies).join(', '));
+    
+    const token = cookies[COOKIE_NAME];
+    
+    if (!token) {
+      console.log('❌ Cookie developer_token não encontrado');
+      return { valid: false, reason: 'Token não fornecido - faça login novamente' };
+    }
+
+    console.log('   Token length:', token.length);
+    
+    // Token is URL-safe base64(JSON) - decode with proper handling
     let payload;
     try {
-      payload = JSON.parse(atob(token));
-      console.log('   Payload parsed:', JSON.stringify(payload, null, 2));
+      // Convert URL-safe base64 back to standard base64
+      let base64 = token
+        .replace(/-/g, '+')
+        .replace(/_/g, '/');
+      
+      // Add padding if needed
+      while (base64.length % 4) {
+        base64 += '=';
+      }
+      
+      payload = JSON.parse(atob(base64));
+      console.log('   Payload parsed successfully');
     } catch (parseErr) {
       console.log('❌ Erro ao parsear token base64:', parseErr);
       return { valid: false, reason: 'Token mal formatado' };
     }
     
-    // Check is_developer flag (not "type")
+    // Check is_developer flag
     if (!payload.is_developer) {
       console.log('❌ Token não é de developer (is_developer =', payload.is_developer, ')');
       return { valid: false, reason: 'Token não é de desenvolvedor' };
     }
     
-    // Check developer_id (with underscore, not camelCase)
+    // Check developer_id
     if (!payload.developer_id) {
       console.log('❌ developer_id não encontrado no payload');
       return { valid: false, reason: 'developer_id ausente' };
@@ -68,6 +118,8 @@ async function verifyDeveloperToken(token: string, supabase: any): Promise<{ val
 }
 
 serve(async (req) => {
+  const corsHeaders = getCorsHeaders(req);
+  
   console.log('\n╔══════════════════════════════════════════════════════════════════╗');
   console.log('║              📊 DEVELOPER-DATA FUNCTION CALLED                   ║');
   console.log('╚══════════════════════════════════════════════════════════════════╝');
@@ -94,28 +146,10 @@ serve(async (req) => {
     const supabase = createClient(supabaseUrl ?? '', supabaseKey ?? '');
 
     console.log('\n┌─────────────────────────────────────────────────────────────────┐');
-    console.log('│ 2️⃣  VERIFICANDO AUTHORIZATION HEADER                           │');
+    console.log('│ 2️⃣  VERIFICANDO AUTENTICAÇÃO (COOKIE OU HEADER)                │');
     console.log('└─────────────────────────────────────────────────────────────────┘');
     
-    const authHeader = req.headers.get('Authorization');
-    console.log('   Authorization header:', authHeader ? `"${authHeader.substring(0, 50)}..."` : '❌ AUSENTE');
-    
-    if (!authHeader?.startsWith('Bearer ')) {
-      console.log('❌ Header não começa com "Bearer "');
-      return new Response(
-        JSON.stringify({ error: 'Token não fornecido', detail: 'Authorization header ausente ou mal formatado' }),
-        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    const token = authHeader.split(' ')[1];
-    console.log('   Token extraído:', token ? `${token.substring(0, 30)}... (${token.length} chars)` : '❌ VAZIO');
-    
-    console.log('\n┌─────────────────────────────────────────────────────────────────┐');
-    console.log('│ 3️⃣  VALIDANDO TOKEN DO DEVELOPER                               │');
-    console.log('└─────────────────────────────────────────────────────────────────┘');
-    
-    const { valid, developerId, reason } = await verifyDeveloperToken(token, supabase);
+    const { valid, developerId, reason } = await verifyDeveloperToken(req, supabase);
     
     if (!valid) {
       console.log('❌ Token inválido. Razão:', reason);
@@ -128,7 +162,7 @@ serve(async (req) => {
     console.log('✅ Developer autenticado:', developerId);
 
     console.log('\n┌─────────────────────────────────────────────────────────────────┐');
-    console.log('│ 4️⃣  PROCESSANDO REQUEST BODY                                   │');
+    console.log('│ 3️⃣  PROCESSANDO REQUEST BODY                                   │');
     console.log('└─────────────────────────────────────────────────────────────────┘');
     
     const body = await req.json();

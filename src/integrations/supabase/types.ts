@@ -114,6 +114,7 @@ export type Database = {
           id: string
           last_interaction_at: string | null
           name: string | null
+          name_manually_edited: boolean | null
           notes: string | null
           phone_number: string
           tags: string[] | null
@@ -128,6 +129,7 @@ export type Database = {
           id?: string
           last_interaction_at?: string | null
           name?: string | null
+          name_manually_edited?: boolean | null
           notes?: string | null
           phone_number: string
           tags?: string[] | null
@@ -142,6 +144,7 @@ export type Database = {
           id?: string
           last_interaction_at?: string | null
           name?: string | null
+          name_manually_edited?: boolean | null
           notes?: string | null
           phone_number?: string
           tags?: string[] | null

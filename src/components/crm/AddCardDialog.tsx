@@ -4,7 +4,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Search, User, Phone, Loader2 } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { Search, Phone, Loader2, Smartphone } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -13,6 +14,8 @@ interface Contact {
   name: string | null;
   phone_number: string;
   avatar_url: string | null;
+  connection_id?: string;
+  connection_name?: string;
 }
 
 interface AddCardDialogProps {
@@ -20,13 +23,17 @@ interface AddCardDialogProps {
   onOpenChange: (open: boolean) => void;
   existingContactIds: string[];
   onAddCard: (contactId: string) => Promise<boolean>;
+  connectionId?: string | null;
+  departmentId?: string | null;
 }
 
 export function AddCardDialog({ 
   open, 
   onOpenChange, 
   existingContactIds,
-  onAddCard 
+  onAddCard,
+  connectionId,
+  departmentId
 }: AddCardDialogProps) {
   const { company } = useAuth();
   const [contacts, setContacts] = useState<Contact[]>([]);
@@ -35,24 +42,56 @@ export function AddCardDialog({
   const [addingId, setAddingId] = useState<string | null>(null);
 
   useEffect(() => {
-    if (open && company?.id) {
+    if (open && company?.id && connectionId) {
       loadContacts();
     }
-  }, [open, company?.id]);
+  }, [open, company?.id, connectionId, departmentId]);
 
   const loadContacts = async () => {
-    if (!company?.id) return;
+    if (!company?.id || !connectionId) return;
     
     setLoading(true);
     try {
-      const { data, error } = await supabase
+      // Build query to get contacts
+      let query = supabase
         .from('contacts')
-        .select('id, name, phone_number, avatar_url')
+        .select(`
+          id, 
+          name, 
+          phone_number, 
+          avatar_url
+        `)
         .eq('company_id', company.id)
         .order('name', { ascending: true });
 
+      const { data, error } = await query;
+
       if (error) throw error;
-      setContacts(data || []);
+
+      // Get conversations to find which contacts are associated with this connection AND department
+      let conversationsQuery = supabase
+        .from('conversations')
+        .select('contact_id, whatsapp_connection_id, department_id')
+        .eq('company_id', company.id)
+        .eq('whatsapp_connection_id', connectionId);
+
+      // Add department filter if a specific department is selected
+      if (departmentId) {
+        conversationsQuery = conversationsQuery.eq('department_id', departmentId);
+      }
+
+      const { data: conversations } = await conversationsQuery;
+
+      const contactIdsForConnection = new Set(
+        conversations?.map(c => c.contact_id) || []
+      );
+
+      // Filter contacts that have conversations on this connection (and department if selected)
+      const filteredContacts = (data || []).filter(contact => 
+        contactIdsForConnection.has(contact.id)
+      );
+
+      setContacts(filteredContacts);
     } catch (error) {
       console.error('Error loading contacts:', error);
     } finally {
@@ -103,6 +142,13 @@ export function AddCardDialog({
               className="pl-9"
             />
           </div>
+
+          {/* Info about filtering */}
+          {connectionId && (
+            <p className="text-xs text-muted-foreground">
+              Mostrando contatos da conexão{departmentId ? ' e departamento selecionados' : ' selecionada'} que ainda não estão no Kanban.
+            </p>
+          )}
 
           {/* Contacts List */}
           {loading ? (

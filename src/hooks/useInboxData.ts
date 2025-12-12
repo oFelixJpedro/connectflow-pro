@@ -115,7 +115,7 @@ function transformReaction(db: any): MessageReaction {
 
 export function useInboxData() {
   const { user, profile, userRole } = useAuth();
-  const { selectedConnectionId, conversationFilters, setCurrentAccessLevel } = useAppStore();
+  const { selectedConnectionId, conversationFilters, setCurrentAccessLevel, inboxColumn } = useAppStore();
   
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
@@ -256,29 +256,41 @@ export function useInboxData() {
         query = query.in('department_id', allowedDepartmentIds);
       }
 
-      // Aplicar filtros
-      // Filtro de status
+      // Apply filters
+      // Status filter
       if (conversationFilters.status && conversationFilters.status !== 'all') {
         query = query.eq('status', conversationFilters.status);
       }
 
-      // Filtro de atribuição - ONLY if access_level is 'full'
-      // If 'assigned_only', force filter to only user's conversations
+      // Column-based assignment filter
+      // If 'assigned_only' access level, force filter to only user's conversations
       if (effectiveAccessLevel === 'assigned_only' && user?.id) {
         // Force filter to only assigned to current user
         query = query.eq('assigned_user_id', user.id);
       } else {
-        // Normal assignment filter logic
-        if (conversationFilters.assignedUserId === 'mine' && user?.id) {
-          query = query.eq('assigned_user_id', user.id);
-        } else if (conversationFilters.assignedUserId === 'unassigned') {
-          query = query.is('assigned_user_id', null);
-        } else if (conversationFilters.assignedUserId === 'others' && user?.id) {
-          query = query.neq('assigned_user_id', user.id).not('assigned_user_id', 'is', null);
+        // Column-based filtering (replaces old assignment filter)
+        switch (inboxColumn) {
+          case 'minhas':
+            // Only conversations assigned to current user
+            if (user?.id) {
+              query = query.eq('assigned_user_id', user.id);
+            }
+            break;
+          case 'fila':
+            // Only unassigned conversations
+            query = query.is('assigned_user_id', null);
+            break;
+          case 'todas':
+            // All conversations - no assignment filter
+            // Only apply agent filter if admin/owner has selected one
+            if (conversationFilters.filterByAgentId) {
+              query = query.eq('assigned_user_id', conversationFilters.filterByAgentId);
+            }
+            break;
         }
       }
 
-      // Filtro de departamento (do filtro UI - adicional ao filtro de acesso)
+      // Department filter (from UI filter - additional to access filter)
       if (conversationFilters.departmentId) {
         query = query.eq('department_id', conversationFilters.departmentId);
       }
@@ -312,7 +324,7 @@ export function useInboxData() {
     } finally {
       setIsLoadingConversations(false);
     }
-  }, [profile?.company_id, selectedConnectionId, conversationFilters, user?.id, userRole?.role, setCurrentAccessLevel]);
+  }, [profile?.company_id, selectedConnectionId, conversationFilters, user?.id, userRole?.role, setCurrentAccessLevel, inboxColumn]);
 
   // ============================================================
   // 2. CARREGAR MENSAGENS DE UMA CONVERSA
@@ -882,6 +894,24 @@ export function useInboxData() {
           
           // Se a mensagem é da conversa atualmente selecionada, adicionar ao array
           if (currentConversation && newMessage.conversationId === currentConversation.id) {
+            // Se é uma mensagem recebida (do contato) e a conversa está aberta, marcar como lida imediatamente
+            if (newMessage.direction === 'inbound' && newMessage.senderType === 'contact') {
+              console.log('[Realtime] Mensagem recebida em conversa aberta - marcando como lida');
+              // Atualizar unread_count para 0 no banco (a conversa já está sendo visualizada)
+              supabase
+                .from('conversations')
+                .update({ unread_count: 0 })
+                .eq('id', currentConversation.id)
+                .then(({ error }) => {
+                  if (error) {
+                    console.error('[Realtime] Erro ao marcar como lida:', error);
+                  } else {
+                    // Disparar evento para atualizar notificações globais
+                    window.dispatchEvent(new CustomEvent('whatsapp-conversation-read'));
+                  }
+                });
+            }
+            
             // Se tem quoted_message_id, buscar os dados da mensagem citada
             if (newMessage.quotedMessageId) {
               console.log('[Realtime] Buscando mensagem citada:', newMessage.quotedMessageId);
@@ -1093,6 +1123,9 @@ export function useInboxData() {
           const conversationId = updatedData.id as string;
           
           // Atualizar na lista de conversas
+          const currentConversation = selectedConversationRef.current;
+          const isSelectedConversation = currentConversation?.id === conversationId;
+          
           setConversations((prev) => {
             const updated = prev.map((c) => {
               if (c.id !== conversationId) return c;
@@ -1100,11 +1133,16 @@ export function useInboxData() {
               // Usar hasOwnProperty para verificar se o campo foi enviado (mesmo que null)
               const hasAssignedUserId = 'assigned_user_id' in updatedData;
               
+              // Se é a conversa selecionada, manter unreadCount em 0 (está sendo visualizada)
+              const newUnreadCount = isSelectedConversation 
+                ? 0 
+                : ((updatedData.unread_count as number) ?? c.unreadCount);
+              
               return {
                 ...c,
                 status: (updatedData.status as Conversation['status']) || c.status,
                 priority: (updatedData.priority as Conversation['priority']) || c.priority,
-                unreadCount: (updatedData.unread_count as number) ?? c.unreadCount,
+                unreadCount: newUnreadCount,
                 lastMessageAt: (updatedData.last_message_at as string) || c.lastMessageAt,
                 // Para assigned_user_id, aceitar null explicitamente
                 assignedUserId: hasAssignedUserId 
@@ -1126,10 +1164,25 @@ export function useInboxData() {
             });
           });
           
-          // Se for a conversa selecionada, atualizar também
-          const currentConversation = selectedConversationRef.current;
-          if (currentConversation?.id === conversationId) {
+          // Se for a conversa selecionada, manter unreadCount em 0 (usuário já está visualizando)
+          if (isSelectedConversation) {
             const hasAssignedUserId = 'assigned_user_id' in updatedData;
+            const incomingUnreadCount = updatedData.unread_count as number;
+            
+            // Se o banco está tentando definir unread_count > 0, resetar para 0
+            // porque a conversa está sendo visualizada pelo usuário
+            if (incomingUnreadCount > 0) {
+              console.log('[Realtime] Conversa selecionada recebeu unread_count > 0, resetando para 0');
+              supabase
+                .from('conversations')
+                .update({ unread_count: 0 })
+                .eq('id', conversationId)
+                .then(({ error }) => {
+                  if (!error) {
+                    window.dispatchEvent(new CustomEvent('whatsapp-conversation-read'));
+                  }
+                });
+            }
             
             setSelectedConversation((prev) => {
               if (!prev) return null;
@@ -1137,9 +1190,9 @@ export function useInboxData() {
                 ...prev,
                 status: (updatedData.status as Conversation['status']) || prev.status,
                 priority: (updatedData.priority as Conversation['priority']) || prev.priority,
-                unreadCount: (updatedData.unread_count as number) ?? prev.unreadCount,
+                unreadCount: 0, // Sempre 0 para conversa selecionada (está sendo visualizada)
                 lastMessageAt: (updatedData.last_message_at as string) || prev.lastMessageAt,
-                assignedUserId: hasAssignedUserId 
+                assignedUserId: hasAssignedUserId
                   ? (updatedData.assigned_user_id as string | undefined) ?? undefined
                   : prev.assignedUserId,
                 assignedUser: hasAssignedUserId && !updatedData.assigned_user_id 

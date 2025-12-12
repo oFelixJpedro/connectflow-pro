@@ -53,7 +53,7 @@ import { toast } from '@/hooks/use-toast';
 interface ChatPanelProps {
   conversation: Conversation | null;
   messages: Message[];
-  onSendMessage: (content: string, quotedMessageId?: string) => void;
+  onSendMessage: (content: string, quotedMessageId?: string) => void | Promise<void>;
   onSendInternalNote?: (content: string, messageType?: 'text' | 'image' | 'video' | 'audio' | 'document', mediaUrl?: string, mediaMimeType?: string, metadata?: Record<string, unknown>) => Promise<boolean>;
   onResendMessage?: (messageId: string) => void;
   onAssign: () => void;
@@ -477,15 +477,25 @@ export function ChatPanel({
         setInputValue('');
         setReplyingTo(null);
         // Keep internal note mode active for convenience
+        // Restore focus after state update
+        setTimeout(() => textareaRef.current?.focus(), 0);
       }
     } else {
       // Send as WhatsApp message
       if (!canReply) return;
-      onSendMessage(inputValue.trim(), replyingTo?.id);
+      const contentToSend = inputValue.trim();
+      const quotedId = replyingTo?.id;
+      
+      // Clear input and reply immediately for better UX
       setInputValue('');
       setReplyingTo(null);
+      
+      // Await the send operation
+      await onSendMessage(contentToSend, quotedId);
+      
+      // Restore focus after send completes
+      setTimeout(() => textareaRef.current?.focus(), 0);
     }
-    textareaRef.current?.focus();
   };
 
   const handleReply = (message: Message) => {
@@ -720,6 +730,7 @@ export function ChatPanel({
             <AssignButton
               conversation={conversation}
               currentUserId={currentUserId}
+              currentUserRole={currentUserRole}
               onAssigned={onRefresh || onAssign}
               isRestricted={isRestricted}
             />
@@ -1280,9 +1291,9 @@ export function ChatPanel({
                       : blockInfo.message
                 }
                 className={cn(
-                  "min-h-[44px] max-h-32 resize-none pr-12",
+                  "min-h-[44px] max-h-32 resize-none pr-12 transition-colors duration-200",
                   !canReply && !isInternalNoteMode && "bg-muted/50 cursor-not-allowed",
-                  isInternalNoteMode && "internal-note-input"
+                  isInternalNoteMode && "bg-amber-50 border-amber-300 focus-visible:ring-amber-400 placeholder:text-amber-600/70"
                 )}
                 rows={1}
                 disabled={isSendingMessage || (!canReply && !isInternalNoteMode)}

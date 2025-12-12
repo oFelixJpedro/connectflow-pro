@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useDeveloperAuth, getDeveloperToken } from '@/contexts/DeveloperAuthContext';
+import { useDeveloperAuth } from '@/contexts/DeveloperAuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -33,6 +33,7 @@ import DeleteConfirmModal from './components/DeleteConfirmModal';
 import ResetPasswordModal from './components/ResetPasswordModal';
 import PermissionWaitingModal from './components/PermissionWaitingModal';
 import { useDeveloperPermissions } from '@/hooks/useDeveloperPermissions';
+import { developerData, developerActions } from '@/lib/developerApi';
 
 interface Company {
   id: string;
@@ -146,29 +147,22 @@ export default function DeveloperDashboard() {
     try {
       setIsLoading(true);
       
-      const token = getDeveloperToken();
-      console.log('🔐 Developer token:', token ? `${token.substring(0, 30)}... (${token.length} chars)` : '❌ NULL');
-      
-      if (!token) {
-        console.error('❌ Token não encontrado no localStorage');
-        toast.error('Sessão expirada. Faça login novamente.');
-        navigate('/developer');
-        return;
-      }
-      
-      console.log('📡 Chamando developer-data com token...');
-      const { data, error } = await supabase.functions.invoke('developer-data', {
-        body: { action: 'list_companies' },
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      console.log('📡 Chamando developer-data (cookie auth)...');
+      const { data, error } = await developerData({ action: 'list_companies' });
       
       console.log('📨 Resposta:', { data, error });
 
-      if (error) throw error;
-      if (data?.error) throw new Error(data.error);
+      if (error) {
+        if (error.includes('Token') || error.includes('expirado') || error.includes('login')) {
+          toast.error('Sessão expirada. Faça login novamente.');
+          navigate('/developer');
+          return;
+        }
+        throw new Error(error);
+      }
 
-      setCompanies(data.companies || []);
-      console.log('✅ Empresas carregadas:', data.companies?.length || 0);
+      setCompanies(data?.companies || []);
+      console.log('✅ Empresas carregadas:', data?.companies?.length || 0);
     } catch (err) {
       console.error('Error loading companies:', err);
       toast.error('Erro ao carregar empresas');
@@ -183,18 +177,13 @@ export default function DeveloperDashboard() {
     setLoadingUsers(prev => new Set([...prev, companyId]));
     
     try {
-      const token = getDeveloperToken();
-      const { data, error } = await supabase.functions.invoke('developer-data', {
-        body: { action: 'list_users', company_id: companyId },
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const { data, error } = await developerData({ action: 'list_users', company_id: companyId });
 
-      if (error) throw error;
-      if (data?.error) throw new Error(data.error);
+      if (error) throw new Error(error);
 
       setCompanyUsers(prev => ({
         ...prev,
-        [companyId]: data.users || []
+        [companyId]: data?.users || []
       }));
     } catch (err) {
       console.error('Error loading users:', err);
@@ -221,26 +210,22 @@ export default function DeveloperDashboard() {
     setExpandedCompanies(newExpanded);
   };
 
-  const handleLogout = () => {
-    logout();
+  const handleLogout = async () => {
+    await logout();
     navigate('/developer');
   };
 
   const handleCleanupDeletedCompanies = async () => {
     setActionLoading(true);
     try {
-      const token = getDeveloperToken();
-      const { data, error } = await supabase.functions.invoke('developer-actions', {
-        body: { action: 'cleanup_deleted_companies' },
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const { data, error } = await developerActions({ action: 'cleanup_deleted_companies' });
 
-      if (error || data?.error) {
-        toast.error(data?.error || 'Erro ao limpar empresas excluídas');
+      if (error) {
+        toast.error(error);
         return;
       }
 
-      toast.success(`Limpeza concluída: ${data.deletedCompanies} empresas removidas permanentemente`);
+      toast.success(`Limpeza concluída: ${data?.deletedCompanies || 0} empresas removidas permanentemente`);
       loadCompanies();
     } catch (err) {
       console.error('Cleanup error:', err);
@@ -253,14 +238,10 @@ export default function DeveloperDashboard() {
   const handleDeleteUserByEmail = async (email: string) => {
     setActionLoading(true);
     try {
-      const token = getDeveloperToken();
-      const { data, error } = await supabase.functions.invoke('developer-actions', {
-        body: { action: 'delete_user_by_email', email },
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const { data, error } = await developerActions({ action: 'delete_user_by_email', email });
 
-      if (error || data?.error) {
-        toast.error(data?.error || 'Erro ao deletar usuário');
+      if (error) {
+        toast.error(error);
         return;
       }
 
@@ -275,7 +256,6 @@ export default function DeveloperDashboard() {
   };
 
   const handleCleanupBannedUsers = async () => {
-    // Delete known banned users
     const bannedEmails = ['teste@teste.com', 'teste2@teste.com'];
     
     setActionLoading(true);
@@ -283,13 +263,9 @@ export default function DeveloperDashboard() {
     
     for (const email of bannedEmails) {
       try {
-        const token = getDeveloperToken();
-        const { data, error } = await supabase.functions.invoke('developer-actions', {
-          body: { action: 'delete_user_by_email', email },
-          headers: { Authorization: `Bearer ${token}` }
-        });
+        const { error } = await developerActions({ action: 'delete_user_by_email', email });
         
-        if (!error && !data?.error) {
+        if (!error) {
           deletedCount++;
         }
       } catch (err) {
@@ -307,14 +283,10 @@ export default function DeveloperDashboard() {
     
     setActionLoading(true);
     try {
-      const token = getDeveloperToken();
-      const { data, error } = await supabase.functions.invoke('developer-actions', {
-        body: { action: 'reset_password', user_id: resetPasswordUser.id },
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const { error } = await developerActions({ action: 'reset_password', user_id: resetPasswordUser.id });
 
-      if (error || data?.error) {
-        toast.error(data?.error || 'Erro ao resetar senha');
+      if (error) {
+        toast.error(error);
         return;
       }
 
@@ -346,14 +318,10 @@ export default function DeveloperDashboard() {
     
     setActionLoading(true);
     try {
-      const token = getDeveloperToken();
-      const { data, error } = await supabase.functions.invoke('developer-actions', {
-        body: { action: 'delete_company', company_id: deleteCompany.id },
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const { error } = await developerActions({ action: 'delete_company', company_id: deleteCompany.id });
 
-      if (error || data?.error) {
-        toast.error(data?.error || 'Erro ao excluir empresa');
+      if (error) {
+        toast.error(error);
         return;
       }
 
@@ -373,18 +341,14 @@ export default function DeveloperDashboard() {
     
     setActionLoading(true);
     try {
-      const token = getDeveloperToken();
-      const { data, error } = await supabase.functions.invoke('developer-actions', {
-        body: { 
-          action: 'delete_user', 
-          user_id: deleteUser.user.id,
-          company_id: deleteUser.company.id 
-        },
-        headers: { Authorization: `Bearer ${token}` }
+      const { error } = await developerActions({ 
+        action: 'delete_user', 
+        user_id: deleteUser.user.id,
+        company_id: deleteUser.company.id 
       });
 
-      if (error || data?.error) {
-        toast.error(data?.error || 'Erro ao excluir usuário');
+      if (error) {
+        toast.error(error);
         return;
       }
 
@@ -794,6 +758,7 @@ export default function DeveloperDashboard() {
         <EditUserModal
           user={editUser.user}
           company={editUser.company}
+          companyUsers={companyUsers[editUser.company.id] || []}
           onClose={() => setEditUser(null)}
           onSuccess={() => {
             setEditUser(null);

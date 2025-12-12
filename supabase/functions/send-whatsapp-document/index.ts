@@ -216,6 +216,25 @@ serve(async (req) => {
     const phoneNumber = contactPhoneNumber.replace(/[^0-9]/g, '');
     console.log(`📞 Número extraído: ${phoneNumber}`);
 
+    // Get replyid if quoting a message
+    let replyId: string | null = null;
+    if (quotedMessageId) {
+      console.log('🔍 Buscando whatsapp_message_id da mensagem citada...');
+      const { data: quotedMessage } = await supabase
+        .from('messages')
+        .select('whatsapp_message_id')
+        .eq('id', quotedMessageId)
+        .maybeSingle();
+      
+      if (quotedMessage?.whatsapp_message_id) {
+        const fullId = quotedMessage.whatsapp_message_id;
+        replyId = fullId.includes(':') ? fullId.split(':').pop()! : fullId;
+        console.log(`✅ replyId encontrado: ${replyId}`);
+      } else {
+        console.log('⚠️ Mensagem citada não tem whatsapp_message_id');
+      }
+    }
+
     // Send to UAZAPI
     console.log(`🔍 Buscando UAZAPI_BASE_URL dos secrets...`);
     console.log(`✅ URL: ${uazapiBaseUrl}`);
@@ -231,8 +250,12 @@ serve(async (req) => {
       uazapiPayload.text = text;
     }
 
+    if (replyId) {
+      uazapiPayload.replyid = replyId;
+    }
+
     console.log('📤 POST /send/media');
-    console.log(`   Body: { number: ${phoneNumber}, type: "document", file: ${mediaUrl.substring(0, 50)}..., text: ${text ? 'yes' : 'no'} }`);
+    console.log(`   Body: { number: ${phoneNumber}, type: "document", file: ${mediaUrl.substring(0, 50)}..., text: ${text ? 'yes' : 'no'}, replyid: ${replyId || 'no'} }`);
 
     const uazapiResponse = await fetch(`${uazapiBaseUrl}/send/media`, {
       method: 'POST',

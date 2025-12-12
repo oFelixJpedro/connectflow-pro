@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -19,8 +19,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { User as UserIcon, Loader2, ShieldAlert } from 'lucide-react';
-import { supabase } from '@/integrations/supabase/client';
-import { getDeveloperToken } from '@/contexts/DeveloperAuthContext';
+import { developerActions } from '@/lib/developerApi';
 import { toast } from 'sonner';
 import { useDeveloperPermissions } from '@/hooks/useDeveloperPermissions';
 import PermissionWaitingModal from './PermissionWaitingModal';
@@ -46,13 +45,21 @@ interface Company {
 interface EditUserModalProps {
   user: User;
   company: Company;
+  companyUsers: User[];
   onClose: () => void;
   onSuccess: () => void;
 }
 
-export default function EditUserModal({ user, company, onClose, onSuccess }: EditUserModalProps) {
+export default function EditUserModal({ user, company, companyUsers, onClose, onSuccess }: EditUserModalProps) {
   const [fullName, setFullName] = useState(user.full_name);
   const [role, setRole] = useState(user.role || 'agent');
+  
+  // Check if another user (not the current one) is already owner
+  const existingOwner = companyUsers.find(u => u.role === 'owner' && u.id !== user.id);
+  const currentUserIsOwner = user.role === 'owner';
+  
+  // Show owner option only if: current user is owner OR no other owner exists
+  const showOwnerOption = currentUserIsOwner || !existingOwner;
   const [active, setActive] = useState(user.active);
   const [isLoading, setIsLoading] = useState(false);
   const [pendingRequestId, setPendingRequestId] = useState<string | null>(null);
@@ -86,20 +93,15 @@ export default function EditUserModal({ user, company, onClose, onSuccess }: Edi
     
     setIsLoading(true);
     try {
-      const token = getDeveloperToken();
-      const { data, error } = await supabase.functions.invoke('developer-actions', {
-        body: { 
-          action: 'update_user', 
-          user_id: user.id,
-          company_id: company.id,
-          updates: updates,
-          permission_request_id: pendingRequestId
-        },
-        headers: { Authorization: `Bearer ${token}` }
+      const { error } = await developerActions({ 
+        action: 'update_user', 
+        user_id: user.id,
+        company_id: company.id,
+        updates: updates,
+        permission_request_id: pendingRequestId
       });
 
-      if (error) throw error;
-      if (data?.error) throw new Error(data.error);
+      if (error) throw new Error(error);
 
       toast.success('Usuário atualizado com sucesso');
       setPendingRequestId(null);
@@ -236,7 +238,7 @@ export default function EditUserModal({ user, company, onClose, onSuccess }: Edi
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="owner">Proprietário</SelectItem>
+                {showOwnerOption && <SelectItem value="owner">Proprietário</SelectItem>}
                 <SelectItem value="admin">Administrador</SelectItem>
                 <SelectItem value="supervisor">Supervisor</SelectItem>
                 <SelectItem value="agent">Atendente</SelectItem>

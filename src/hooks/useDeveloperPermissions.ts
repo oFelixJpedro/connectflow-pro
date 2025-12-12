@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { supabase } from '@/integrations/supabase/client';
-import { getDeveloperToken } from '@/contexts/DeveloperAuthContext';
+import { useDeveloperAuth } from '@/contexts/DeveloperAuthContext';
+import { developerActions } from '@/lib/developerApi';
 import { toast } from 'sonner';
 
 type PermissionRequestType = 'edit_company' | 'edit_user' | 'access_user' | 'delete_company' | 'delete_user';
@@ -18,6 +18,7 @@ interface UsePermissionRequestResult {
 
 export function useDeveloperPermissions(): UsePermissionRequestResult {
   const [isRequesting, setIsRequesting] = useState(false);
+  const { isAuthenticated } = useDeveloperAuth();
 
   const requestPermission = async (
     type: PermissionRequestType,
@@ -28,32 +29,22 @@ export function useDeveloperPermissions(): UsePermissionRequestResult {
     setIsRequesting(true);
     
     try {
-      const token = getDeveloperToken();
-      if (!token) {
+      if (!isAuthenticated) {
         toast.error('Sessão expirada. Faça login novamente.');
         return null;
       }
 
-      // Parse token to get developer ID
-      const payload = JSON.parse(atob(token));
-      const developerId = payload.developer_id;
-
-      // Create permission request using service role via edge function
-      const { data, error } = await supabase.functions.invoke('developer-actions', {
-        body: {
-          action: 'create_permission_request',
-          request_type: type,
-          target_company_id: targetCompanyId,
-          target_user_id: targetUserId,
-          approver_id: approverId
-        },
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
+      // Use developerActions helper which sends cookies via credentials: 'include'
+      const { data, error } = await developerActions({
+        action: 'create_permission_request',
+        request_type: type,
+        target_company_id: targetCompanyId,
+        target_user_id: targetUserId,
+        approver_id: approverId
       });
 
       if (error || data?.error) {
-        toast.error(data?.error || 'Erro ao criar solicitação de permissão');
+        toast.error(data?.error || error || 'Erro ao criar solicitação de permissão');
         return null;
       }
 
@@ -69,16 +60,10 @@ export function useDeveloperPermissions(): UsePermissionRequestResult {
 
   const cancelRequest = async (requestId: string) => {
     try {
-      const token = getDeveloperToken();
-      
-      await supabase.functions.invoke('developer-actions', {
-        body: {
-          action: 'cancel_permission_request',
-          request_id: requestId
-        },
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
+      // Use developerActions helper which sends cookies via credentials: 'include'
+      await developerActions({
+        action: 'cancel_permission_request',
+        request_id: requestId
       });
     } catch (err) {
       console.error('Error cancelling request:', err);

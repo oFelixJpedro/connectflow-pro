@@ -86,6 +86,9 @@ export function ContactPanel({ conversation, onClose, onContactUpdated, onScroll
   const [chatNotesModalOpen, setChatNotesModalOpen] = useState(false);
   const [chatNotesCount, setChatNotesCount] = useState(0);
 
+  // Last interaction state - for real-time updates
+  const [lastInteraction, setLastInteraction] = useState<string | null>(null);
+
   const contact = conversation?.contact;
 
   // Load initial data
@@ -93,29 +96,50 @@ export function ContactPanel({ conversation, onClose, onContactUpdated, onScroll
     if (contact) {
       setNotes(contact.notes || '');
       setContactTags(contact.tags || []);
+      setLastInteraction(contact.lastInteractionAt || null);
       loadAvailableTags();
       loadConversationHistory();
       loadChatNotesCount();
     }
   }, [contact?.id]);
 
-  // Realtime subscription for chat notes count
+  // Realtime subscription for chat notes count AND last interaction
   useEffect(() => {
     if (!conversation?.id) return;
 
     const channel = supabase
-      .channel(`chat-notes-${conversation.id}`)
+      .channel(`contact-panel-${conversation.id}`)
       .on(
         'postgres_changes',
         {
-          event: '*',
+          event: 'INSERT',
           schema: 'public',
           table: 'messages',
           filter: `conversation_id=eq.${conversation.id}`,
         },
         (payload: any) => {
-          // Check if it's an internal note
-          if (payload.new?.is_internal_note || payload.old?.is_internal_note) {
+          // Update last interaction timestamp with the new message's created_at
+          if (payload.new?.created_at) {
+            setLastInteraction(payload.new.created_at);
+          }
+          
+          // Check if it's an internal note to update count
+          if (payload.new?.is_internal_note) {
+            loadChatNotesCount();
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'DELETE',
+          schema: 'public',
+          table: 'messages',
+          filter: `conversation_id=eq.${conversation.id}`,
+        },
+        (payload: any) => {
+          // Only reload chat notes count for deleted internal notes
+          if (payload.old?.is_internal_note) {
             loadChatNotesCount();
           }
         }
@@ -306,6 +330,8 @@ export function ContactPanel({ conversation, onClose, onContactUpdated, onScroll
           email: data.email || null,
           tags: data.tags,
           notes: data.notes || null,
+          // Mark name as manually edited if name was changed
+          name_manually_edited: data.name ? true : false,
         })
         .eq('id', contact.id);
 
@@ -462,7 +488,7 @@ export function ContactPanel({ conversation, onClose, onContactUpdated, onScroll
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">Última interação</p>
-                  <p className="text-foreground">{formatDate(contact?.lastInteractionAt)}</p>
+                  <p className="text-foreground">{formatDate(lastInteraction || contact?.lastInteractionAt)}</p>
                 </div>
               </div>
             </div>

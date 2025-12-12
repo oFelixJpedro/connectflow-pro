@@ -6,7 +6,7 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-type ActionType = 'assign' | 'transfer' | 'release' | 'close' | 'move_department'
+type ActionType = 'assign' | 'transfer' | 'release' | 'close' | 'reopen' | 'move_department'
 
 interface RequestBody {
   action: ActionType
@@ -115,7 +115,7 @@ serve(async (req) => {
     console.log('   - departmentId:', departmentId || '(não informado)')
     
     // Validar action
-    const validActions: ActionType[] = ['assign', 'transfer', 'release', 'close', 'move_department']
+    const validActions: ActionType[] = ['assign', 'transfer', 'release', 'close', 'reopen', 'move_department']
     if (!validActions.includes(action)) {
       console.log('❌ Ação inválida:', action)
       return new Response(
@@ -319,6 +319,29 @@ serve(async (req) => {
         }
         
         console.log('📝 Fechando conversa')
+        break
+      }
+      
+      // ───────────────────────────────────────────────────────────────────
+      // ACTION: REOPEN
+      // ───────────────────────────────────────────────────────────────────
+      case 'reopen': {
+        if (conversation.status !== 'closed') {
+          console.log('❌ Conversa não está fechada')
+          return new Response(
+            JSON.stringify({ success: false, error: 'Conversa não está fechada', code: 'NOT_CLOSED' }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
+        }
+        
+        updateData = {
+          status: 'in_progress',
+          closed_at: null,
+          assigned_user_id: userId,
+          assigned_at: new Date().toISOString()
+        }
+        
+        console.log('📝 Reabrindo conversa e atribuindo para:', userId)
         break
       }
       

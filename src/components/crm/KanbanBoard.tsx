@@ -25,11 +25,20 @@ import { Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { KanbanColumn, KanbanCard, KanbanCardComment, KanbanCardHistory, KanbanCardAttachment } from '@/hooks/useKanbanData';
 
+interface ConnectionInfo {
+  id: string;
+  name: string;
+  phone_number: string;
+}
+
 interface KanbanBoardProps {
   columns: KanbanColumn[];
   cards: KanbanCard[];
   teamMembers: { id: string; full_name: string; avatar_url: string | null }[];
   isAdminOrOwner: boolean;
+  isGlobalView?: boolean;
+  connectionMap?: Map<string, ConnectionInfo>;
+  connections?: { id: string; name: string; phone_number: string }[];
   onCreateColumn: (name: string, color: string) => Promise<KanbanColumn | null>;
   onUpdateColumn: (columnId: string, updates: Partial<KanbanColumn>) => Promise<boolean>;
   onDeleteColumn: (columnId: string, moveToColumnId?: string) => Promise<boolean>;
@@ -61,6 +70,9 @@ export function KanbanBoard({
   cards,
   teamMembers,
   isAdminOrOwner,
+  isGlobalView = false,
+  connectionMap,
+  connections,
   onCreateColumn,
   onUpdateColumn,
   onDeleteColumn,
@@ -103,6 +115,17 @@ export function KanbanBoard({
     return cards
       .filter(card => card.column_id === columnId)
       .sort((a, b) => a.position - b.position);
+  };
+
+  // Get connection name for a card (used in global view)
+  const getConnectionNameForCard = (card: KanbanCard): string | undefined => {
+    if (!isGlobalView || !connectionMap) return undefined;
+    
+    const column = columns.find(c => c.id === card.column_id);
+    if (!column) return undefined;
+    
+    const connection = connectionMap.get(column.board_id);
+    return connection?.name;
   };
 
   const handleDragStart = (event: DragStartEvent) => {
@@ -151,8 +174,8 @@ export function KanbanBoard({
     const activeData = active.data.current;
     const overData = over.data.current;
 
-    // Handle column reordering
-    if (activeData?.type === 'column' && overData?.type === 'column' && isAdminOrOwner) {
+    // Handle column reordering (disabled in global view)
+    if (activeData?.type === 'column' && overData?.type === 'column' && isAdminOrOwner && !isGlobalView) {
       const oldIndex = columns.findIndex(c => c.id === active.id);
       const newIndex = columns.findIndex(c => c.id === over.id);
 
@@ -163,7 +186,7 @@ export function KanbanBoard({
       return;
     }
 
-    // Handle card movement
+    // Handle card movement (disabled in global view for cross-board moves)
     if (activeData?.type === 'card') {
       const activeCardId = active.id as string;
       let targetColumnId: string;
@@ -182,6 +205,17 @@ export function KanbanBoard({
         newPosition = overIndex >= 0 ? overIndex : columnCards.length;
       } else {
         return;
+      }
+
+      // In global view, prevent moving cards between different boards
+      if (isGlobalView) {
+        const activeCard = cards.find(c => c.id === activeCardId);
+        const activeColumn = columns.find(c => c.id === activeCard?.column_id);
+        const targetColumn = columns.find(c => c.id === targetColumnId);
+        
+        if (activeColumn?.board_id !== targetColumn?.board_id) {
+          return; // Don't allow cross-board moves
+        }
       }
 
       await onMoveCard(activeCardId, targetColumnId, newPosition);
@@ -210,7 +244,7 @@ export function KanbanBoard({
             <SortableContext
               items={columns.map(c => c.id)}
               strategy={horizontalListSortingStrategy}
-              disabled={!isAdminOrOwner}
+              disabled={!isAdminOrOwner || isGlobalView}
             >
               {columns.map(column => (
                 <KanbanColumnComponent
@@ -219,15 +253,18 @@ export function KanbanBoard({
                   cards={getCardsByColumn(column.id)}
                   allColumns={columns}
                   isAdminOrOwner={isAdminOrOwner}
+                  isGlobalView={isGlobalView}
+                  connectionMap={connectionMap}
                   onUpdateColumn={onUpdateColumn}
                   onDeleteColumn={onDeleteColumn}
                   onCardClick={(card) => setSelectedCardId(card.id)}
+                  getConnectionName={getConnectionNameForCard}
                 />
               ))}
             </SortableContext>
 
-            {/* Add Column Button */}
-            {isAdminOrOwner && (
+            {/* Add Column Button - hidden in global view */}
+            {isAdminOrOwner && !isGlobalView && (
               <div className="w-72 flex-shrink-0">
                 <Button
                   variant="outline"

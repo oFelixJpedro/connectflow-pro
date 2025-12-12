@@ -21,8 +21,7 @@ import {
   Building2,
   Folder
 } from 'lucide-react';
-import { supabase } from '@/integrations/supabase/client';
-import { getDeveloperToken } from '@/contexts/DeveloperAuthContext';
+import { developerData } from '@/lib/developerApi';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -80,17 +79,13 @@ export default function UserModal({
     try {
       setIsLoading(true);
 
-      const token = getDeveloperToken();
-      const { data, error } = await supabase.functions.invoke('developer-data', {
-        body: { action: 'get_user_details', user_id: user.id },
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const { data, error } = await developerData({ action: 'get_user_details', user_id: user.id });
 
-      if (error) throw error;
+      if (error) throw new Error(error);
 
       setDetails({
         ...user,
-        departments: data.departments || []
+        departments: data?.departments || []
       });
     } catch (err) {
       console.error('Error loading user details:', err);

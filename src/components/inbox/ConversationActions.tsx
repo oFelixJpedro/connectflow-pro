@@ -10,6 +10,7 @@ import {
   Contact,
   Download,
   ImageIcon,
+  RotateCcw,
 } from 'lucide-react';
 import { MediaGalleryModal } from './MediaGalleryModal';
 import { Button } from '@/components/ui/button';
@@ -161,8 +162,9 @@ export function ConversationActions({
       // Toast de sucesso baseado na ação
       const messages: Record<string, string> = {
         transfer: `Conversa transferida com sucesso`,
-        release: 'Conversa liberada',
+        release: 'Conversa retornada para a fila',
         close: 'Atendimento concluído',
+        reopen: 'Conversa reaberta',
         move_department: 'Conversa movida para departamento',
       };
       
@@ -202,8 +204,8 @@ export function ConversationActions({
     setConfirmDialog({
       open: true,
       action: 'release',
-      title: 'Liberar conversa?',
-      description: 'A conversa voltará para a fila de não atribuídas.',
+      title: 'Voltar para a fila?',
+      description: 'A conversa ficará disponível para outros agentes.',
     });
   };
 
@@ -213,6 +215,15 @@ export function ConversationActions({
       action: 'close',
       title: 'Concluir atendimento?',
       description: 'A conversa será marcada como fechada. Esta ação não pode ser desfeita.',
+    });
+  };
+
+  const handleReopen = () => {
+    setConfirmDialog({
+      open: true,
+      action: 'reopen',
+      title: 'Reabrir conversa?',
+      description: 'A conversa será reaberta e atribuída a você.',
     });
   };
 
@@ -447,20 +458,30 @@ export function ConversationActions({
             className="text-muted-foreground"
           >
             <UserMinus className="w-4 h-4 mr-2" />
-            <span>Liberar conversa</span>
+            <span>Voltar para a fila</span>
           </DropdownMenuItem>
 
           <DropdownMenuSeparator />
 
-          {/* Concluir */}
-          <DropdownMenuItem
-            onClick={handleClose}
-            disabled={!canClose}
-            className="text-success focus:text-success"
-          >
-            <CheckCircle className="w-4 h-4 mr-2" />
-            <span>Concluir atendimento</span>
-          </DropdownMenuItem>
+          {/* Concluir ou Reabrir - baseado no status */}
+          {isClosed ? (
+            <DropdownMenuItem
+              onClick={handleReopen}
+              className="text-primary focus:text-primary"
+            >
+              <RotateCcw className="w-4 h-4 mr-2" />
+              <span>Reabrir conversa</span>
+            </DropdownMenuItem>
+          ) : (
+            <DropdownMenuItem
+              onClick={handleClose}
+              disabled={!canClose}
+              className="text-success focus:text-success"
+            >
+              <CheckCircle className="w-4 h-4 mr-2" />
+              <span>Concluir atendimento</span>
+            </DropdownMenuItem>
+          )}
 
           <DropdownMenuSeparator />
 

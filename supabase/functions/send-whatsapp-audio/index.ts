@@ -326,11 +326,34 @@ serve(async (req) => {
       )
     }
 
+    // Get replyid if quoting a message
+    let replyId: string | null = null
+    if (quotedMessageId) {
+      console.log('🔍 Buscando whatsapp_message_id da mensagem citada...')
+      const { data: quotedMessage } = await supabase
+        .from('messages')
+        .select('whatsapp_message_id')
+        .eq('id', quotedMessageId)
+        .maybeSingle()
+      
+      if (quotedMessage?.whatsapp_message_id) {
+        const fullId = quotedMessage.whatsapp_message_id
+        replyId = fullId.includes(':') ? fullId.split(':').pop()! : fullId
+        console.log(`✅ replyId encontrado: ${replyId}`)
+      } else {
+        console.log('⚠️ Mensagem citada não tem whatsapp_message_id')
+      }
+    }
+
     // Build UAZAPI payload
-    const uazapiPayload = {
+    const uazapiPayload: { number: string; type: string; file: string; replyid?: string } = {
       number: cleanPhoneNumber,
       type: 'ptt', // Push-to-talk (voice message)
       file: mediaUrl
+    }
+
+    if (replyId) {
+      uazapiPayload.replyid = replyId
     }
 
     console.log('📤 UAZAPI Request:')
@@ -339,6 +362,7 @@ serve(async (req) => {
     console.log('   - number:', cleanPhoneNumber)
     console.log('   - type:', 'ptt')
     console.log('   - file:', mediaUrl)
+    console.log('   - replyid:', replyId || '(nenhum)')
 
     const uazapiResponse = await fetch(`${UAZAPI_BASE_URL}/send/media`, {
       method: 'POST',
