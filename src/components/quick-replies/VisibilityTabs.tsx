@@ -1,4 +1,4 @@
-import { Globe, User, Users, Smartphone } from 'lucide-react';
+import { Globe, User, Building2, Smartphone } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { QuickReplyVisibility } from '@/hooks/useQuickRepliesData';
 import { useAuth } from '@/contexts/AuthContext';
@@ -61,7 +61,7 @@ const tabs: {
   { 
     id: 'department', 
     label: 'Departamento', 
-    icon: <Users className="w-4 h-4" />,
+    icon: <Building2 className="w-4 h-4" />,
     description: 'Membros do departamento'
   },
   { 
@@ -88,95 +88,116 @@ export function VisibilityTabs({
   const { userRole } = useAuth();
   const isAdminOrOwner = userRole?.role === 'owner' || userRole?.role === 'admin';
 
-  return (
-    <div className="flex flex-col gap-3">
-      <div className="flex gap-1 p-1 bg-muted rounded-lg">
-        {tabs.map((tab) => {
-          // Admin/owner always have access to departments tab
-          const isDisabled = 
-            (tab.id === 'department' && !hasDepartments && !isAdminOrOwner) ||
-            (tab.id === 'connection' && !hasConnection);
-          const count = counts[tab.id];
-          
-          return (
-            <button
-              key={tab.id}
-              onClick={() => !isDisabled && onTabChange(tab.id)}
-              disabled={isDisabled}
-              title={isDisabled ? 
-                (tab.id === 'department' ? 'Você não está em nenhum departamento' : 'Selecione uma conexão') 
-                : tab.description
-              }
-              className={cn(
-                "flex items-center justify-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors flex-1",
-                activeTab === tab.id
-                  ? "bg-background text-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground",
-                isDisabled && "opacity-50 cursor-not-allowed"
-              )}
+  // Render tab with optional inline dropdown
+  const renderTab = (tab: typeof tabs[0]) => {
+    const isDisabled = 
+      (tab.id === 'department' && !hasDepartments && !isAdminOrOwner) ||
+      (tab.id === 'connection' && !hasConnection);
+    const count = counts[tab.id];
+    const isActive = activeTab === tab.id;
+    
+    // Show inline dropdown for department and connection tabs
+    const showDepartmentDropdown = tab.id === 'department' && isActive && departments.length > 0;
+    const showConnectionDropdown = tab.id === 'connection' && isActive && connections.length > 0;
+    
+    return (
+      <div
+        key={tab.id}
+        className={cn(
+          "flex items-center justify-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors flex-1",
+          isActive
+            ? "bg-background text-foreground shadow-sm"
+            : "text-muted-foreground hover:text-foreground",
+          isDisabled && "opacity-50 cursor-not-allowed"
+        )}
+      >
+        {!showDepartmentDropdown && !showConnectionDropdown && (
+          <button
+            onClick={() => !isDisabled && onTabChange(tab.id)}
+            disabled={isDisabled}
+            title={isDisabled ? 
+              (tab.id === 'department' ? 'Você não está em nenhum departamento' : 'Selecione uma conexão') 
+              : tab.description
+            }
+            className="flex items-center justify-center gap-2"
+          >
+            {tab.icon}
+            <span className="hidden sm:inline">{tab.label}</span>
+            {count > 0 && (
+              <span className={cn(
+                "text-xs px-1.5 py-0.5 rounded-full min-w-[20px] text-center",
+                isActive 
+                  ? "bg-primary/10 text-primary" 
+                  : "bg-muted-foreground/20"
+              )}>
+                {count}
+              </span>
+            )}
+          </button>
+        )}
+        
+        {/* Inline department dropdown */}
+        {showDepartmentDropdown && (
+          <div className="flex items-center gap-2">
+            <Building2 className="w-4 h-4" />
+            <Select
+              value={selectedDepartmentId || 'all'}
+              onValueChange={(value) => onDepartmentChange(value === 'all' ? null : value)}
             >
-              {tab.icon}
-              <span className="hidden sm:inline">{tab.label}</span>
-              {count > 0 && (
-                <span className={cn(
-                  "text-xs px-1.5 py-0.5 rounded-full min-w-[20px] text-center",
-                  activeTab === tab.id 
-                    ? "bg-primary/10 text-primary" 
-                    : "bg-muted-foreground/20"
-                )}>
-                  {count}
-                </span>
-              )}
-            </button>
-          );
-        })}
+              <SelectTrigger className="h-7 border-none shadow-none bg-transparent p-0 gap-1 min-w-[150px]">
+                <SelectValue placeholder="Todos" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos os departamentos</SelectItem>
+                {departments.map((dept) => (
+                  <SelectItem key={dept.id} value={dept.id}>
+                    {dept.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {count > 0 && (
+              <span className="text-xs px-1.5 py-0.5 rounded-full min-w-[20px] text-center bg-primary/10 text-primary">
+                {count}
+              </span>
+            )}
+          </div>
+        )}
+        
+        {/* Inline connection dropdown */}
+        {showConnectionDropdown && (
+          <div className="flex items-center gap-2">
+            <Smartphone className="w-4 h-4" />
+            <Select
+              value={selectedConnectionId || 'all'}
+              onValueChange={(value) => onConnectionChange(value === 'all' ? null : value)}
+            >
+              <SelectTrigger className="h-7 border-none shadow-none bg-transparent p-0 gap-1 min-w-[150px]">
+                <SelectValue placeholder="Todas" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todas as conexões</SelectItem>
+                {connections.map((conn) => (
+                  <SelectItem key={conn.id} value={conn.id}>
+                    {conn.name} ({conn.phone_number})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {count > 0 && (
+              <span className="text-xs px-1.5 py-0.5 rounded-full min-w-[20px] text-center bg-primary/10 text-primary">
+                {count}
+              </span>
+            )}
+          </div>
+        )}
       </div>
+    );
+  };
 
-      {/* Department filter dropdown */}
-      {activeTab === 'department' && departments.length > 0 && (
-        <div className="flex items-center gap-2">
-          <span className="text-sm text-muted-foreground">Filtrar por:</span>
-          <Select
-            value={selectedDepartmentId || 'all'}
-            onValueChange={(value) => onDepartmentChange(value === 'all' ? null : value)}
-          >
-            <SelectTrigger className="w-[220px]">
-              <SelectValue placeholder="Todos os departamentos" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Todos os departamentos</SelectItem>
-              {departments.map((dept) => (
-                <SelectItem key={dept.id} value={dept.id}>
-                  {dept.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      )}
-
-      {/* Connection filter dropdown */}
-      {activeTab === 'connection' && connections.length > 0 && (
-        <div className="flex items-center gap-2">
-          <span className="text-sm text-muted-foreground">Filtrar por:</span>
-          <Select
-            value={selectedConnectionId || 'all'}
-            onValueChange={(value) => onConnectionChange(value === 'all' ? null : value)}
-          >
-            <SelectTrigger className="w-[220px]">
-              <SelectValue placeholder="Todas as conexões" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Todas as conexões</SelectItem>
-              {connections.map((conn) => (
-                <SelectItem key={conn.id} value={conn.id}>
-                  {conn.name} ({conn.phone_number})
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      )}
+  return (
+    <div className="flex gap-1 p-1 bg-muted rounded-lg">
+      {tabs.map(renderTab)}
     </div>
   );
 }
