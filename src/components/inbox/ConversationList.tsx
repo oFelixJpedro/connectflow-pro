@@ -10,8 +10,6 @@ import { InboxTabs, type InboxColumn } from '@/components/inbox/InboxTabs';
 import { AssignmentBadge } from '@/components/inbox/AssignmentBadge';
 import { cn } from '@/lib/utils';
 import type { Conversation, ConversationFilters } from '@/types';
-import { formatDistanceToNow } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
 import { useAuth } from '@/contexts/AuthContext';
 
 interface ConversationListProps {
@@ -83,9 +81,37 @@ export function ConversationList({
     return { minhas, fila, todas };
   }, [conversations, user?.id]);
 
-  const getTimeAgo = (date?: string) => {
-    if (!date) return '';
-    return formatDistanceToNow(new Date(date), { addSuffix: true, locale: ptBR });
+  const formatTimestamp = (dateString?: string): string => {
+    if (!dateString) return '';
+    
+    const date = new Date(dateString);
+    const now = new Date();
+    
+    const isToday = date.toDateString() === now.toDateString();
+    
+    const yesterday = new Date(now);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const isYesterday = date.toDateString() === yesterday.toDateString();
+    
+    if (isToday) {
+      return date.toLocaleTimeString('pt-BR', {
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    } else if (isYesterday) {
+      return 'Ontem';
+    } else {
+      const diffDays = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24));
+      
+      if (diffDays < 7) {
+        return date.toLocaleDateString('pt-BR', { weekday: 'short' }).replace('.', '');
+      } else {
+        return date.toLocaleDateString('pt-BR', {
+          day: '2-digit',
+          month: '2-digit'
+        });
+      }
+    }
   };
 
   const getInitials = (name?: string) => {
@@ -175,7 +201,7 @@ export function ConversationList({
                   )}
                 >
                   <div className="flex gap-3">
-                    {/* Avatar */}
+                    {/* Avatar with unread badge */}
                     <div className="relative flex-shrink-0">
                       <Avatar className="w-12 h-12">
                         <AvatarImage src={conversation.contact?.avatarUrl} />
@@ -183,6 +209,13 @@ export function ConversationList({
                           {getInitials(conversation.contact?.name)}
                         </AvatarFallback>
                       </Avatar>
+                      
+                      {/* Unread badge on avatar */}
+                      {conversation.unreadCount > 0 && (
+                        <span className="absolute -top-1 -right-1 bg-primary text-primary-foreground text-xs font-semibold rounded-full min-w-[20px] h-5 px-1.5 flex items-center justify-center shadow-md z-10">
+                          {conversation.unreadCount > 99 ? '99+' : conversation.unreadCount}
+                        </span>
+                      )}
                     </div>
 
                     {/* Content */}
@@ -191,8 +224,8 @@ export function ConversationList({
                         <p className="font-medium text-sm text-foreground truncate">
                           {conversation.contact?.name || conversation.contact?.phoneNumber}
                         </p>
-                        <span className="text-xs text-muted-foreground whitespace-nowrap">
-                          {getTimeAgo(conversation.lastMessageAt)}
+                        <span className="text-xs text-muted-foreground whitespace-nowrap flex-shrink-0">
+                          {formatTimestamp(conversation.lastMessageAt)}
                         </span>
                       </div>
                       
@@ -223,9 +256,9 @@ export function ConversationList({
                         )}
                       </div>
 
-                      {/* Tags and unread */}
-                      <div className="flex items-center justify-between mt-2">
-                        <div className="flex items-center gap-1.5">
+                      {/* Tags */}
+                      {conversation.tags.length > 0 && (
+                        <div className="flex items-center gap-1.5 mt-2">
                           {conversation.tags.slice(0, 2).map((tag) => (
                             <Badge 
                               key={tag} 
@@ -241,12 +274,7 @@ export function ConversationList({
                             </span>
                           )}
                         </div>
-                        {conversation.unreadCount > 0 && (
-                          <Badge className="bg-primary text-primary-foreground text-xs px-2 py-0 h-5">
-                            {conversation.unreadCount}
-                          </Badge>
-                        )}
-                      </div>
+                      )}
                     </div>
                   </div>
 
