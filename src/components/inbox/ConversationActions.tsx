@@ -45,7 +45,6 @@ interface Agent {
   id: string;
   full_name: string;
   avatar_url: string | null;
-  status: string;
 }
 
 interface Department {
@@ -91,9 +90,8 @@ export function ConversationActions({
     async function loadAgents() {
       const { data, error } = await supabase
         .from('profiles')
-        .select('id, full_name, avatar_url, status')
+        .select('id, full_name, avatar_url')
         .neq('id', currentUserId)
-        .order('status', { ascending: true })
         .order('full_name');
 
       if (!error && data) {
@@ -391,16 +389,6 @@ export function ConversationActions({
                         </AvatarFallback>
                       </Avatar>
                       <span className="flex-1 truncate">{agent.full_name}</span>
-                      <Badge
-                        variant="outline"
-                        className={`ml-2 text-xs ${
-                          agent.status === 'online'
-                            ? 'bg-success/10 text-success border-success/30'
-                            : 'bg-muted text-muted-foreground'
-                        }`}
-                      >
-                        {agent.status === 'online' ? 'Online' : 'Offline'}
-                      </Badge>
                     </DropdownMenuItem>
                   ))
                 )}

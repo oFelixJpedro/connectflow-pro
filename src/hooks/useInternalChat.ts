@@ -63,7 +63,7 @@ export function useInternalChat() {
     // Build query - fetch all active members from company
     let query = supabase
       .from('profiles')
-      .select('id, full_name, avatar_url, status, email')
+      .select('id, full_name, avatar_url, email')
       .eq('company_id', company.id)
       .eq('active', true);
 
