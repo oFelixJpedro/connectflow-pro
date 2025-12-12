@@ -123,6 +123,7 @@ export default function QuickReplies() {
   const [departments, setDepartments] = useState<Department[]>([]);
   const [connections, setConnections] = useState<Connection[]>([]);
   const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(null);
+  const [selectedDepartmentId, setSelectedDepartmentId] = useState<string | null>(null);
   
   // Add dialog state
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
@@ -216,7 +217,7 @@ export default function QuickReplies() {
   const allCategories = [...new Set([...defaultCategories, ...existingCategories])].sort();
 
   // Get replies filtered by visibility tab, then by search/category
-  const visibilityFilteredReplies = getFilteredByVisibility(visibilityTab, selectedConnectionId);
+  const visibilityFilteredReplies = getFilteredByVisibility(visibilityTab, selectedConnectionId, selectedDepartmentId);
   const filteredReplies = visibilityFilteredReplies.filter((reply) => {
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
@@ -829,6 +830,12 @@ export default function QuickReplies() {
         counts={visibilityCounts}
         hasDepartments={departments.length > 0}
         hasConnection={connections.length > 0}
+        departments={departments}
+        connections={connections}
+        selectedDepartmentId={selectedDepartmentId}
+        selectedConnectionId={selectedConnectionId}
+        onDepartmentChange={setSelectedDepartmentId}
+        onConnectionChange={setSelectedConnectionId}
       />
 
       {/* Filters */}
