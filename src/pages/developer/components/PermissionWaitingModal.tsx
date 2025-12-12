@@ -7,13 +7,15 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Loader2, X, CheckCircle, XCircle, Clock } from 'lucide-react';
+import { Loader2, X, CheckCircle, XCircle, Clock, ExternalLink } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { getDeveloperToken } from '@/contexts/DeveloperAuthContext';
+import { toast } from 'sonner';
 
 interface PermissionWaitingModalProps {
   requestId: string;
   targetName: string;
+  targetUserId?: string;
   actionDescription?: string;
   requestType?: 'edit_company' | 'edit_user' | 'access_user' | 'delete_company' | 'delete_user';
   onCancel: () => void;
@@ -25,6 +27,7 @@ interface PermissionWaitingModalProps {
 export default function PermissionWaitingModal({
   requestId,
   targetName,
+  targetUserId,
   actionDescription,
   requestType,
   onCancel,
@@ -32,83 +35,96 @@ export default function PermissionWaitingModal({
   onApproved,
   onDenied
 }: PermissionWaitingModalProps) {
-  const [status, setStatus] = useState<'pending' | 'approved' | 'denied' | 'expired'>('pending');
-  const [timeLeft, setTimeLeft] = useState(300); // 5 minutes in seconds
+  const [status, setStatus] = useState<'pending' | 'approved' | 'denied' | 'expired' | 'ready'>('pending');
+  const [timeLeft, setTimeLeft] = useState(300);
+  const [magicLink, setMagicLink] = useState<string | null>(null);
   const hasCalledCallback = useRef(false);
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Poll for permission status using Edge Function
+  // Função para buscar o magic link com URL dinâmica
+  const fetchMagicLink = async () => {
+    if (!targetUserId || requestType !== 'access_user') return;
+    
+    try {
+      const token = getDeveloperToken();
+      
+      // Passar a URL atual do frontend
+      const redirectUrl = `${window.location.origin}/dashboard`;
+      
+      const { data, error } = await supabase.functions.invoke('developer-impersonate', {
+        body: { 
+          action: 'impersonate', 
+          target_user_id: targetUserId,
+          redirect_url: redirectUrl
+        },
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      if (error || data?.error) {
+        toast.error(data?.error || 'Erro ao gerar link de acesso');
+        setStatus('denied');
+        return;
+      }
+
+      if (data?.magic_link) {
+        setMagicLink(data.magic_link);
+        setStatus('ready');
+      }
+    } catch (err) {
+      console.error('Error fetching magic link:', err);
+      toast.error('Erro ao gerar link de acesso');
+      setStatus('denied');
+    }
+  };
+
   const checkPermissionStatus = useCallback(async () => {
     if (hasCalledCallback.current) return;
     
     try {
       const token = getDeveloperToken();
-      console.log('Checking permission status for:', requestId);
       
       const { data, error } = await supabase.functions.invoke('developer-data', {
         body: { action: 'check_permission_status', request_id: requestId },
         headers: { Authorization: `Bearer ${token}` }
       });
 
-      if (error) {
-        console.error('Error checking permission status:', error);
-        return;
-      }
+      if (error) return;
 
       const permStatus = data?.status;
-      console.log('Permission status response:', permStatus);
-
       if (!permStatus || permStatus === 'pending') return;
 
-      // Clear intervals first
-      if (pollIntervalRef.current) {
-        clearInterval(pollIntervalRef.current);
-        pollIntervalRef.current = null;
-      }
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-        timerRef.current = null;
-      }
+      if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+      if (timerRef.current) clearInterval(timerRef.current);
 
-      setStatus(permStatus);
-
-      // Only call callback once
-      if (!hasCalledCallback.current) {
+      if (permStatus === 'approved') {
         hasCalledCallback.current = true;
+        setStatus('approved');
         
-        if (permStatus === 'approved') {
-          console.log('Permission APPROVED - calling onApproved callback');
-          if (onApproved) {
-            // Small delay to ensure UI updates
-            setTimeout(() => {
-              onApproved();
-            }, 500);
-          }
-        } else if (permStatus === 'denied' || permStatus === 'expired' || permStatus === 'cancelled') {
-          console.log('Permission DENIED/EXPIRED - calling onDenied callback');
-          if (onDenied) {
-            setTimeout(() => {
-              onDenied();
-            }, 1500);
-          } else {
-            setTimeout(onClose, 2000);
-          }
+        // Para access_user, buscar o magic link
+        if (requestType === 'access_user' && targetUserId) {
+          await fetchMagicLink();
+        } else if (onApproved) {
+          setTimeout(() => onApproved(), 500);
+        }
+      } else if (permStatus === 'denied' || permStatus === 'expired' || permStatus === 'cancelled') {
+        hasCalledCallback.current = true;
+        setStatus(permStatus === 'cancelled' ? 'denied' : permStatus);
+        if (onDenied) {
+          setTimeout(() => onDenied(), 1500);
+        } else {
+          setTimeout(onClose, 2000);
         }
       }
     } catch (err) {
       console.error('Error polling permission:', err);
     }
-  }, [requestId, onApproved, onDenied, onClose]);
+  }, [requestId, targetUserId, requestType, onApproved, onDenied, onClose]);
 
   useEffect(() => {
-    // Initial check
     checkPermissionStatus();
-
-    // Poll every 2 seconds
     pollIntervalRef.current = setInterval(checkPermissionStatus, 2000);
 
-    // Timer countdown
     timerRef.current = setInterval(() => {
       setTimeLeft(prev => {
         if (prev <= 1) {
@@ -144,6 +160,14 @@ export default function PermissionWaitingModal({
     onCancel();
   };
 
+  const handleOpenMagicLink = () => {
+    if (magicLink) {
+      window.open(magicLink, '_blank');
+      toast.success(`Sessão aberta como ${targetName}`);
+      onClose();
+    }
+  };
+
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
@@ -152,20 +176,13 @@ export default function PermissionWaitingModal({
 
   const getRequestTypeText = () => {
     if (actionDescription) return actionDescription;
-    
     switch (requestType) {
-      case 'edit_company':
-        return 'editar a empresa';
-      case 'edit_user':
-        return 'editar o usuário';
-      case 'access_user':
-        return 'acessar como o usuário';
-      case 'delete_company':
-        return 'excluir a empresa';
-      case 'delete_user':
-        return 'excluir o usuário';
-      default:
-        return 'realizar esta ação';
+      case 'edit_company': return 'editar a empresa';
+      case 'edit_user': return 'editar o usuário';
+      case 'access_user': return 'acessar como o usuário';
+      case 'delete_company': return 'excluir a empresa';
+      case 'delete_user': return 'excluir o usuário';
+      default: return 'realizar esta ação';
     }
   };
 
@@ -175,12 +192,14 @@ export default function PermissionWaitingModal({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             {status === 'pending' && <Loader2 className="h-5 w-5 animate-spin text-primary" />}
-            {status === 'approved' && <CheckCircle className="h-5 w-5 text-green-600" />}
+            {status === 'approved' && <Loader2 className="h-5 w-5 animate-spin text-green-600" />}
+            {status === 'ready' && <CheckCircle className="h-5 w-5 text-green-600" />}
             {status === 'denied' && <XCircle className="h-5 w-5 text-destructive" />}
             {status === 'expired' && <Clock className="h-5 w-5 text-muted-foreground" />}
             
             {status === 'pending' && 'Aguardando Permissão'}
-            {status === 'approved' && 'Permissão Concedida'}
+            {status === 'approved' && 'Gerando Acesso...'}
+            {status === 'ready' && 'Acesso Pronto!'}
             {status === 'denied' && 'Permissão Negada'}
             {status === 'expired' && 'Tempo Expirado'}
           </DialogTitle>
@@ -189,12 +208,17 @@ export default function PermissionWaitingModal({
               <>
                 Solicitando permissão para {getRequestTypeText()} de <strong>{targetName}</strong>.
                 <br />
-                O usuário responsável foi notificado e precisa aprovar esta ação.
+                O usuário foi notificado e precisa aprovar.
               </>
             )}
-            {status === 'approved' && 'A permissão foi concedida. Executando ação...'}
-            {status === 'denied' && 'O usuário negou a permissão para esta ação.'}
-            {status === 'expired' && 'O tempo de espera expirou. Tente novamente.'}
+            {status === 'approved' && 'Permissão concedida! Gerando link de acesso...'}
+            {status === 'ready' && (
+              <>
+                Clique no botão abaixo para acessar como <strong>{targetName}</strong>.
+              </>
+            )}
+            {status === 'denied' && 'O usuário negou a permissão.'}
+            {status === 'expired' && 'O tempo expirou. Tente novamente.'}
           </DialogDescription>
         </DialogHeader>
 
@@ -205,7 +229,7 @@ export default function PermissionWaitingModal({
                 {formatTime(timeLeft)}
               </div>
               <p className="text-sm text-muted-foreground text-center">
-                A solicitação expira automaticamente após 5 minutos
+                Expira automaticamente após 5 minutos
               </p>
               <Button variant="outline" onClick={handleCancel}>
                 <X className="h-4 w-4 mr-2" />
@@ -217,8 +241,15 @@ export default function PermissionWaitingModal({
           {status === 'approved' && (
             <div className="flex items-center gap-2">
               <Loader2 className="h-5 w-5 animate-spin text-green-600" />
-              <span className="text-green-600 font-medium">Processando...</span>
+              <span className="text-green-600 font-medium">Gerando link seguro...</span>
             </div>
+          )}
+
+          {status === 'ready' && magicLink && (
+            <Button onClick={handleOpenMagicLink} className="w-full" size="lg">
+              <ExternalLink className="h-4 w-4 mr-2" />
+              Acessar como {targetName}
+            </Button>
           )}
           
           {(status === 'denied' || status === 'expired') && (
