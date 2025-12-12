@@ -10,8 +10,8 @@ import {
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
 import type { ConversationFilters as FiltersType } from '@/types';
 
 interface Department {
@@ -19,20 +19,18 @@ interface Department {
   name: string;
 }
 
+interface Agent {
+  id: string;
+  full_name: string;
+}
+
 interface ConversationFiltersProps {
   connectionId: string | null;
   filters: FiltersType;
   onFiltersChange: (filters: FiltersType) => void;
   currentUserId?: string;
-  isRestricted?: boolean; // true if access_level = 'assigned_only'
+  isRestricted?: boolean;
 }
-
-const ASSIGNMENT_OPTIONS = [
-  { value: 'all', label: 'Todas' },
-  { value: 'mine', label: 'Minhas conversas' },
-  { value: 'unassigned', label: 'Não atribuídas' },
-  { value: 'others', label: 'De outros atendentes' },
-] as const;
 
 const STATUS_OPTIONS = [
   { value: 'all', label: 'Todos' },
@@ -48,11 +46,15 @@ export function ConversationFiltersComponent({
   currentUserId,
   isRestricted = false,
 }: ConversationFiltersProps) {
+  const { userRole } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
   const [departments, setDepartments] = useState<Department[]>([]);
+  const [agents, setAgents] = useState<Agent[]>([]);
   const [localFilters, setLocalFilters] = useState<FiltersType>(filters);
 
-  // Carregar departamentos da conexão
+  const isAdminOrOwner = userRole?.role === 'owner' || userRole?.role === 'admin';
+
+  // Load departments for the connection
   useEffect(() => {
     async function loadDepartments() {
       if (!connectionId) {
@@ -68,7 +70,7 @@ export function ConversationFiltersComponent({
         .order('name');
 
       if (error) {
-        console.error('[ConversationFilters] Erro ao carregar departamentos:', error);
+        console.error('[ConversationFilters] Error loading departments:', error);
         return;
       }
 
@@ -78,16 +80,41 @@ export function ConversationFiltersComponent({
     loadDepartments();
   }, [connectionId]);
 
+  // Load agents for admin/owner
+  useEffect(() => {
+    async function loadAgents() {
+      if (!isAdminOrOwner) {
+        setAgents([]);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id, full_name')
+        .eq('active', true)
+        .order('full_name');
+
+      if (error) {
+        console.error('[ConversationFilters] Error loading agents:', error);
+        return;
+      }
+
+      setAgents(data || []);
+    }
+
+    loadAgents();
+  }, [isAdminOrOwner]);
+
   // Sync local filters when props change
   useEffect(() => {
     setLocalFilters(filters);
   }, [filters]);
 
-  // Contar filtros ativos (don't count assignment filter if restricted)
+  // Count active filters (excluding column-based assignment)
   const activeFiltersCount = [
-    !isRestricted && filters.assignedUserId && filters.assignedUserId !== 'all',
     filters.status && filters.status !== 'all',
     filters.departmentId && filters.departmentId !== 'all',
+    isAdminOrOwner && filters.filterByAgentId,
   ].filter(Boolean).length;
 
   const handleApply = () => {
@@ -99,8 +126,8 @@ export function ConversationFiltersComponent({
   const handleClear = () => {
     const clearedFilters: FiltersType = {
       status: 'all',
-      assignedUserId: 'all',
       departmentId: undefined,
+      filterByAgentId: undefined,
     };
     setLocalFilters(clearedFilters);
     onFiltersChange(clearedFilters);
@@ -112,10 +139,10 @@ export function ConversationFiltersComponent({
     const newFilters = { ...filters };
     if (filterKey === 'status') {
       newFilters.status = 'all';
-    } else if (filterKey === 'assignedUserId') {
-      newFilters.assignedUserId = 'all';
     } else if (filterKey === 'departmentId') {
       newFilters.departmentId = undefined;
+    } else if (filterKey === 'filterByAgentId') {
+      newFilters.filterByAgentId = undefined;
     }
     onFiltersChange(newFilters);
     localStorage.setItem('conversationFilters', JSON.stringify(newFilters));
@@ -125,190 +152,189 @@ export function ConversationFiltersComponent({
     if (key === 'status') {
       return STATUS_OPTIONS.find(o => o.value === value)?.label || value || '';
     }
-    if (key === 'assignedUserId') {
-      return ASSIGNMENT_OPTIONS.find(o => o.value === value)?.label || value || '';
-    }
     if (key === 'departmentId') {
       return departments.find(d => d.id === value)?.name || 'Departamento';
+    }
+    if (key === 'filterByAgentId') {
+      return agents.find(a => a.id === value)?.full_name || 'Atendente';
     }
     return '';
   };
 
   return (
-    <div className="space-y-2">
-      <div className="flex items-center gap-2">
-        <Popover open={isOpen} onOpenChange={setIsOpen}>
-          <PopoverTrigger asChild>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-8 gap-1.5 bg-card"
-            >
-              <Filter className="w-4 h-4" />
-              <span>Filtros</span>
-              {activeFiltersCount > 0 && (
-                <Badge 
-                  variant="secondary" 
-                  className="ml-1 h-5 min-w-5 px-1.5 text-xs bg-primary text-primary-foreground"
-                >
-                  {activeFiltersCount}
-                </Badge>
-              )}
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent 
-            align="start" 
-            className="w-72 p-0 bg-popover border-border flex flex-col max-h-[60vh]"
-            sideOffset={4}
+    <div className="flex items-center gap-2">
+      <Popover open={isOpen} onOpenChange={setIsOpen}>
+        <PopoverTrigger asChild>
+          <Button
+            variant="outline"
+            size="icon"
+            className="h-9 w-9 shrink-0 bg-card"
           >
-            <div className="p-3 border-b border-border shrink-0">
-              <h4 className="font-medium text-sm">Filtrar Conversas</h4>
-            </div>
-            
-            <div className="flex-1 overflow-y-auto min-h-0 max-h-[300px]">
+            <Filter className="w-4 h-4" />
+            {activeFiltersCount > 0 && (
+              <Badge 
+                variant="secondary" 
+                className="absolute -top-1.5 -right-1.5 h-5 min-w-5 px-1.5 text-xs bg-primary text-primary-foreground"
+              >
+                {activeFiltersCount}
+              </Badge>
+            )}
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent 
+          align="end" 
+          className="w-72 p-0 bg-popover border-border flex flex-col max-h-[60vh]"
+          sideOffset={4}
+        >
+          <div className="p-3 border-b border-border shrink-0">
+            <h4 className="font-medium text-sm">Filtrar Conversas</h4>
+          </div>
+          
+          <div className="flex-1 overflow-y-auto min-h-0 max-h-[300px]">
             <div className="p-3 space-y-4">
-                {/* Filtro de Atribuição - hide if restricted */}
-                {!isRestricted && (
+              {/* Agent Filter - Only for admin/owner */}
+              {isAdminOrOwner && agents.length > 0 && (
+                <>
                   <div className="space-y-2">
                     <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                      Atribuição
+                      Por Atendente
                     </Label>
                     <RadioGroup
-                      value={localFilters.assignedUserId || 'all'}
+                      value={localFilters.filterByAgentId || 'all'}
                       onValueChange={(value) => 
-                        setLocalFilters(prev => ({ ...prev, assignedUserId: value as FiltersType['assignedUserId'] }))
+                        setLocalFilters(prev => ({ 
+                          ...prev, 
+                          filterByAgentId: value === 'all' ? undefined : value 
+                        }))
                       }
                       className="space-y-1.5"
                     >
-                      {ASSIGNMENT_OPTIONS.map((option) => (
-                        <div key={option.value} className="flex items-center space-x-2">
-                          <RadioGroupItem value={option.value} id={`assignment-${option.value}`} />
+                      <div className="flex items-center space-x-2">
+                        <RadioGroupItem value="all" id="agent-all" />
+                        <Label 
+                          htmlFor="agent-all"
+                          className="text-sm font-normal cursor-pointer"
+                        >
+                          Todos os atendentes
+                        </Label>
+                      </div>
+                      {agents.map((agent) => (
+                        <div key={agent.id} className="flex items-center space-x-2">
+                          <RadioGroupItem value={agent.id} id={`agent-${agent.id}`} />
                           <Label 
-                            htmlFor={`assignment-${option.value}`}
+                            htmlFor={`agent-${agent.id}`}
                             className="text-sm font-normal cursor-pointer"
                           >
-                            {option.label}
+                            {agent.full_name}
                           </Label>
                         </div>
                       ))}
                     </RadioGroup>
                   </div>
-                )}
+                  <Separator />
+                </>
+              )}
 
-                {!isRestricted && <Separator />}
+              {/* Status Filter */}
+              <div className="space-y-2">
+                <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                  Status
+                </Label>
+                <RadioGroup
+                  value={localFilters.status || 'all'}
+                  onValueChange={(value) => 
+                    setLocalFilters(prev => ({ ...prev, status: value as FiltersType['status'] }))
+                  }
+                  className="space-y-1.5"
+                >
+                  {STATUS_OPTIONS.map((option) => (
+                    <div key={option.value} className="flex items-center space-x-2">
+                      <RadioGroupItem value={option.value} id={`status-${option.value}`} />
+                      <Label 
+                        htmlFor={`status-${option.value}`}
+                        className="text-sm font-normal cursor-pointer"
+                      >
+                        {option.label}
+                      </Label>
+                    </div>
+                  ))}
+                </RadioGroup>
+              </div>
 
-                {/* Filtro de Status */}
-                <div className="space-y-2">
-                  <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                    Status
-                  </Label>
-                  <RadioGroup
-                    value={localFilters.status || 'all'}
-                    onValueChange={(value) => 
-                      setLocalFilters(prev => ({ ...prev, status: value as FiltersType['status'] }))
-                    }
-                    className="space-y-1.5"
-                  >
-                    {STATUS_OPTIONS.map((option) => (
-                      <div key={option.value} className="flex items-center space-x-2">
-                        <RadioGroupItem value={option.value} id={`status-${option.value}`} />
+              {departments.length > 0 && (
+                <>
+                  <Separator />
+
+                  {/* Department Filter */}
+                  <div className="space-y-2">
+                    <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                      Departamento
+                    </Label>
+                    <RadioGroup
+                      value={localFilters.departmentId || 'all'}
+                      onValueChange={(value) => 
+                        setLocalFilters(prev => ({ 
+                          ...prev, 
+                          departmentId: value === 'all' ? undefined : value 
+                        }))
+                      }
+                      className="space-y-1.5"
+                    >
+                      <div className="flex items-center space-x-2">
+                        <RadioGroupItem value="all" id="department-all" />
                         <Label 
-                          htmlFor={`status-${option.value}`}
+                          htmlFor="department-all"
                           className="text-sm font-normal cursor-pointer"
                         >
-                          {option.label}
+                          Todos
                         </Label>
                       </div>
-                    ))}
-                  </RadioGroup>
-                </div>
-
-                {departments.length > 0 && (
-                  <>
-                    <Separator />
-
-                    {/* Filtro de Departamento */}
-                    <div className="space-y-2">
-                      <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                        Departamento
-                      </Label>
-                      <RadioGroup
-                        value={localFilters.departmentId || 'all'}
-                        onValueChange={(value) => 
-                          setLocalFilters(prev => ({ 
-                            ...prev, 
-                            departmentId: value === 'all' ? undefined : value 
-                          }))
-                        }
-                        className="space-y-1.5"
-                      >
-                        <div className="flex items-center space-x-2">
-                          <RadioGroupItem value="all" id="department-all" />
+                      {departments.map((dept) => (
+                        <div key={dept.id} className="flex items-center space-x-2">
+                          <RadioGroupItem value={dept.id} id={`department-${dept.id}`} />
                           <Label 
-                            htmlFor="department-all"
+                            htmlFor={`department-${dept.id}`}
                             className="text-sm font-normal cursor-pointer"
                           >
-                            Todos
+                            {dept.name}
                           </Label>
                         </div>
-                        {departments.map((dept) => (
-                          <div key={dept.id} className="flex items-center space-x-2">
-                            <RadioGroupItem value={dept.id} id={`department-${dept.id}`} />
-                            <Label 
-                              htmlFor={`department-${dept.id}`}
-                              className="text-sm font-normal cursor-pointer"
-                            >
-                              {dept.name}
-                            </Label>
-                          </div>
-                        ))}
-                      </RadioGroup>
-                    </div>
-                  </>
-                )}
-              </div>
+                      ))}
+                    </RadioGroup>
+                  </div>
+                </>
+              )}
             </div>
+          </div>
 
-            <div className="p-3 border-t border-border flex gap-2 shrink-0">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleClear}
-                className="flex-1"
-              >
-                Limpar
-              </Button>
-              <Button
-                size="sm"
-                onClick={handleApply}
-                className="flex-1"
-              >
-                Aplicar
-              </Button>
-            </div>
-          </PopoverContent>
-        </Popover>
+          <div className="p-3 border-t border-border flex gap-2 shrink-0">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleClear}
+              className="flex-1"
+            >
+              Limpar
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleApply}
+              className="flex-1"
+            >
+              Aplicar
+            </Button>
+          </div>
+        </PopoverContent>
+      </Popover>
 
-        {activeFiltersCount > 0 && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleClear}
-            className="h-8 text-xs text-muted-foreground hover:text-foreground"
-          >
-            Limpar todos
-          </Button>
-        )}
-      </div>
-
-      {/* Chips dos filtros ativos */}
+      {/* Active filter chips */}
       {activeFiltersCount > 0 && (
         <div className="flex flex-wrap gap-1.5">
-          {!isRestricted && filters.assignedUserId && filters.assignedUserId !== 'all' && (
+          {isAdminOrOwner && filters.filterByAgentId && (
             <Badge variant="secondary" className="gap-1 pl-2 pr-1 py-0.5">
-              <span className="text-xs">{getFilterLabel('assignedUserId', filters.assignedUserId)}</span>
+              <span className="text-xs">{getFilterLabel('filterByAgentId', filters.filterByAgentId)}</span>
               <button
-                onClick={() => removeFilter('assignedUserId')}
+                onClick={() => removeFilter('filterByAgentId')}
                 className="ml-1 hover:bg-muted rounded p-0.5"
               >
                 <X className="w-3 h-3" />

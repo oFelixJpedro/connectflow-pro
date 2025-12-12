@@ -115,7 +115,7 @@ function transformReaction(db: any): MessageReaction {
 
 export function useInboxData() {
   const { user, profile, userRole } = useAuth();
-  const { selectedConnectionId, conversationFilters, setCurrentAccessLevel } = useAppStore();
+  const { selectedConnectionId, conversationFilters, setCurrentAccessLevel, inboxColumn } = useAppStore();
   
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
@@ -256,29 +256,41 @@ export function useInboxData() {
         query = query.in('department_id', allowedDepartmentIds);
       }
 
-      // Aplicar filtros
-      // Filtro de status
+      // Apply filters
+      // Status filter
       if (conversationFilters.status && conversationFilters.status !== 'all') {
         query = query.eq('status', conversationFilters.status);
       }
 
-      // Filtro de atribuição - ONLY if access_level is 'full'
-      // If 'assigned_only', force filter to only user's conversations
+      // Column-based assignment filter
+      // If 'assigned_only' access level, force filter to only user's conversations
       if (effectiveAccessLevel === 'assigned_only' && user?.id) {
         // Force filter to only assigned to current user
         query = query.eq('assigned_user_id', user.id);
       } else {
-        // Normal assignment filter logic
-        if (conversationFilters.assignedUserId === 'mine' && user?.id) {
-          query = query.eq('assigned_user_id', user.id);
-        } else if (conversationFilters.assignedUserId === 'unassigned') {
-          query = query.is('assigned_user_id', null);
-        } else if (conversationFilters.assignedUserId === 'others' && user?.id) {
-          query = query.neq('assigned_user_id', user.id).not('assigned_user_id', 'is', null);
+        // Column-based filtering (replaces old assignment filter)
+        switch (inboxColumn) {
+          case 'minhas':
+            // Only conversations assigned to current user
+            if (user?.id) {
+              query = query.eq('assigned_user_id', user.id);
+            }
+            break;
+          case 'fila':
+            // Only unassigned conversations
+            query = query.is('assigned_user_id', null);
+            break;
+          case 'todas':
+            // All conversations - no assignment filter
+            // Only apply agent filter if admin/owner has selected one
+            if (conversationFilters.filterByAgentId) {
+              query = query.eq('assigned_user_id', conversationFilters.filterByAgentId);
+            }
+            break;
         }
       }
 
-      // Filtro de departamento (do filtro UI - adicional ao filtro de acesso)
+      // Department filter (from UI filter - additional to access filter)
       if (conversationFilters.departmentId) {
         query = query.eq('department_id', conversationFilters.departmentId);
       }
@@ -312,7 +324,7 @@ export function useInboxData() {
     } finally {
       setIsLoadingConversations(false);
     }
-  }, [profile?.company_id, selectedConnectionId, conversationFilters, user?.id, userRole?.role, setCurrentAccessLevel]);
+  }, [profile?.company_id, selectedConnectionId, conversationFilters, user?.id, userRole?.role, setCurrentAccessLevel, inboxColumn]);
 
   // ============================================================
   // 2. CARREGAR MENSAGENS DE UMA CONVERSA
