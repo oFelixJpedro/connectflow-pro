@@ -892,8 +892,8 @@ serve(async (req) => {
     const contactName = payload.chat?.wa_name || payload.message?.senderName || phoneNumber
     console.log(`👤 Nome do contato: ${contactName}`)
     
-    // Extract profile picture URL from UAZAPI
-    const profilePictureUrl = payload.chat?.image || payload.chat?.profilePicUrl || payload.message?.profilePicUrl || null
+    // Extract profile picture URL from UAZAPI - imagePreview has the actual URL, not image
+    const profilePictureUrl = payload.chat?.imagePreview || payload.chat?.image || payload.chat?.profilePicUrl || payload.message?.profilePicUrl || null
     console.log(`🖼️ Foto de perfil: ${profilePictureUrl ? 'Disponível' : 'Não disponível'}`)
     
     // Check if contact already exists
