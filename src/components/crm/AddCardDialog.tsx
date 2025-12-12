@@ -53,7 +53,6 @@ export function AddCardDialog({
     setLoading(true);
     try {
       // Build query to get contacts
-      // Contacts are tied to conversations which are tied to connections
       let query = supabase
         .from('contacts')
         .select(`
@@ -69,18 +68,25 @@ export function AddCardDialog({
 
       if (error) throw error;
 
-      // Get conversations to find which contacts are associated with this connection
-      const { data: conversations } = await supabase
+      // Get conversations to find which contacts are associated with this connection AND department
+      let conversationsQuery = supabase
         .from('conversations')
-        .select('contact_id, whatsapp_connection_id')
+        .select('contact_id, whatsapp_connection_id, department_id')
         .eq('company_id', company.id)
         .eq('whatsapp_connection_id', connectionId);
+
+      // Add department filter if a specific department is selected
+      if (departmentId) {
+        conversationsQuery = conversationsQuery.eq('department_id', departmentId);
+      }
+
+      const { data: conversations } = await conversationsQuery;
 
       const contactIdsForConnection = new Set(
         conversations?.map(c => c.contact_id) || []
       );
 
-      // Filter contacts that have conversations on this connection
+      // Filter contacts that have conversations on this connection (and department if selected)
       const filteredContacts = (data || []).filter(contact => 
         contactIdsForConnection.has(contact.id)
       );
@@ -140,7 +146,7 @@ export function AddCardDialog({
           {/* Info about filtering */}
           {connectionId && (
             <p className="text-xs text-muted-foreground">
-              Mostrando contatos da conexão selecionada que ainda não estão no Kanban.
+              Mostrando contatos da conexão{departmentId ? ' e departamento selecionados' : ' selecionada'} que ainda não estão no Kanban.
             </p>
           )}
 
