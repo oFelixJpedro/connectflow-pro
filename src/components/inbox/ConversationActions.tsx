@@ -202,8 +202,8 @@ export function ConversationActions({
     setConfirmDialog({
       open: true,
       action: 'release',
-      title: 'Liberar conversa?',
-      description: 'A conversa voltará para a fila de não atribuídas.',
+      title: 'Voltar para a fila?',
+      description: 'A conversa ficará disponível para outros agentes.',
     });
   };
 
@@ -447,7 +447,7 @@ export function ConversationActions({
             className="text-muted-foreground"
           >
             <UserMinus className="w-4 h-4 mr-2" />
-            <span>Liberar conversa</span>
+            <span>Voltar para a fila</span>
           </DropdownMenuItem>
 
           <DropdownMenuSeparator />
