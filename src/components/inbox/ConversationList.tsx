@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { Search } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -6,6 +6,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { ConnectionSelector } from '@/components/inbox/ConnectionSelector';
 import { ConversationFiltersComponent } from '@/components/inbox/ConversationFilters';
+import { InboxTabs, type InboxColumn } from '@/components/inbox/InboxTabs';
 import { AssignmentBadge } from '@/components/inbox/AssignmentBadge';
 import { cn } from '@/lib/utils';
 import type { Conversation, ConversationFilters } from '@/types';
@@ -24,6 +25,8 @@ interface ConversationListProps {
   onNoConnections?: () => void;
   isLoading?: boolean;
   isRestricted?: boolean;
+  inboxColumn: InboxColumn;
+  onColumnChange: (column: InboxColumn) => void;
 }
 
 const priorityColors = {
@@ -53,11 +56,13 @@ export function ConversationList({
   onNoConnections,
   isLoading,
   isRestricted = false,
+  inboxColumn,
+  onColumnChange,
 }: ConversationListProps) {
   const { user } = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Filtrar apenas por busca local (outros filtros são aplicados no backend)
+  // Filter by local search only (other filters are applied in backend)
   const filteredConversations = conversations.filter((conv) => {
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
@@ -67,6 +72,16 @@ export function ConversationList({
     }
     return true;
   });
+
+  // Calculate counts for each tab
+  const tabCounts = useMemo(() => {
+    // Note: These are just placeholder counts based on current conversations
+    // Real counts would need to come from the backend
+    const minhas = conversations.filter(c => c.assignedUserId === user?.id).length;
+    const fila = conversations.filter(c => !c.assignedUserId).length;
+    const todas = conversations.length;
+    return { minhas, fila, todas };
+  }, [conversations, user?.id]);
 
   const getTimeAgo = (date?: string) => {
     if (!date) return '';
@@ -85,35 +100,44 @@ export function ConversationList({
 
   return (
     <div className="w-80 border-r border-border bg-card flex flex-col h-full">
-      {/* Header com seletor de conexão */}
+      {/* Header with connection selector */}
       <div className="p-4 border-b border-border space-y-3">
-        {/* Seletor de conexão */}
+        {/* Connection Selector */}
         <ConnectionSelector
           selectedConnectionId={selectedConnectionId}
           onConnectionChange={onConnectionChange}
           onNoConnections={onNoConnections}
         />
         
-        {/* Search */}
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input
-            placeholder="Buscar conversa..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-9 bg-muted/50 border-0"
+        {/* Search + Filter Row */}
+        <div className="flex items-center gap-2">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <Input
+              placeholder="Buscar conversa..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-9 bg-muted/50 border-0"
+            />
+          </div>
+
+          {/* Filter Button */}
+          <ConversationFiltersComponent
+            connectionId={selectedConnectionId}
+            filters={filters}
+            onFiltersChange={onFilterChange}
+            currentUserId={user?.id}
+            isRestricted={isRestricted}
           />
         </div>
-
-        {/* Filtros */}
-        <ConversationFiltersComponent
-          connectionId={selectedConnectionId}
-          filters={filters}
-          onFiltersChange={onFilterChange}
-          currentUserId={user?.id}
-          isRestricted={isRestricted}
-        />
       </div>
+
+      {/* Inbox Tabs */}
+      <InboxTabs
+        activeTab={inboxColumn}
+        onTabChange={onColumnChange}
+        isRestricted={isRestricted}
+      />
 
       {/* Conversation List */}
       <ScrollArea className="flex-1">
@@ -126,9 +150,13 @@ export function ConversationList({
           ) : filteredConversations.length === 0 ? (
             <div className="p-8 text-center text-muted-foreground">
               <p className="text-sm">
-                {searchQuery || (filters.status && filters.status !== 'all') || (filters.assignedUserId && filters.assignedUserId !== 'all') || filters.departmentId
+                {searchQuery || (filters.status && filters.status !== 'all') || filters.departmentId || filters.filterByAgentId
                   ? 'Nenhuma conversa com estes filtros'
-                  : 'Nenhuma conversa nesta conexão'}
+                  : inboxColumn === 'minhas' 
+                    ? 'Nenhuma conversa atribuída a você'
+                    : inboxColumn === 'fila'
+                      ? 'Nenhuma conversa na fila'
+                      : 'Nenhuma conversa nesta conexão'}
               </p>
             </div>
           ) : (
@@ -140,7 +168,7 @@ export function ConversationList({
                   key={conversation.id}
                   onClick={() => onSelect(conversation)}
                   className={cn(
-                    'conversation-item p-4 border-l-4',
+                    'conversation-item p-4 border-l-4 relative',
                     statusColors[conversation.status] || 'border-l-transparent',
                     selectedId === conversation.id && 'active',
                     isAssignedToMe && 'bg-success/5'
@@ -172,15 +200,15 @@ export function ConversationList({
                         {conversation.contact?.phoneNumber}
                       </p>
 
-                      {/* Badges de atribuição e departamento */}
+                      {/* Assignment and department badges */}
                       <div className="flex items-center gap-1.5 mt-2 flex-wrap">
-                        {/* Badge de atribuição */}
+                        {/* Assignment badge */}
                         <AssignmentBadge
                           assignedUser={conversation.assignedUser}
                           currentUserId={user?.id}
                         />
                         
-                        {/* Badge de departamento */}
+                        {/* Department badge */}
                         {conversation.department && (
                           <Badge 
                             variant="outline" 
@@ -195,7 +223,7 @@ export function ConversationList({
                         )}
                       </div>
 
-                      {/* Tags e unread */}
+                      {/* Tags and unread */}
                       <div className="flex items-center justify-between mt-2">
                         <div className="flex items-center gap-1.5">
                           {conversation.tags.slice(0, 2).map((tag) => (
@@ -222,7 +250,7 @@ export function ConversationList({
                     </div>
                   </div>
 
-                  {/* Avatar do atendente no canto superior direito */}
+                  {/* Agent avatar in top right corner */}
                   {conversation.assignedUser && conversation.assignedUserId !== user?.id && (
                     <div className="absolute top-2 right-2">
                       <Avatar className="w-5 h-5 border border-background">

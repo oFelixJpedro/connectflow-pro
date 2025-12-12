@@ -24,6 +24,8 @@ export default function Inbox() {
     selectedConnectionId,
     setSelectedConnectionId,
     currentAccessLevel,
+    inboxColumn,
+    setInboxColumn,
   } = useAppStore();
 
   const [hasNoConnections, setHasNoConnections] = useState(false);
@@ -138,6 +140,8 @@ export default function Inbox() {
           onNoConnections={handleNoConnections}
           isLoading={isLoadingConversations}
           isRestricted={isRestricted}
+          inboxColumn={inboxColumn}
+          onColumnChange={setInboxColumn}
         />
 
       {/* Chat Panel */}

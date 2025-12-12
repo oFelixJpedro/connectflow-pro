@@ -192,12 +192,17 @@ export interface DashboardMetrics {
   myConversations: number;
 }
 
+// Inbox column type
+export type InboxColumn = 'minhas' | 'fila' | 'todas';
+
 // Filters
 export interface ConversationFilters {
   status?: ConversationStatus | 'all';
-  assignedUserId?: string | 'mine' | 'unassigned' | 'all';
+  assignedUserId?: string | 'mine' | 'unassigned' | 'all' | 'others';
+  filterByAgentId?: string; // Filter by specific agent (admin/owner only)
   departmentId?: string;
   tags?: string[];
   priority?: ConversationPriority;
   search?: string;
+  inboxColumn?: InboxColumn;
 }

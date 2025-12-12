@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { User, Company, Conversation, Message, ConversationFilters } from '@/types';
+import type { User, Company, Conversation, Message, ConversationFilters, InboxColumn } from '@/types';
 
 // Carregar filtros salvos do localStorage
 function loadSavedFilters(): ConversationFilters {
@@ -13,8 +13,21 @@ function loadSavedFilters(): ConversationFilters {
   }
   return {
     status: 'all',
-    assignedUserId: 'mine',
+    inboxColumn: 'minhas',
   };
+}
+
+// Carregar coluna ativa do localStorage
+function loadSavedInboxColumn(): InboxColumn {
+  try {
+    const saved = localStorage.getItem('inboxActiveColumn');
+    if (saved && ['minhas', 'fila', 'todas'].includes(saved)) {
+      return saved as InboxColumn;
+    }
+  } catch (e) {
+    console.error('Erro ao carregar coluna salva:', e);
+  }
+  return 'minhas';
 }
 
 // Carregar conexão selecionada do localStorage
@@ -36,6 +49,7 @@ interface AppState {
   // Inbox state
   selectedConnectionId: string | null;
   currentAccessLevel: 'full' | 'assigned_only' | null;
+  inboxColumn: InboxColumn;
   conversations: Conversation[];
   selectedConversation: Conversation | null;
   messages: Message[];
@@ -54,6 +68,7 @@ interface AppState {
   // Actions - Inbox
   setSelectedConnectionId: (id: string | null) => void;
   setCurrentAccessLevel: (level: 'full' | 'assigned_only' | null) => void;
+  setInboxColumn: (column: InboxColumn) => void;
   setConversations: (conversations: Conversation[]) => void;
   selectConversation: (conversation: Conversation | null) => void;
   setMessages: (messages: Message[]) => void;
@@ -76,6 +91,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   isAuthenticated: false,
   selectedConnectionId: loadSavedConnectionId(),
   currentAccessLevel: null,
+  inboxColumn: loadSavedInboxColumn(),
   conversations: [],
   selectedConversation: null,
   messages: [],
@@ -104,13 +120,17 @@ export const useAppStore = create<AppState>((set, get) => ({
     } else {
       localStorage.removeItem('selectedConnectionId');
     }
-    // Limpar filtro de departamento ao trocar conexão (pode não ser válido)
+    // Limpar filtro de departamento e agente ao trocar conexão
     const currentFilters = get().conversationFilters;
-    const newFilters = { ...currentFilters, departmentId: undefined };
+    const newFilters = { ...currentFilters, departmentId: undefined, filterByAgentId: undefined };
     localStorage.setItem('conversationFilters', JSON.stringify(newFilters));
     set({ selectedConnectionId: id, currentAccessLevel: null, conversationFilters: newFilters, selectedConversation: null });
   },
   setCurrentAccessLevel: (level) => set({ currentAccessLevel: level }),
+  setInboxColumn: (column) => {
+    localStorage.setItem('inboxActiveColumn', column);
+    set({ inboxColumn: column, selectedConversation: null });
+  },
   setConversations: (conversations) => set({ conversations }),
   selectConversation: (conversation) => set({ selectedConversation: conversation }),
   setMessages: (messages) => set({ messages }),
@@ -131,10 +151,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   resetFilters: () => {
     const defaultFilters: ConversationFilters = {
       status: 'all',
-      assignedUserId: 'mine',
+      inboxColumn: 'minhas',
     };
     localStorage.removeItem('conversationFilters');
-    set({ conversationFilters: defaultFilters });
+    set({ conversationFilters: defaultFilters, inboxColumn: 'minhas' });
   },
   
   // UI actions
