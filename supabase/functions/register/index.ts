@@ -114,7 +114,6 @@ Deno.serve(async (req) => {
         company_id: company.id,
         email: email,
         full_name: fullName,
-        status: 'online',
         max_conversations: 5,
         active: true
       })
