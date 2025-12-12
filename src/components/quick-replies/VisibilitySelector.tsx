@@ -1,5 +1,7 @@
+import { useEffect, useState } from 'react';
 import { Globe, User, Users, Smartphone } from 'lucide-react';
 import { Label } from '@/components/ui/label';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import {
   Select,
   SelectContent,
@@ -8,6 +10,8 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { QuickReplyVisibility } from '@/hooks/useQuickRepliesData';
+import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/integrations/supabase/client';
 
 interface Department {
   id: string;
@@ -27,8 +31,6 @@ interface VisibilitySelectorProps {
   onDepartmentChange: (departmentId: string | null) => void;
   selectedConnectionId: string | null;
   onConnectionChange: (connectionId: string | null) => void;
-  userDepartments: Department[];
-  connections: Connection[];
 }
 
 const visibilityOptions: {
@@ -51,13 +53,13 @@ const visibilityOptions: {
   },
   {
     value: 'department',
-    label: 'Meu departamento',
+    label: 'Departamento',
     icon: <Users className="w-4 h-4" />,
     description: 'Visível para membros do departamento',
   },
   {
     value: 'connection',
-    label: 'Conexão específica',
+    label: 'Conexão',
     icon: <Smartphone className="w-4 h-4" />,
     description: 'Visível para usuários da conexão',
   },
@@ -70,56 +72,140 @@ export function VisibilitySelector({
   onDepartmentChange,
   selectedConnectionId,
   onConnectionChange,
-  userDepartments,
-  connections,
 }: VisibilitySelectorProps) {
-  const hasDepartments = userDepartments.length > 0;
+  const { profile, userRole } = useAuth();
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [connections, setConnections] = useState<Connection[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const isAdminOrOwner = userRole?.role === 'owner' || userRole?.role === 'admin';
+
+  // Load departments and connections based on user role
+  useEffect(() => {
+    const loadData = async () => {
+      if (!profile?.company_id || !profile?.id) return;
+      
+      setLoading(true);
+      
+      try {
+        // Load departments
+        if (isAdminOrOwner) {
+          // Admin/owner sees all departments in the company
+          const { data: deptData } = await supabase
+            .from('departments')
+            .select('id, name')
+            .eq('active', true)
+            .order('name');
+          setDepartments(deptData || []);
+        } else {
+          // Regular user sees only their departments
+          const { data: userDepts } = await supabase
+            .from('department_users')
+            .select('department_id')
+            .eq('user_id', profile.id);
+          
+          if (userDepts && userDepts.length > 0) {
+            const deptIds = userDepts.map(d => d.department_id);
+            const { data: deptData } = await supabase
+              .from('departments')
+              .select('id, name')
+              .in('id', deptIds)
+              .eq('active', true)
+              .order('name');
+            setDepartments(deptData || []);
+          }
+        }
+
+        // Load connections
+        if (isAdminOrOwner) {
+          // Admin/owner sees all connections in the company
+          const { data: connData } = await supabase
+            .from('whatsapp_connections')
+            .select('id, name, phone_number')
+            .eq('company_id', profile.company_id)
+            .eq('status', 'connected')
+            .order('name');
+          setConnections(connData || []);
+        } else {
+          // Regular user sees only their connections
+          const { data: userConns } = await supabase
+            .from('connection_users')
+            .select('connection_id')
+            .eq('user_id', profile.id);
+          
+          if (userConns && userConns.length > 0) {
+            const connIds = userConns.map(c => c.connection_id);
+            const { data: connData } = await supabase
+              .from('whatsapp_connections')
+              .select('id, name, phone_number')
+              .in('id', connIds)
+              .eq('company_id', profile.company_id)
+              .eq('status', 'connected')
+              .order('name');
+            setConnections(connData || []);
+          }
+        }
+      } catch (error) {
+        console.error('Error loading visibility data:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadData();
+  }, [profile?.company_id, profile?.id, isAdminOrOwner]);
+
+  const hasDepartments = departments.length > 0;
   const hasConnections = connections.length > 0;
 
   return (
     <div className="space-y-4">
-      <div className="space-y-2">
+      <div className="space-y-3">
         <Label>Visibilidade</Label>
-        <Select value={visibility} onValueChange={(v) => onVisibilityChange(v as QuickReplyVisibility)}>
-          <SelectTrigger>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {visibilityOptions.map((option) => {
-              const isDisabled = 
-                (option.value === 'department' && !hasDepartments) ||
-                (option.value === 'connection' && !hasConnections);
-              
-              return (
-                <SelectItem 
-                  key={option.value} 
-                  value={option.value}
+        <RadioGroup 
+          value={visibility} 
+          onValueChange={(v) => onVisibilityChange(v as QuickReplyVisibility)}
+          className="space-y-2"
+        >
+          {visibilityOptions.map((option) => {
+            const isDisabled = 
+              (option.value === 'department' && !hasDepartments) ||
+              (option.value === 'connection' && !hasConnections);
+            
+            return (
+              <div key={option.value} className="flex items-start space-x-3">
+                <RadioGroupItem 
+                  value={option.value} 
+                  id={`visibility-${option.value}`}
                   disabled={isDisabled}
+                  className="mt-1"
+                />
+                <Label 
+                  htmlFor={`visibility-${option.value}`}
+                  className={`flex-1 cursor-pointer ${isDisabled ? 'opacity-50 cursor-not-allowed' : ''}`}
                 >
                   <div className="flex items-center gap-2">
                     {option.icon}
-                    <div>
-                      <div className="font-medium">{option.label}</div>
-                      <div className="text-xs text-muted-foreground">
-                        {isDisabled 
-                          ? (option.value === 'department' 
-                              ? 'Você não está em nenhum departamento' 
-                              : 'Nenhuma conexão disponível')
-                          : option.description
-                        }
-                      </div>
-                    </div>
+                    <span className="font-medium">{option.label}</span>
                   </div>
-                </SelectItem>
-              );
-            })}
-          </SelectContent>
-        </Select>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {isDisabled 
+                      ? (option.value === 'department' 
+                          ? 'Você não está em nenhum departamento' 
+                          : 'Nenhuma conexão disponível')
+                      : option.description
+                    }
+                  </p>
+                </Label>
+              </div>
+            );
+          })}
+        </RadioGroup>
       </div>
 
       {/* Department selector */}
       {visibility === 'department' && hasDepartments && (
-        <div className="space-y-2">
+        <div className="space-y-2 pl-7">
           <Label>Departamento</Label>
           <Select 
             value={selectedDepartmentId || ''} 
@@ -129,7 +215,7 @@ export function VisibilitySelector({
               <SelectValue placeholder="Selecione o departamento" />
             </SelectTrigger>
             <SelectContent>
-              {userDepartments.map((dept) => (
+              {departments.map((dept) => (
                 <SelectItem key={dept.id} value={dept.id}>
                   {dept.name}
                 </SelectItem>
@@ -141,7 +227,7 @@ export function VisibilitySelector({
 
       {/* Connection selector */}
       {visibility === 'connection' && hasConnections && (
-        <div className="space-y-2">
+        <div className="space-y-2 pl-7">
           <Label>Conexão</Label>
           <Select 
             value={selectedConnectionId || ''} 

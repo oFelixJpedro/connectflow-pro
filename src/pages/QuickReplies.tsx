@@ -761,8 +761,6 @@ export default function QuickReplies() {
                 onDepartmentChange={setFormDepartmentId}
                 selectedConnectionId={formConnectionId}
                 onConnectionChange={setFormConnectionId}
-                userDepartments={departments}
-                connections={connections}
               />
             </div>
             
@@ -1254,17 +1252,15 @@ export default function QuickReplies() {
             )}
             
             {/* Visibility Selector */}
-            <VisibilitySelector
-              visibility={editVisibility}
-              onVisibilityChange={setEditVisibility}
-              selectedDepartmentId={editDepartmentId}
-              onDepartmentChange={setEditDepartmentId}
-              selectedConnectionId={editConnectionId}
-              onConnectionChange={setEditConnectionId}
-              userDepartments={departments}
-              connections={connections}
-            />
-          </div>
+              <VisibilitySelector
+                visibility={editVisibility}
+                onVisibilityChange={setEditVisibility}
+                selectedDepartmentId={editDepartmentId}
+                onDepartmentChange={setEditDepartmentId}
+                selectedConnectionId={editConnectionId}
+                onConnectionChange={setEditConnectionId}
+              />
+            </div>
           
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsEditDialogOpen(false)} disabled={isSubmitting}>
