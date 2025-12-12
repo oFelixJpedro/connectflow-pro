@@ -72,10 +72,12 @@ serve(async (req) => {
         );
       }
 
-      // Get user profile and email
+      console.log('Permission found:', permissionRequest.id);
+
+      // Get user profile (WITHOUT join to user_roles - no direct FK)
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
-        .select('*, user_roles(role)')
+        .select('id, email, full_name, company_id, avatar_url, active')
         .eq('id', target_user_id)
         .single();
 
@@ -87,6 +89,17 @@ serve(async (req) => {
         );
       }
 
+      // Get user role separately (no FK relationship with profiles)
+      const { data: roleData } = await supabase
+        .from('user_roles')
+        .select('role')
+        .eq('user_id', target_user_id)
+        .single();
+
+      const userRole = roleData?.role || 'agent';
+
+      console.log('User profile found:', profile.email, 'Role:', userRole);
+
       // Mark permission as used
       await supabase
         .from('developer_permission_requests')
@@ -94,7 +107,8 @@ serve(async (req) => {
         .eq('id', permissionRequest.id);
 
       // Generate a magic link for the user using Supabase Admin API
-      const redirectUrl = `${supabaseUrl.replace('.supabase.co', '.lovable.app')}/dashboard`;
+      const appUrl = Deno.env.get('APP_URL') || supabaseUrl.replace('.supabase.co', '.lovable.app');
+      const redirectUrl = `${appUrl}/dashboard`;
       
       console.log('Generating magic link for:', profile.email, 'redirect:', redirectUrl);
 
@@ -120,7 +134,11 @@ serve(async (req) => {
         action_type: 'access_user',
         target_company_id: profile.company_id,
         target_user_id: target_user_id,
-        details: { email: profile.email, full_name: profile.full_name },
+        details: { 
+          email: profile.email, 
+          full_name: profile.full_name,
+          role: userRole 
+        },
         ip_address: clientIP,
         user_agent: userAgent
       });
@@ -136,7 +154,7 @@ serve(async (req) => {
             email: profile.email,
             full_name: profile.full_name,
             company_id: profile.company_id,
-            role: profile.user_roles?.[0]?.role || 'agent'
+            role: userRole
           }
         }),
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
