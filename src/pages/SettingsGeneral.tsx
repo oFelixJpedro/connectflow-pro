@@ -307,7 +307,7 @@ export default function SettingsGeneral() {
                 {/* Logo */}
                 <div className="flex items-center gap-6">
                   <Avatar className="w-20 h-20">
-                    <AvatarImage src={companyLogo || undefined} />
+                    <AvatarImage src={companyLogo || undefined} className="object-cover object-top" />
                     <AvatarFallback className="bg-primary/10 text-primary text-xl">
                       {companyName?.charAt(0) || 'E'}
                     </AvatarFallback>
