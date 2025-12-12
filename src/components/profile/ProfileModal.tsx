@@ -51,7 +51,8 @@ export function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
   const [fullName, setFullName] = useState('');
   const [signature, setSignature] = useState('');
   const [bio, setBio] = useState('');
-  const [status, setStatus] = useState<UserStatus>('online');
+  // Status is tracked separately - only updated when user explicitly changes it
+  const [selectedStatus, setSelectedStatus] = useState<UserStatus | null>(null);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
@@ -62,7 +63,8 @@ export function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
     if (isOpen && profile) {
       setFullName(profile.full_name || '');
       setAvatarUrl(profile.avatar_url);
-      setStatus(profile.status!);
+      // Reset selected status to null - we'll use profile.status directly
+      setSelectedStatus(null);
       
       // Parse metadata for signature and bio
       const metadata = profile.metadata as ProfileMetadata | null;
@@ -74,6 +76,9 @@ export function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
       setAvatarPreview(null);
     }
   }, [isOpen, profile]);
+
+  // Current status to display - use selectedStatus if user changed it, otherwise profile.status
+  const currentStatus = selectedStatus ?? profile?.status;
 
   const getInitials = (name: string) => {
     return name
@@ -179,9 +184,9 @@ export function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
         return;
       }
 
-      // Update status only if it was explicitly changed by user
-      if (profile.status !== status) {
-        await updateStatus(status);
+      // Update status only if user explicitly changed it (selectedStatus is not null)
+      if (selectedStatus !== null && selectedStatus !== profile.status) {
+        await updateStatus(selectedStatus);
       }
 
       toast.success('Perfil atualizado com sucesso!');
@@ -269,7 +274,7 @@ export function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
             {/* Status Field */}
             <div className="space-y-2">
               <Label htmlFor="status">Status</Label>
-              <Select value={status} onValueChange={(value) => setStatus(value as UserStatus)}>
+              <Select value={currentStatus || 'online'} onValueChange={(value) => setSelectedStatus(value as UserStatus)}>
                 <SelectTrigger id="status">
                   <SelectValue placeholder="Selecione seu status" />
                 </SelectTrigger>
