@@ -11,6 +11,7 @@ import { AssignmentBadge } from '@/components/inbox/AssignmentBadge';
 import { cn } from '@/lib/utils';
 import type { Conversation, ConversationFilters } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
+import type { Tag } from '@/hooks/useTagsData';
 
 interface ConversationListProps {
   conversations: Conversation[];
@@ -25,6 +26,7 @@ interface ConversationListProps {
   isRestricted?: boolean;
   inboxColumn: InboxColumn;
   onColumnChange: (column: InboxColumn) => void;
+  tags?: Tag[];
 }
 
 const priorityColors = {
@@ -56,6 +58,7 @@ export function ConversationList({
   isRestricted = false,
   inboxColumn,
   onColumnChange,
+  tags = [],
 }: ConversationListProps) {
   const { user } = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
@@ -256,21 +259,30 @@ export function ConversationList({
                         )}
                       </div>
 
-                      {/* Tags */}
-                      {conversation.tags.length > 0 && (
-                        <div className="flex items-center gap-1.5 mt-2">
-                          {conversation.tags.slice(0, 2).map((tag) => (
-                            <Badge 
-                              key={tag} 
-                              variant="secondary" 
-                              className="text-xs px-1.5 py-0 h-5"
-                            >
-                              {tag}
-                            </Badge>
-                          ))}
-                          {conversation.tags.length > 2 && (
+                      {/* Contact Tags */}
+                      {conversation.contact?.tags && conversation.contact.tags.length > 0 && (
+                        <div className="flex items-center gap-1 mt-2 flex-wrap">
+                          {conversation.contact.tags.slice(0, 3).map((tagName) => {
+                            const tagData = tags.find(t => t.name === tagName);
+                            const tagColor = tagData?.color || '#6B7280';
+                            return (
+                              <Badge 
+                                key={tagName} 
+                                variant="outline"
+                                className="text-xs px-1.5 py-0 h-5"
+                                style={{
+                                  backgroundColor: `${tagColor}20`,
+                                  borderColor: tagColor,
+                                  color: tagColor,
+                                }}
+                              >
+                                {tagName}
+                              </Badge>
+                            );
+                          })}
+                          {conversation.contact.tags.length > 3 && (
                             <span className="text-xs text-muted-foreground">
-                              +{conversation.tags.length - 2}
+                              +{conversation.contact.tags.length - 3}
                             </span>
                           )}
                         </div>

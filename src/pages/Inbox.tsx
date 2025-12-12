@@ -8,6 +8,7 @@ import { RestrictedAccessBanner } from '@/components/inbox/RestrictedAccessBanne
 import { useAppStore } from '@/stores/appStore';
 import { useInboxData } from '@/hooks/useInboxData';
 import { useAuth } from '@/contexts/AuthContext';
+import { useTagsData } from '@/hooks/useTagsData';
 import type { ConversationFilters } from '@/types';
 import { toast } from '@/hooks/use-toast';
 import { Loader2, MessageSquare } from 'lucide-react';
@@ -30,6 +31,7 @@ export default function Inbox() {
 
   const [hasNoConnections, setHasNoConnections] = useState(false);
   const scrollToMessageRef = useRef<((messageId: string) => void) | null>(null);
+  const { tags } = useTagsData();
 
   const handleRegisterScrollToMessage = useCallback((fn: (messageId: string) => void) => {
     scrollToMessageRef.current = fn;
@@ -142,6 +144,7 @@ export default function Inbox() {
           isRestricted={isRestricted}
           inboxColumn={inboxColumn}
           onColumnChange={setInboxColumn}
+          tags={tags}
         />
 
       {/* Chat Panel */}
