@@ -1,5 +1,5 @@
-import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
-import { User, Session } from '@supabase/supabase-js';
+import { createContext, useContext, useEffect, useState, ReactNode, useCallback } from 'react';
+import { User, Session, RealtimeChannel } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import type { Tables } from '@/integrations/supabase/types';
 
@@ -15,6 +15,7 @@ interface AuthContextType {
   session: Session | null;
   loading: boolean;
   needsPasswordChange: boolean;
+  teamProfiles: Profile[];
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
   resetPassword: (email: string) => Promise<{ error: Error | null }>;
@@ -34,6 +35,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [needsPasswordChange, setNeedsPasswordChange] = useState(false);
+  const [teamProfiles, setTeamProfiles] = useState<Profile[]>([]);
+
+  // Load team profiles for realtime status updates
+  const loadTeamProfiles = useCallback(async (companyId: string) => {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('company_id', companyId)
+      .eq('active', true);
+
+    if (!error && data) {
+      setTeamProfiles(data as Profile[]);
+    }
+  }, []);
 
   useEffect(() => {
     // Set up auth state listener FIRST
@@ -51,6 +66,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setProfile(null);
           setCompany(null);
           setUserRole(null);
+          setTeamProfiles([]);
           setLoading(false);
         }
       }
@@ -70,6 +86,53 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => subscription.unsubscribe();
   }, []);
 
+  // Realtime subscription for team profiles (status updates)
+  useEffect(() => {
+    if (!profile?.company_id) return;
+
+    console.log('[Realtime] Iniciando subscription de profiles para empresa:', profile.company_id);
+
+    // Load initial team profiles
+    loadTeamProfiles(profile.company_id);
+
+    const channel: RealtimeChannel = supabase
+      .channel(`team-profiles-${profile.company_id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'profiles',
+        },
+        (payload) => {
+          console.log('[Realtime] Profile atualizado:', payload);
+          
+          const updatedProfile = payload.new as Profile;
+          
+          // Only process if it's from the same company
+          if (updatedProfile.company_id !== profile.company_id) return;
+          
+          // Update team profiles list
+          setTeamProfiles((prev) => 
+            prev.map((p) => p.id === updatedProfile.id ? updatedProfile : p)
+          );
+          
+          // If it's the current user's profile, update that too
+          if (updatedProfile.id === profile.id) {
+            setProfile(updatedProfile);
+          }
+        }
+      )
+      .subscribe((status) => {
+        console.log('[Realtime] Status subscription profiles:', status);
+      });
+
+    return () => {
+      console.log('[Realtime] Cancelando subscription de profiles');
+      supabase.removeChannel(channel);
+    };
+  }, [profile?.company_id, profile?.id, loadTeamProfiles]);
+
   async function loadUserData(userId: string) {
     try {
       // Load profile
@@ -87,6 +150,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       
       setProfile(profileData as Profile);
       setNeedsPasswordChange(profileData.needs_password_change ?? false);
+
+      // Set status to online when user logs in
+      if (profileData.status !== 'online') {
+        await supabase
+          .from('profiles')
+          .update({ status: 'online' })
+          .eq('id', userId);
+        
+        setProfile({ ...profileData, status: 'online' } as Profile);
+      }
 
       // Load company
       const { data: companyData, error: companyError } = await supabase
@@ -214,6 +287,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       session,
       loading,
       needsPasswordChange,
+      teamProfiles,
       signIn,
       signOut,
       resetPassword,
