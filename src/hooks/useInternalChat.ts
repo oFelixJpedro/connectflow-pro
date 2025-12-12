@@ -345,7 +345,7 @@ export function useInternalChat() {
             id: profile.id,
             fullName: profile.full_name || 'Você',
             avatarUrl: profile.avatar_url || null,
-            status: profile.status || 'online',
+            status: profile.status ?? 'offline',
           },
           {
             id: otherUserId,
