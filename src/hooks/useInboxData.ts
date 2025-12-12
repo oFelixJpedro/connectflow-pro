@@ -1264,7 +1264,10 @@ export function useInboxData() {
                   ...c.contact,
                   tags: newTags,
                   name: newName || c.contact.name,
-                  avatarUrl: newAvatarUrl || c.contact.avatarUrl,
+                  // Allow null to clear avatar (when contact removes WhatsApp profile pic)
+                  avatarUrl: updatedContact.avatar_url !== undefined 
+                    ? (newAvatarUrl || undefined) 
+                    : c.contact.avatarUrl,
                 },
               };
             })
@@ -1280,7 +1283,10 @@ export function useInboxData() {
                 ...prev.contact,
                 tags: newTags,
                 name: newName || prev.contact.name,
-                avatarUrl: newAvatarUrl || prev.contact.avatarUrl,
+                // Allow null to clear avatar (when contact removes WhatsApp profile pic)
+                avatarUrl: updatedContact.avatar_url !== undefined 
+                  ? (newAvatarUrl || undefined) 
+                  : prev.contact.avatarUrl,
               } : prev.contact,
             };
           });
