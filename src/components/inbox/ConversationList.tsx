@@ -236,8 +236,8 @@ export function ConversationList({
                         {conversation.contact?.phoneNumber}
                       </p>
 
-                      {/* Assignment and department badges */}
-                      <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+                      {/* Assignment, department badges and contact tags */}
+                      <div className="flex items-center gap-1 mt-2 overflow-hidden">
                         {/* Assignment badge */}
                         <AssignmentBadge
                           assignedUser={conversation.assignedUser}
@@ -248,7 +248,7 @@ export function ConversationList({
                         {conversation.department && (
                           <Badge 
                             variant="outline" 
-                            className="text-xs px-1.5 py-0 h-5"
+                            className="text-xs px-1.5 py-0 h-5 flex-shrink-0"
                             style={{ 
                               borderColor: conversation.department.color,
                               color: conversation.department.color 
@@ -257,36 +257,40 @@ export function ConversationList({
                             {conversation.department.name}
                           </Badge>
                         )}
-                      </div>
 
-                      {/* Contact Tags */}
-                      {conversation.contact?.tags && conversation.contact.tags.length > 0 && (
-                        <div className="flex items-center gap-1 mt-2 flex-wrap">
-                          {conversation.contact.tags.slice(0, 3).map((tagName) => {
-                            const tagData = tags.find(t => t.name === tagName);
-                            const tagColor = tagData?.color || '#6B7280';
-                            return (
-                              <Badge 
-                                key={tagName} 
-                                variant="outline"
-                                className="text-xs px-1.5 py-0 h-5"
-                                style={{
-                                  backgroundColor: `${tagColor}20`,
-                                  borderColor: tagColor,
-                                  color: tagColor,
-                                }}
+                        {/* Contact Tags - inline with ellipsis */}
+                        {conversation.contact?.tags && conversation.contact.tags.length > 0 && (
+                          <>
+                            {conversation.contact.tags.slice(0, 2).map((tagName) => {
+                              const tagData = tags.find(t => t.name === tagName);
+                              const tagColor = tagData?.color || '#6B7280';
+                              return (
+                                <Badge 
+                                  key={tagName} 
+                                  variant="outline"
+                                  className="text-xs px-1.5 py-0 h-5 flex-shrink-0 max-w-[60px] truncate"
+                                  style={{
+                                    backgroundColor: `${tagColor}20`,
+                                    borderColor: tagColor,
+                                    color: tagColor,
+                                  }}
+                                  title={tagName}
+                                >
+                                  {tagName}
+                                </Badge>
+                              );
+                            })}
+                            {conversation.contact.tags.length > 2 && (
+                              <span 
+                                className="text-xs text-muted-foreground flex-shrink-0"
+                                title={conversation.contact.tags.slice(2).join(', ')}
                               >
-                                {tagName}
-                              </Badge>
-                            );
-                          })}
-                          {conversation.contact.tags.length > 3 && (
-                            <span className="text-xs text-muted-foreground">
-                              +{conversation.contact.tags.length - 3}
-                            </span>
-                          )}
-                        </div>
-                      )}
+                                ...
+                              </span>
+                            )}
+                          </>
+                        )}
+                      </div>
                     </div>
                   </div>
 
