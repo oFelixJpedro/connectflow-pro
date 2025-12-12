@@ -1,5 +1,4 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { supabase } from '@/integrations/supabase/client';
 
 interface Developer {
   id: string;
@@ -17,6 +16,12 @@ interface DeveloperAuthContextType {
 
 const DeveloperAuthContext = createContext<DeveloperAuthContextType | undefined>(undefined);
 
+// Get the Edge Function URL from environment
+const getEdgeFunctionUrl = () => {
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+  return `${supabaseUrl}/functions/v1/developer-auth`;
+};
+
 export function DeveloperAuthProvider({ children }: { children: ReactNode }) {
   const [developer, setDeveloper] = useState<Developer | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -28,11 +33,16 @@ export function DeveloperAuthProvider({ children }: { children: ReactNode }) {
 
   const checkAuth = async () => {
     try {
-      const { data, error } = await supabase.functions.invoke('developer-auth', {
-        body: { action: 'verify' }
+      const response = await fetch(getEdgeFunctionUrl(), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'verify' }),
+        credentials: 'include' // CRITICAL: Send cookies
       });
 
-      if (error || !data?.valid) {
+      const data = await response.json();
+
+      if (!response.ok || !data?.valid) {
         setDeveloper(null);
       } else {
         setDeveloper(data.developer);
@@ -47,12 +57,17 @@ export function DeveloperAuthProvider({ children }: { children: ReactNode }) {
 
   const login = async (email: string, password: string): Promise<{ success: boolean; error?: string }> => {
     try {
-      const { data, error } = await supabase.functions.invoke('developer-auth', {
-        body: { action: 'login', email, password }
+      const response = await fetch(getEdgeFunctionUrl(), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'login', email, password }),
+        credentials: 'include' // CRITICAL: Allow cookies to be set
       });
 
-      if (error) {
-        return { success: false, error: 'Erro ao conectar com o servidor' };
+      const data = await response.json();
+
+      if (!response.ok) {
+        return { success: false, error: data.error || 'Erro ao conectar com o servidor' };
       }
 
       if (data.error) {
@@ -76,8 +91,11 @@ export function DeveloperAuthProvider({ children }: { children: ReactNode }) {
   const logout = async () => {
     try {
       // Call logout endpoint to delete httpOnly cookie
-      await supabase.functions.invoke('developer-auth', {
-        body: { action: 'logout' }
+      await fetch(getEdgeFunctionUrl(), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'logout' }),
+        credentials: 'include' // CRITICAL: Send cookie to be deleted
       });
     } catch (error) {
       console.error('Logout error:', error);
@@ -116,6 +134,5 @@ export function useDeveloperAuth() {
 export function getDeveloperToken(): string | null {
   // Token is now stored in httpOnly cookie - JavaScript cannot access it
   // This function is deprecated and will return null
-  console.warn('getDeveloperToken is deprecated. Token is now stored in httpOnly cookie.');
   return null;
 }
