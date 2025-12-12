@@ -41,6 +41,7 @@ import { MessageReactions } from './MessageReactions';
 import { ReactionPicker } from './ReactionPicker';
 import { EmojiMessagePicker } from './EmojiMessagePicker';
 import { QuickRepliesPicker } from './QuickRepliesPicker';
+import { QuickReplyConfirmModal } from './QuickReplyConfirmModal';
 import { QuickReply } from '@/hooks/useQuickRepliesData';
 import { cn } from '@/lib/utils';
 import type { Conversation, Message, QuotedMessage } from '@/types';
@@ -118,6 +119,8 @@ export function ChatPanel({
   const [sendingReactionMessageId, setSendingReactionMessageId] = useState<string | null>(null);
   const [showQuickReplies, setShowQuickReplies] = useState(false);
   const [isInternalNoteMode, setIsInternalNoteMode] = useState(false);
+  const [pendingQuickReply, setPendingQuickReply] = useState<QuickReply | null>(null);
+  const [isQuickReplyConfirmOpen, setIsQuickReplyConfirmOpen] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messageRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -583,8 +586,9 @@ export function ChatPanel({
     
     // Handle different media types
     if (mediaType === 'text' || !reply.media_url) {
-      // Send as text message
-      onSendMessage(reply.message, replyingTo?.id);
+      // For text messages, show confirmation modal instead of sending directly
+      setPendingQuickReply(reply);
+      setIsQuickReplyConfirmOpen(true);
     } else if (mediaType === 'image' && reply.media_url) {
       // Send image with caption
       try {
@@ -654,6 +658,23 @@ export function ChatPanel({
     }
     
     setReplyingTo(null);
+    textareaRef.current?.focus();
+  };
+
+  // Handle quick reply confirmation
+  const handleQuickReplyConfirm = () => {
+    if (!pendingQuickReply) return;
+    
+    onSendMessage(pendingQuickReply.message, replyingTo?.id);
+    setPendingQuickReply(null);
+    setIsQuickReplyConfirmOpen(false);
+    setReplyingTo(null);
+    textareaRef.current?.focus();
+  };
+
+  const handleQuickReplyCancel = () => {
+    setPendingQuickReply(null);
+    setIsQuickReplyConfirmOpen(false);
     textareaRef.current?.focus();
   };
 
@@ -1412,6 +1433,16 @@ export function ChatPanel({
           };
           input.click();
         }}
+      />
+
+      {/* Quick Reply Confirmation Modal */}
+      <QuickReplyConfirmModal
+        isOpen={isQuickReplyConfirmOpen}
+        onClose={handleQuickReplyCancel}
+        onConfirm={handleQuickReplyConfirm}
+        message={pendingQuickReply?.message || ''}
+        title={pendingQuickReply?.title}
+        isSending={isSendingMessage}
       />
     </div>
   );
