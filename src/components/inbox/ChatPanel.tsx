@@ -657,7 +657,7 @@ export function ChatPanel({
       }
     }
     
-    setReplyingTo(null);
+    // Don't clear replyingTo here - let the preview modals/confirmation handle it after actual send
     textareaRef.current?.focus();
   };
 
@@ -1443,6 +1443,7 @@ export function ChatPanel({
         message={pendingQuickReply?.message || ''}
         title={pendingQuickReply?.title}
         isSending={isSendingMessage}
+        quotedMessage={replyingTo}
       />
     </div>
   );
