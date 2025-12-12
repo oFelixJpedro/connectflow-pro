@@ -173,14 +173,25 @@ export default function QuickReplies() {
     const loadData = async () => {
       if (!profile?.company_id) return;
       
-      // Load user departments with names
-      const deptIds = userDepartments;
-      if (deptIds.length > 0) {
+      // Load departments - admins/owners see all, regular users see only their departments
+      if (isAdminOrOwner) {
         const { data: deptData } = await supabase
           .from('departments')
           .select('id, name')
-          .in('id', deptIds);
+          .eq('active', true)
+          .order('name');
         setDepartments(deptData || []);
+      } else {
+        const deptIds = userDepartments;
+        if (deptIds.length > 0) {
+          const { data: deptData } = await supabase
+            .from('departments')
+            .select('id, name')
+            .in('id', deptIds)
+            .eq('active', true)
+            .order('name');
+          setDepartments(deptData || []);
+        }
       }
       
       // Load connections
@@ -198,7 +209,7 @@ export default function QuickReplies() {
     };
     
     loadData();
-  }, [profile?.company_id, userDepartments, selectedConnectionId]);
+  }, [profile?.company_id, userDepartments, selectedConnectionId, isAdminOrOwner]);
 
   // Get all categories (existing + defaults)
   const existingCategories = getCategories();

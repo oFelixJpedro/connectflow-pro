@@ -158,6 +158,57 @@ export function VisibilitySelector({
   const hasDepartments = departments.length > 0;
   const hasConnections = connections.length > 0;
 
+  const renderDropdown = (option: typeof visibilityOptions[0]) => {
+    if (option.value === 'department' && visibility === 'department' && hasDepartments) {
+      return (
+        <div className="mt-2 ml-7">
+          <Select 
+            value={selectedDepartmentId || ''} 
+            onValueChange={(v) => onDepartmentChange(v || null)}
+          >
+            <SelectTrigger className="w-full">
+              <SelectValue placeholder="Selecione o departamento" />
+            </SelectTrigger>
+            <SelectContent>
+              {departments.map((dept) => (
+                <SelectItem key={dept.id} value={dept.id}>
+                  {dept.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      );
+    }
+    
+    if (option.value === 'connection' && visibility === 'connection' && hasConnections) {
+      return (
+        <div className="mt-2 ml-7">
+          <Select 
+            value={selectedConnectionId || ''} 
+            onValueChange={(v) => onConnectionChange(v || null)}
+          >
+            <SelectTrigger className="w-full">
+              <SelectValue placeholder="Selecione a conexão" />
+            </SelectTrigger>
+            <SelectContent>
+              {connections.map((conn) => (
+                <SelectItem key={conn.id} value={conn.id}>
+                  <div className="flex flex-col">
+                    <span>{conn.name}</span>
+                    <span className="text-xs text-muted-foreground">{conn.phone_number}</span>
+                  </div>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      );
+    }
+    
+    return null;
+  };
+
   return (
     <div className="space-y-4">
       <div className="space-y-3">
@@ -173,82 +224,38 @@ export function VisibilitySelector({
               (option.value === 'connection' && !hasConnections);
             
             return (
-              <div key={option.value} className="flex items-start space-x-3">
-                <RadioGroupItem 
-                  value={option.value} 
-                  id={`visibility-${option.value}`}
-                  disabled={isDisabled}
-                  className="mt-1"
-                />
-                <Label 
-                  htmlFor={`visibility-${option.value}`}
-                  className={`flex-1 cursor-pointer ${isDisabled ? 'opacity-50 cursor-not-allowed' : ''}`}
-                >
-                  <div className="flex items-center gap-2">
-                    {option.icon}
-                    <span className="font-medium">{option.label}</span>
-                  </div>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    {isDisabled 
-                      ? (option.value === 'department' 
-                          ? 'Você não está em nenhum departamento' 
-                          : 'Nenhuma conexão disponível')
-                      : option.description
-                    }
-                  </p>
-                </Label>
+              <div key={option.value}>
+                <div className="flex items-start space-x-3">
+                  <RadioGroupItem 
+                    value={option.value} 
+                    id={`visibility-${option.value}`}
+                    disabled={isDisabled}
+                    className="mt-1"
+                  />
+                  <Label 
+                    htmlFor={`visibility-${option.value}`}
+                    className={`flex-1 cursor-pointer ${isDisabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  >
+                    <div className="flex items-center gap-2">
+                      {option.icon}
+                      <span className="font-medium">{option.label}</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {isDisabled 
+                        ? (option.value === 'department' 
+                            ? 'Nenhum departamento disponível' 
+                            : 'Nenhuma conexão disponível')
+                        : option.description
+                      }
+                    </p>
+                  </Label>
+                </div>
+                {renderDropdown(option)}
               </div>
             );
           })}
         </RadioGroup>
       </div>
-
-      {/* Department selector */}
-      {visibility === 'department' && hasDepartments && (
-        <div className="space-y-2 pl-7">
-          <Label>Departamento</Label>
-          <Select 
-            value={selectedDepartmentId || ''} 
-            onValueChange={(v) => onDepartmentChange(v || null)}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Selecione o departamento" />
-            </SelectTrigger>
-            <SelectContent>
-              {departments.map((dept) => (
-                <SelectItem key={dept.id} value={dept.id}>
-                  {dept.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      )}
-
-      {/* Connection selector */}
-      {visibility === 'connection' && hasConnections && (
-        <div className="space-y-2 pl-7">
-          <Label>Conexão</Label>
-          <Select 
-            value={selectedConnectionId || ''} 
-            onValueChange={(v) => onConnectionChange(v || null)}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Selecione a conexão" />
-            </SelectTrigger>
-            <SelectContent>
-              {connections.map((conn) => (
-                <SelectItem key={conn.id} value={conn.id}>
-                  <div className="flex flex-col">
-                    <span>{conn.name}</span>
-                    <span className="text-xs text-muted-foreground">{conn.phone_number}</span>
-                  </div>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      )}
     </div>
   );
 }
