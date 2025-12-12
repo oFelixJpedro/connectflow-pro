@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Globe, User, Users, Smartphone } from 'lucide-react';
+import { Globe, User, Building2, Smartphone } from 'lucide-react';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import {
@@ -54,7 +54,7 @@ const visibilityOptions: {
   {
     value: 'department',
     label: 'Departamento',
-    icon: <Users className="w-4 h-4" />,
+    icon: <Building2 className="w-4 h-4" />,
     description: 'Visível para membros do departamento',
   },
   {
