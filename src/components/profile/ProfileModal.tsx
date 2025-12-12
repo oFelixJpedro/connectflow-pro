@@ -274,7 +274,7 @@ export function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
             {/* Status Field */}
             <div className="space-y-2">
               <Label htmlFor="status">Status</Label>
-              <Select value={currentStatus || 'online'} onValueChange={(value) => setSelectedStatus(value as UserStatus)}>
+              <Select value={currentStatus ?? undefined} onValueChange={(value) => setSelectedStatus(value as UserStatus)}>
                 <SelectTrigger id="status">
                   <SelectValue placeholder="Selecione seu status" />
                 </SelectTrigger>
