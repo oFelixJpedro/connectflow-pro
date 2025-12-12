@@ -306,6 +306,8 @@ export function ContactPanel({ conversation, onClose, onContactUpdated, onScroll
           email: data.email || null,
           tags: data.tags,
           notes: data.notes || null,
+          // Mark name as manually edited if name was changed
+          name_manually_edited: data.name ? true : false,
         })
         .eq('id', contact.id);
 

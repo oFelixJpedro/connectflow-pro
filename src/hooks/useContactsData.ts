@@ -168,6 +168,8 @@ export function useContactsData() {
           email: data.email || null,
           tags: data.tags,
           notes: data.notes || null,
+          // Mark name as manually edited if name was changed
+          name_manually_edited: data.name ? true : false,
           updated_at: new Date().toISOString()
         })
         .eq('id', id);
