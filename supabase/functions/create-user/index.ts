@@ -185,6 +185,7 @@ serve(async (req) => {
         company_id: currentProfile.company_id,
         email: email.toLowerCase(),
         full_name: fullName,
+        status: 'online',
         needs_password_change: true,
         active: true
       });
