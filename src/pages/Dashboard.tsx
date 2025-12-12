@@ -170,12 +170,34 @@ export default function Dashboard() {
                       Tempo Médio Resposta
                     </p>
                     <p className="text-3xl font-bold text-foreground mt-1">
-                      {formatResponseTime(metrics.avgResponseTimeMinutes)}
+                      {metrics.avgResponseTimeMinutes > 0 
+                        ? formatResponseTime(metrics.avgResponseTimeMinutes)
+                        : 'N/A'}
                     </p>
                     <div className="flex items-center gap-1 mt-2">
-                      <ArrowDownRight className="w-4 h-4 text-success" />
-                      <span className="text-sm text-success font-medium">Bom</span>
-                      <span className="text-sm text-muted-foreground">desempenho</span>
+                      {metrics.avgResponseTimeMinutes === 0 ? (
+                        <span className="text-sm text-muted-foreground">Sem dados suficientes</span>
+                      ) : metrics.avgResponseTimeMinutes < 5 ? (
+                        <>
+                          <ArrowDownRight className="w-4 h-4 text-success" />
+                          <span className="text-sm text-success font-medium">Excelente</span>
+                        </>
+                      ) : metrics.avgResponseTimeMinutes <= 15 ? (
+                        <>
+                          <ArrowDownRight className="w-4 h-4 text-success" />
+                          <span className="text-sm text-success font-medium">Bom desempenho</span>
+                        </>
+                      ) : metrics.avgResponseTimeMinutes <= 30 ? (
+                        <>
+                          <TrendingUp className="w-4 h-4 text-warning" />
+                          <span className="text-sm text-warning font-medium">Atenção</span>
+                        </>
+                      ) : (
+                        <>
+                          <ArrowUpRight className="w-4 h-4 text-destructive" />
+                          <span className="text-sm text-destructive font-medium">Crítico</span>
+                        </>
+                      )}
                     </div>
                   </div>
                   <div className="w-12 h-12 bg-info/10 rounded-xl flex items-center justify-center">

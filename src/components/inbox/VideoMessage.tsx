@@ -52,21 +52,8 @@ export function VideoMessage({
     setHasError(true);
   };
 
-  const handleDownload = async () => {
-    try {
-      const response = await fetch(src);
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `video_${Date.now()}.mp4`;
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
-    } catch (err) {
-      console.error('Failed to download video:', err);
-    }
+  const handleDownload = () => {
+    window.open(src, '_blank', 'noopener,noreferrer');
   };
 
   const isFailed = status === 'failed';

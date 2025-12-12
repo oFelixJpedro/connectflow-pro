@@ -429,17 +429,12 @@ export default function InternalChat() {
                         className="w-full p-3 text-left hover:bg-muted/50 transition-colors flex items-center gap-3"
                         onClick={() => handleSelectTeamMember(member.id)}
                       >
-                        <div className="relative">
-                          <Avatar className="w-10 h-10">
-                            <AvatarImage src={member.avatarUrl || undefined} />
-                            <AvatarFallback className="bg-gray-100 text-gray-700">
-                              {getInitials(member.fullName)}
-                            </AvatarFallback>
-                          </Avatar>
-                          <Circle
-                            className={`absolute bottom-0 right-0 w-3 h-3 fill-current ${getStatusColor(member.status)}`}
-                          />
-                        </div>
+                        <Avatar className="w-10 h-10">
+                          <AvatarImage src={member.avatarUrl || undefined} className="object-cover object-top" />
+                          <AvatarFallback className="bg-gray-100 text-gray-700">
+                            {getInitials(member.fullName)}
+                          </AvatarFallback>
+                        </Avatar>
                         <div className="flex-1 min-w-0">
                           <p className="font-medium text-sm truncate">{member.fullName}</p>
                           <p className="text-xs text-muted-foreground truncate">{member.email}</p>
@@ -508,7 +503,7 @@ export default function InternalChat() {
                       >
                         {!msg.isOwnMessage && (
                           <Avatar className="w-9 h-9 flex-shrink-0">
-                            <AvatarImage src={msg.senderAvatar || undefined} />
+                            <AvatarImage src={msg.senderAvatar || undefined} className="object-cover object-top" />
                             <AvatarFallback className="bg-emerald-100 text-emerald-700 text-xs">
                               {getInitials(msg.senderName)}
                             </AvatarFallback>

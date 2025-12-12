@@ -1,5 +1,5 @@
-import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
-import { User, Session } from '@supabase/supabase-js';
+import { createContext, useContext, useEffect, useState, ReactNode, useCallback } from 'react';
+import { User, Session, RealtimeChannel } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import type { Tables } from '@/integrations/supabase/types';
 
@@ -15,12 +15,12 @@ interface AuthContextType {
   session: Session | null;
   loading: boolean;
   needsPasswordChange: boolean;
+  teamProfiles: Profile[];
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
   resetPassword: (email: string) => Promise<{ error: Error | null }>;
   updateProfile: (updates: Partial<Profile>) => Promise<{ error: Error | null }>;
   updateCompany: (updates: Partial<Company>) => Promise<{ error: Error | null }>;
-  updateStatus: (status: Profile['status']) => Promise<void>;
   clearPasswordChangeFlag: () => void;
 }
 
@@ -34,6 +34,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [needsPasswordChange, setNeedsPasswordChange] = useState(false);
+  const [teamProfiles, setTeamProfiles] = useState<Profile[]>([]);
+
+  // Load team profiles
+  const loadTeamProfiles = useCallback(async (companyId: string) => {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('company_id', companyId)
+      .eq('active', true);
+
+    if (!error && data) {
+      setTeamProfiles(data as Profile[]);
+    }
+  }, []);
 
   useEffect(() => {
     // Set up auth state listener FIRST
@@ -51,6 +65,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setProfile(null);
           setCompany(null);
           setUserRole(null);
+          setTeamProfiles([]);
           setLoading(false);
         }
       }
@@ -69,6 +84,46 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     return () => subscription.unsubscribe();
   }, []);
+
+  // Realtime subscription for team profiles
+  useEffect(() => {
+    if (!profile?.company_id) return;
+
+    // Load initial team profiles
+    loadTeamProfiles(profile.company_id);
+
+    const channel: RealtimeChannel = supabase
+      .channel(`team-profiles-${profile.company_id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'profiles',
+        },
+        (payload) => {
+          const updatedProfile = payload.new as Profile;
+          
+          // Only process if it's from the same company
+          if (updatedProfile.company_id !== profile.company_id) return;
+          
+          // Update team profiles list
+          setTeamProfiles((prev) => 
+            prev.map((p) => p.id === updatedProfile.id ? updatedProfile : p)
+          );
+          
+          // If it's the current user's profile, update that too
+          if (updatedProfile.id === profile.id) {
+            setProfile(updatedProfile);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [profile?.company_id, profile?.id, loadTeamProfiles]);
 
   async function loadUserData(userId: string) {
     try {
@@ -130,11 +185,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   async function signOut() {
-    // Update status to offline before signing out
+    // Update last_seen_at before signing out
     if (user) {
       await supabase
         .from('profiles')
-        .update({ status: 'offline', last_seen_at: new Date().toISOString() })
+        .update({ last_seen_at: new Date().toISOString() })
         .eq('id', user.id);
     }
     
@@ -182,22 +237,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { error: error as Error | null };
   }
 
-  async function updateStatus(status: Profile['status']) {
-    if (!user) return;
-
-    await supabase
-      .from('profiles')
-      .update({ 
-        status, 
-        last_seen_at: status === 'offline' ? new Date().toISOString() : null 
-      })
-      .eq('id', user.id);
-
-    if (profile) {
-      setProfile({ ...profile, status });
-    }
-  }
-
   function clearPasswordChangeFlag() {
     setNeedsPasswordChange(false);
     if (profile) {
@@ -214,12 +253,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       session,
       loading,
       needsPasswordChange,
+      teamProfiles,
       signIn,
       signOut,
       resetPassword,
       updateProfile,
       updateCompany,
-      updateStatus,
       clearPasswordChangeFlag
     }}>
       {children}

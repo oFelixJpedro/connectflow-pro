@@ -16,6 +16,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { ContactAvatar } from '@/components/ui/contact-avatar';
 import { Badge } from '@/components/ui/badge';
 import {
   Tooltip,
@@ -41,6 +42,7 @@ import { MessageReactions } from './MessageReactions';
 import { ReactionPicker } from './ReactionPicker';
 import { EmojiMessagePicker } from './EmojiMessagePicker';
 import { QuickRepliesPicker } from './QuickRepliesPicker';
+import { QuickReplyConfirmModal } from './QuickReplyConfirmModal';
 import { QuickReply } from '@/hooks/useQuickRepliesData';
 import { cn } from '@/lib/utils';
 import type { Conversation, Message, QuotedMessage } from '@/types';
@@ -118,6 +120,8 @@ export function ChatPanel({
   const [sendingReactionMessageId, setSendingReactionMessageId] = useState<string | null>(null);
   const [showQuickReplies, setShowQuickReplies] = useState(false);
   const [isInternalNoteMode, setIsInternalNoteMode] = useState(false);
+  const [pendingQuickReply, setPendingQuickReply] = useState<QuickReply | null>(null);
+  const [isQuickReplyConfirmOpen, setIsQuickReplyConfirmOpen] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messageRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -583,8 +587,9 @@ export function ChatPanel({
     
     // Handle different media types
     if (mediaType === 'text' || !reply.media_url) {
-      // Send as text message
-      onSendMessage(reply.message, replyingTo?.id);
+      // For text messages, show confirmation modal instead of sending directly
+      setPendingQuickReply(reply);
+      setIsQuickReplyConfirmOpen(true);
     } else if (mediaType === 'image' && reply.media_url) {
       // Send image with caption
       try {
@@ -653,7 +658,24 @@ export function ChatPanel({
       }
     }
     
+    // Don't clear replyingTo here - let the preview modals/confirmation handle it after actual send
+    textareaRef.current?.focus();
+  };
+
+  // Handle quick reply confirmation
+  const handleQuickReplyConfirm = () => {
+    if (!pendingQuickReply) return;
+    
+    onSendMessage(pendingQuickReply.message, replyingTo?.id);
+    setPendingQuickReply(null);
+    setIsQuickReplyConfirmOpen(false);
     setReplyingTo(null);
+    textareaRef.current?.focus();
+  };
+
+  const handleQuickReplyCancel = () => {
+    setPendingQuickReply(null);
+    setIsQuickReplyConfirmOpen(false);
     textareaRef.current?.focus();
   };
 
@@ -709,12 +731,11 @@ export function ChatPanel({
       <div className="px-4 py-3 border-b border-border bg-card">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3 min-w-0">
-            <Avatar className="w-10 h-10 flex-shrink-0">
-              <AvatarImage src={conversation.contact?.avatarUrl} />
-              <AvatarFallback className="bg-primary/10 text-primary text-sm">
-                {getInitials(conversation.contact?.name)}
-              </AvatarFallback>
-            </Avatar>
+            <ContactAvatar
+              imageUrl={conversation.contact?.avatarUrl}
+              name={conversation.contact?.name}
+              size="md"
+            />
             <div className="min-w-0">
               <p className="font-medium text-sm text-foreground truncate">
                 {conversation.contact?.name || conversation.contact?.phoneNumber}
@@ -1412,6 +1433,17 @@ export function ChatPanel({
           };
           input.click();
         }}
+      />
+
+      {/* Quick Reply Confirmation Modal */}
+      <QuickReplyConfirmModal
+        isOpen={isQuickReplyConfirmOpen}
+        onClose={handleQuickReplyCancel}
+        onConfirm={handleQuickReplyConfirm}
+        message={pendingQuickReply?.message || ''}
+        title={pendingQuickReply?.title}
+        isSending={isSendingMessage}
+        quotedMessage={replyingTo}
       />
     </div>
   );

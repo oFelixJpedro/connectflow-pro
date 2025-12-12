@@ -8,9 +8,11 @@ import { ConnectionSelector } from '@/components/inbox/ConnectionSelector';
 import { ConversationFiltersComponent } from '@/components/inbox/ConversationFilters';
 import { InboxTabs, type InboxColumn } from '@/components/inbox/InboxTabs';
 import { AssignmentBadge } from '@/components/inbox/AssignmentBadge';
+import { ContactAvatar } from '@/components/ui/contact-avatar';
 import { cn } from '@/lib/utils';
 import type { Conversation, ConversationFilters } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
+import type { Tag } from '@/hooks/useTagsData';
 
 interface ConversationListProps {
   conversations: Conversation[];
@@ -25,6 +27,7 @@ interface ConversationListProps {
   isRestricted?: boolean;
   inboxColumn: InboxColumn;
   onColumnChange: (column: InboxColumn) => void;
+  tags?: Tag[];
 }
 
 const priorityColors = {
@@ -56,6 +59,7 @@ export function ConversationList({
   isRestricted = false,
   inboxColumn,
   onColumnChange,
+  tags = [],
 }: ConversationListProps) {
   const { user } = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
@@ -203,12 +207,11 @@ export function ConversationList({
                   <div className="flex gap-3">
                     {/* Avatar with unread badge */}
                     <div className="relative flex-shrink-0">
-                      <Avatar className="w-12 h-12">
-                        <AvatarImage src={conversation.contact?.avatarUrl} />
-                        <AvatarFallback className="bg-primary/10 text-primary text-sm font-medium">
-                          {getInitials(conversation.contact?.name)}
-                        </AvatarFallback>
-                      </Avatar>
+                      <ContactAvatar
+                        imageUrl={conversation.contact?.avatarUrl}
+                        name={conversation.contact?.name}
+                        size="lg"
+                      />
                       
                       {/* Unread badge on avatar */}
                       {conversation.unreadCount > 0 && (
@@ -233,8 +236,8 @@ export function ConversationList({
                         {conversation.contact?.phoneNumber}
                       </p>
 
-                      {/* Assignment and department badges */}
-                      <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+                      {/* Assignment, department badges and contact tags */}
+                      <div className="flex items-center gap-1 mt-2 overflow-hidden">
                         {/* Assignment badge */}
                         <AssignmentBadge
                           assignedUser={conversation.assignedUser}
@@ -245,7 +248,7 @@ export function ConversationList({
                         {conversation.department && (
                           <Badge 
                             variant="outline" 
-                            className="text-xs px-1.5 py-0 h-5"
+                            className="text-xs px-1.5 py-0 h-5 flex-shrink-0"
                             style={{ 
                               borderColor: conversation.department.color,
                               color: conversation.department.color 
@@ -254,27 +257,40 @@ export function ConversationList({
                             {conversation.department.name}
                           </Badge>
                         )}
-                      </div>
 
-                      {/* Tags */}
-                      {conversation.tags.length > 0 && (
-                        <div className="flex items-center gap-1.5 mt-2">
-                          {conversation.tags.slice(0, 2).map((tag) => (
-                            <Badge 
-                              key={tag} 
-                              variant="secondary" 
-                              className="text-xs px-1.5 py-0 h-5"
-                            >
-                              {tag}
-                            </Badge>
-                          ))}
-                          {conversation.tags.length > 2 && (
-                            <span className="text-xs text-muted-foreground">
-                              +{conversation.tags.length - 2}
-                            </span>
-                          )}
-                        </div>
-                      )}
+                        {/* Contact Tags - inline with ellipsis */}
+                        {conversation.contact?.tags && conversation.contact.tags.length > 0 && (
+                          <>
+                            {conversation.contact.tags.slice(0, 2).map((tagName) => {
+                              const tagData = tags.find(t => t.name === tagName);
+                              const tagColor = tagData?.color || '#6B7280';
+                              return (
+                                <Badge 
+                                  key={tagName} 
+                                  variant="outline"
+                                  className="text-xs px-1.5 py-0 h-5 flex-shrink-0 max-w-[60px] truncate"
+                                  style={{
+                                    backgroundColor: `${tagColor}20`,
+                                    borderColor: tagColor,
+                                    color: tagColor,
+                                  }}
+                                  title={tagName}
+                                >
+                                  {tagName}
+                                </Badge>
+                              );
+                            })}
+                            {conversation.contact.tags.length > 2 && (
+                              <span 
+                                className="text-xs text-muted-foreground flex-shrink-0"
+                                title={conversation.contact.tags.slice(2).join(', ')}
+                              >
+                                ...
+                              </span>
+                            )}
+                          </>
+                        )}
+                      </div>
                     </div>
                   </div>
 
@@ -282,7 +298,7 @@ export function ConversationList({
                   {conversation.assignedUser && conversation.assignedUserId !== user?.id && (
                     <div className="absolute top-2 right-2">
                       <Avatar className="w-5 h-5 border border-background">
-                        <AvatarImage src={conversation.assignedUser.avatarUrl} />
+                        <AvatarImage src={conversation.assignedUser.avatarUrl} className="object-cover object-top" />
                         <AvatarFallback className="text-[8px] bg-muted">
                           {getInitials(conversation.assignedUser.fullName)}
                         </AvatarFallback>

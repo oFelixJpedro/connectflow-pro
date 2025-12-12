@@ -42,7 +42,6 @@ interface TeamMember {
   email: string;
   full_name: string;
   avatar_url: string | null;
-  status: string;
   active: boolean;
   created_at: string;
   role: string;
@@ -423,7 +422,7 @@ export function UserConfigDrawer({ open, onClose, member, onSaveSuccess, isOwner
             {/* User Info */}
             <div className="flex items-center gap-4 p-4 bg-muted/50 rounded-lg">
               <Avatar className="w-12 h-12">
-                <AvatarImage src={member.avatar_url || undefined} />
+                <AvatarImage src={member.avatar_url || undefined} className="object-cover object-top" />
                 <AvatarFallback className="bg-primary/10 text-primary">
                   {getInitials(member.full_name)}
                 </AvatarFallback>

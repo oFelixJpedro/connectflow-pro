@@ -171,7 +171,7 @@ export function AddCardDialog({
                   >
                     <div className="flex items-center gap-3">
                       <Avatar className="w-10 h-10">
-                        <AvatarImage src={contact.avatar_url || undefined} />
+                        <AvatarImage src={contact.avatar_url || undefined} className="object-cover object-top" />
                         <AvatarFallback className="bg-primary/10 text-primary">
                           {getInitials(contact.name)}
                         </AvatarFallback>

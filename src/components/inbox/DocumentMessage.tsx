@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { cn } from '@/lib/utils';
 import { 
   Download, 
@@ -9,7 +8,6 @@ import {
   Archive,
   FileX,
   AlertCircle,
-  Loader2,
   FileCode
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -125,35 +123,15 @@ export function DocumentMessage({
   errorMessage,
   caption,
 }: DocumentMessageProps) {
-  const [isDownloading, setIsDownloading] = useState(false);
-
-  const handleDownload = async (e: React.MouseEvent) => {
+  const handleDownload = (e: React.MouseEvent) => {
     e.stopPropagation();
-    
     if (!src) return;
-    
-    try {
-      setIsDownloading(true);
-      const response = await fetch(src);
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = fileName || `document_${Date.now()}`;
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
-    } catch (err) {
-      console.error('Failed to download document:', err);
-    } finally {
-      setIsDownloading(false);
-    }
+    window.open(src, '_blank', 'noopener,noreferrer');
   };
 
   const handleOpenInNewTab = () => {
     if (src) {
-      window.open(src, '_blank');
+      window.open(src, '_blank', 'noopener,noreferrer');
     }
   };
 
@@ -249,7 +227,6 @@ export function DocumentMessage({
                 variant="ghost"
                 size="icon"
                 onClick={handleDownload}
-                disabled={isDownloading}
                 className={cn(
                   "h-9 w-9 rounded-full flex-shrink-0",
                   isOutbound 
@@ -258,11 +235,7 @@ export function DocumentMessage({
                 )}
                 title="Baixar documento"
               >
-                {isDownloading ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Download className="w-4 h-4" />
-                )}
+                <Download className="w-4 h-4" />
               </Button>
             </div>
           )}

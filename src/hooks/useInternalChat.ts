@@ -10,7 +10,6 @@ interface ChatRoom {
     id: string;
     fullName: string;
     avatarUrl: string | null;
-    status: string;
   }[];
   lastMessage?: {
     content: string;
@@ -40,7 +39,6 @@ interface TeamMember {
   id: string;
   fullName: string;
   avatarUrl: string | null;
-  status: string;
   email: string;
 }
 
@@ -65,7 +63,7 @@ export function useInternalChat() {
     // Build query - fetch all active members from company
     let query = supabase
       .from('profiles')
-      .select('id, full_name, avatar_url, status, email')
+      .select('id, full_name, avatar_url, email')
       .eq('company_id', company.id)
       .eq('active', true);
 
@@ -88,7 +86,6 @@ export function useInternalChat() {
         id: m.id,
         fullName: m.full_name,
         avatarUrl: m.avatar_url,
-        status: m.status || 'offline',
         email: m.email,
       })));
     }
@@ -166,7 +163,6 @@ export function useInternalChat() {
               id: (p.profiles as any)?.id,
               fullName: (p.profiles as any)?.full_name || 'Usuário',
               avatarUrl: (p.profiles as any)?.avatar_url,
-              status: (p.profiles as any)?.status || 'offline',
             }));
 
           // For direct chats, get the other participant's name
@@ -345,13 +341,11 @@ export function useInternalChat() {
             id: profile.id,
             fullName: profile.full_name || 'Você',
             avatarUrl: profile.avatar_url || null,
-            status: profile.status || 'online',
           },
           {
             id: otherUserId,
             fullName: otherUser?.fullName || 'Usuário',
             avatarUrl: otherUser?.avatarUrl || null,
-            status: otherUser?.status || 'offline',
           },
         ],
       };

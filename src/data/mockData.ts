@@ -20,7 +20,6 @@ export const mockUser: User = {
   avatarUrl: undefined,
   role: 'admin',
   departmentId: '1',
-  status: 'online',
   maxConversations: 10,
   active: true,
   createdAt: '2024-01-01T00:00:00Z',

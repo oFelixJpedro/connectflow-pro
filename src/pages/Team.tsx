@@ -10,13 +10,13 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { UserConfigDrawer } from '@/components/team/UserConfigDrawer';
 import { InviteUserModal } from '@/components/team/InviteUserModal';
+import type { Tables } from '@/integrations/supabase/types';
 
 interface TeamMember {
   id: string;
   email: string;
   full_name: string;
   avatar_url: string | null;
-  status: string;
   active: boolean;
   created_at: string;
   role: string;
@@ -92,7 +92,6 @@ export default function Team() {
           email: p.email,
           full_name: p.full_name,
           avatar_url: p.avatar_url,
-          status: p.status || 'offline',
           active: p.active ?? true,
           created_at: p.created_at || '',
           role: userRole?.role || 'agent',
@@ -205,21 +204,12 @@ export default function Team() {
                   className="flex items-center justify-between p-4 hover:bg-muted/50 transition-colors"
                 >
                   <div className="flex items-center gap-4">
-                    <div className="relative">
-                      <Avatar className="w-10 h-10">
-                        <AvatarImage src={member.avatar_url || undefined} />
-                        <AvatarFallback className="bg-muted text-muted-foreground">
-                          {getInitials(member.full_name)}
-                        </AvatarFallback>
-                      </Avatar>
-                      <span
-                        className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-background ${
-                          member.status === 'online' ? 'bg-green-500' :
-                          member.status === 'away' ? 'bg-yellow-500' :
-                          member.status === 'busy' ? 'bg-red-500' : 'bg-gray-400'
-                        }`}
-                      />
-                    </div>
+                    <Avatar className="w-10 h-10">
+                      <AvatarImage src={member.avatar_url || undefined} className="object-cover object-top" />
+                      <AvatarFallback className="bg-muted text-muted-foreground">
+                        {getInitials(member.full_name)}
+                      </AvatarFallback>
+                    </Avatar>
 
                     <div>
                       <p className="font-medium">{member.full_name}</p>
