@@ -116,15 +116,14 @@ export function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
     try {
       let newAvatarUrl = avatarUrl;
 
-      // Upload avatar if changed
+      // Upload avatar if changed - using same pattern as company logo
       if (avatarFile) {
         const fileExt = avatarFile.name.split('.').pop() || 'jpg';
-        const sanitizedName = sanitizeFileName(`avatar_${Date.now()}.${fileExt}`);
-        const filePath = `${profile.company_id}/${profile.id}/${sanitizedName}`;
+        const fileName = `${profile.id}/avatar.${fileExt}`;
 
         const { error: uploadError } = await supabase.storage
           .from('avatars')
-          .upload(filePath, avatarFile, { upsert: true });
+          .upload(fileName, avatarFile, { upsert: true });
 
         if (uploadError) {
           console.error('Upload error:', uploadError);
@@ -135,7 +134,7 @@ export function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
 
         const { data: urlData } = supabase.storage
           .from('avatars')
-          .getPublicUrl(filePath);
+          .getPublicUrl(fileName);
 
         newAvatarUrl = urlData.publicUrl;
       }
