@@ -88,6 +88,7 @@ export function useDashboardData() {
           todayMessagesResult,
           recentConvsResult,
           agentsResult,
+          responseTimeMessagesResult,
         ] = await Promise.all([
           // Today's conversations
           supabase
@@ -147,6 +148,14 @@ export function useDashboardData() {
             .select('id, full_name, avatar_url')
             .eq('company_id', company.id)
             .eq('active', true),
+
+          // Messages for response time calculation (last 24h)
+          supabase
+            .from('messages')
+            .select('id, conversation_id, direction, sender_type, created_at')
+            .gte('created_at', todayStart.toISOString())
+            .lte('created_at', todayEnd.toISOString())
+            .order('created_at', { ascending: true }),
         ]);
 
         // Process metrics
@@ -161,15 +170,73 @@ export function useDashboardData() {
         ).length || 0;
         const resolutionRate = totalConvs > 0 ? Math.round((resolvedConvs / totalConvs) * 100) : 0;
 
+        // Calculate average response time from real messages
+        let avgResponseTimeMinutes = 0;
+        const responseMessages = responseTimeMessagesResult.data || [];
+        
+        if (responseMessages.length > 0) {
+          // Group messages by conversation
+          const messagesByConv: Record<string, typeof responseMessages> = {};
+          responseMessages.forEach(msg => {
+            if (!messagesByConv[msg.conversation_id]) {
+              messagesByConv[msg.conversation_id] = [];
+            }
+            messagesByConv[msg.conversation_id].push(msg);
+          });
+
+          // Calculate response times for each conversation
+          const responseTimes: number[] = [];
+          
+          Object.values(messagesByConv).forEach(convMessages => {
+            // Sort by created_at to ensure correct order
+            convMessages.sort((a, b) => 
+              new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+            );
+            
+            // Find pairs: inbound (contact) message followed by outbound (user) response
+            for (let i = 0; i < convMessages.length - 1; i++) {
+              const currentMsg = convMessages[i];
+              
+              // Check if this is an inbound message from contact
+              if (currentMsg.direction === 'inbound' && currentMsg.sender_type === 'contact') {
+                // Find the next outbound message from user
+                for (let j = i + 1; j < convMessages.length; j++) {
+                  const nextMsg = convMessages[j];
+                  
+                  if (nextMsg.direction === 'outbound' && nextMsg.sender_type === 'user') {
+                    // Calculate time difference in minutes
+                    const inboundTime = new Date(currentMsg.created_at).getTime();
+                    const outboundTime = new Date(nextMsg.created_at).getTime();
+                    const diffMinutes = Math.round((outboundTime - inboundTime) / (1000 * 60));
+                    
+                    // Only count reasonable response times (< 24h)
+                    if (diffMinutes > 0 && diffMinutes < 1440) {
+                      responseTimes.push(diffMinutes);
+                    }
+                    break; // Found the response, move to next inbound message
+                  }
+                }
+              }
+            }
+          });
+
+          // Calculate average
+          if (responseTimes.length > 0) {
+            avgResponseTimeMinutes = Math.round(
+              responseTimes.reduce((sum, time) => sum + time, 0) / responseTimes.length
+            );
+          }
+        }
+
         setMetrics({
           todayConversations: todayCount,
           yesterdayConversations: yesterdayCount,
           openConversations: openCount,
-          yesterdayOpenConversations: 0, // Would need historical data
-          avgResponseTimeMinutes: 5, // Calculate from messages if needed
-          previousAvgResponseTime: 6,
+          yesterdayOpenConversations: 0,
+          avgResponseTimeMinutes,
+          previousAvgResponseTime: 0,
           resolutionRate,
-          previousResolutionRate: resolutionRate - 3, // Placeholder
+          previousResolutionRate: resolutionRate - 3,
         });
 
         // Process weekly chart data
