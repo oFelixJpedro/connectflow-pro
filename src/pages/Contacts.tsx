@@ -430,12 +430,24 @@ export default function Contacts() {
                     {contact.email || '-'}
                   </TableCell>
                   <TableCell>
-                    <div className="flex gap-1">
-                      {(contact.tags || []).slice(0, 2).map((tag) => (
-                        <Badge key={tag} variant="secondary" className="text-xs">
-                          {tag}
-                        </Badge>
-                      ))}
+                    <div className="flex flex-wrap gap-1">
+                      {(contact.tags || []).slice(0, 2).map((tagName) => {
+                        const tagData = tags.find(t => t.name === tagName);
+                        return (
+                          <Badge 
+                            key={tagName} 
+                            variant="secondary" 
+                            className="text-xs"
+                            style={tagData ? { 
+                              backgroundColor: `${tagData.color}20`,
+                              borderColor: tagData.color,
+                              color: tagData.color
+                            } : undefined}
+                          >
+                            {tagName}
+                          </Badge>
+                        );
+                      })}
                       {(contact.tags || []).length > 2 && (
                         <Badge variant="outline" className="text-xs">
                           +{contact.tags.length - 2}
