@@ -271,6 +271,38 @@ export default function Connections() {
               .eq('id', connectionId);
 
             console.log('✅ [API] Banco atualizado');
+            
+            // Create default department if connection doesn't have any
+            console.log('📁 [DEPARTMENT] Verificando departamentos da conexão...');
+            const { count: deptCount } = await supabase
+              .from('departments')
+              .select('*', { count: 'exact', head: true })
+              .eq('whatsapp_connection_id', connectionId);
+            
+            if (!deptCount || deptCount === 0) {
+              console.log('📁 [DEPARTMENT] Nenhum departamento encontrado, criando "Geral"...');
+              const { data: newDept, error: deptError } = await supabase
+                .from('departments')
+                .insert({
+                  name: 'Geral',
+                  description: 'Departamento padrão criado automaticamente',
+                  whatsapp_connection_id: connectionId,
+                  is_default: true,
+                  active: true,
+                  color: '#3B82F6'
+                })
+                .select()
+                .single();
+              
+              if (deptError) {
+                console.error('❌ [DEPARTMENT] Erro ao criar departamento:', deptError);
+              } else {
+                console.log('✅ [DEPARTMENT] Departamento "Geral" criado com sucesso!', newDept?.id);
+              }
+            } else {
+              console.log('📁 [DEPARTMENT] Conexão já possui', deptCount, 'departamento(s)');
+            }
+            
             console.log('⏱️ [POLLING] Parando polling...');
             stopPolling();
             console.log('🔍 [QR CODE] Fechando dialog...');
