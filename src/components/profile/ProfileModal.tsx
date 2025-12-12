@@ -185,7 +185,7 @@ export function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
             <div className="flex flex-col items-center gap-4">
               <div className="relative group">
                 <Avatar className="w-24 h-24 border-4 border-background shadow-lg">
-                  <AvatarImage src={displayAvatar || undefined} />
+                  <AvatarImage src={displayAvatar || undefined} className="object-cover object-top" />
                   <AvatarFallback className="text-2xl bg-muted">
                     {getInitials(fullName || profile?.full_name || 'U')}
                   </AvatarFallback>
