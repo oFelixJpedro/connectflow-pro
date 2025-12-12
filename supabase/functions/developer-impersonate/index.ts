@@ -44,12 +44,14 @@ serve(async (req) => {
       );
     }
 
-    const { action, target_user_id } = await req.json();
+    // Receber redirect_url do frontend
+    const { action, target_user_id, redirect_url } = await req.json();
     const clientIP = req.headers.get('x-forwarded-for') || 'unknown';
     const userAgent = req.headers.get('user-agent') || 'unknown';
 
     if (action === 'impersonate') {
       console.log('Impersonation request for user:', target_user_id);
+      console.log('Redirect URL from frontend:', redirect_url);
 
       // Check for approved permission request
       const { data: permissionRequest, error: permError } = await supabase
@@ -106,17 +108,17 @@ serve(async (req) => {
         .update({ status: 'used' })
         .eq('id', permissionRequest.id);
 
-      // Generate a magic link for the user using Supabase Admin API
-      const appUrl = Deno.env.get('APP_URL') || supabaseUrl.replace('.supabase.co', '.lovable.app');
-      const redirectUrl = `${appUrl}/dashboard`;
+      // Usar URL dinâmica do frontend (com fallback)
+      const fallbackUrl = `${supabaseUrl.replace('.supabase.co', '.lovable.app')}/dashboard`;
+      const finalRedirectUrl = redirect_url || fallbackUrl;
       
-      console.log('Generating magic link for:', profile.email, 'redirect:', redirectUrl);
+      console.log('Generating magic link for:', profile.email, 'redirect:', finalRedirectUrl);
 
       const { data: linkData, error: linkError } = await supabase.auth.admin.generateLink({
         type: 'magiclink',
         email: profile.email,
         options: {
-          redirectTo: redirectUrl
+          redirectTo: finalRedirectUrl
         }
       });
 
@@ -137,6 +139,7 @@ serve(async (req) => {
         details: { 
           email: profile.email, 
           full_name: profile.full_name,
+          redirect_url: finalRedirectUrl,
           role: userRole 
         },
         ip_address: clientIP,

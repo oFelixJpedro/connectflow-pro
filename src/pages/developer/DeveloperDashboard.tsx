@@ -83,6 +83,7 @@ export default function DeveloperDashboard() {
     requestId: string;
     type: 'edit_company' | 'edit_user' | 'access_user' | 'delete_company' | 'delete_user';
     targetName: string;
+    targetUserId?: string;
     onApproved: () => void;
   } | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
@@ -413,29 +414,10 @@ export default function DeveloperDashboard() {
       requestId: result.requestId,
       type: 'access_user',
       targetName: user.full_name,
-      onApproved: async () => {
-        // After approval, get magic link
-        const token = getDeveloperToken();
-        const { data, error } = await supabase.functions.invoke('developer-impersonate', {
-          body: { action: 'impersonate', target_user_id: user.id },
-          headers: { Authorization: `Bearer ${token}` }
-        });
-
-        if (error || data?.error) {
-          toast.error(data?.error || 'Erro ao acessar como usuário');
-          setPermissionRequest(null);
-          return;
-        }
-
-        if (data?.magic_link) {
-          toast.success(`Abrindo sessão como ${user.full_name}`);
-          setPermissionRequest(null);
-          // Open magic link in new tab - this will log the user in
-          window.open(data.magic_link, '_blank');
-        } else {
-          toast.error('Link de acesso não gerado');
-          setPermissionRequest(null);
-        }
+      targetUserId: user.id,
+      onApproved: () => {
+        // O modal cuida de tudo para access_user
+        setPermissionRequest(null);
       }
     });
   };
@@ -875,6 +857,7 @@ export default function DeveloperDashboard() {
           requestId={permissionRequest.requestId}
           requestType={permissionRequest.type}
           targetName={permissionRequest.targetName}
+          targetUserId={permissionRequest.targetUserId}
           onApproved={permissionRequest.onApproved}
           onDenied={() => setPermissionRequest(null)}
           onCancel={() => setPermissionRequest(null)}
