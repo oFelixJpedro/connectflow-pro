@@ -69,32 +69,19 @@ function parseCookies(cookieHeader: string | null): Record<string, string> {
   );
 }
 
-// Create secure cookie string
+// Create secure cookie string for cross-origin
 function createSecureCookie(name: string, value: string, maxAge: number): string {
-  const parts = [
-    `${name}=${value}`,
-    'HttpOnly',
-    'Path=/',
-    `Max-Age=${maxAge}`,
-    'SameSite=None', // Required for cross-origin requests
-  ];
-  
-  // Always use Secure for cross-origin (even in dev, Supabase uses HTTPS)
-  parts.push('Secure');
-  
-  return parts.join('; ');
+  // For cross-origin cookies (frontend on Vercel, backend on Supabase):
+  // - SameSite=None is REQUIRED for cross-origin
+  // - Secure is REQUIRED when SameSite=None
+  // - Path=/ makes it available on all routes
+  // - HttpOnly prevents JavaScript access (XSS protection)
+  return `${name}=${value}; Path=/; Max-Age=${maxAge}; SameSite=None; Secure; HttpOnly`;
 }
 
-// Create cookie deletion string
+// Create cookie deletion string for cross-origin
 function createDeleteCookie(name: string): string {
-  return [
-    `${name}=`,
-    'HttpOnly',
-    'Path=/',
-    'Max-Age=0',
-    'SameSite=None',
-    'Secure'
-  ].join('; ');
+  return `${name}=; Path=/; Max-Age=0; SameSite=None; Secure; HttpOnly`;
 }
 
 serve(async (req) => {
