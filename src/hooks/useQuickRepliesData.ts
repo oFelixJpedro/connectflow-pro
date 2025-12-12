@@ -4,6 +4,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { toast } from '@/hooks/use-toast';
 
 export type QuickReplyMediaType = 'text' | 'image' | 'video' | 'audio' | 'document';
+export type QuickReplyVisibility = 'all' | 'personal' | 'department' | 'connection';
 
 export interface QuickReply {
   id: string;
@@ -17,6 +18,9 @@ export interface QuickReply {
   use_count: number;
   media_url: string | null;
   media_type: QuickReplyMediaType | null;
+  visibility_type: QuickReplyVisibility;
+  department_id: string | null;
+  whatsapp_connection_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -29,14 +33,39 @@ export interface QuickReplyFormData {
   is_global: boolean;
   media_url?: string | null;
   media_type?: QuickReplyMediaType;
+  visibility_type: QuickReplyVisibility;
+  department_id?: string | null;
+  whatsapp_connection_id?: string | null;
 }
 
 export function useQuickRepliesData() {
   const { profile, user, userRole } = useAuth();
   const [quickReplies, setQuickReplies] = useState<QuickReply[]>([]);
   const [loading, setLoading] = useState(true);
+  const [userDepartments, setUserDepartments] = useState<string[]>([]);
 
   const isAdminOrOwner = userRole?.role === 'owner' || userRole?.role === 'admin';
+
+  // Load user's departments
+  const loadUserDepartments = useCallback(async () => {
+    if (!user?.id) return;
+
+    try {
+      const { data, error } = await supabase
+        .from('department_users')
+        .select('department_id')
+        .eq('user_id', user.id);
+
+      if (error) throw error;
+      setUserDepartments(data?.map(d => d.department_id) || []);
+    } catch (error) {
+      console.error('Erro ao carregar departamentos do usuário:', error);
+    }
+  }, [user?.id]);
+
+  useEffect(() => {
+    loadUserDepartments();
+  }, [loadUserDepartments]);
 
   const loadQuickReplies = useCallback(async () => {
     if (!profile?.company_id) return;
@@ -52,10 +81,11 @@ export function useQuickRepliesData() {
 
       if (error) throw error;
 
-      // Cast media_type to the correct type
+      // Cast types properly
       const typedData = (data || []).map(item => ({
         ...item,
         media_type: (item.media_type || 'text') as QuickReplyMediaType,
+        visibility_type: (item.visibility_type || 'all') as QuickReplyVisibility,
       }));
 
       setQuickReplies(typedData);
@@ -75,11 +105,60 @@ export function useQuickRepliesData() {
     loadQuickReplies();
   }, [loadQuickReplies]);
 
+  // Filter replies by visibility tab
+  const getFilteredByVisibility = useCallback((
+    visibilityTab: QuickReplyVisibility,
+    connectionId?: string | null
+  ): QuickReply[] => {
+    return quickReplies.filter(reply => {
+      switch (visibilityTab) {
+        case 'all':
+          return reply.visibility_type === 'all';
+        case 'personal':
+          return reply.visibility_type === 'personal' && reply.created_by_user_id === user?.id;
+        case 'department':
+          return reply.visibility_type === 'department' && 
+            reply.department_id && 
+            userDepartments.includes(reply.department_id);
+        case 'connection':
+          return reply.visibility_type === 'connection' && 
+            reply.whatsapp_connection_id === connectionId;
+        default:
+          return true;
+      }
+    });
+  }, [quickReplies, user?.id, userDepartments]);
+
+  // Get counts per visibility type
+  const getVisibilityCounts = useCallback((connectionId?: string | null) => {
+    return {
+      all: quickReplies.filter(r => r.visibility_type === 'all').length,
+      personal: quickReplies.filter(r => 
+        r.visibility_type === 'personal' && r.created_by_user_id === user?.id
+      ).length,
+      department: quickReplies.filter(r => 
+        r.visibility_type === 'department' && 
+        r.department_id && 
+        userDepartments.includes(r.department_id)
+      ).length,
+      connection: quickReplies.filter(r => 
+        r.visibility_type === 'connection' && 
+        r.whatsapp_connection_id === connectionId
+      ).length,
+    };
+  }, [quickReplies, user?.id, userDepartments]);
+
   const uploadMedia = async (file: File): Promise<string | null> => {
     if (!profile?.company_id) return null;
 
     try {
-      const fileExt = file.name.split('.').pop();
+      // Sanitize filename
+      const sanitizedName = file.name
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-zA-Z0-9._-]/g, '_');
+      
+      const fileExt = sanitizedName.split('.').pop();
       const fileName = `${profile.company_id}/quick-replies/${Date.now()}.${fileExt}`;
 
       const { data, error } = await supabase.storage
@@ -111,7 +190,6 @@ export function useQuickRepliesData() {
     if (!mediaUrl) return;
 
     try {
-      // Extract path from URL
       const urlParts = mediaUrl.split('/whatsapp-media/');
       if (urlParts.length < 2) return;
 
@@ -125,7 +203,6 @@ export function useQuickRepliesData() {
   const createQuickReply = async (data: QuickReplyFormData): Promise<QuickReply | null> => {
     if (!profile?.company_id || !user?.id) return null;
 
-    // Ensure shortcut starts with /
     const shortcut = data.shortcut.startsWith('/') ? data.shortcut : `/${data.shortcut}`;
 
     try {
@@ -138,9 +215,12 @@ export function useQuickRepliesData() {
           title: data.title.trim(),
           message: data.message.trim(),
           category: data.category?.trim() || null,
-          is_global: data.is_global,
+          is_global: data.visibility_type === 'all',
           media_url: data.media_url || null,
           media_type: data.media_type || 'text',
+          visibility_type: data.visibility_type,
+          department_id: data.visibility_type === 'department' ? data.department_id : null,
+          whatsapp_connection_id: data.visibility_type === 'connection' ? data.whatsapp_connection_id : null,
         })
         .select()
         .single();
@@ -157,10 +237,10 @@ export function useQuickRepliesData() {
         throw error;
       }
 
-      // Cast media_type to the correct type
       const typedReply: QuickReply = {
         ...newReply,
         media_type: (newReply.media_type || 'text') as QuickReplyMediaType,
+        visibility_type: (newReply.visibility_type || 'all') as QuickReplyVisibility,
       };
 
       setQuickReplies(prev => [typedReply, ...prev]);
@@ -195,9 +275,12 @@ export function useQuickRepliesData() {
           title: data.title.trim(),
           message: data.message.trim(),
           category: data.category?.trim() || null,
-          is_global: data.is_global,
+          is_global: data.visibility_type === 'all',
           media_url: data.media_url || null,
           media_type: data.media_type || 'text',
+          visibility_type: data.visibility_type,
+          department_id: data.visibility_type === 'department' ? data.department_id : null,
+          whatsapp_connection_id: data.visibility_type === 'connection' ? data.whatsapp_connection_id : null,
         })
         .eq('id', id);
 
@@ -222,9 +305,12 @@ export function useQuickRepliesData() {
                 title: data.title.trim(),
                 message: data.message.trim(),
                 category: data.category?.trim() || null,
-                is_global: data.is_global,
+                is_global: data.visibility_type === 'all',
                 media_url: data.media_url || null,
                 media_type: data.media_type || 'text',
+                visibility_type: data.visibility_type,
+                department_id: data.visibility_type === 'department' ? data.department_id : null,
+                whatsapp_connection_id: data.visibility_type === 'connection' ? data.whatsapp_connection_id : null,
               }
             : reply
         )
@@ -253,7 +339,6 @@ export function useQuickRepliesData() {
     const replyToDelete = quickReplies.find(r => r.id === id);
 
     try {
-      // Delete media file if exists
       if (replyToDelete?.media_url) {
         await deleteMedia(replyToDelete.media_url);
       }
@@ -322,6 +407,7 @@ export function useQuickRepliesData() {
     quickReplies,
     loading,
     isAdminOrOwner,
+    userDepartments,
     createQuickReply,
     updateQuickReply,
     deleteQuickReply,
@@ -329,6 +415,8 @@ export function useQuickRepliesData() {
     uploadMedia,
     deleteMedia,
     getCategories,
+    getFilteredByVisibility,
+    getVisibilityCounts,
     refresh: loadQuickReplies,
   };
 }

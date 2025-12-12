@@ -51,7 +51,6 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Switch } from '@/components/ui/switch';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   Select,
@@ -60,10 +59,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { useQuickRepliesData, QuickReply, QuickReplyMediaType } from '@/hooks/useQuickRepliesData';
+import { useQuickRepliesData, QuickReply, QuickReplyMediaType, QuickReplyVisibility } from '@/hooks/useQuickRepliesData';
 import { useAudioRecorder } from '@/hooks/useAudioRecorder';
+import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
+import { VisibilityTabs } from '@/components/quick-replies/VisibilityTabs';
+import { VisibilitySelector } from '@/components/quick-replies/VisibilitySelector';
+import { VisibilityBadge } from '@/components/quick-replies/VisibilityBadge';
 
 const defaultCategories = ['Saudações', 'Geral', 'Encerramento', 'Informações', 'Vendas', 'Suporte'];
 
@@ -73,7 +77,6 @@ const mediaTypeOptions: { value: QuickReplyMediaType; label: string; icon: React
   { value: 'image', label: 'Imagem', icon: <Image className="w-4 h-4" />, accept: 'image/jpeg,image/png,image/gif,image/webp,.jpg,.jpeg,.png,.gif,.webp' },
   { value: 'video', label: 'Vídeo', icon: <Video className="w-4 h-4" />, accept: 'video/mp4,video/avi,video/x-msvideo,video/quicktime,video/x-matroska,video/webm,.mp4,.avi,.mov,.mkv,.webm' },
   { value: 'audio', label: 'Áudio', icon: <Mic className="w-4 h-4" />, accept: 'audio/mp3,audio/mpeg,audio/ogg,audio/wav,audio/webm,audio/aac,audio/x-m4a,.mp3,.ogg,.wav,.webm,.aac,.m4a' },
-  // Document accepts ALL file types - using empty string to allow any file (same as AttachmentMenu behavior)
   { value: 'document', label: 'Documento', icon: <FileText className="w-4 h-4" />, accept: '.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.md,.zip,.rar,.json,.xml,.html,.css,.js,.ts,.tsx,.jsx,.py,.java,.c,.cpp,.h,.sql,.sh,.bat,.log,.ini,.cfg,.yaml,.yml,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,text/plain,text/csv,text/markdown,text/html,text/css,text/javascript,application/json,application/xml,application/zip,application/x-rar-compressed,application/octet-stream' },
 ];
 
@@ -84,21 +87,42 @@ const formatRecordingTime = (seconds: number): string => {
   return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
 };
 
+interface Department {
+  id: string;
+  name: string;
+}
+
+interface Connection {
+  id: string;
+  name: string;
+  phone_number: string;
+}
+
 export default function QuickReplies() {
+  const { profile } = useAuth();
   const { 
     quickReplies, 
     loading, 
     isAdminOrOwner,
+    userDepartments,
     createQuickReply, 
     updateQuickReply, 
     deleteQuickReply,
     uploadMedia,
     deleteMedia,
-    getCategories 
+    getCategories,
+    getFilteredByVisibility,
+    getVisibilityCounts,
   } = useQuickRepliesData();
   
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
+  const [visibilityTab, setVisibilityTab] = useState<QuickReplyVisibility>('all');
+  
+  // Data for visibility selectors
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [connections, setConnections] = useState<Connection[]>([]);
+  const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(null);
   
   // Add dialog state
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
@@ -106,7 +130,9 @@ export default function QuickReplies() {
   const [title, setTitle] = useState('');
   const [message, setMessage] = useState('');
   const [category, setCategory] = useState('');
-  const [isGlobal, setIsGlobal] = useState(true);
+  const [visibility, setVisibility] = useState<QuickReplyVisibility>('all');
+  const [formDepartmentId, setFormDepartmentId] = useState<string | null>(null);
+  const [formConnectionId, setFormConnectionId] = useState<string | null>(null);
   const [mediaType, setMediaType] = useState<QuickReplyMediaType>('text');
   const [mediaFile, setMediaFile] = useState<File | null>(null);
   const [mediaPreview, setMediaPreview] = useState<string | null>(null);
@@ -121,7 +147,9 @@ export default function QuickReplies() {
   const [editTitle, setEditTitle] = useState('');
   const [editMessage, setEditMessage] = useState('');
   const [editCategory, setEditCategory] = useState('');
-  const [editIsGlobal, setEditIsGlobal] = useState(true);
+  const [editVisibility, setEditVisibility] = useState<QuickReplyVisibility>('all');
+  const [editDepartmentId, setEditDepartmentId] = useState<string | null>(null);
+  const [editConnectionId, setEditConnectionId] = useState<string | null>(null);
   const [editMediaType, setEditMediaType] = useState<QuickReplyMediaType>('text');
   const [editMediaFile, setEditMediaFile] = useState<File | null>(null);
   const [editMediaPreview, setEditMediaPreview] = useState<string | null>(null);
@@ -136,16 +164,49 @@ export default function QuickReplies() {
   const [isRecordingMode, setIsRecordingMode] = useState(false);
   const [editIsRecordingMode, setEditIsRecordingMode] = useState(false);
   
-  // Audio recorder hook for Add dialog
+  // Audio recorder hooks
   const audioRecorder = useAudioRecorder();
-  // Audio recorder hook for Edit dialog
   const editAudioRecorder = useAudioRecorder();
+
+  // Load departments and connections
+  useEffect(() => {
+    const loadData = async () => {
+      if (!profile?.company_id) return;
+      
+      // Load user departments with names
+      const deptIds = userDepartments;
+      if (deptIds.length > 0) {
+        const { data: deptData } = await supabase
+          .from('departments')
+          .select('id, name')
+          .in('id', deptIds);
+        setDepartments(deptData || []);
+      }
+      
+      // Load connections
+      const { data: connData } = await supabase
+        .from('whatsapp_connections')
+        .select('id, name, phone_number')
+        .eq('company_id', profile.company_id)
+        .eq('status', 'connected');
+      setConnections(connData || []);
+      
+      // Set default connection
+      if (connData && connData.length > 0 && !selectedConnectionId) {
+        setSelectedConnectionId(connData[0].id);
+      }
+    };
+    
+    loadData();
+  }, [profile?.company_id, userDepartments, selectedConnectionId]);
 
   // Get all categories (existing + defaults)
   const existingCategories = getCategories();
   const allCategories = [...new Set([...defaultCategories, ...existingCategories])].sort();
 
-  const filteredReplies = quickReplies.filter((reply) => {
+  // Get replies filtered by visibility tab, then by search/category
+  const visibilityFilteredReplies = getFilteredByVisibility(visibilityTab, selectedConnectionId);
+  const filteredReplies = visibilityFilteredReplies.filter((reply) => {
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
       const matchesShortcut = reply.shortcut.toLowerCase().includes(query);
@@ -158,6 +219,8 @@ export default function QuickReplies() {
     }
     return true;
   });
+
+  const visibilityCounts = getVisibilityCounts(selectedConnectionId);
 
   // Convert recorded blob to File
   const blobToFile = (blob: Blob, fileName: string): File => {
@@ -218,7 +281,9 @@ export default function QuickReplies() {
     setTitle('');
     setMessage('');
     setCategory('');
-    setIsGlobal(true);
+    setVisibility('all');
+    setFormDepartmentId(null);
+    setFormConnectionId(null);
     setMediaType('text');
     setMediaFile(null);
     setMediaPreview(null);
@@ -252,9 +317,12 @@ export default function QuickReplies() {
       title,
       message: message || '',
       category,
-      is_global: isGlobal,
+      is_global: visibility === 'all',
       media_url: mediaUrl,
       media_type: mediaType,
+      visibility_type: visibility,
+      department_id: visibility === 'department' ? formDepartmentId : null,
+      whatsapp_connection_id: visibility === 'connection' ? formConnectionId : null,
     });
     setIsSubmitting(false);
 
@@ -270,7 +338,9 @@ export default function QuickReplies() {
     setEditTitle(reply.title);
     setEditMessage(reply.message);
     setEditCategory(reply.category || '');
-    setEditIsGlobal(reply.is_global);
+    setEditVisibility(reply.visibility_type || 'all');
+    setEditDepartmentId(reply.department_id);
+    setEditConnectionId(reply.whatsapp_connection_id);
     setEditMediaType(reply.media_type || 'text');
     setEditMediaFile(null);
     setEditMediaPreview(null);
@@ -318,9 +388,12 @@ export default function QuickReplies() {
       title: editTitle,
       message: editMessage,
       category: editCategory,
-      is_global: editIsGlobal,
+      is_global: editVisibility === 'all',
       media_url: mediaUrl,
       media_type: editMediaType,
+      visibility_type: editVisibility,
+      department_id: editVisibility === 'department' ? editDepartmentId : null,
+      whatsapp_connection_id: editVisibility === 'connection' ? editConnectionId : null,
     });
     setIsSubmitting(false);
 
@@ -680,18 +753,17 @@ export default function QuickReplies() {
                 </div>
               )}
               
-              <div className="flex items-center justify-between">
-                <div className="space-y-0.5">
-                  <Label>Resposta Global</Label>
-                  <p className="text-xs text-muted-foreground">
-                    Visível para toda a equipe
-                  </p>
-                </div>
-                <Switch
-                  checked={isGlobal}
-                  onCheckedChange={setIsGlobal}
-                />
-              </div>
+              {/* Visibility Selector */}
+              <VisibilitySelector
+                visibility={visibility}
+                onVisibilityChange={setVisibility}
+                selectedDepartmentId={formDepartmentId}
+                onDepartmentChange={setFormDepartmentId}
+                selectedConnectionId={formConnectionId}
+                onConnectionChange={setFormConnectionId}
+                userDepartments={departments}
+                connections={connections}
+              />
             </div>
             
             <DialogFooter>
@@ -741,6 +813,15 @@ export default function QuickReplies() {
         </CardContent>
       </Card>
 
+      {/* Visibility Tabs */}
+      <VisibilityTabs
+        activeTab={visibilityTab}
+        onTabChange={setVisibilityTab}
+        counts={visibilityCounts}
+        hasDepartments={departments.length > 0}
+        hasConnection={connections.length > 0}
+      />
+
       {/* Filters */}
       <div className="flex items-center gap-4">
         <div className="relative flex-1 max-w-md">
@@ -765,6 +846,21 @@ export default function QuickReplies() {
             ))}
           </SelectContent>
         </Select>
+        {/* Connection selector for connection tab */}
+        {visibilityTab === 'connection' && connections.length > 0 && (
+          <Select value={selectedConnectionId || ''} onValueChange={setSelectedConnectionId}>
+            <SelectTrigger className="w-48">
+              <SelectValue placeholder="Conexão" />
+            </SelectTrigger>
+            <SelectContent>
+              {connections.map((conn) => (
+                <SelectItem key={conn.id} value={conn.id}>
+                  {conn.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
       </div>
 
       {/* Quick Replies Grid */}
@@ -786,11 +882,7 @@ export default function QuickReplies() {
                           {getMediaTypeLabel(replyMediaType)}
                         </Badge>
                       )}
-                      {reply.is_global && (
-                        <Badge variant="outline" className="text-xs">
-                          Global
-                        </Badge>
-                      )}
+                      <VisibilityBadge visibility={reply.visibility_type || 'all'} />
                     </div>
                     <h4 className="font-medium text-foreground mt-2 truncate">
                       {reply.title}
@@ -1161,18 +1253,17 @@ export default function QuickReplies() {
               </div>
             )}
             
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label>Resposta Global</Label>
-                <p className="text-xs text-muted-foreground">
-                  Visível para toda a equipe
-                </p>
-              </div>
-              <Switch
-                checked={editIsGlobal}
-                onCheckedChange={setEditIsGlobal}
-              />
-            </div>
+            {/* Visibility Selector */}
+            <VisibilitySelector
+              visibility={editVisibility}
+              onVisibilityChange={setEditVisibility}
+              selectedDepartmentId={editDepartmentId}
+              onDepartmentChange={setEditDepartmentId}
+              selectedConnectionId={editConnectionId}
+              onConnectionChange={setEditConnectionId}
+              userDepartments={departments}
+              connections={connections}
+            />
           </div>
           
           <DialogFooter>

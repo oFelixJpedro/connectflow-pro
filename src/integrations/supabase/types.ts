@@ -1221,6 +1221,7 @@ export type Database = {
           company_id: string
           created_at: string | null
           created_by_user_id: string | null
+          department_id: string | null
           id: string
           is_global: boolean | null
           media_type: string | null
@@ -1230,12 +1231,15 @@ export type Database = {
           title: string
           updated_at: string | null
           use_count: number | null
+          visibility_type: Database["public"]["Enums"]["quick_reply_visibility"]
+          whatsapp_connection_id: string | null
         }
         Insert: {
           category?: string | null
           company_id: string
           created_at?: string | null
           created_by_user_id?: string | null
+          department_id?: string | null
           id?: string
           is_global?: boolean | null
           media_type?: string | null
@@ -1245,12 +1249,15 @@ export type Database = {
           title: string
           updated_at?: string | null
           use_count?: number | null
+          visibility_type?: Database["public"]["Enums"]["quick_reply_visibility"]
+          whatsapp_connection_id?: string | null
         }
         Update: {
           category?: string | null
           company_id?: string
           created_at?: string | null
           created_by_user_id?: string | null
+          department_id?: string | null
           id?: string
           is_global?: boolean | null
           media_type?: string | null
@@ -1260,6 +1267,8 @@ export type Database = {
           title?: string
           updated_at?: string | null
           use_count?: number | null
+          visibility_type?: Database["public"]["Enums"]["quick_reply_visibility"]
+          whatsapp_connection_id?: string | null
         }
         Relationships: [
           {
@@ -1274,6 +1283,20 @@ export type Database = {
             columns: ["created_by_user_id"]
             isOneToOne: false
             referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "quick_replies_department_id_fkey"
+            columns: ["department_id"]
+            isOneToOne: false
+            referencedRelation: "departments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "quick_replies_whatsapp_connection_id_fkey"
+            columns: ["whatsapp_connection_id"]
+            isOneToOne: false
+            referencedRelation: "whatsapp_connections"
             referencedColumns: ["id"]
           },
         ]
@@ -1496,6 +1519,7 @@ export type Database = {
         | "location"
         | "contact"
         | "sticker"
+      quick_reply_visibility: "all" | "personal" | "department" | "connection"
       sender_type: "user" | "contact" | "system" | "bot"
     }
     CompositeTypes: {
@@ -1683,6 +1707,7 @@ export const Constants = {
         "contact",
         "sticker",
       ],
+      quick_reply_visibility: ["all", "personal", "department", "connection"],
       sender_type: ["user", "contact", "system", "bot"],
     },
   },
