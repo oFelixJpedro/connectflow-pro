@@ -51,10 +51,20 @@ async function verifyDeveloperToken(req: Request, supabase: any): Promise<{ vali
 
     console.log('   Token length:', token?.length);
     
-    // Token is simple base64(JSON) - decode directly (no signature)
+    // Token is URL-safe base64(JSON) - decode with proper handling
     let payload;
     try {
-      payload = JSON.parse(atob(token));
+      // Convert URL-safe base64 back to standard base64
+      let base64 = token
+        .replace(/-/g, '+')
+        .replace(/_/g, '/');
+      
+      // Add padding if needed
+      while (base64.length % 4) {
+        base64 += '=';
+      }
+      
+      payload = JSON.parse(atob(base64));
       console.log('   Payload parsed:', JSON.stringify(payload, null, 2));
     } catch (parseErr) {
       console.log('❌ Erro ao parsear token base64:', parseErr);
