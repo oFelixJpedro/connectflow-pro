@@ -37,7 +37,7 @@ function transformConversation(db: any): Conversation {
       fullName: db.profiles.full_name,
       avatarUrl: db.profiles.avatar_url || undefined,
       role: 'agent',
-      status: db.profiles.status || 'offline',
+      status: db.profiles.status!,
       maxConversations: 5,
       active: true,
       createdAt: '',
