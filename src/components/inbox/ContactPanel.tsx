@@ -424,7 +424,7 @@ export function ContactPanel({ conversation, onClose, onContactUpdated, onScroll
           {/* Contact Info */}
           <div className="flex flex-col items-center text-center">
             <Avatar className="w-20 h-20">
-              <AvatarImage src={contact?.avatarUrl} />
+              <AvatarImage src={contact?.avatarUrl} className="object-cover object-top" />
               <AvatarFallback className="bg-primary/10 text-primary text-xl font-medium">
                 {getInitials(contact?.name)}
               </AvatarFallback>

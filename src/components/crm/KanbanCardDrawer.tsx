@@ -133,7 +133,7 @@ export function KanbanCardDrawer({ card, columns, teamMembers, open, onOpenChang
           {/* Contact Info */}
           <div className="flex items-center gap-4">
             <Avatar className="w-12 h-12">
-              <AvatarImage src={card.contact?.avatar_url || undefined} />
+              <AvatarImage src={card.contact?.avatar_url || undefined} className="object-cover object-top" />
               <AvatarFallback>{getInitials(card.contact?.name || 'SN')}</AvatarFallback>
             </Avatar>
             <div className="flex-1">

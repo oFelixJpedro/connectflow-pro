@@ -192,7 +192,7 @@ export function AppSidebar() {
             <div className="flex items-center gap-3">
               <div className="w-8 h-8 bg-sidebar-accent rounded-lg flex items-center justify-center overflow-hidden">
                 {company.logo_url ? (
-                  <img src={company.logo_url} alt={company.name} className="w-full h-full object-cover" />
+                  <img src={company.logo_url} alt={company.name} className="w-full h-full object-cover object-top" />
                 ) : (
                   <Building2 className="w-4 h-4 text-sidebar-foreground" />
                 )}
@@ -327,7 +327,7 @@ export function AppSidebar() {
                 )}>
                   <div className="relative">
                     <Avatar className="w-9 h-9">
-                      <AvatarImage src={profile.avatar_url || undefined} />
+                      <AvatarImage src={profile.avatar_url || undefined} className="object-cover object-top" />
                       <AvatarFallback className="bg-sidebar-accent text-sidebar-foreground text-sm">
                         {getInitials(profile.full_name)}
                       </AvatarFallback>

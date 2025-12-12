@@ -207,7 +207,7 @@ export default function Team() {
                   <div className="flex items-center gap-4">
                     <div className="relative">
                       <Avatar className="w-10 h-10">
-                        <AvatarImage src={member.avatar_url || undefined} />
+                        <AvatarImage src={member.avatar_url || undefined} className="object-cover object-top" />
                         <AvatarFallback className="bg-muted text-muted-foreground">
                           {getInitials(member.full_name)}
                         </AvatarFallback>

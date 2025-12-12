@@ -431,7 +431,7 @@ export default function InternalChat() {
                       >
                         <div className="relative">
                           <Avatar className="w-10 h-10">
-                            <AvatarImage src={member.avatarUrl || undefined} />
+                            <AvatarImage src={member.avatarUrl || undefined} className="object-cover object-top" />
                             <AvatarFallback className="bg-gray-100 text-gray-700">
                               {getInitials(member.fullName)}
                             </AvatarFallback>
@@ -508,7 +508,7 @@ export default function InternalChat() {
                       >
                         {!msg.isOwnMessage && (
                           <Avatar className="w-9 h-9 flex-shrink-0">
-                            <AvatarImage src={msg.senderAvatar || undefined} />
+                            <AvatarImage src={msg.senderAvatar || undefined} className="object-cover object-top" />
                             <AvatarFallback className="bg-emerald-100 text-emerald-700 text-xs">
                               {getInitials(msg.senderName)}
                             </AvatarFallback>

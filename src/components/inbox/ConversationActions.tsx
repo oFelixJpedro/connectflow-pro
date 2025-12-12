@@ -385,7 +385,7 @@ export function ConversationActions({
                       disabled={loadingAction === 'transfer'}
                     >
                       <Avatar className="w-6 h-6 mr-2">
-                        <AvatarImage src={agent.avatar_url || undefined} />
+                        <AvatarImage src={agent.avatar_url || undefined} className="object-cover object-top" />
                         <AvatarFallback className="text-xs">
                           {getInitials(agent.full_name)}
                         </AvatarFallback>

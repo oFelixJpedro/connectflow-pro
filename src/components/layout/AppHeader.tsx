@@ -191,7 +191,7 @@ export function AppHeader({ title }: AppHeaderProps) {
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" className="flex items-center gap-2 px-2">
                 <Avatar className="w-8 h-8">
-                  <AvatarImage src={user.avatarUrl} />
+                  <AvatarImage src={user.avatarUrl} className="object-cover object-top" />
                   <AvatarFallback className="bg-primary text-primary-foreground text-sm">
                     {getInitials(user.fullName)}
                   </AvatarFallback>

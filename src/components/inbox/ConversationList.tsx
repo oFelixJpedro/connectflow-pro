@@ -207,7 +207,7 @@ export function ConversationList({
                     {/* Avatar with unread badge */}
                     <div className="relative flex-shrink-0">
                       <Avatar className="w-12 h-12">
-                        <AvatarImage src={conversation.contact?.avatarUrl} />
+                        <AvatarImage src={conversation.contact?.avatarUrl} className="object-cover object-top" />
                         <AvatarFallback className="bg-primary/10 text-primary text-sm font-medium">
                           {getInitials(conversation.contact?.name)}
                         </AvatarFallback>
@@ -298,7 +298,7 @@ export function ConversationList({
                   {conversation.assignedUser && conversation.assignedUserId !== user?.id && (
                     <div className="absolute top-2 right-2">
                       <Avatar className="w-5 h-5 border border-background">
-                        <AvatarImage src={conversation.assignedUser.avatarUrl} />
+                        <AvatarImage src={conversation.assignedUser.avatarUrl} className="object-cover object-top" />
                         <AvatarFallback className="text-[8px] bg-muted">
                           {getInitials(conversation.assignedUser.fullName)}
                         </AvatarFallback>

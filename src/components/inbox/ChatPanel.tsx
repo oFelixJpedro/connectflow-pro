@@ -731,7 +731,7 @@ export function ChatPanel({
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3 min-w-0">
             <Avatar className="w-10 h-10 flex-shrink-0">
-              <AvatarImage src={conversation.contact?.avatarUrl} />
+              <AvatarImage src={conversation.contact?.avatarUrl} className="object-cover object-top" />
               <AvatarFallback className="bg-primary/10 text-primary text-sm">
                 {getInitials(conversation.contact?.name)}
               </AvatarFallback>
