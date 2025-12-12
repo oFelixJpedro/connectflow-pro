@@ -1166,7 +1166,6 @@ export type Database = {
           max_conversations: number | null
           metadata: Json | null
           needs_password_change: boolean
-          status: Database["public"]["Enums"]["user_status"] | null
           updated_at: string | null
         }
         Insert: {
@@ -1182,7 +1181,6 @@ export type Database = {
           max_conversations?: number | null
           metadata?: Json | null
           needs_password_change?: boolean
-          status?: Database["public"]["Enums"]["user_status"] | null
           updated_at?: string | null
         }
         Update: {
@@ -1198,7 +1196,6 @@ export type Database = {
           max_conversations?: number | null
           metadata?: Json | null
           needs_password_change?: boolean
-          status?: Database["public"]["Enums"]["user_status"] | null
           updated_at?: string | null
         }
         Relationships: [
@@ -1500,7 +1497,6 @@ export type Database = {
         | "contact"
         | "sticker"
       sender_type: "user" | "contact" | "system" | "bot"
-      user_status: "online" | "offline" | "away" | "busy"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -1688,7 +1684,6 @@ export const Constants = {
         "sticker",
       ],
       sender_type: ["user", "contact", "system", "bot"],
-      user_status: ["online", "offline", "away", "busy"],
     },
   },
 } as const
