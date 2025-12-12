@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, ReactNode, useCallback } from 'react';
+import React, { createContext, useContext, useEffect, useState, ReactNode, useCallback, useRef } from 'react';
 import { User, Session, RealtimeChannel } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import type { Tables } from '@/integrations/supabase/types';
@@ -36,6 +36,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [needsPasswordChange, setNeedsPasswordChange] = useState(false);
   const [teamProfiles, setTeamProfiles] = useState<Profile[]>([]);
+  // Flag to ignore realtime updates temporarily after loadUserData
+  const ignoreRealtimeUntil = useRef<number>(0);
 
   // Load team profiles for realtime status updates
   const loadTeamProfiles = useCallback(async (companyId: string) => {
@@ -112,6 +114,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           const updatedProfile = payload.new as Profile;
           console.log('[Realtime] Profile atualizado - id:', updatedProfile.id, 'status:', updatedProfile.status);
           
+          // Ignore realtime updates temporarily after loadUserData to avoid race conditions
+          if (Date.now() < ignoreRealtimeUntil.current) {
+            console.log('[Realtime] Ignorando update - dentro do período de proteção');
+            return;
+          }
+          
           // Only process if it's from the same company
           if (updatedProfile.company_id !== profile.company_id) return;
           
@@ -155,6 +163,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       
       console.log('[AuthContext] Profile carregado do banco - status:', profileData.status);
+      
+      // Ignore realtime updates for 3 seconds to avoid race conditions
+      ignoreRealtimeUntil.current = Date.now() + 3000;
+      
       setProfile(profileData as Profile);
       setNeedsPasswordChange(profileData.needs_password_change ?? false);
 
