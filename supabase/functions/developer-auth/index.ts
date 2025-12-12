@@ -166,7 +166,7 @@ serve(async (req) => {
           details: { email: developer.email }
         });
 
-      // Generate token
+      // Generate token - use URL-safe base64 for cookies
       const tokenPayload = {
         developer_id: developer.id,
         email: developer.email,
@@ -174,7 +174,11 @@ serve(async (req) => {
         exp: Date.now() + (COOKIE_MAX_AGE * 1000)
       };
       
-      const token = btoa(JSON.stringify(tokenPayload));
+      // URL-safe base64 encoding (replace +/= with -_)
+      const token = btoa(JSON.stringify(tokenPayload))
+        .replace(/\+/g, '-')
+        .replace(/\//g, '_')
+        .replace(/=+$/, '');
 
       // Set httpOnly cookie
       const cookie = createSecureCookie(COOKIE_NAME, token, COOKIE_MAX_AGE);
@@ -220,7 +224,17 @@ serve(async (req) => {
       }
       
       try {
-        const payload = JSON.parse(atob(token));
+        // Convert URL-safe base64 back to standard base64
+        let base64 = token
+          .replace(/-/g, '+')
+          .replace(/_/g, '/');
+        
+        // Add padding if needed
+        while (base64.length % 4) {
+          base64 += '=';
+        }
+        
+        const payload = JSON.parse(atob(base64));
         
         if (!payload.is_developer || payload.exp < Date.now()) {
           return new Response(

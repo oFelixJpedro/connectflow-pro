@@ -46,7 +46,17 @@ function validateDeveloperToken(req: Request): { valid: boolean; developerId?: s
   }
 
   try {
-    const payload = JSON.parse(atob(token));
+    // Convert URL-safe base64 back to standard base64
+    let base64 = token
+      .replace(/-/g, '+')
+      .replace(/_/g, '/');
+    
+    // Add padding if needed
+    while (base64.length % 4) {
+      base64 += '=';
+    }
+    
+    const payload = JSON.parse(atob(base64));
     if (!payload.is_developer || payload.exp < Date.now()) {
       return { valid: false, error: 'Token inválido ou expirado' };
     }
