@@ -18,6 +18,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { ContactAvatar } from '@/components/ui/contact-avatar';
 import { Separator } from '@/components/ui/separator';
 import { Textarea } from '@/components/ui/textarea';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -423,12 +424,13 @@ export function ContactPanel({ conversation, onClose, onContactUpdated, onScroll
         <div className="p-4 space-y-6">
           {/* Contact Info */}
           <div className="flex flex-col items-center text-center">
-            <Avatar className="w-20 h-20">
-              <AvatarImage src={contact?.avatarUrl} className="object-cover object-top" />
-              <AvatarFallback className="bg-primary/10 text-primary text-xl font-medium">
-                {getInitials(contact?.name)}
-              </AvatarFallback>
-            </Avatar>
+            <ContactAvatar
+              imageUrl={contact?.avatarUrl}
+              name={contact?.name}
+              size="xl"
+              className="w-20 h-20"
+              fallbackClassName="text-xl"
+            />
             <h4 className="mt-3 font-semibold text-foreground">
               {contact?.name || 'Sem nome'}
             </h4>

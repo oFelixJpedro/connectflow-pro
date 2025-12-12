@@ -892,6 +892,10 @@ serve(async (req) => {
     const contactName = payload.chat?.wa_name || payload.message?.senderName || phoneNumber
     console.log(`👤 Nome do contato: ${contactName}`)
     
+    // Extract profile picture URL from UAZAPI
+    const profilePictureUrl = payload.chat?.image || payload.chat?.profilePicUrl || payload.message?.profilePicUrl || null
+    console.log(`🖼️ Foto de perfil: ${profilePictureUrl ? 'Disponível' : 'Não disponível'}`)
+    
     // Check if contact already exists
     console.log('🔍 Verificando se contato já existe...')
     
@@ -936,6 +940,12 @@ serve(async (req) => {
         console.log(`   🔒 Nome preservado (editado manualmente)`)
       }
       
+      // Always update profile picture if available (WhatsApp profile pics can change anytime)
+      if (profilePictureUrl) {
+        updateData.avatar_url = profilePictureUrl
+        console.log(`   🖼️ Foto de perfil será atualizada`)
+      }
+      
       const { error: updateContactError } = await supabase
         .from('contacts')
         .update(updateData)
@@ -965,6 +975,7 @@ serve(async (req) => {
           phone_number: phoneNumber,
           name: contactName,
           name_manually_edited: false,
+          avatar_url: profilePictureUrl,
           last_interaction_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         })
