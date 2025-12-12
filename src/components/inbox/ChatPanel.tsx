@@ -1280,9 +1280,9 @@ export function ChatPanel({
                       : blockInfo.message
                 }
                 className={cn(
-                  "min-h-[44px] max-h-32 resize-none pr-12",
+                  "min-h-[44px] max-h-32 resize-none pr-12 transition-colors duration-200",
                   !canReply && !isInternalNoteMode && "bg-muted/50 cursor-not-allowed",
-                  isInternalNoteMode && "internal-note-input"
+                  isInternalNoteMode && "bg-amber-50 border-amber-300 focus-visible:ring-amber-400 placeholder:text-amber-600/70"
                 )}
                 rows={1}
                 disabled={isSendingMessage || (!canReply && !isInternalNoteMode)}
