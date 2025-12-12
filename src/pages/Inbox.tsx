@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { ConversationList } from '@/components/inbox/ConversationList';
 import { ChatPanel } from '@/components/inbox/ChatPanel';
 import { ContactPanel } from '@/components/inbox/ContactPanel';
@@ -16,6 +17,7 @@ import { supabase } from '@/integrations/supabase/client';
 
 export default function Inbox() {
   const { user } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { 
     contactPanelOpen,
     toggleContactPanel,
@@ -32,6 +34,7 @@ export default function Inbox() {
   const [hasNoConnections, setHasNoConnections] = useState(false);
   const scrollToMessageRef = useRef<((messageId: string) => void) | null>(null);
   const { tags } = useTagsData();
+  const hasProcessedUrlConversation = useRef(false);
 
   const handleRegisterScrollToMessage = useCallback((fn: (messageId: string) => void) => {
     scrollToMessageRef.current = fn;
@@ -55,6 +58,26 @@ export default function Inbox() {
     loadConversations,
     sendReaction,
   } = useInboxData();
+
+  // Handle URL parameter for opening specific conversation
+  useEffect(() => {
+    const conversationId = searchParams.get('conversation');
+    if (conversationId && !hasProcessedUrlConversation.current && !isLoadingConversations && conversations.length > 0) {
+      const targetConversation = conversations.find(c => c.id === conversationId);
+      if (targetConversation) {
+        selectConversation(targetConversation);
+        hasProcessedUrlConversation.current = true;
+        // Clear the URL parameter
+        setSearchParams({});
+      } else {
+        // Conversation not in current list, might be in a different tab
+        // Set to 'todas' tab and reload
+        if (inboxColumn !== 'todas') {
+          setInboxColumn('todas');
+        }
+      }
+    }
+  }, [searchParams, conversations, isLoadingConversations, selectConversation, setSearchParams, inboxColumn, setInboxColumn]);
 
   const handleSendMessage = async (content: string, quotedMessageId?: string) => {
     const success = await sendMessage(content, quotedMessageId);
