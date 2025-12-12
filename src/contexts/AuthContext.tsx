@@ -151,16 +151,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setProfile(profileData as Profile);
       setNeedsPasswordChange(profileData.needs_password_change ?? false);
 
-      // Set status to online when user logs in
-      if (profileData.status !== 'online') {
-        await supabase
-          .from('profiles')
-          .update({ status: 'online' })
-          .eq('id', userId);
-        
-        setProfile({ ...profileData, status: 'online' } as Profile);
-      }
-
       // Load company
       const { data: companyData, error: companyError } = await supabase
         .from('companies')

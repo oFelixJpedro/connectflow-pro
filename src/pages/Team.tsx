@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { UserConfigDrawer } from '@/components/team/UserConfigDrawer';
 import { InviteUserModal } from '@/components/team/InviteUserModal';
+import type { Tables } from '@/integrations/supabase/types';
 
 interface TeamMember {
   id: string;
@@ -33,7 +34,7 @@ const ROLE_CONFIG: Record<string, { label: string; color: string; icon: typeof S
 };
 
 export default function Team() {
-  const { profile, userRole } = useAuth();
+  const { profile, userRole, teamProfiles } = useAuth();
   const navigate = useNavigate();
   const [members, setMembers] = useState<TeamMember[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -52,6 +53,21 @@ export default function Team() {
     }
     loadMembers();
   }, [canManageTeam, navigate]);
+
+  // Update member statuses in real-time from teamProfiles
+  useEffect(() => {
+    if (teamProfiles.length > 0 && members.length > 0) {
+      setMembers((prev) =>
+        prev.map((member) => {
+          const updatedProfile = teamProfiles.find((p) => p.id === member.id);
+          if (updatedProfile && updatedProfile.status !== member.status) {
+            return { ...member, status: updatedProfile.status || 'offline' };
+          }
+          return member;
+        })
+      );
+    }
+  }, [teamProfiles]);
 
   const loadMembers = async () => {
     if (!profile?.company_id) return;
