@@ -108,7 +108,8 @@ export function useQuickRepliesData() {
   // Filter replies by visibility tab
   const getFilteredByVisibility = useCallback((
     visibilityTab: QuickReplyVisibility,
-    connectionId?: string | null
+    connectionId?: string | null,
+    departmentId?: string | null
   ): QuickReply[] => {
     return quickReplies.filter(reply => {
       switch (visibilityTab) {
@@ -117,12 +118,21 @@ export function useQuickRepliesData() {
         case 'personal':
           return reply.visibility_type === 'personal' && reply.created_by_user_id === user?.id;
         case 'department':
+          // If departmentId is specified, filter by that specific department
+          if (departmentId) {
+            return reply.visibility_type === 'department' && reply.department_id === departmentId;
+          }
+          // Otherwise, show all departments the user has access to
           return reply.visibility_type === 'department' && 
             reply.department_id && 
             userDepartments.includes(reply.department_id);
         case 'connection':
-          return reply.visibility_type === 'connection' && 
-            reply.whatsapp_connection_id === connectionId;
+          // If connectionId is specified, filter by that specific connection
+          if (connectionId) {
+            return reply.visibility_type === 'connection' && reply.whatsapp_connection_id === connectionId;
+          }
+          // Otherwise, show all connection quick replies
+          return reply.visibility_type === 'connection';
         default:
           return true;
       }
