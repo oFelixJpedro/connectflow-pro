@@ -88,7 +88,7 @@ export function useInternalChat() {
         id: m.id,
         fullName: m.full_name,
         avatarUrl: m.avatar_url,
-        status: m.status || 'offline',
+        status: m.status!,
         email: m.email,
       })));
     }
@@ -166,7 +166,7 @@ export function useInternalChat() {
               id: (p.profiles as any)?.id,
               fullName: (p.profiles as any)?.full_name || 'Usuário',
               avatarUrl: (p.profiles as any)?.avatar_url,
-              status: (p.profiles as any)?.status || 'offline',
+              status: (p.profiles as any)?.status,
             }));
 
           // For direct chats, get the other participant's name
@@ -351,7 +351,7 @@ export function useInternalChat() {
             id: otherUserId,
             fullName: otherUser?.fullName || 'Usuário',
             avatarUrl: otherUser?.avatarUrl || null,
-            status: otherUser?.status || 'offline',
+            status: otherUser?.status!,
           },
         ],
       };
