@@ -335,7 +335,7 @@ export function AppSidebar() {
                     <span 
                       className={cn(
                         "absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-sidebar",
-                        statusColors[profile.status ?? 'offline']
+                        statusColors[profile.status!]
                       )} 
                     />
                   </div>
@@ -345,7 +345,7 @@ export function AppSidebar() {
                         {profile.full_name}
                       </p>
                       <p className="text-xs text-sidebar-foreground/60">
-                        {userRole ? roleLabels[userRole.role] : statusLabels[profile.status ?? 'offline']}
+                        {userRole ? roleLabels[userRole.role] : statusLabels[profile.status!]}
                       </p>
                     </div>
                   )}

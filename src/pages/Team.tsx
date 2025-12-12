@@ -61,7 +61,7 @@ export default function Team() {
         prev.map((member) => {
           const updatedProfile = teamProfiles.find((p) => p.id === member.id);
           if (updatedProfile && updatedProfile.status !== member.status) {
-            return { ...member, status: updatedProfile.status || 'offline' };
+            return { ...member, status: updatedProfile.status! };
           }
           return member;
         })
@@ -108,7 +108,7 @@ export default function Team() {
           email: p.email,
           full_name: p.full_name,
           avatar_url: p.avatar_url,
-          status: p.status || 'offline',
+          status: p.status!,
           active: p.active ?? true,
           created_at: p.created_at || '',
           role: userRole?.role || 'agent',

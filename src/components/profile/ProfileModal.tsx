@@ -51,7 +51,7 @@ export function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
   const [fullName, setFullName] = useState('');
   const [signature, setSignature] = useState('');
   const [bio, setBio] = useState('');
-  const [status, setStatus] = useState<UserStatus>('offline');
+  const [status, setStatus] = useState<UserStatus>('online');
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
@@ -62,8 +62,7 @@ export function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
     if (isOpen && profile) {
       setFullName(profile.full_name || '');
       setAvatarUrl(profile.avatar_url);
-      // Use the actual status from profile, default to 'offline' only if null
-      setStatus(profile.status ?? 'offline');
+      setStatus(profile.status!);
       
       // Parse metadata for signature and bio
       const metadata = profile.metadata as ProfileMetadata | null;
