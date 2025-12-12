@@ -54,25 +54,27 @@ export function InboxTabs({
   const effectiveActiveTab = isActiveTabVisible ? activeTab : visibleTabs[0]?.id || 'minhas';
 
   return (
-    <div className="flex border-b border-border">
+    <div className="flex w-full bg-muted/30">
       {visibleTabs.map((tab) => (
         <button
           key={tab.id}
           onClick={() => onTabChange(tab.id)}
           className={cn(
-            'flex items-center gap-1.5 px-4 py-2 text-sm font-medium transition-colors',
-            'border-b-2 -mb-px focus:outline-none',
+            'flex-1 flex items-center justify-center gap-2 py-3 px-4',
+            'text-sm font-medium text-center',
+            'transition-all duration-200',
+            'border-b-2 focus:outline-none',
             effectiveActiveTab === tab.id
-              ? 'border-primary text-primary'
-              : 'border-transparent text-muted-foreground hover:text-foreground hover:border-border'
+              ? 'border-primary text-primary bg-background shadow-sm font-semibold'
+              : 'border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/50'
           )}
         >
           {tab.label}
           {counts && counts[tab.id] > 0 && (
             <span className={cn(
-              'text-xs px-1.5 py-0.5 rounded-full min-w-5 text-center',
+              'text-xs px-2 py-0.5 rounded-full min-w-5 text-center font-medium',
               effectiveActiveTab === tab.id
-                ? 'bg-primary/10 text-primary'
+                ? 'bg-primary/15 text-primary'
                 : 'bg-muted text-muted-foreground'
             )}>
               {counts[tab.id]}
