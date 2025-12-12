@@ -162,209 +162,168 @@ export function ConversationFiltersComponent({
   };
 
   return (
-    <div className="flex items-center gap-2">
-      <Popover open={isOpen} onOpenChange={setIsOpen}>
-        <PopoverTrigger asChild>
-          <Button
-            variant="outline"
-            size="icon"
-            className="h-9 w-9 shrink-0 bg-card"
-          >
-            <Filter className="w-4 h-4" />
-            {activeFiltersCount > 0 && (
-              <Badge 
-                variant="secondary" 
-                className="absolute -top-1.5 -right-1.5 h-5 min-w-5 px-1.5 text-xs bg-primary text-primary-foreground"
-              >
-                {activeFiltersCount}
-              </Badge>
-            )}
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent 
-          align="end" 
-          className="w-72 p-0 bg-popover border-border flex flex-col max-h-[60vh]"
-          sideOffset={4}
+    <Popover open={isOpen} onOpenChange={setIsOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          variant="outline"
+          size="icon"
+          className="h-9 w-9 shrink-0 bg-card relative"
         >
-          <div className="p-3 border-b border-border shrink-0">
-            <h4 className="font-medium text-sm">Filtrar Conversas</h4>
-          </div>
-          
-          <div className="flex-1 overflow-y-auto min-h-0 max-h-[300px]">
-            <div className="p-3 space-y-4">
-              {/* Agent Filter - Only for admin/owner */}
-              {isAdminOrOwner && agents.length > 0 && (
-                <>
-                  <div className="space-y-2">
-                    <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                      Por Atendente
-                    </Label>
-                    <RadioGroup
-                      value={localFilters.filterByAgentId || 'all'}
-                      onValueChange={(value) => 
-                        setLocalFilters(prev => ({ 
-                          ...prev, 
-                          filterByAgentId: value === 'all' ? undefined : value 
-                        }))
-                      }
-                      className="space-y-1.5"
-                    >
-                      <div className="flex items-center space-x-2">
-                        <RadioGroupItem value="all" id="agent-all" />
-                        <Label 
-                          htmlFor="agent-all"
-                          className="text-sm font-normal cursor-pointer"
-                        >
-                          Todos os atendentes
-                        </Label>
-                      </div>
-                      {agents.map((agent) => (
-                        <div key={agent.id} className="flex items-center space-x-2">
-                          <RadioGroupItem value={agent.id} id={`agent-${agent.id}`} />
-                          <Label 
-                            htmlFor={`agent-${agent.id}`}
-                            className="text-sm font-normal cursor-pointer"
-                          >
-                            {agent.full_name}
-                          </Label>
-                        </div>
-                      ))}
-                    </RadioGroup>
-                  </div>
-                  <Separator />
-                </>
-              )}
-
-              {/* Status Filter */}
-              <div className="space-y-2">
-                <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                  Status
-                </Label>
-                <RadioGroup
-                  value={localFilters.status || 'all'}
-                  onValueChange={(value) => 
-                    setLocalFilters(prev => ({ ...prev, status: value as FiltersType['status'] }))
-                  }
-                  className="space-y-1.5"
-                >
-                  {STATUS_OPTIONS.map((option) => (
-                    <div key={option.value} className="flex items-center space-x-2">
-                      <RadioGroupItem value={option.value} id={`status-${option.value}`} />
+          <Filter className="w-4 h-4" />
+          {activeFiltersCount > 0 && (
+            <Badge 
+              variant="secondary" 
+              className="absolute -top-1.5 -right-1.5 h-5 min-w-5 px-1.5 text-xs bg-primary text-primary-foreground"
+            >
+              {activeFiltersCount}
+            </Badge>
+          )}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent 
+        align="end" 
+        className="w-72 p-0 bg-popover border-border flex flex-col max-h-[60vh]"
+        sideOffset={4}
+      >
+        <div className="p-3 border-b border-border shrink-0">
+          <h4 className="font-medium text-sm">Filtrar Conversas</h4>
+        </div>
+        
+        <div className="flex-1 overflow-y-auto min-h-0 max-h-[300px]">
+          <div className="p-3 space-y-4">
+            {/* Agent Filter - Only for admin/owner */}
+            {isAdminOrOwner && agents.length > 0 && (
+              <>
+                <div className="space-y-2">
+                  <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                    Por Atendente
+                  </Label>
+                  <RadioGroup
+                    value={localFilters.filterByAgentId || 'all'}
+                    onValueChange={(value) => 
+                      setLocalFilters(prev => ({ 
+                        ...prev, 
+                        filterByAgentId: value === 'all' ? undefined : value 
+                      }))
+                    }
+                    className="space-y-1.5"
+                  >
+                    <div className="flex items-center space-x-2">
+                      <RadioGroupItem value="all" id="agent-all" />
                       <Label 
-                        htmlFor={`status-${option.value}`}
+                        htmlFor="agent-all"
                         className="text-sm font-normal cursor-pointer"
                       >
-                        {option.label}
+                        Todos os atendentes
                       </Label>
                     </div>
-                  ))}
-                </RadioGroup>
-              </div>
-
-              {departments.length > 0 && (
-                <>
-                  <Separator />
-
-                  {/* Department Filter */}
-                  <div className="space-y-2">
-                    <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                      Departamento
-                    </Label>
-                    <RadioGroup
-                      value={localFilters.departmentId || 'all'}
-                      onValueChange={(value) => 
-                        setLocalFilters(prev => ({ 
-                          ...prev, 
-                          departmentId: value === 'all' ? undefined : value 
-                        }))
-                      }
-                      className="space-y-1.5"
-                    >
-                      <div className="flex items-center space-x-2">
-                        <RadioGroupItem value="all" id="department-all" />
+                    {agents.map((agent) => (
+                      <div key={agent.id} className="flex items-center space-x-2">
+                        <RadioGroupItem value={agent.id} id={`agent-${agent.id}`} />
                         <Label 
-                          htmlFor="department-all"
+                          htmlFor={`agent-${agent.id}`}
                           className="text-sm font-normal cursor-pointer"
                         >
-                          Todos
+                          {agent.full_name}
                         </Label>
                       </div>
-                      {departments.map((dept) => (
-                        <div key={dept.id} className="flex items-center space-x-2">
-                          <RadioGroupItem value={dept.id} id={`department-${dept.id}`} />
-                          <Label 
-                            htmlFor={`department-${dept.id}`}
-                            className="text-sm font-normal cursor-pointer"
-                          >
-                            {dept.name}
-                          </Label>
-                        </div>
-                      ))}
-                    </RadioGroup>
+                    ))}
+                  </RadioGroup>
+                </div>
+                <Separator />
+              </>
+            )}
+
+            {/* Status Filter */}
+            <div className="space-y-2">
+              <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                Status
+              </Label>
+              <RadioGroup
+                value={localFilters.status || 'all'}
+                onValueChange={(value) => 
+                  setLocalFilters(prev => ({ ...prev, status: value as FiltersType['status'] }))
+                }
+                className="space-y-1.5"
+              >
+                {STATUS_OPTIONS.map((option) => (
+                  <div key={option.value} className="flex items-center space-x-2">
+                    <RadioGroupItem value={option.value} id={`status-${option.value}`} />
+                    <Label 
+                      htmlFor={`status-${option.value}`}
+                      className="text-sm font-normal cursor-pointer"
+                    >
+                      {option.label}
+                    </Label>
                   </div>
-                </>
-              )}
+                ))}
+              </RadioGroup>
             </div>
-          </div>
 
-          <div className="p-3 border-t border-border flex gap-2 shrink-0">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleClear}
-              className="flex-1"
-            >
-              Limpar
-            </Button>
-            <Button
-              size="sm"
-              onClick={handleApply}
-              className="flex-1"
-            >
-              Aplicar
-            </Button>
-          </div>
-        </PopoverContent>
-      </Popover>
+            {departments.length > 0 && (
+              <>
+                <Separator />
 
-      {/* Active filter chips */}
-      {activeFiltersCount > 0 && (
-        <div className="flex flex-wrap gap-1.5">
-          {isAdminOrOwner && filters.filterByAgentId && (
-            <Badge variant="secondary" className="gap-1 pl-2 pr-1 py-0.5">
-              <span className="text-xs">{getFilterLabel('filterByAgentId', filters.filterByAgentId)}</span>
-              <button
-                onClick={() => removeFilter('filterByAgentId')}
-                className="ml-1 hover:bg-muted rounded p-0.5"
-              >
-                <X className="w-3 h-3" />
-              </button>
-            </Badge>
-          )}
-          {filters.status && filters.status !== 'all' && (
-            <Badge variant="secondary" className="gap-1 pl-2 pr-1 py-0.5">
-              <span className="text-xs">{getFilterLabel('status', filters.status)}</span>
-              <button
-                onClick={() => removeFilter('status')}
-                className="ml-1 hover:bg-muted rounded p-0.5"
-              >
-                <X className="w-3 h-3" />
-              </button>
-            </Badge>
-          )}
-          {filters.departmentId && (
-            <Badge variant="secondary" className="gap-1 pl-2 pr-1 py-0.5">
-              <span className="text-xs">{getFilterLabel('departmentId', filters.departmentId)}</span>
-              <button
-                onClick={() => removeFilter('departmentId')}
-                className="ml-1 hover:bg-muted rounded p-0.5"
-              >
-                <X className="w-3 h-3" />
-              </button>
-            </Badge>
-          )}
+                {/* Department Filter */}
+                <div className="space-y-2">
+                  <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                    Departamento
+                  </Label>
+                  <RadioGroup
+                    value={localFilters.departmentId || 'all'}
+                    onValueChange={(value) => 
+                      setLocalFilters(prev => ({ 
+                        ...prev, 
+                        departmentId: value === 'all' ? undefined : value 
+                      }))
+                    }
+                    className="space-y-1.5"
+                  >
+                    <div className="flex items-center space-x-2">
+                      <RadioGroupItem value="all" id="department-all" />
+                      <Label 
+                        htmlFor="department-all"
+                        className="text-sm font-normal cursor-pointer"
+                      >
+                        Todos
+                      </Label>
+                    </div>
+                    {departments.map((dept) => (
+                      <div key={dept.id} className="flex items-center space-x-2">
+                        <RadioGroupItem value={dept.id} id={`department-${dept.id}`} />
+                        <Label 
+                          htmlFor={`department-${dept.id}`}
+                          className="text-sm font-normal cursor-pointer"
+                        >
+                          {dept.name}
+                        </Label>
+                      </div>
+                    ))}
+                  </RadioGroup>
+                </div>
+              </>
+            )}
+          </div>
         </div>
-      )}
-    </div>
+
+        <div className="p-3 border-t border-border flex gap-2 shrink-0">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleClear}
+            className="flex-1"
+          >
+            Limpar
+          </Button>
+          <Button
+            size="sm"
+            onClick={handleApply}
+            className="flex-1"
+          >
+            Aplicar
+          </Button>
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }
