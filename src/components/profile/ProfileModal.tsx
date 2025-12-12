@@ -11,11 +11,21 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Camera, Loader2, Save, X } from 'lucide-react';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Camera, Loader2, Save, X, Circle } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import type { Database } from '@/integrations/supabase/types';
+
+type UserStatus = Database['public']['Enums']['user_status'];
 
 interface ProfileModalProps {
   isOpen: boolean;
@@ -27,13 +37,21 @@ interface ProfileMetadata {
   bio?: string;
 }
 
+const STATUS_OPTIONS: { value: UserStatus; label: string; color: string }[] = [
+  { value: 'online', label: 'Online', color: 'text-green-500' },
+  { value: 'away', label: 'Ausente', color: 'text-yellow-500' },
+  { value: 'busy', label: 'Ocupado', color: 'text-red-500' },
+  { value: 'offline', label: 'Offline', color: 'text-gray-400' },
+];
+
 export function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
-  const { profile, updateProfile } = useAuth();
+  const { profile, updateProfile, updateStatus } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [fullName, setFullName] = useState('');
   const [signature, setSignature] = useState('');
   const [bio, setBio] = useState('');
+  const [status, setStatus] = useState<UserStatus>('online');
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
@@ -44,6 +62,7 @@ export function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
     if (isOpen && profile) {
       setFullName(profile.full_name || '');
       setAvatarUrl(profile.avatar_url);
+      setStatus(profile.status || 'online');
       
       // Parse metadata for signature and bio
       const metadata = profile.metadata as ProfileMetadata | null;
@@ -160,6 +179,11 @@ export function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
         return;
       }
 
+      // Update status if changed
+      if (status !== profile.status) {
+        await updateStatus(status);
+      }
+
       toast.success('Perfil atualizado com sucesso!');
       onClose();
     } catch (error) {
@@ -239,6 +263,29 @@ export function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
               />
               <p className="text-xs text-muted-foreground">
                 O e-mail não pode ser alterado
+              </p>
+            </div>
+
+            {/* Status Field */}
+            <div className="space-y-2">
+              <Label htmlFor="status">Status</Label>
+              <Select value={status} onValueChange={(value) => setStatus(value as UserStatus)}>
+                <SelectTrigger id="status">
+                  <SelectValue placeholder="Selecione seu status" />
+                </SelectTrigger>
+                <SelectContent>
+                  {STATUS_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      <div className="flex items-center gap-2">
+                        <Circle className={cn("w-3 h-3 fill-current", option.color)} />
+                        {option.label}
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Seu status será visível para toda a equipe em tempo real
               </p>
             </div>
 
