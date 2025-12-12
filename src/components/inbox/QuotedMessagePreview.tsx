@@ -116,7 +116,7 @@ export function ReplyInputPreview({ quotedMessage, onCancel }: ReplyInputPreview
         <p className="text-xs font-medium text-muted-foreground">
           Respondendo a {getSenderLabel()}
         </p>
-        <p className="text-sm text-foreground truncate mt-0.5">
+        <p className="text-sm text-foreground line-clamp-2 mt-0.5">
           {getPreviewContent()}
         </p>
       </div>
