@@ -169,6 +169,9 @@ export default function QuickReplies() {
   const audioRecorder = useAudioRecorder();
   const editAudioRecorder = useAudioRecorder();
 
+  // Track if initial load has been done
+  const [initialLoadDone, setInitialLoadDone] = useState(false);
+
   // Load departments and connections
   useEffect(() => {
     const loadData = async () => {
@@ -203,14 +206,11 @@ export default function QuickReplies() {
         .eq('status', 'connected');
       setConnections(connData || []);
       
-      // Set default connection
-      if (connData && connData.length > 0 && !selectedConnectionId) {
-        setSelectedConnectionId(connData[0].id);
-      }
+      setInitialLoadDone(true);
     };
     
     loadData();
-  }, [profile?.company_id, userDepartments, selectedConnectionId, isAdminOrOwner]);
+  }, [profile?.company_id, userDepartments, isAdminOrOwner]);
 
   // Get all categories (existing + defaults)
   const existingCategories = getCategories();
