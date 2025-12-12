@@ -892,40 +892,100 @@ serve(async (req) => {
     const contactName = payload.chat?.wa_name || payload.message?.senderName || phoneNumber
     console.log(`👤 Nome do contato: ${contactName}`)
     
-    // Upsert contact
-    console.log('💾 Fazendo UPSERT do contato...')
+    // Check if contact already exists
+    console.log('🔍 Verificando se contato já existe...')
     
-    const { data: contact, error: contactError } = await supabase
+    const { data: existingContact, error: existingContactError } = await supabase
       .from('contacts')
-      .upsert(
-        {
-          company_id: companyId,
-          phone_number: phoneNumber,
-          name: contactName,
-          last_interaction_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        },
-        {
-          onConflict: 'company_id,phone_number',
-          ignoreDuplicates: false
-        }
-      )
-      .select('id')
-      .single()
+      .select('id, name, name_manually_edited')
+      .eq('company_id', companyId)
+      .eq('phone_number', phoneNumber)
+      .maybeSingle()
     
-    if (contactError) {
-      console.log(`❌ Erro ao processar contato: ${contactError.message}`)
+    if (existingContactError) {
+      console.log(`❌ Erro ao buscar contato existente: ${existingContactError.message}`)
       return new Response(
         JSON.stringify({ 
           success: false, 
-          error: 'Error processing contact',
-          details: contactError.message 
+          error: 'Error searching contact',
+          details: existingContactError.message 
         }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
     
-    const contactId = contact.id
+    let contactId: string
+    
+    if (existingContact) {
+      // Contact exists - update but respect name_manually_edited flag
+      console.log(`📝 Contato existente encontrado: ${existingContact.id}`)
+      console.log(`   - Nome atual: ${existingContact.name}`)
+      console.log(`   - Nome do WhatsApp: ${contactName}`)
+      console.log(`   - Editado manualmente: ${existingContact.name_manually_edited}`)
+      
+      const updateData: any = {
+        last_interaction_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      }
+      
+      // Only update name if NOT manually edited
+      if (!existingContact.name_manually_edited) {
+        updateData.name = contactName
+        console.log(`   ✅ Nome será atualizado para: ${contactName}`)
+      } else {
+        console.log(`   🔒 Nome preservado (editado manualmente)`)
+      }
+      
+      const { error: updateContactError } = await supabase
+        .from('contacts')
+        .update(updateData)
+        .eq('id', existingContact.id)
+      
+      if (updateContactError) {
+        console.log(`❌ Erro ao atualizar contato: ${updateContactError.message}`)
+        return new Response(
+          JSON.stringify({ 
+            success: false, 
+            error: 'Error updating contact',
+            details: updateContactError.message 
+          }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+      
+      contactId = existingContact.id
+    } else {
+      // New contact - create with WhatsApp name
+      console.log('📝 Contato novo, criando...')
+      
+      const { data: newContact, error: createContactError } = await supabase
+        .from('contacts')
+        .insert({
+          company_id: companyId,
+          phone_number: phoneNumber,
+          name: contactName,
+          name_manually_edited: false,
+          last_interaction_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })
+        .select('id')
+        .single()
+      
+      if (createContactError) {
+        console.log(`❌ Erro ao criar contato: ${createContactError.message}`)
+        return new Response(
+          JSON.stringify({ 
+            success: false, 
+            error: 'Error creating contact',
+            details: createContactError.message 
+          }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+      
+      contactId = newContact.id
+    }
+    
     console.log(`✅ Contato processado!`)
     console.log(`   - contact_id: ${contactId}`)
     
