@@ -238,8 +238,7 @@ export function useInboxData() {
             id,
             full_name,
             email,
-            avatar_url,
-            status
+            avatar_url
           ),
           departments (
             id,
