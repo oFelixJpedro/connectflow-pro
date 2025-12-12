@@ -54,12 +54,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Set up auth state listener FIRST
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event, session) => {
+        console.log('[AuthContext] onAuthStateChange event:', event);
         setSession(session);
         setUser(session?.user ?? null);
         
         // Defer Supabase calls with setTimeout to prevent deadlock
         if (session?.user) {
           setTimeout(() => {
+            console.log('[AuthContext] Calling loadUserData from onAuthStateChange');
             loadUserData(session.user.id);
           }, 0);
         } else {
@@ -74,9 +76,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     // THEN check for existing session
     supabase.auth.getSession().then(({ data: { session } }) => {
+      console.log('[AuthContext] getSession result:', session ? 'has session' : 'no session');
       setSession(session);
       setUser(session?.user ?? null);
       if (session?.user) {
+        console.log('[AuthContext] Calling loadUserData from getSession');
         loadUserData(session.user.id);
       } else {
         setLoading(false);
@@ -105,9 +109,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           table: 'profiles',
         },
         (payload) => {
-          console.log('[Realtime] Profile atualizado:', payload);
-          
           const updatedProfile = payload.new as Profile;
+          console.log('[Realtime] Profile atualizado - id:', updatedProfile.id, 'status:', updatedProfile.status);
           
           // Only process if it's from the same company
           if (updatedProfile.company_id !== profile.company_id) return;
@@ -119,6 +122,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           
           // If it's the current user's profile, update that too
           if (updatedProfile.id === profile.id) {
+            console.log('[Realtime] Atualizando profile do usuário atual com status:', updatedProfile.status);
             setProfile(updatedProfile);
           }
         }
@@ -135,6 +139,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   async function loadUserData(userId: string) {
     try {
+      console.log('[AuthContext] loadUserData chamado para userId:', userId);
+      
       // Load profile
       const { data: profileData, error: profileError } = await supabase
         .from('profiles')
@@ -148,6 +154,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return;
       }
       
+      console.log('[AuthContext] Profile carregado do banco - status:', profileData.status);
       setProfile(profileData as Profile);
       setNeedsPasswordChange(profileData.needs_password_change ?? false);
 
