@@ -392,47 +392,134 @@ serve(async (req) => {
     if (action === 'delete_company') {
       const { company_id } = params;
 
-      console.log('Deleting company:', company_id);
+      console.log('🗑️ ========== DELETING COMPANY ==========');
+      console.log('📋 Company ID:', company_id);
 
-      // 1. Get all users from this company
+      // Get UAZAPI base URL from environment
+      const UAZAPI_BASE_URL = Deno.env.get('UAZAPI_BASE_URL')?.trim() || '';
+      console.log('🔗 UAZAPI Base URL:', UAZAPI_BASE_URL ? 'configured' : 'NOT CONFIGURED');
+
+      // 1. Get all WhatsApp connections from this company
+      const { data: connections, error: connectionsError } = await supabase
+        .from('whatsapp_connections')
+        .select('id, session_id, instance_token, phone_number, status')
+        .eq('company_id', company_id);
+
+      if (connectionsError) {
+        console.error('❌ Error fetching connections:', connectionsError);
+      }
+
+      console.log(`📱 Found ${connections?.length || 0} WhatsApp connections`);
+
+      // 2. Delete each UAZAPI instance BEFORE deleting from database
+      let deletedInstances = 0;
+      let failedInstances = 0;
+
+      if (connections && connections.length > 0 && UAZAPI_BASE_URL) {
+        for (const connection of connections) {
+          console.log(`\n🔄 Processing connection: ${connection.session_id}`);
+          console.log(`   - Phone: ${connection.phone_number || 'N/A'}`);
+          console.log(`   - Status: ${connection.status}`);
+          console.log(`   - Has token: ${connection.instance_token ? 'yes' : 'no'}`);
+
+          if (connection.instance_token) {
+            try {
+              console.log(`   🗑️ Deleting from UAZAPI...`);
+              
+              // Delete from UAZAPI using instance token
+              const deleteResponse = await fetch(`${UAZAPI_BASE_URL}/instance`, {
+                method: 'DELETE',
+                headers: {
+                  'Accept': 'application/json',
+                  'token': connection.instance_token
+                }
+              });
+
+              console.log(`   📡 UAZAPI response status: ${deleteResponse.status}`);
+              
+              const responseText = await deleteResponse.text();
+              console.log(`   📡 UAZAPI response: ${responseText}`);
+
+              if (deleteResponse.ok || deleteResponse.status === 404) {
+                // 404 means already deleted, which is fine
+                deletedInstances++;
+                console.log(`   ✅ Instance deleted successfully!`);
+              } else {
+                failedInstances++;
+                console.error(`   ❌ Failed to delete instance: ${responseText}`);
+              }
+            } catch (e) {
+              failedInstances++;
+              console.error(`   ❌ Error deleting UAZAPI instance:`, e);
+              // Continue with next connection - don't block company deletion
+            }
+          } else {
+            console.log(`   ⚠️ No instance token, skipping UAZAPI deletion`);
+          }
+        }
+      }
+
+      console.log(`\n📊 UAZAPI Deletion Summary:`);
+      console.log(`   - Deleted: ${deletedInstances}`);
+      console.log(`   - Failed: ${failedInstances}`);
+      console.log(`   - Skipped (no token): ${(connections?.length || 0) - deletedInstances - failedInstances}`);
+
+      // 3. Get all users from this company
       const { data: companyUsers } = await supabase
         .from('profiles')
         .select('id')
         .eq('company_id', company_id);
 
-      // 2. Delete all users from auth.users
+      console.log(`\n👥 Found ${companyUsers?.length || 0} users to delete`);
+
+      // 4. Delete all users from auth.users
       if (companyUsers && companyUsers.length > 0) {
         for (const user of companyUsers) {
           try {
-            console.log('Deleting auth user:', user.id);
+            console.log(`🗑️ Deleting auth user: ${user.id}`);
             const { error: authDeleteError } = await supabase.auth.admin.deleteUser(user.id);
             if (authDeleteError) {
-              console.error('Error deleting auth user:', user.id, authDeleteError);
+              console.error(`❌ Error deleting auth user ${user.id}:`, authDeleteError);
             }
           } catch (e) {
-            console.error('Error deleting auth user:', user.id, e);
+            console.error(`❌ Error deleting auth user ${user.id}:`, e);
           }
         }
       }
 
-      // 3. HARD DELETE company (cascade will handle related records)
+      // 5. HARD DELETE company (cascade will handle related records)
+      console.log(`\n🗑️ Deleting company from database...`);
       const { error } = await supabase
         .from('companies')
         .delete()
         .eq('id', company_id);
 
       if (error) {
-        console.error('Error deleting company:', error);
+        console.error('❌ Error deleting company:', error);
         return new Response(
           JSON.stringify({ error: error.message }),
           { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
 
-      await logAction('delete_company', company_id);
+      console.log('✅ Company deleted successfully!');
+      console.log('🗑️ ========== DELETE COMPLETE ==========\n');
+
+      await logAction('delete_company', company_id, undefined, {
+        whatsapp_connections_deleted: deletedInstances,
+        whatsapp_connections_failed: failedInstances,
+        users_deleted: companyUsers?.length || 0
+      });
 
       return new Response(
-        JSON.stringify({ success: true }),
+        JSON.stringify({ 
+          success: true,
+          details: {
+            uazapi_deleted: deletedInstances,
+            uazapi_failed: failedInstances,
+            users_deleted: companyUsers?.length || 0
+          }
+        }),
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
