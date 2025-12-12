@@ -20,14 +20,23 @@ import {
 import { cn } from '@/lib/utils';
 import type { KanbanColumn as KanbanColumnType, KanbanCard as KanbanCardType } from '@/hooks/useKanbanData';
 
+interface ConnectionInfo {
+  id: string;
+  name: string;
+  phone_number: string;
+}
+
 interface KanbanColumnProps {
   column: KanbanColumnType;
   cards: KanbanCardType[];
   allColumns: KanbanColumnType[];
   isAdminOrOwner: boolean;
+  isGlobalView?: boolean;
+  connectionMap?: Map<string, ConnectionInfo>;
   onUpdateColumn: (columnId: string, updates: Partial<KanbanColumnType>) => Promise<boolean>;
   onDeleteColumn: (columnId: string, moveToColumnId?: string) => Promise<boolean>;
   onCardClick: (card: KanbanCardType) => void;
+  getConnectionName?: (card: KanbanCardType) => string | undefined;
 }
 
 export function KanbanColumn({
@@ -35,9 +44,12 @@ export function KanbanColumn({
   cards,
   allColumns,
   isAdminOrOwner,
+  isGlobalView = false,
+  connectionMap,
   onUpdateColumn,
   onDeleteColumn,
   onCardClick,
+  getConnectionName,
 }: KanbanColumnProps) {
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -52,7 +64,7 @@ export function KanbanColumn({
   } = useSortable({
     id: column.id,
     data: { type: 'column', column },
-    disabled: !isAdminOrOwner,
+    disabled: !isAdminOrOwner || isGlobalView,
   });
 
   const { setNodeRef: setDroppableRef, isOver } = useDroppable({
@@ -84,7 +96,7 @@ export function KanbanColumn({
           className="p-3 flex items-center gap-2 border-b border-border/50"
           style={{ borderTopColor: column.color, borderTopWidth: 3, borderTopLeftRadius: 8, borderTopRightRadius: 8 }}
         >
-          {isAdminOrOwner && (
+          {isAdminOrOwner && !isGlobalView && (
             <button
               className="cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground"
               {...attributes}
@@ -103,14 +115,14 @@ export function KanbanColumn({
           
           <span className="text-sm text-muted-foreground">{cards.length}</span>
 
-          {isAdminOrOwner && (
+          {isAdminOrOwner && !isGlobalView && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="icon" className="h-7 w-7">
                   <MoreHorizontal className="w-4 h-4" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
+              <DropdownMenuContent align="end" className="bg-popover">
                 <DropdownMenuItem onClick={() => setEditOpen(true)}>
                   <Pencil className="w-4 h-4 mr-2" />
                   Editar
@@ -138,6 +150,7 @@ export function KanbanColumn({
                 key={card.id}
                 card={card}
                 onClick={() => onCardClick(card)}
+                connectionName={getConnectionName?.(card)}
               />
             ))}
           </SortableContext>
