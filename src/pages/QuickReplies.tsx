@@ -862,21 +862,6 @@ export default function QuickReplies() {
             ))}
           </SelectContent>
         </Select>
-        {/* Connection selector for connection tab */}
-        {visibilityTab === 'connection' && connections.length > 0 && (
-          <Select value={selectedConnectionId || ''} onValueChange={setSelectedConnectionId}>
-            <SelectTrigger className="w-48">
-              <SelectValue placeholder="Conexão" />
-            </SelectTrigger>
-            <SelectContent>
-              {connections.map((conn) => (
-                <SelectItem key={conn.id} value={conn.id}>
-                  {conn.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
       </div>
 
       {/* Quick Replies Grid */}
