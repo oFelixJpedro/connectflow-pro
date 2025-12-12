@@ -730,6 +730,7 @@ export function ChatPanel({
             <AssignButton
               conversation={conversation}
               currentUserId={currentUserId}
+              currentUserRole={currentUserRole}
               onAssigned={onRefresh || onAssign}
               isRestricted={isRestricted}
             />
