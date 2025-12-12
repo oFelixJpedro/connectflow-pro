@@ -1,16 +1,54 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+const COOKIE_NAME = 'developer_token';
+
+// Get allowed origins from environment or use default
+const getAllowedOrigin = (req: Request): string => {
+  const origin = req.headers.get('origin');
+  return origin || '*';
 };
+
+const getCorsHeaders = (req: Request) => ({
+  'Access-Control-Allow-Origin': getAllowedOrigin(req),
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Credentials': 'true',
+});
+
+// Parse cookies from header
+function parseCookies(cookieHeader: string | null): Record<string, string> {
+  if (!cookieHeader) return {};
+  return Object.fromEntries(
+    cookieHeader.split('; ').map(cookie => {
+      const [key, ...values] = cookie.split('=');
+      return [key, values.join('=')];
+    })
+  );
+}
 
 // Verify developer token (simple base64 JSON, not JWT)
 // Token format: btoa(JSON.stringify({ developer_id, email, is_developer, exp }))
-async function verifyDeveloperToken(token: string, supabase: any): Promise<{ valid: boolean; developerId?: string; reason?: string }> {
+async function verifyDeveloperToken(req: Request, supabase: any): Promise<{ valid: boolean; developerId?: string; reason?: string }> {
   try {
     console.log('🔐 Verificando token...');
+    
+    // Try cookie first
+    const cookies = parseCookies(req.headers.get('cookie'));
+    let token = cookies[COOKIE_NAME];
+    
+    // Fallback to Authorization header for backwards compatibility
+    if (!token) {
+      const authHeader = req.headers.get('Authorization');
+      if (authHeader?.startsWith('Bearer ')) {
+        token = authHeader.split(' ')[1];
+      }
+    }
+
+    if (!token) {
+      console.log('❌ Token não encontrado em cookie nem header');
+      return { valid: false, reason: 'Token não fornecido' };
+    }
+
     console.log('   Token length:', token?.length);
     
     // Token is simple base64(JSON) - decode directly (no signature)
@@ -68,6 +106,8 @@ async function verifyDeveloperToken(token: string, supabase: any): Promise<{ val
 }
 
 serve(async (req) => {
+  const corsHeaders = getCorsHeaders(req);
+  
   console.log('\n╔══════════════════════════════════════════════════════════════════╗');
   console.log('║              📊 DEVELOPER-DATA FUNCTION CALLED                   ║');
   console.log('╚══════════════════════════════════════════════════════════════════╝');
@@ -94,28 +134,10 @@ serve(async (req) => {
     const supabase = createClient(supabaseUrl ?? '', supabaseKey ?? '');
 
     console.log('\n┌─────────────────────────────────────────────────────────────────┐');
-    console.log('│ 2️⃣  VERIFICANDO AUTHORIZATION HEADER                           │');
+    console.log('│ 2️⃣  VERIFICANDO AUTENTICAÇÃO (COOKIE OU HEADER)                │');
     console.log('└─────────────────────────────────────────────────────────────────┘');
     
-    const authHeader = req.headers.get('Authorization');
-    console.log('   Authorization header:', authHeader ? `"${authHeader.substring(0, 50)}..."` : '❌ AUSENTE');
-    
-    if (!authHeader?.startsWith('Bearer ')) {
-      console.log('❌ Header não começa com "Bearer "');
-      return new Response(
-        JSON.stringify({ error: 'Token não fornecido', detail: 'Authorization header ausente ou mal formatado' }),
-        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    const token = authHeader.split(' ')[1];
-    console.log('   Token extraído:', token ? `${token.substring(0, 30)}... (${token.length} chars)` : '❌ VAZIO');
-    
-    console.log('\n┌─────────────────────────────────────────────────────────────────┐');
-    console.log('│ 3️⃣  VALIDANDO TOKEN DO DEVELOPER                               │');
-    console.log('└─────────────────────────────────────────────────────────────────┘');
-    
-    const { valid, developerId, reason } = await verifyDeveloperToken(token, supabase);
+    const { valid, developerId, reason } = await verifyDeveloperToken(req, supabase);
     
     if (!valid) {
       console.log('❌ Token inválido. Razão:', reason);
@@ -128,7 +150,7 @@ serve(async (req) => {
     console.log('✅ Developer autenticado:', developerId);
 
     console.log('\n┌─────────────────────────────────────────────────────────────────┐');
-    console.log('│ 4️⃣  PROCESSANDO REQUEST BODY                                   │');
+    console.log('│ 3️⃣  PROCESSANDO REQUEST BODY                                   │');
     console.log('└─────────────────────────────────────────────────────────────────┘');
     
     const body = await req.json();

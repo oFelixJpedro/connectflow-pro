@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useDeveloperAuth, getDeveloperToken } from '@/contexts/DeveloperAuthContext';
+import { useDeveloperAuth } from '@/contexts/DeveloperAuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -146,26 +146,24 @@ export default function DeveloperDashboard() {
     try {
       setIsLoading(true);
       
-      const token = getDeveloperToken();
-      console.log('🔐 Developer token:', token ? `${token.substring(0, 30)}... (${token.length} chars)` : '❌ NULL');
-      
-      if (!token) {
-        console.error('❌ Token não encontrado no localStorage');
-        toast.error('Sessão expirada. Faça login novamente.');
-        navigate('/developer');
-        return;
-      }
-      
-      console.log('📡 Chamando developer-data com token...');
+      // Token is now in httpOnly cookie - no need to pass it manually
+      console.log('📡 Chamando developer-data (cookie auth)...');
       const { data, error } = await supabase.functions.invoke('developer-data', {
-        body: { action: 'list_companies' },
-        headers: { Authorization: `Bearer ${token}` }
+        body: { action: 'list_companies' }
       });
       
       console.log('📨 Resposta:', { data, error });
 
       if (error) throw error;
-      if (data?.error) throw new Error(data.error);
+      if (data?.error) {
+        // Check if it's an auth error
+        if (data.error === 'Token inválido' || data.detail?.includes('expirado')) {
+          toast.error('Sessão expirada. Faça login novamente.');
+          navigate('/developer');
+          return;
+        }
+        throw new Error(data.error);
+      }
 
       setCompanies(data.companies || []);
       console.log('✅ Empresas carregadas:', data.companies?.length || 0);
@@ -183,10 +181,9 @@ export default function DeveloperDashboard() {
     setLoadingUsers(prev => new Set([...prev, companyId]));
     
     try {
-      const token = getDeveloperToken();
+      // Token is now in httpOnly cookie
       const { data, error } = await supabase.functions.invoke('developer-data', {
-        body: { action: 'list_users', company_id: companyId },
-        headers: { Authorization: `Bearer ${token}` }
+        body: { action: 'list_users', company_id: companyId }
       });
 
       if (error) throw error;
@@ -221,18 +218,17 @@ export default function DeveloperDashboard() {
     setExpandedCompanies(newExpanded);
   };
 
-  const handleLogout = () => {
-    logout();
+  const handleLogout = async () => {
+    await logout();
     navigate('/developer');
   };
 
   const handleCleanupDeletedCompanies = async () => {
     setActionLoading(true);
     try {
-      const token = getDeveloperToken();
+      // Token is now in httpOnly cookie
       const { data, error } = await supabase.functions.invoke('developer-actions', {
-        body: { action: 'cleanup_deleted_companies' },
-        headers: { Authorization: `Bearer ${token}` }
+        body: { action: 'cleanup_deleted_companies' }
       });
 
       if (error || data?.error) {
@@ -253,10 +249,9 @@ export default function DeveloperDashboard() {
   const handleDeleteUserByEmail = async (email: string) => {
     setActionLoading(true);
     try {
-      const token = getDeveloperToken();
+      // Token is now in httpOnly cookie
       const { data, error } = await supabase.functions.invoke('developer-actions', {
-        body: { action: 'delete_user_by_email', email },
-        headers: { Authorization: `Bearer ${token}` }
+        body: { action: 'delete_user_by_email', email }
       });
 
       if (error || data?.error) {
@@ -283,10 +278,9 @@ export default function DeveloperDashboard() {
     
     for (const email of bannedEmails) {
       try {
-        const token = getDeveloperToken();
+        // Token is now in httpOnly cookie
         const { data, error } = await supabase.functions.invoke('developer-actions', {
-          body: { action: 'delete_user_by_email', email },
-          headers: { Authorization: `Bearer ${token}` }
+          body: { action: 'delete_user_by_email', email }
         });
         
         if (!error && !data?.error) {
@@ -307,10 +301,9 @@ export default function DeveloperDashboard() {
     
     setActionLoading(true);
     try {
-      const token = getDeveloperToken();
+      // Token is now in httpOnly cookie
       const { data, error } = await supabase.functions.invoke('developer-actions', {
-        body: { action: 'reset_password', user_id: resetPasswordUser.id },
-        headers: { Authorization: `Bearer ${token}` }
+        body: { action: 'reset_password', user_id: resetPasswordUser.id }
       });
 
       if (error || data?.error) {
@@ -346,10 +339,9 @@ export default function DeveloperDashboard() {
     
     setActionLoading(true);
     try {
-      const token = getDeveloperToken();
+      // Token is now in httpOnly cookie
       const { data, error } = await supabase.functions.invoke('developer-actions', {
-        body: { action: 'delete_company', company_id: deleteCompany.id },
-        headers: { Authorization: `Bearer ${token}` }
+        body: { action: 'delete_company', company_id: deleteCompany.id }
       });
 
       if (error || data?.error) {
@@ -373,14 +365,13 @@ export default function DeveloperDashboard() {
     
     setActionLoading(true);
     try {
-      const token = getDeveloperToken();
+      // Token is now in httpOnly cookie
       const { data, error } = await supabase.functions.invoke('developer-actions', {
         body: { 
           action: 'delete_user', 
           user_id: deleteUser.user.id,
           company_id: deleteUser.company.id 
-        },
-        headers: { Authorization: `Bearer ${token}` }
+        }
       });
 
       if (error || data?.error) {

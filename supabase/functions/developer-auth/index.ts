@@ -1,10 +1,24 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+// Get allowed origins from environment or use default
+const getAllowedOrigin = (req: Request): string => {
+  const origin = req.headers.get('origin');
+  // In production, you'd validate against a whitelist
+  // For now, allow the requesting origin for proper cookie handling
+  return origin || '*';
 };
+
+const getCorsHeaders = (req: Request) => ({
+  'Access-Control-Allow-Origin': getAllowedOrigin(req),
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Credentials': 'true', // Required for cookies
+});
+
+// Cookie configuration
+const COOKIE_NAME = 'developer_token';
+const COOKIE_MAX_AGE = 24 * 60 * 60; // 24 hours in seconds
+const isProduction = Deno.env.get('ENVIRONMENT') !== 'development';
 
 // Convert Uint8Array to hex string
 function toHex(arr: Uint8Array): string {
@@ -44,7 +58,48 @@ async function hashPassword(password: string): Promise<string> {
   return `${saltHex}:${hashHex}`;
 }
 
+// Parse cookies from header
+function parseCookies(cookieHeader: string | null): Record<string, string> {
+  if (!cookieHeader) return {};
+  return Object.fromEntries(
+    cookieHeader.split('; ').map(cookie => {
+      const [key, ...values] = cookie.split('=');
+      return [key, values.join('=')];
+    })
+  );
+}
+
+// Create secure cookie string
+function createSecureCookie(name: string, value: string, maxAge: number): string {
+  const parts = [
+    `${name}=${value}`,
+    'HttpOnly',
+    'Path=/',
+    `Max-Age=${maxAge}`,
+    'SameSite=None', // Required for cross-origin requests
+  ];
+  
+  // Always use Secure for cross-origin (even in dev, Supabase uses HTTPS)
+  parts.push('Secure');
+  
+  return parts.join('; ');
+}
+
+// Create cookie deletion string
+function createDeleteCookie(name: string): string {
+  return [
+    `${name}=`,
+    'HttpOnly',
+    'Path=/',
+    'Max-Age=0',
+    'SameSite=None',
+    'Secure'
+  ].join('; ');
+}
+
 serve(async (req) => {
+  const corsHeaders = getCorsHeaders(req);
+
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -55,7 +110,8 @@ serve(async (req) => {
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    const { action, email, password } = await req.json();
+    const body = await req.json();
+    const { action, email, password } = body;
     const clientIP = req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip') || 'unknown';
     const userAgent = req.headers.get('user-agent') || 'unknown';
 
@@ -110,46 +166,65 @@ serve(async (req) => {
           details: { email: developer.email }
         });
 
-      // Generate a simple JWT-like token (in production, use proper JWT)
+      // Generate token
       const tokenPayload = {
         developer_id: developer.id,
         email: developer.email,
         is_developer: true,
-        exp: Date.now() + (60 * 60 * 1000) // 1 hour expiration
+        exp: Date.now() + (COOKIE_MAX_AGE * 1000)
       };
       
       const token = btoa(JSON.stringify(tokenPayload));
 
+      // Set httpOnly cookie
+      const cookie = createSecureCookie(COOKIE_NAME, token, COOKIE_MAX_AGE);
+
       return new Response(
         JSON.stringify({
           success: true,
-          token,
           developer: {
             id: developer.id,
             email: developer.email
           }
+          // Token NOT returned in body - only in httpOnly cookie
         }),
-        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        { 
+          status: 200, 
+          headers: { 
+            ...corsHeaders, 
+            'Content-Type': 'application/json',
+            'Set-Cookie': cookie
+          } 
+        }
       );
     }
 
     if (action === 'verify') {
-      const authHeader = req.headers.get('authorization');
-      if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      // Try to get token from cookie first, fallback to Authorization header
+      const cookies = parseCookies(req.headers.get('cookie'));
+      let token = cookies[COOKIE_NAME];
+      
+      // Fallback to Authorization header for backwards compatibility
+      if (!token) {
+        const authHeader = req.headers.get('authorization');
+        if (authHeader?.startsWith('Bearer ')) {
+          token = authHeader.replace('Bearer ', '');
+        }
+      }
+
+      if (!token) {
         return new Response(
-          JSON.stringify({ error: 'Token não fornecido' }),
+          JSON.stringify({ valid: false, error: 'Token não fornecido' }),
           { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
-
-      const token = authHeader.replace('Bearer ', '');
       
       try {
         const payload = JSON.parse(atob(token));
         
         if (!payload.is_developer || payload.exp < Date.now()) {
           return new Response(
-            JSON.stringify({ error: 'Token inválido ou expirado' }),
+            JSON.stringify({ valid: false, error: 'Token inválido ou expirado' }),
             { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
           );
         }
@@ -163,7 +238,7 @@ serve(async (req) => {
 
         if (!developer) {
           return new Response(
-            JSON.stringify({ error: 'Desenvolvedor não encontrado' }),
+            JSON.stringify({ valid: false, error: 'Desenvolvedor não encontrado' }),
             { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
           );
         }
@@ -174,16 +249,33 @@ serve(async (req) => {
         );
       } catch {
         return new Response(
-          JSON.stringify({ error: 'Token inválido' }),
+          JSON.stringify({ valid: false, error: 'Token inválido' }),
           { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
     }
 
+    if (action === 'logout') {
+      // Delete cookie by setting Max-Age=0
+      const deleteCookie = createDeleteCookie(COOKIE_NAME);
+
+      return new Response(
+        JSON.stringify({ success: true, message: 'Logout realizado' }),
+        { 
+          status: 200, 
+          headers: { 
+            ...corsHeaders, 
+            'Content-Type': 'application/json',
+            'Set-Cookie': deleteCookie
+          } 
+        }
+      );
+    }
+
     if (action === 'setup_password') {
       // This action is for initial setup only - should be removed after first use
       const setupKey = Deno.env.get('DEVELOPER_SETUP_KEY');
-      const { setup_key, new_password } = await req.json();
+      const { setup_key, new_password } = body;
       
       if (!setupKey || setup_key !== setupKey) {
         return new Response(
@@ -214,7 +306,7 @@ serve(async (req) => {
     console.error('Developer auth error:', error);
     return new Response(
       JSON.stringify({ error: 'Erro interno do servidor' }),
-      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      { status: 500, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' } }
     );
   }
 });

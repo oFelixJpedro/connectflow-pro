@@ -2,12 +2,63 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import * as bcrypt from "https://deno.land/x/bcrypt@v0.4.1/mod.ts";
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+const COOKIE_NAME = 'developer_token';
+
+// Get allowed origins from environment or use default
+const getAllowedOrigin = (req: Request): string => {
+  const origin = req.headers.get('origin');
+  return origin || '*';
 };
 
+const getCorsHeaders = (req: Request) => ({
+  'Access-Control-Allow-Origin': getAllowedOrigin(req),
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Credentials': 'true',
+});
+
+// Parse cookies from header
+function parseCookies(cookieHeader: string | null): Record<string, string> {
+  if (!cookieHeader) return {};
+  return Object.fromEntries(
+    cookieHeader.split('; ').map(cookie => {
+      const [key, ...values] = cookie.split('=');
+      return [key, values.join('=')];
+    })
+  );
+}
+
+// Validate developer token from cookie or auth header
+function validateDeveloperToken(req: Request): { valid: boolean; developerId?: string; error?: string } {
+  // Try cookie first
+  const cookies = parseCookies(req.headers.get('cookie'));
+  let token = cookies[COOKIE_NAME];
+  
+  // Fallback to Authorization header for backwards compatibility
+  if (!token) {
+    const authHeader = req.headers.get('authorization');
+    if (authHeader?.startsWith('Bearer ')) {
+      token = authHeader.replace('Bearer ', '');
+    }
+  }
+
+  if (!token) {
+    return { valid: false, error: 'Token não fornecido' };
+  }
+
+  try {
+    const payload = JSON.parse(atob(token));
+    if (!payload.is_developer || payload.exp < Date.now()) {
+      return { valid: false, error: 'Token inválido ou expirado' };
+    }
+    return { valid: true, developerId: payload.developer_id };
+  } catch {
+    return { valid: false, error: 'Token inválido' };
+  }
+}
+
 serve(async (req) => {
+  const corsHeaders = getCorsHeaders(req);
+
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
@@ -17,33 +68,16 @@ serve(async (req) => {
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Verify developer token
-    const authHeader = req.headers.get('authorization');
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    // Validate developer token
+    const auth = validateDeveloperToken(req);
+    if (!auth.valid || !auth.developerId) {
       return new Response(
-        JSON.stringify({ error: 'Token não fornecido' }),
+        JSON.stringify({ error: auth.error || 'Não autorizado' }),
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    const token = authHeader.replace('Bearer ', '');
-    let developerId: string;
-    
-    try {
-      const payload = JSON.parse(atob(token));
-      if (!payload.is_developer || payload.exp < Date.now()) {
-        return new Response(
-          JSON.stringify({ error: 'Token inválido ou expirado' }),
-          { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-      developerId = payload.developer_id;
-    } catch {
-      return new Response(
-        JSON.stringify({ error: 'Token inválido' }),
-        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
+    const developerId = auth.developerId;
 
     const { action, ...params } = await req.json();
     const clientIP = req.headers.get('x-forwarded-for') || 'unknown';
