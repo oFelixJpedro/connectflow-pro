@@ -1230,6 +1230,75 @@ export function useInboxData() {
   }, [profile?.company_id, selectedConnectionId, loadConversations]);
 
   // ============================================================
+  // REALTIME: CONTATOS (PARA ATUALIZAR TAGS EM TEMPO REAL)
+  // ============================================================
+  useEffect(() => {
+    if (!profile?.company_id) return;
+
+    console.log('[Realtime] Iniciando subscription de contatos');
+
+    const channel: RealtimeChannel = supabase
+      .channel(`inbox-contacts-${profile.company_id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'contacts',
+        },
+        (payload) => {
+          console.log('[Realtime] Contato atualizado:', payload);
+          
+          const updatedContact = payload.new as Record<string, unknown>;
+          const contactId = updatedContact.id as string;
+          const newTags = (updatedContact.tags as string[]) || [];
+          const newName = updatedContact.name as string | null;
+          const newAvatarUrl = updatedContact.avatar_url as string | null;
+          
+          // Atualizar o contato na lista de conversas
+          setConversations((prev) => 
+            prev.map((c) => {
+              if (c.contact?.id !== contactId) return c;
+              
+              return {
+                ...c,
+                contact: {
+                  ...c.contact,
+                  tags: newTags,
+                  name: newName || c.contact.name,
+                  avatarUrl: newAvatarUrl || c.contact.avatarUrl,
+                },
+              };
+            })
+          );
+          
+          // Atualizar também na conversa selecionada
+          setSelectedConversation((prev) => {
+            if (!prev || prev.contact?.id !== contactId) return prev;
+            
+            return {
+              ...prev,
+              contact: prev.contact ? {
+                ...prev.contact,
+                tags: newTags,
+                name: newName || prev.contact.name,
+                avatarUrl: newAvatarUrl || prev.contact.avatarUrl,
+              } : prev.contact,
+            };
+          });
+        }
+      )
+      .subscribe((status) => {
+        console.log('[Realtime] Status subscription contatos:', status);
+      });
+
+    return () => {
+      console.log('[Realtime] Cancelando subscription de contatos');
+      supabase.removeChannel(channel);
+    };
+  }, [profile?.company_id]);
+
+  // ============================================================
   // ENVIAR/REMOVER REAÇÃO
   // ============================================================
   const sendReaction = useCallback(async (
