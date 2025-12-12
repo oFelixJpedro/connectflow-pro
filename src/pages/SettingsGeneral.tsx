@@ -75,8 +75,11 @@ const defaultNotificationSettings: NotificationSettings = {
 };
 
 export default function SettingsGeneral() {
-  const { company, profile, updateCompany, updateProfile } = useAuth();
+  const { company, profile, userRole, updateCompany, updateProfile } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  // Check if user is owner or admin
+  const isOwnerOrAdmin = userRole?.role === 'owner' || userRole?.role === 'admin';
   
   // Company state
   const [companyName, setCompanyName] = useState('');
@@ -278,23 +281,28 @@ export default function SettingsGeneral() {
           </p>
         </div>
 
-        <Tabs defaultValue="company" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-3 lg:w-auto lg:inline-flex">
-            <TabsTrigger value="company" className="gap-2">
-              <Building2 className="w-4 h-4" />
-              <span className="hidden sm:inline">Empresa</span>
-            </TabsTrigger>
+        <Tabs defaultValue={isOwnerOrAdmin ? "company" : "notifications"} className="space-y-6">
+          <TabsList className={`grid w-full lg:w-auto lg:inline-flex ${isOwnerOrAdmin ? 'grid-cols-3' : 'grid-cols-1'}`}>
+            {isOwnerOrAdmin && (
+              <TabsTrigger value="company" className="gap-2">
+                <Building2 className="w-4 h-4" />
+                <span className="hidden sm:inline">Empresa</span>
+              </TabsTrigger>
+            )}
             <TabsTrigger value="notifications" className="gap-2">
               <Bell className="w-4 h-4" />
               <span className="hidden sm:inline">Notificações</span>
             </TabsTrigger>
-            <TabsTrigger value="billing" className="gap-2">
-              <CreditCard className="w-4 h-4" />
-              <span className="hidden sm:inline">Faturamento</span>
-            </TabsTrigger>
+            {isOwnerOrAdmin && (
+              <TabsTrigger value="billing" className="gap-2">
+                <CreditCard className="w-4 h-4" />
+                <span className="hidden sm:inline">Faturamento</span>
+              </TabsTrigger>
+            )}
           </TabsList>
 
           {/* Company Settings */}
+          {isOwnerOrAdmin && (
           <TabsContent value="company" className="space-y-6">
             <Card>
               <CardHeader>
@@ -489,6 +497,7 @@ export default function SettingsGeneral() {
               </CardContent>
             </Card>
           </TabsContent>
+          )}
 
           {/* Notifications Settings */}
           <TabsContent value="notifications" className="space-y-6">
@@ -575,6 +584,7 @@ export default function SettingsGeneral() {
           </TabsContent>
 
           {/* Billing Settings (Mockup) */}
+          {isOwnerOrAdmin && (
           <TabsContent value="billing" className="space-y-6">
             <Card>
               <CardHeader>
@@ -622,6 +632,7 @@ export default function SettingsGeneral() {
               </CardContent>
             </Card>
           </TabsContent>
+          )}
         </Tabs>
       </div>
     </div>
