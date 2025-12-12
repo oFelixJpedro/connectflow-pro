@@ -477,6 +477,8 @@ export function ChatPanel({
         setInputValue('');
         setReplyingTo(null);
         // Keep internal note mode active for convenience
+        // Restore focus after state update
+        setTimeout(() => textareaRef.current?.focus(), 0);
       }
     } else {
       // Send as WhatsApp message
@@ -484,8 +486,9 @@ export function ChatPanel({
       onSendMessage(inputValue.trim(), replyingTo?.id);
       setInputValue('');
       setReplyingTo(null);
+      // Restore focus after state update
+      setTimeout(() => textareaRef.current?.focus(), 0);
     }
-    textareaRef.current?.focus();
   };
 
   const handleReply = (message: Message) => {
