@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -16,6 +15,7 @@ import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
+import { ConversationPreviewModal } from './ConversationPreviewModal';
 import type { KanbanCard, KanbanColumn, KanbanCardComment, KanbanCardHistory, KanbanCardAttachment } from '@/hooks/useKanbanData';
 
 interface KanbanCardDrawerProps {
@@ -50,7 +50,6 @@ const priorityOptions = [
 const TAG_COLORS = ['#FFD6E0', '#D6E5FF', '#D6FFE0', '#FFF5D6', '#E8D6FF', '#FFE5D6'];
 
 export function KanbanCardDrawer({ card, columns, teamMembers, open, onOpenChange, onUpdateCard, onDeleteCard, onAddTag, onRemoveTag, onAddChecklistItem, onToggleChecklistItem, onDeleteChecklistItem, onAddComment, onLoadComments, onLoadHistory, onLoadAttachments, onUploadAttachment, onDeleteAttachment, onMoveCard }: KanbanCardDrawerProps) {
-  const navigate = useNavigate();
   const [comments, setComments] = useState<KanbanCardComment[]>([]);
   const [history, setHistory] = useState<KanbanCardHistory[]>([]);
   const [attachments, setAttachments] = useState<KanbanCardAttachment[]>([]);
@@ -58,6 +57,7 @@ export function KanbanCardDrawer({ card, columns, teamMembers, open, onOpenChang
   const [newChecklistItem, setNewChecklistItem] = useState('');
   const [newTagName, setNewTagName] = useState('');
   const [loading, setLoading] = useState(false);
+  const [isConversationPreviewOpen, setIsConversationPreviewOpen] = useState(false);
 
   useEffect(() => {
     if (card && open) {
@@ -148,11 +148,21 @@ export function KanbanCardDrawer({ card, columns, teamMembers, open, onOpenChang
                 </div>
               )}
             </div>
-            <Button size="sm" variant="outline" onClick={() => navigate('/inbox')}>
+            <Button size="sm" variant="outline" onClick={() => setIsConversationPreviewOpen(true)}>
               <MessageSquare className="w-4 h-4 mr-2" />
               Conversa
             </Button>
           </div>
+
+          {/* Conversation Preview Modal */}
+          <ConversationPreviewModal
+            open={isConversationPreviewOpen}
+            onOpenChange={setIsConversationPreviewOpen}
+            contactId={card.contact_id}
+            contactName={card.contact?.name}
+            contactPhone={card.contact?.phone_number}
+            contactAvatarUrl={card.contact?.avatar_url || undefined}
+          />
 
           {/* Column, Priority, Assigned */}
           <div className="grid grid-cols-3 gap-3">
