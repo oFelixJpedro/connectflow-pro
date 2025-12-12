@@ -52,10 +52,7 @@ export function ImageMessage({
   }, []);
 
   const handleDownload = useCallback(() => {
-    const link = document.createElement('a');
-    link.href = src;
-    link.download = `whatsapp-image-${Date.now()}.jpg`;
-    link.click();
+    window.open(src, '_blank', 'noopener,noreferrer');
   }, [src]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {

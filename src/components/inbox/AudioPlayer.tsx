@@ -153,13 +153,8 @@ export function AudioPlayer({
   }, [cycleSpeed]);
 
   const handleDownload = useCallback(() => {
-    const link = document.createElement('a');
-    link.href = src;
-    link.download = metadata?.fileName || `audio_${Date.now()}.${mimeType?.split('/')[1] || 'ogg'}`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  }, [src, mimeType, metadata]);
+    window.open(src, '_blank', 'noopener,noreferrer');
+  }, [src]);
 
   useEffect(() => {
     const audio = audioRef.current;
