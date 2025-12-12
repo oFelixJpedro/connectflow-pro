@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { supabase } from '@/integrations/supabase/client';
 import { useDeveloperAuth } from '@/contexts/DeveloperAuthContext';
+import { developerActions } from '@/lib/developerApi';
 import { toast } from 'sonner';
 
 type PermissionRequestType = 'edit_company' | 'edit_user' | 'access_user' | 'delete_company' | 'delete_user';
@@ -34,20 +34,17 @@ export function useDeveloperPermissions(): UsePermissionRequestResult {
         return null;
       }
 
-      // Token is now in httpOnly cookie - no need to pass it manually
-      // supabase.functions.invoke will send cookies automatically
-      const { data, error } = await supabase.functions.invoke('developer-actions', {
-        body: {
-          action: 'create_permission_request',
-          request_type: type,
-          target_company_id: targetCompanyId,
-          target_user_id: targetUserId,
-          approver_id: approverId
-        }
+      // Use developerActions helper which sends cookies via credentials: 'include'
+      const { data, error } = await developerActions({
+        action: 'create_permission_request',
+        request_type: type,
+        target_company_id: targetCompanyId,
+        target_user_id: targetUserId,
+        approver_id: approverId
       });
 
       if (error || data?.error) {
-        toast.error(data?.error || 'Erro ao criar solicitação de permissão');
+        toast.error(data?.error || error || 'Erro ao criar solicitação de permissão');
         return null;
       }
 
@@ -63,12 +60,10 @@ export function useDeveloperPermissions(): UsePermissionRequestResult {
 
   const cancelRequest = async (requestId: string) => {
     try {
-      // Token is now in httpOnly cookie
-      await supabase.functions.invoke('developer-actions', {
-        body: {
-          action: 'cancel_permission_request',
-          request_id: requestId
-        }
+      // Use developerActions helper which sends cookies via credentials: 'include'
+      await developerActions({
+        action: 'cancel_permission_request',
+        request_id: requestId
       });
     } catch (err) {
       console.error('Error cancelling request:', err);
