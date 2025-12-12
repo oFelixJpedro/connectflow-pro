@@ -8,8 +8,7 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Loader2, X, CheckCircle, XCircle, Clock, ExternalLink } from 'lucide-react';
-import { supabase } from '@/integrations/supabase/client';
-import { getDeveloperToken } from '@/contexts/DeveloperAuthContext';
+import { developerData, developerActions, developerImpersonate } from '@/lib/developerApi';
 import { toast } from 'sonner';
 
 interface PermissionWaitingModalProps {
@@ -47,22 +46,17 @@ export default function PermissionWaitingModal({
     if (!targetUserId || requestType !== 'access_user') return;
     
     try {
-      const token = getDeveloperToken();
-      
       // Passar a URL atual do frontend
       const redirectUrl = `${window.location.origin}/dashboard`;
       
-      const { data, error } = await supabase.functions.invoke('developer-impersonate', {
-        body: { 
-          action: 'impersonate', 
-          target_user_id: targetUserId,
-          redirect_url: redirectUrl
-        },
-        headers: { Authorization: `Bearer ${token}` }
+      const { data, error } = await developerImpersonate({ 
+        action: 'impersonate', 
+        target_user_id: targetUserId,
+        redirect_url: redirectUrl
       });
 
-      if (error || data?.error) {
-        toast.error(data?.error || 'Erro ao gerar link de acesso');
+      if (error) {
+        toast.error(error);
         setStatus('denied');
         return;
       }
@@ -82,12 +76,7 @@ export default function PermissionWaitingModal({
     if (hasCalledCallback.current) return;
     
     try {
-      const token = getDeveloperToken();
-      
-      const { data, error } = await supabase.functions.invoke('developer-data', {
-        body: { action: 'check_permission_status', request_id: requestId },
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const { data, error } = await developerData({ action: 'check_permission_status', request_id: requestId });
 
       if (error) return;
 
@@ -151,11 +140,7 @@ export default function PermissionWaitingModal({
     if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
     if (timerRef.current) clearInterval(timerRef.current);
     
-    const token = getDeveloperToken();
-    await supabase.functions.invoke('developer-actions', {
-      body: { action: 'cancel_permission_request', request_id: requestId },
-      headers: { Authorization: `Bearer ${token}` }
-    });
+    await developerActions({ action: 'cancel_permission_request', request_id: requestId });
     
     onCancel();
   };

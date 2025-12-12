@@ -26,30 +26,32 @@ function parseCookies(cookieHeader: string | null): Record<string, string> {
   );
 }
 
-// Verify developer token (simple base64 JSON, not JWT)
-// Token format: btoa(JSON.stringify({ developer_id, email, is_developer, exp }))
+// Verify developer token from cookie ONLY (not Authorization header)
+// The Authorization header contains the Supabase Auth JWT which is NOT the developer token
 async function verifyDeveloperToken(req: Request, supabase: any): Promise<{ valid: boolean; developerId?: string; reason?: string }> {
   try {
     console.log('🔐 Verificando token...');
     
-    // Try cookie first
-    const cookies = parseCookies(req.headers.get('cookie'));
-    let token = cookies[COOKIE_NAME];
+    // ONLY read from cookie - ignore Authorization header completely
+    const cookieHeader = req.headers.get('cookie');
+    console.log('🍪 Cookie header presente:', !!cookieHeader);
     
-    // Fallback to Authorization header for backwards compatibility
+    if (!cookieHeader) {
+      console.log('❌ Nenhum cookie foi enviado');
+      return { valid: false, reason: 'Cookie não fornecido - faça login novamente' };
+    }
+    
+    const cookies = parseCookies(cookieHeader);
+    console.log('🔍 Cookies encontrados:', Object.keys(cookies).join(', '));
+    
+    const token = cookies[COOKIE_NAME];
+    
     if (!token) {
-      const authHeader = req.headers.get('Authorization');
-      if (authHeader?.startsWith('Bearer ')) {
-        token = authHeader.split(' ')[1];
-      }
+      console.log('❌ Cookie developer_token não encontrado');
+      return { valid: false, reason: 'Token não fornecido - faça login novamente' };
     }
 
-    if (!token) {
-      console.log('❌ Token não encontrado em cookie nem header');
-      return { valid: false, reason: 'Token não fornecido' };
-    }
-
-    console.log('   Token length:', token?.length);
+    console.log('   Token length:', token.length);
     
     // Token is URL-safe base64(JSON) - decode with proper handling
     let payload;
@@ -65,19 +67,19 @@ async function verifyDeveloperToken(req: Request, supabase: any): Promise<{ vali
       }
       
       payload = JSON.parse(atob(base64));
-      console.log('   Payload parsed:', JSON.stringify(payload, null, 2));
+      console.log('   Payload parsed successfully');
     } catch (parseErr) {
       console.log('❌ Erro ao parsear token base64:', parseErr);
       return { valid: false, reason: 'Token mal formatado' };
     }
     
-    // Check is_developer flag (not "type")
+    // Check is_developer flag
     if (!payload.is_developer) {
       console.log('❌ Token não é de developer (is_developer =', payload.is_developer, ')');
       return { valid: false, reason: 'Token não é de desenvolvedor' };
     }
     
-    // Check developer_id (with underscore, not camelCase)
+    // Check developer_id
     if (!payload.developer_id) {
       console.log('❌ developer_id não encontrado no payload');
       return { valid: false, reason: 'developer_id ausente' };

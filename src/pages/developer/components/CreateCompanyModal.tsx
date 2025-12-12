@@ -34,7 +34,7 @@ import {
   AlertTriangle,
   Loader2
 } from 'lucide-react';
-import { supabase } from '@/integrations/supabase/client';
+import { developerActions } from '@/lib/developerApi';
 import { toast } from 'sonner';
 import { addDays, addWeeks, addMonths, addYears } from 'date-fns';
 
@@ -136,35 +136,25 @@ export default function CreateCompanyModal({ onClose, onSuccess }: CreateCompany
         ? 'free' 
         : plan;
 
-      // Get developer token
-      const token = localStorage.getItem('developer_auth_token');
-
-      // Call edge function to create company
-      const { data, error } = await supabase.functions.invoke('developer-actions', {
-        body: {
-          action: 'create_company',
-          company_name: companyName.trim(),
-          slug: slug.trim(),
-          plan: validPlan,
-          trial_ends_at: trialEndsAt,
-          owner_name: ownerName.trim(),
-          owner_email: ownerEmail.trim(),
-          owner_password: ownerPassword,
-          force_password_change: forcePasswordChange
-        },
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
+      const { data, error } = await developerActions({
+        action: 'create_company',
+        company_name: companyName.trim(),
+        slug: slug.trim(),
+        plan: validPlan,
+        trial_ends_at: trialEndsAt,
+        owner_name: ownerName.trim(),
+        owner_email: ownerEmail.trim(),
+        owner_password: ownerPassword,
+        force_password_change: forcePasswordChange
       });
 
-      if (error || data?.error) {
-        const errorMsg = data?.error || error?.message || 'Erro ao criar empresa';
-        if (data?.code === '23505' || errorMsg.includes('slug')) {
+      if (error) {
+        if (error.includes('slug')) {
           toast.error('Slug já existe. Escolha outro nome.');
-        } else if (errorMsg.includes('already')) {
+        } else if (error.includes('already')) {
           toast.error('Email já cadastrado');
         } else {
-          toast.error(errorMsg);
+          toast.error(error);
         }
         setStep('form');
         return;

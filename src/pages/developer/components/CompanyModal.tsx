@@ -19,8 +19,7 @@ import {
   Pencil,
   Trash2
 } from 'lucide-react';
-import { supabase } from '@/integrations/supabase/client';
-import { getDeveloperToken } from '@/contexts/DeveloperAuthContext';
+import { developerData } from '@/lib/developerApi';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -61,20 +60,16 @@ export default function CompanyModal({ company, onClose, onRefresh, onEdit, onDe
     try {
       setIsLoading(true);
 
-      const token = getDeveloperToken();
-      const { data, error } = await supabase.functions.invoke('developer-data', {
-        body: { action: 'get_company_details', company_id: company.id },
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const { data, error } = await developerData({ action: 'get_company_details', company_id: company.id });
 
-      if (error) throw error;
+      if (error) throw new Error(error);
 
       setDetails({
         ...company,
-        users_count: data.users_count || 0,
-        connections_count: data.connections_count || 0,
-        departments_count: data.departments_count || 0,
-        conversations_count: data.conversations_count || 0
+        users_count: data?.users_count || 0,
+        connections_count: data?.connections_count || 0,
+        departments_count: data?.departments_count || 0,
+        conversations_count: data?.conversations_count || 0
       });
     } catch (err) {
       console.error('Error loading company details:', err);
