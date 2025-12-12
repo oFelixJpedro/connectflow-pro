@@ -35,6 +35,7 @@ import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import { SettingsSubmenu } from './SettingsSubmenu';
 import { useNotifications } from '@/hooks/useNotifications';
+import { ProfileModal } from '@/components/profile/ProfileModal';
 
 const baseMenuItems = [
   { 
@@ -74,6 +75,7 @@ export function AppSidebar() {
   const { unreadCounts } = useNotifications();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [profileModalOpen, setProfileModalOpen] = useState(false);
 
   // Auto-open settings submenu when on settings route
   useEffect(() => {
@@ -379,7 +381,7 @@ export function AppSidebar() {
                 </DropdownMenuItem>
                 
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => navigate('/settings/general')}>
+                <DropdownMenuItem onClick={() => setProfileModalOpen(true)}>
                   <User className="w-4 h-4 mr-2" />
                   Meu perfil
                 </DropdownMenuItem>
@@ -403,6 +405,12 @@ export function AppSidebar() {
         isOpen={settingsOpen} 
         onClose={() => setSettingsOpen(false)}
         sidebarCollapsed={sidebarCollapsed}
+      />
+
+      {/* Profile Modal */}
+      <ProfileModal 
+        isOpen={profileModalOpen} 
+        onClose={() => setProfileModalOpen(false)} 
       />
     </div>
   );
