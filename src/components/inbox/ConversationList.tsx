@@ -8,6 +8,7 @@ import { ConnectionSelector } from '@/components/inbox/ConnectionSelector';
 import { ConversationFiltersComponent } from '@/components/inbox/ConversationFilters';
 import { InboxTabs, type InboxColumn } from '@/components/inbox/InboxTabs';
 import { AssignmentBadge } from '@/components/inbox/AssignmentBadge';
+import { ContactAvatar } from '@/components/ui/contact-avatar';
 import { cn } from '@/lib/utils';
 import type { Conversation, ConversationFilters } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
@@ -206,12 +207,11 @@ export function ConversationList({
                   <div className="flex gap-3">
                     {/* Avatar with unread badge */}
                     <div className="relative flex-shrink-0">
-                      <Avatar className="w-12 h-12">
-                        <AvatarImage src={conversation.contact?.avatarUrl} className="object-cover object-top" />
-                        <AvatarFallback className="bg-primary/10 text-primary text-sm font-medium">
-                          {getInitials(conversation.contact?.name)}
-                        </AvatarFallback>
-                      </Avatar>
+                      <ContactAvatar
+                        imageUrl={conversation.contact?.avatarUrl}
+                        name={conversation.contact?.name}
+                        size="lg"
+                      />
                       
                       {/* Unread badge on avatar */}
                       {conversation.unreadCount > 0 && (

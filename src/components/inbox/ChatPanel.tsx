@@ -16,6 +16,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { ContactAvatar } from '@/components/ui/contact-avatar';
 import { Badge } from '@/components/ui/badge';
 import {
   Tooltip,
@@ -730,12 +731,11 @@ export function ChatPanel({
       <div className="px-4 py-3 border-b border-border bg-card">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3 min-w-0">
-            <Avatar className="w-10 h-10 flex-shrink-0">
-              <AvatarImage src={conversation.contact?.avatarUrl} className="object-cover object-top" />
-              <AvatarFallback className="bg-primary/10 text-primary text-sm">
-                {getInitials(conversation.contact?.name)}
-              </AvatarFallback>
-            </Avatar>
+            <ContactAvatar
+              imageUrl={conversation.contact?.avatarUrl}
+              name={conversation.contact?.name}
+              size="md"
+            />
             <div className="min-w-0">
               <p className="font-medium text-sm text-foreground truncate">
                 {conversation.contact?.name || conversation.contact?.phoneNumber}
