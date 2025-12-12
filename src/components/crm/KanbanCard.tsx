@@ -2,7 +2,7 @@ import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
-import { Phone, CheckSquare } from 'lucide-react';
+import { Phone, CheckSquare, Smartphone } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { KanbanCard as KanbanCardType } from '@/hooks/useKanbanData';
 
@@ -10,6 +10,7 @@ interface KanbanCardProps {
   card: KanbanCardType;
   isDragging?: boolean;
   onClick: () => void;
+  connectionName?: string;
 }
 
 const priorityConfig = {
@@ -19,7 +20,7 @@ const priorityConfig = {
   urgent: { label: 'Urgente', color: 'bg-red-500' },
 };
 
-export function KanbanCard({ card, isDragging, onClick }: KanbanCardProps) {
+export function KanbanCard({ card, isDragging, onClick, connectionName }: KanbanCardProps) {
   const {
     attributes,
     listeners,
@@ -90,6 +91,16 @@ export function KanbanCard({ card, isDragging, onClick }: KanbanCardProps) {
         <Phone className="w-3 h-3" />
         <span>{formatPhone(card.contact?.phone_number || '')}</span>
       </div>
+
+      {/* Connection Badge (only in global view) */}
+      {connectionName && (
+        <div className="flex items-center gap-1 mb-2">
+          <Badge variant="outline" className="text-xs px-1.5 py-0 flex items-center gap-1">
+            <Smartphone className="w-3 h-3 text-green-500" />
+            {connectionName}
+          </Badge>
+        </div>
+      )}
 
       {/* Tags */}
       {card.tags && card.tags.length > 0 && (

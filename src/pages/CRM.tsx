@@ -5,10 +5,17 @@ import { supabase } from '@/integrations/supabase/client';
 import { KanbanBoard } from '@/components/crm/KanbanBoard';
 import { KanbanFilters } from '@/components/crm/KanbanFilters';
 import { AddCardDialog } from '@/components/crm/AddCardDialog';
-import { ConnectionSelector } from '@/components/inbox/ConnectionSelector';
 import { Button } from '@/components/ui/button';
-import { Loader2, LayoutGrid, Plus } from 'lucide-react';
+import { 
+  Select, 
+  SelectContent, 
+  SelectItem, 
+  SelectTrigger, 
+  SelectValue 
+} from '@/components/ui/select';
+import { Loader2, LayoutGrid, Plus, Globe, Smartphone, Building2 } from 'lucide-react';
 import { toast } from 'sonner';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 interface Connection {
   id: string;
@@ -17,10 +24,20 @@ interface Connection {
   status: string;
 }
 
+interface Department {
+  id: string;
+  name: string;
+  whatsapp_connection_id: string;
+}
+
+const ALL_CONNECTIONS = 'all';
+
 export default function CRM() {
   const { profile, company, userRole } = useAuth();
   const [connections, setConnections] = useState<Connection[]>([]);
-  const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(null);
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [selectedConnectionId, setSelectedConnectionId] = useState<string>(ALL_CONNECTIONS);
+  const [selectedDepartmentId, setSelectedDepartmentId] = useState<string | null>(null);
   const [loadingConnections, setLoadingConnections] = useState(true);
   const [hasCRMAccess, setHasCRMAccess] = useState<boolean | null>(null);
   const [addCardOpen, setAddCardOpen] = useState(false);
@@ -31,13 +48,20 @@ export default function CRM() {
   const [filterPriority, setFilterPriority] = useState<string[]>([]);
   const [filterTags, setFilterTags] = useState<string[]>([]);
 
+  const isAdminOrOwner = userRole?.role === 'owner' || userRole?.role === 'admin';
+  const canAccessGlobalView = isAdminOrOwner;
+  const isGlobalView = selectedConnectionId === ALL_CONNECTIONS;
+
+  // Get connection ID for kanban hook - null for global view to load all boards
+  const kanbanConnectionId = isGlobalView ? null : selectedConnectionId;
+
   const {
     board,
     columns,
     cards,
     loading,
     teamMembers,
-    isAdminOrOwner,
+    isAdminOrOwner: kanbanIsAdmin,
     refresh,
     createColumn,
     updateColumn,
@@ -58,7 +82,10 @@ export default function CRM() {
     loadCardAttachments,
     uploadAttachment,
     deleteAttachment,
-  } = useKanbanData(selectedConnectionId);
+    allCards,
+    allColumns,
+    connectionMap,
+  } = useKanbanData(kanbanConnectionId, isGlobalView);
 
   // Load connections with CRM access check
   useEffect(() => {
@@ -82,11 +109,14 @@ export default function CRM() {
           setConnections(data || []);
           setHasCRMAccess((data?.length || 0) > 0);
 
-          // Auto-select first connection
-          if (data?.length && !selectedConnectionId) {
-            const savedId = localStorage.getItem('crm_selectedConnectionId');
-            const validSaved = savedId && data.find(c => c.id === savedId);
-            setSelectedConnectionId(validSaved ? savedId : data[0].id);
+          // Auto-select: admin/owner defaults to global view
+          const savedId = localStorage.getItem('crm_selectedConnectionId');
+          if (savedId && savedId !== ALL_CONNECTIONS && data?.find(c => c.id === savedId)) {
+            setSelectedConnectionId(savedId);
+          } else if (canAccessGlobalView) {
+            setSelectedConnectionId(ALL_CONNECTIONS);
+          } else if (data?.length) {
+            setSelectedConnectionId(data[0].id);
           }
         } else {
           // For other roles, get only connections where user has crm_access = true
@@ -120,10 +150,10 @@ export default function CRM() {
           setConnections(data || []);
           setHasCRMAccess((data?.length || 0) > 0);
 
-          // Auto-select first connection
-          if (data?.length && !selectedConnectionId) {
+          // Auto-select first connection for non-admin users (no global view)
+          if (data?.length) {
             const savedId = localStorage.getItem('crm_selectedConnectionId');
-            const validSaved = savedId && data.find(c => c.id === savedId);
+            const validSaved = savedId && savedId !== ALL_CONNECTIONS && data.find(c => c.id === savedId);
             setSelectedConnectionId(validSaved ? savedId : data[0].id);
           }
         }
@@ -136,7 +166,31 @@ export default function CRM() {
     };
 
     loadConnectionsWithCRMAccess();
-  }, [company?.id, profile?.id, userRole]);
+  }, [company?.id, profile?.id, userRole, canAccessGlobalView]);
+
+  // Load departments
+  useEffect(() => {
+    const loadDepartments = async () => {
+      if (!company?.id) return;
+
+      try {
+        const { data, error } = await supabase
+          .from('departments')
+          .select('id, name, whatsapp_connection_id')
+          .eq('active', true)
+          .in('whatsapp_connection_id', connections.map(c => c.id));
+
+        if (error) throw error;
+        setDepartments(data || []);
+      } catch (error) {
+        console.error('Error loading departments:', error);
+      }
+    };
+
+    if (connections.length > 0) {
+      loadDepartments();
+    }
+  }, [connections, company?.id]);
 
   // Persist selected connection
   useEffect(() => {
@@ -145,8 +199,38 @@ export default function CRM() {
     }
   }, [selectedConnectionId]);
 
-  // Filter cards
-  const filteredCards = cards.filter(card => {
+  // Handle connection change
+  const handleConnectionChange = (value: string) => {
+    setSelectedConnectionId(value);
+    // Reset department filter when changing connection
+    setSelectedDepartmentId(null);
+  };
+
+  // Get cards to display based on filters
+  const displayCards = isGlobalView ? allCards : cards;
+  const displayColumns = isGlobalView ? allColumns : columns;
+
+  // Filter cards by department if selected
+  const departmentFilteredCards = displayCards.filter(card => {
+    if (!selectedDepartmentId) return true;
+    
+    // Get connection for this card's column
+    const column = displayColumns.find(c => c.id === card.column_id);
+    if (!column) return false;
+    
+    // Get connection for this board
+    const connection = connectionMap?.get(column.board_id);
+    if (!connection) return false;
+    
+    // Check if connection belongs to selected department
+    const connectionDept = departments.find(d => 
+      d.whatsapp_connection_id === connection.id
+    );
+    return connectionDept?.id === selectedDepartmentId;
+  });
+
+  // Apply other filters
+  const filteredCards = departmentFilteredCards.filter(card => {
     // Search filter
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
@@ -182,7 +266,12 @@ export default function CRM() {
   });
 
   // Get all unique tags for filter
-  const allTags = [...new Set(cards.flatMap(c => c.tags?.map(t => t.name) || []))];
+  const allTags = [...new Set(displayCards.flatMap(c => c.tags?.map(t => t.name) || []))];
+
+  // Get filtered departments based on selected connection
+  const filteredDepartments = isGlobalView 
+    ? departments 
+    : departments.filter(d => d.whatsapp_connection_id === selectedConnectionId);
 
   const clearFilters = () => {
     setSearchQuery('');
@@ -193,6 +282,32 @@ export default function CRM() {
 
   const hasActiveFilters = !!(searchQuery || filterResponsible.length > 0 || 
     filterPriority.length > 0 || filterTags.length > 0);
+
+  // Get contact count message
+  const getContactCountMessage = () => {
+    const count = filteredCards.length;
+    const total = departmentFilteredCards.length;
+    
+    if (hasActiveFilters && count !== total) {
+      return `${count} de ${total} cards (filtrados)`;
+    }
+    
+    if (isGlobalView && !selectedDepartmentId) {
+      return `${count} cards no total (visão global)`;
+    }
+    
+    if (isGlobalView && selectedDepartmentId) {
+      const deptName = departments.find(d => d.id === selectedDepartmentId)?.name;
+      return `${count} cards no departamento ${deptName} (todas as conexões)`;
+    }
+    
+    if (!selectedDepartmentId) {
+      return `${count} cards nesta conexão`;
+    }
+    
+    const deptName = departments.find(d => d.id === selectedDepartmentId)?.name;
+    return `${count} cards (${deptName})`;
+  };
 
   // Loading state
   if (loadingConnections || hasCRMAccess === null) {
@@ -233,31 +348,110 @@ export default function CRM() {
     <div className="flex-1 flex flex-col h-full overflow-hidden bg-background">
       {/* Header */}
       <div className="flex items-center justify-between gap-4 p-4 border-b">
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-4 flex-wrap">
           <h1 className="text-xl font-semibold">CRM</h1>
-          <ConnectionSelector
-            selectedConnectionId={selectedConnectionId}
-            onConnectionChange={setSelectedConnectionId}
-            overrideConnections={connections.map(c => ({
-              id: c.id,
-              name: c.name,
-              phoneNumber: c.phone_number,
-              status: c.status as 'connected' | 'disconnected' | 'qr_ready' | 'connecting' | 'error',
-            }))}
-          />
+          
+          {/* Connection Selector */}
+          <Select value={selectedConnectionId} onValueChange={handleConnectionChange}>
+            <SelectTrigger className="w-[220px]">
+              <div className="flex items-center gap-2">
+                {isGlobalView ? (
+                  <Globe className="w-4 h-4 text-primary" />
+                ) : (
+                  <Smartphone className="w-4 h-4 text-green-500" />
+                )}
+                <SelectValue placeholder="Selecionar conexão" />
+              </div>
+            </SelectTrigger>
+            <SelectContent className="bg-popover">
+              {canAccessGlobalView && (
+                <>
+                  <SelectItem value={ALL_CONNECTIONS}>
+                    <div className="flex items-center gap-2">
+                      <Globe className="w-4 h-4 text-primary" />
+                      <span>Todas as conexões</span>
+                    </div>
+                  </SelectItem>
+                  <div className="my-1 border-t" />
+                </>
+              )}
+              {connections.map(conn => (
+                <SelectItem key={conn.id} value={conn.id}>
+                  <div className="flex items-center gap-2">
+                    <Smartphone className="w-4 h-4 text-green-500" />
+                    <span>{conn.name}</span>
+                    <span className="text-xs text-muted-foreground">
+                      ({conn.phone_number})
+                    </span>
+                  </div>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          {/* Department Selector */}
+          {filteredDepartments.length > 0 && (
+            <Select 
+              value={selectedDepartmentId || 'all'} 
+              onValueChange={(v) => setSelectedDepartmentId(v === 'all' ? null : v)}
+            >
+              <SelectTrigger className="w-[200px]">
+                <div className="flex items-center gap-2">
+                  <Building2 className="w-4 h-4 text-muted-foreground" />
+                  <SelectValue placeholder="Departamento" />
+                </div>
+              </SelectTrigger>
+              <SelectContent className="bg-popover">
+                <SelectItem value="all">
+                  <span>Todos os departamentos</span>
+                </SelectItem>
+                <div className="my-1 border-t" />
+                {filteredDepartments.map(dept => (
+                  <SelectItem key={dept.id} value={dept.id}>
+                    <span>{dept.name}</span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+
+          {/* Contact count */}
+          <span className="text-sm text-muted-foreground">
+            {getContactCountMessage()}
+          </span>
         </div>
-        <Button onClick={() => setAddCardOpen(true)}>
-          <Plus className="w-4 h-4 mr-2" />
-          Adicionar Card
-        </Button>
+
+        {/* Add Card Button */}
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span>
+                <Button 
+                  onClick={() => setAddCardOpen(true)}
+                  disabled={isGlobalView}
+                >
+                  <Plus className="w-4 h-4 mr-2" />
+                  Adicionar Card
+                </Button>
+              </span>
+            </TooltipTrigger>
+            {isGlobalView && (
+              <TooltipContent>
+                <p>Selecione uma conexão específica para adicionar contatos</p>
+              </TooltipContent>
+            )}
+          </Tooltip>
+        </TooltipProvider>
       </div>
 
       {/* Add Card Dialog */}
       <AddCardDialog
         open={addCardOpen}
         onOpenChange={setAddCardOpen}
-        existingContactIds={cards.map(c => c.contact_id)}
+        existingContactIds={displayCards.map(c => c.contact_id)}
         onAddCard={createCard}
+        connectionId={isGlobalView ? null : selectedConnectionId}
+        departmentId={selectedDepartmentId}
       />
 
       {/* Filters */}
@@ -283,10 +477,13 @@ export default function CRM() {
         </div>
       ) : (
         <KanbanBoard
-          columns={columns}
+          columns={displayColumns}
           cards={filteredCards}
           teamMembers={teamMembers}
-          isAdminOrOwner={!!isAdminOrOwner}
+          isAdminOrOwner={!!kanbanIsAdmin}
+          isGlobalView={isGlobalView}
+          connectionMap={connectionMap}
+          connections={connections}
           onCreateColumn={createColumn}
           onUpdateColumn={updateColumn}
           onDeleteColumn={deleteColumn}

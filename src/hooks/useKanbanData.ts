@@ -105,11 +105,21 @@ const DEFAULT_COLUMNS = [
   { name: 'Perdido', color: '#FFD6E0', position: 4 },
 ];
 
-export function useKanbanData(connectionId: string | null) {
+interface ConnectionInfo {
+  id: string;
+  name: string;
+  phone_number: string;
+}
+
+export function useKanbanData(connectionId: string | null, isGlobalView: boolean = false) {
   const { profile, company, userRole } = useAuth();
   const [board, setBoard] = useState<KanbanBoard | null>(null);
   const [columns, setColumns] = useState<KanbanColumn[]>([]);
   const [cards, setCards] = useState<KanbanCard[]>([]);
+  const [allBoards, setAllBoards] = useState<KanbanBoard[]>([]);
+  const [allColumns, setAllColumns] = useState<KanbanColumn[]>([]);
+  const [allCards, setAllCards] = useState<KanbanCard[]>([]);
+  const [connectionMap, setConnectionMap] = useState<Map<string, ConnectionInfo>>(new Map());
   const [loading, setLoading] = useState(true);
   const [teamMembers, setTeamMembers] = useState<{ id: string; full_name: string; avatar_url: string | null }[]>([]);
 
@@ -130,7 +140,92 @@ export function useKanbanData(connectionId: string | null) {
     }
   }, [company?.id]);
 
-  // Load or create board
+  // Load all boards for global view
+  const loadAllBoards = useCallback(async () => {
+    if (!company?.id) return;
+
+    setLoading(true);
+    try {
+      // Get all boards for this company
+      const { data: boards, error: boardsError } = await supabase
+        .from('kanban_boards')
+        .select('*')
+        .eq('company_id', company.id);
+
+      if (boardsError) throw boardsError;
+      
+      if (!boards?.length) {
+        setAllBoards([]);
+        setAllColumns([]);
+        setAllCards([]);
+        setLoading(false);
+        return;
+      }
+
+      setAllBoards(boards);
+
+      // Get all connections info
+      const connectionIds = boards.map(b => b.whatsapp_connection_id);
+      const { data: connections } = await supabase
+        .from('whatsapp_connections')
+        .select('id, name, phone_number')
+        .in('id', connectionIds);
+
+      const connMap = new Map<string, ConnectionInfo>();
+      connections?.forEach(c => {
+        connMap.set(c.id, { id: c.id, name: c.name, phone_number: c.phone_number });
+      });
+      
+      // Also map board_id to connection for easier lookup
+      boards.forEach(b => {
+        const conn = connections?.find(c => c.id === b.whatsapp_connection_id);
+        if (conn) {
+          connMap.set(b.id, conn);
+        }
+      });
+      
+      setConnectionMap(connMap);
+
+      // Get all columns for all boards
+      const boardIds = boards.map(b => b.id);
+      const { data: allCols, error: colsError } = await supabase
+        .from('kanban_columns')
+        .select('*')
+        .in('board_id', boardIds)
+        .order('position', { ascending: true });
+
+      if (colsError) throw colsError;
+      setAllColumns(allCols || []);
+
+      // Get all cards
+      if (allCols?.length) {
+        const columnIds = allCols.map(c => c.id);
+        const { data: allCardsData, error: cardsError } = await supabase
+          .from('kanban_cards')
+          .select(`
+            *,
+            contact:contacts(id, name, phone_number, avatar_url, email),
+            assigned_user:profiles!assigned_user_id(id, full_name, avatar_url),
+            tags:kanban_card_tags(*),
+            checklist_items:kanban_card_checklist_items(*)
+          `)
+          .in('column_id', columnIds)
+          .order('position', { ascending: true });
+
+        if (cardsError) throw cardsError;
+        setAllCards((allCardsData || []) as KanbanCard[]);
+      } else {
+        setAllCards([]);
+      }
+    } catch (error) {
+      console.error('Error loading all boards:', error);
+      toast.error('Erro ao carregar quadros Kanban');
+    } finally {
+      setLoading(false);
+    }
+  }, [company?.id]);
+
+  // Load or create board for specific connection
   const loadBoard = useCallback(async () => {
     if (!connectionId || !company?.id) {
       setBoard(null);
@@ -807,57 +902,9 @@ export function useKanbanData(connectionId: string | null) {
     return true;
   };
 
-  // Initialize cards for existing contacts
-  const initializeCardsForContacts = async () => {
-    if (!board || !columns.length || !connectionId) return;
-
-    const firstColumn = columns[0];
-
-    // Get contacts that don't have cards yet
-    // First, get conversations for this connection to find contacts
-    const { data: conversations } = await supabase
-      .from('conversations')
-      .select('contact_id')
-      .eq('whatsapp_connection_id', connectionId);
-
-    if (!conversations?.length) return;
-
-    const contactIds = [...new Set(conversations.map(c => c.contact_id))];
-
-    // Get existing cards
-    const { data: existingCards } = await supabase
-      .from('kanban_cards')
-      .select('contact_id')
-      .in('contact_id', contactIds);
-
-    const existingContactIds = new Set(existingCards?.map(c => c.contact_id) || []);
-    const newContactIds = contactIds.filter(id => !existingContactIds.has(id));
-
-    if (newContactIds.length === 0) return;
-
-    // Get max position in first column
-    const columnCards = cards.filter(c => c.column_id === firstColumn.id);
-    const maxPosition = columnCards.reduce((max, c) => Math.max(max, c.position), -1);
-
-    // Create cards for new contacts one by one to avoid type issues
-    for (let i = 0; i < newContactIds.length; i++) {
-      await supabase.from('kanban_cards').insert({
-        column_id: firstColumn.id,
-        contact_id: newContactIds[i],
-        priority: 'medium' as const,
-        position: maxPosition + 1 + i,
-      });
-    }
-
-    // Reload cards after insertion
-    if (board) {
-      await loadCards(board.id);
-    }
-  };
-
   // Setup realtime subscriptions
   useEffect(() => {
-    if (!board) return;
+    if (!board && !isGlobalView) return;
 
     const cardsChannel = supabase
       .channel('kanban-cards-changes')
@@ -866,7 +913,11 @@ export function useKanbanData(connectionId: string | null) {
         schema: 'public',
         table: 'kanban_cards',
       }, () => {
-        loadCards(board.id);
+        if (isGlobalView) {
+          loadAllBoards();
+        } else if (board) {
+          loadCards(board.id);
+        }
       })
       .subscribe();
 
@@ -876,9 +927,12 @@ export function useKanbanData(connectionId: string | null) {
         event: '*',
         schema: 'public',
         table: 'kanban_columns',
-        filter: `board_id=eq.${board.id}`,
       }, () => {
-        loadColumns(board.id);
+        if (isGlobalView) {
+          loadAllBoards();
+        } else if (board) {
+          loadColumns(board.id);
+        }
       })
       .subscribe();
 
@@ -886,26 +940,30 @@ export function useKanbanData(connectionId: string | null) {
       supabase.removeChannel(cardsChannel);
       supabase.removeChannel(columnsChannel);
     };
-  }, [board?.id]);
+  }, [board?.id, isGlobalView]);
 
   // Load data on mount
   useEffect(() => {
-    loadBoard();
+    if (isGlobalView) {
+      loadAllBoards();
+    } else {
+      loadBoard();
+    }
     loadTeamMembers();
-  }, [loadBoard, loadTeamMembers]);
-
-  // Note: Removed automatic card initialization on every load
-  // Cards should only be created manually via "Adicionar Card" button
-  // This prevents deleted cards from reappearing
+  }, [loadBoard, loadTeamMembers, isGlobalView, loadAllBoards]);
 
   return {
     board,
     columns,
     cards,
+    allBoards,
+    allColumns,
+    allCards,
+    connectionMap,
     loading,
     teamMembers,
     isAdminOrOwner,
-    refresh: loadBoard,
+    refresh: isGlobalView ? loadAllBoards : loadBoard,
     createColumn,
     updateColumn,
     deleteColumn,
