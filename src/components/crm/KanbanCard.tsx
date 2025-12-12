@@ -138,7 +138,7 @@ export function KanbanCard({ card, isDragging, onClick, connectionName }: Kanban
         {/* Assigned User */}
         {card.assigned_user ? (
           <Avatar className="w-6 h-6">
-            <AvatarImage src={card.assigned_user.avatar_url || undefined} />
+            <AvatarImage src={card.assigned_user.avatar_url || undefined} className="object-cover object-top" />
             <AvatarFallback className="text-xs">
               {getInitials(card.assigned_user.full_name)}
             </AvatarFallback>

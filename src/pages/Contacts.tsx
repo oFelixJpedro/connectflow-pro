@@ -411,7 +411,7 @@ export default function Contacts() {
                   <TableCell>
                     <div className="flex items-center gap-3">
                       <Avatar className="w-9 h-9">
-                        <AvatarImage src={contact.avatar_url || undefined} />
+                        <AvatarImage src={contact.avatar_url || undefined} className="object-cover object-top" />
                         <AvatarFallback className="bg-primary/10 text-primary text-sm">
                           {getInitials(contact.name)}
                         </AvatarFallback>

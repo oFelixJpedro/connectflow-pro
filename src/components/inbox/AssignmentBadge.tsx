@@ -54,7 +54,7 @@ export function AssignmentBadge({ assignedUser, currentUserId, className }: Assi
   return (
     <div className={cn("flex items-center gap-1", className)}>
       <Avatar className="w-4 h-4">
-        <AvatarImage src={assignedUser.avatarUrl} />
+        <AvatarImage src={assignedUser.avatarUrl} className="object-cover object-top" />
         <AvatarFallback className="text-[8px] bg-muted">
           {getInitials(assignedUser.fullName)}
         </AvatarFallback>

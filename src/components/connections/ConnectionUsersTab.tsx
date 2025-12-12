@@ -238,7 +238,7 @@ export function ConnectionUsersTab({ connectionId, onClose }: ConnectionUsersTab
               className="flex items-center gap-4 p-3 rounded-lg bg-muted/30 opacity-60"
             >
               <Avatar className="w-10 h-10">
-                <AvatarImage src={user.avatarUrl || undefined} alt={user.fullName} />
+                <AvatarImage src={user.avatarUrl || undefined} alt={user.fullName} className="object-cover object-top" />
                 <AvatarFallback className="text-sm bg-primary/10 text-primary">
                   {getInitials(user.fullName)}
                 </AvatarFallback>
@@ -263,7 +263,7 @@ export function ConnectionUsersTab({ connectionId, onClose }: ConnectionUsersTab
               onClick={() => handleToggleUser(user.id)}
             >
               <Avatar className="w-10 h-10">
-                <AvatarImage src={user.avatarUrl || undefined} alt={user.fullName} />
+                <AvatarImage src={user.avatarUrl || undefined} alt={user.fullName} className="object-cover object-top" />
                 <AvatarFallback className="text-sm bg-primary/10 text-primary">
                   {getInitials(user.fullName)}
                 </AvatarFallback>

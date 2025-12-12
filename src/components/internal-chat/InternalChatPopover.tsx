@@ -168,7 +168,7 @@ export function InternalChatPopover() {
                     >
                       {!msg.isOwnMessage && (
                         <Avatar className="w-8 h-8 flex-shrink-0">
-                          <AvatarImage src={msg.senderAvatar || undefined} />
+                          <AvatarImage src={msg.senderAvatar || undefined} className="object-cover object-top" />
                           <AvatarFallback className="bg-emerald-100 text-emerald-700 text-xs">
                             {getInitials(msg.senderName)}
                           </AvatarFallback>
@@ -274,6 +274,7 @@ export function InternalChatPopover() {
                             <>
                               <AvatarImage
                                 src={room.participants?.find(p => p.id !== room.id)?.avatarUrl || undefined}
+                                className="object-cover object-top"
                               />
                               <AvatarFallback className="bg-emerald-100 text-emerald-700">
                                 {getInitials(room.name || 'CD')}
@@ -325,7 +326,7 @@ export function InternalChatPopover() {
                       >
                         <div className="relative">
                           <Avatar className="w-10 h-10">
-                            <AvatarImage src={member.avatarUrl || undefined} />
+                            <AvatarImage src={member.avatarUrl || undefined} className="object-cover object-top" />
                             <AvatarFallback className="bg-emerald-100 text-emerald-700">
                               {getInitials(member.fullName)}
                             </AvatarFallback>
