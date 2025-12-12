@@ -1218,6 +1218,7 @@ export type Database = {
       quick_replies: {
         Row: {
           category: string | null
+          category_id: string | null
           company_id: string
           created_at: string | null
           created_by_user_id: string | null
@@ -1236,6 +1237,7 @@ export type Database = {
         }
         Insert: {
           category?: string | null
+          category_id?: string | null
           company_id: string
           created_at?: string | null
           created_by_user_id?: string | null
@@ -1254,6 +1256,7 @@ export type Database = {
         }
         Update: {
           category?: string | null
+          category_id?: string | null
           company_id?: string
           created_at?: string | null
           created_by_user_id?: string | null
@@ -1271,6 +1274,13 @@ export type Database = {
           whatsapp_connection_id?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "quick_replies_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "quick_reply_categories"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "quick_replies_company_id_fkey"
             columns: ["company_id"]
@@ -1297,6 +1307,48 @@ export type Database = {
             columns: ["whatsapp_connection_id"]
             isOneToOne: false
             referencedRelation: "whatsapp_connections"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      quick_reply_categories: {
+        Row: {
+          company_id: string
+          created_at: string | null
+          created_by_user_id: string | null
+          id: string
+          name: string
+          updated_at: string | null
+        }
+        Insert: {
+          company_id: string
+          created_at?: string | null
+          created_by_user_id?: string | null
+          id?: string
+          name: string
+          updated_at?: string | null
+        }
+        Update: {
+          company_id?: string
+          created_at?: string | null
+          created_by_user_id?: string | null
+          id?: string
+          name?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "quick_reply_categories_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "quick_reply_categories_created_by_user_id_fkey"
+            columns: ["created_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
         ]

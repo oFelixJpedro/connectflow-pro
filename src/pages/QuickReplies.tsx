@@ -60,6 +60,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useQuickRepliesData, QuickReply, QuickReplyMediaType, QuickReplyVisibility } from '@/hooks/useQuickRepliesData';
+import { useQuickReplyCategories, QuickReplyCategory } from '@/hooks/useQuickReplyCategories';
 import { useAudioRecorder } from '@/hooks/useAudioRecorder';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
@@ -68,8 +69,9 @@ import { cn } from '@/lib/utils';
 import { VisibilityTabs } from '@/components/quick-replies/VisibilityTabs';
 import { VisibilitySelector } from '@/components/quick-replies/VisibilitySelector';
 import { VisibilityBadge } from '@/components/quick-replies/VisibilityBadge';
+import { CreateCategoryModal } from '@/components/quick-replies/CreateCategoryModal';
 
-const defaultCategories = ['Saudações', 'Geral', 'Encerramento', 'Informações', 'Vendas', 'Suporte'];
+
 
 // File types matching exactly what AttachmentMenu accepts for WhatsApp sending
 const mediaTypeOptions: { value: QuickReplyMediaType; label: string; icon: React.ReactNode; accept: string }[] = [
@@ -110,10 +112,11 @@ export default function QuickReplies() {
     deleteQuickReply,
     uploadMedia,
     deleteMedia,
-    getCategories,
     getFilteredByVisibility,
     getVisibilityCounts,
   } = useQuickRepliesData();
+  
+  const { categories: dbCategories, loading: categoriesLoading } = useQuickReplyCategories();
   
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
@@ -212,9 +215,8 @@ export default function QuickReplies() {
     loadData();
   }, [profile?.company_id, userDepartments, isAdminOrOwner]);
 
-  // Get all categories (existing + defaults)
-  const existingCategories = getCategories();
-  const allCategories = [...new Set([...defaultCategories, ...existingCategories])].sort();
+  // Categories from database
+  const allCategories = dbCategories;
 
   // Get replies filtered by visibility tab, then by search/category
   const visibilityFilteredReplies = getFilteredByVisibility(visibilityTab, selectedConnectionId, selectedDepartmentId);
@@ -226,7 +228,7 @@ export default function QuickReplies() {
       const matchesMessage = reply.message.toLowerCase().includes(query);
       if (!matchesShortcut && !matchesTitle && !matchesMessage) return false;
     }
-    if (selectedCategory !== 'all' && reply.category !== selectedCategory) {
+    if (selectedCategory !== 'all' && reply.category_id !== selectedCategory) {
       return false;
     }
     return true;
@@ -328,7 +330,7 @@ export default function QuickReplies() {
       shortcut,
       title,
       message: message || '',
-      category,
+      category_id: category && category !== '__none__' ? category : null,
       is_global: visibility === 'all',
       media_url: mediaUrl,
       media_type: mediaType,
@@ -349,7 +351,7 @@ export default function QuickReplies() {
     setEditShortcut(reply.shortcut);
     setEditTitle(reply.title);
     setEditMessage(reply.message);
-    setEditCategory(reply.category || '');
+    setEditCategory(reply.category_id || '__none__');
     setEditVisibility(reply.visibility_type || 'all');
     setEditDepartmentId(reply.department_id);
     setEditConnectionId(reply.whatsapp_connection_id);
@@ -399,7 +401,7 @@ export default function QuickReplies() {
       shortcut: editShortcut,
       title: editTitle,
       message: editMessage,
-      category: editCategory,
+      category_id: editCategory && editCategory !== '__none__' ? editCategory : null,
       is_global: editVisibility === 'all',
       media_url: mediaUrl,
       media_type: editMediaType,
@@ -508,16 +510,18 @@ export default function QuickReplies() {
             Crie atalhos para mensagens frequentes
           </p>
         </div>
-        <Dialog open={isAddDialogOpen} onOpenChange={(open) => {
-          setIsAddDialogOpen(open);
-          if (!open) resetAddForm();
-        }}>
-          <DialogTrigger asChild>
-            <Button>
-              <Plus className="w-4 h-4 mr-2" />
-              Nova Resposta
-            </Button>
-          </DialogTrigger>
+        <div className="flex items-center gap-2">
+          <CreateCategoryModal />
+          <Dialog open={isAddDialogOpen} onOpenChange={(open) => {
+            setIsAddDialogOpen(open);
+            if (!open) resetAddForm();
+          }}>
+            <DialogTrigger asChild>
+              <Button>
+                <Plus className="w-4 h-4 mr-2" />
+                Nova Resposta
+              </Button>
+            </DialogTrigger>
           <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Nova Resposta Rápida</DialogTitle>
@@ -545,9 +549,10 @@ export default function QuickReplies() {
                       <SelectValue placeholder="Selecione" />
                     </SelectTrigger>
                     <SelectContent>
+                      <SelectItem value="__none__">Sem categoria</SelectItem>
                       {allCategories.map((cat) => (
-                        <SelectItem key={cat} value={cat}>
-                          {cat}
+                        <SelectItem key={cat.id} value={cat.id}>
+                          {cat.name}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -802,6 +807,7 @@ export default function QuickReplies() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+        </div>
       </div>
 
       {/* Info Card */}
@@ -856,8 +862,8 @@ export default function QuickReplies() {
           <SelectContent>
             <SelectItem value="all">Todas</SelectItem>
             {allCategories.map((cat) => (
-              <SelectItem key={cat} value={cat}>
-                {cat}
+              <SelectItem key={cat.id} value={cat.id}>
+                {cat.name}
               </SelectItem>
             ))}
           </SelectContent>
@@ -888,11 +894,11 @@ export default function QuickReplies() {
                     <h4 className="font-medium text-foreground mt-2 truncate">
                       {reply.title}
                     </h4>
-                    {reply.category && (
+                    {reply.category_id && (
                       <div className="flex items-center gap-1 mt-1">
                         <FolderOpen className="w-3 h-3 text-muted-foreground" />
                         <span className="text-xs text-muted-foreground">
-                          {reply.category}
+                          {allCategories.find(c => c.id === reply.category_id)?.name || 'Categoria'}
                         </span>
                       </div>
                     )}
@@ -1029,9 +1035,10 @@ export default function QuickReplies() {
                     <SelectValue placeholder="Selecione" />
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="__none__">Sem categoria</SelectItem>
                     {allCategories.map((cat) => (
-                      <SelectItem key={cat} value={cat}>
-                        {cat}
+                      <SelectItem key={cat.id} value={cat.id}>
+                        {cat.name}
                       </SelectItem>
                     ))}
                   </SelectContent>

@@ -14,7 +14,8 @@ export interface QuickReply {
   title: string;
   message: string;
   is_global: boolean;
-  category: string | null;
+  category: string | null; // Legacy - keeping for backwards compatibility
+  category_id: string | null; // New - references quick_reply_categories
   use_count: number;
   media_url: string | null;
   media_type: QuickReplyMediaType | null;
@@ -29,7 +30,8 @@ export interface QuickReplyFormData {
   shortcut: string;
   title: string;
   message: string;
-  category?: string;
+  category?: string; // Legacy
+  category_id?: string | null; // New
   is_global: boolean;
   media_url?: string | null;
   media_type?: QuickReplyMediaType;
@@ -224,7 +226,8 @@ export function useQuickRepliesData() {
           shortcut: shortcut.toLowerCase().trim(),
           title: data.title.trim(),
           message: data.message.trim(),
-          category: data.category?.trim() || null,
+          category: data.category?.trim() || null, // Legacy
+          category_id: data.category_id || null, // New
           is_global: data.visibility_type === 'all',
           media_url: data.media_url || null,
           media_type: data.media_type || 'text',
@@ -284,7 +287,8 @@ export function useQuickRepliesData() {
           shortcut: shortcut.toLowerCase().trim(),
           title: data.title.trim(),
           message: data.message.trim(),
-          category: data.category?.trim() || null,
+          category: data.category?.trim() || null, // Legacy
+          category_id: data.category_id || null, // New
           is_global: data.visibility_type === 'all',
           media_url: data.media_url || null,
           media_type: data.media_type || 'text',
@@ -315,6 +319,7 @@ export function useQuickRepliesData() {
                 title: data.title.trim(),
                 message: data.message.trim(),
                 category: data.category?.trim() || null,
+                category_id: data.category_id || null,
                 is_global: data.visibility_type === 'all',
                 media_url: data.media_url || null,
                 media_type: data.media_type || 'text',
@@ -403,16 +408,6 @@ export function useQuickRepliesData() {
     }
   };
 
-  const getCategories = useCallback((): string[] => {
-    const categories = new Set<string>();
-    quickReplies.forEach(reply => {
-      if (reply.category) {
-        categories.add(reply.category);
-      }
-    });
-    return Array.from(categories).sort();
-  }, [quickReplies]);
-
   return {
     quickReplies,
     loading,
@@ -424,7 +419,6 @@ export function useQuickRepliesData() {
     incrementUseCount,
     uploadMedia,
     deleteMedia,
-    getCategories,
     getFilteredByVisibility,
     getVisibilityCounts,
     refresh: loadQuickReplies,
