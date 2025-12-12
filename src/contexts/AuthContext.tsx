@@ -218,6 +218,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   async function updateProfile(updates: Partial<Profile>) {
     if (!user) return { error: new Error('User not authenticated') };
 
+    console.log('[AuthContext] updateProfile chamado com:', updates);
+    console.trace('[AuthContext] Stack trace:');
+
     const { error } = await supabase
       .from('profiles')
       .update(updates)
@@ -247,6 +250,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   async function updateStatus(status: Profile['status']) {
     if (!user) return;
+
+    console.log('[AuthContext] updateStatus chamado com:', status);
+    console.trace('[AuthContext] Stack trace:');
 
     await supabase
       .from('profiles')
