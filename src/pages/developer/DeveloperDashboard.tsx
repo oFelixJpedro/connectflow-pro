@@ -794,6 +794,7 @@ export default function DeveloperDashboard() {
         <EditUserModal
           user={editUser.user}
           company={editUser.company}
+          companyUsers={companyUsers[editUser.company.id] || []}
           onClose={() => setEditUser(null)}
           onSuccess={() => {
             setEditUser(null);

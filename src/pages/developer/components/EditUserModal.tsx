@@ -46,13 +46,21 @@ interface Company {
 interface EditUserModalProps {
   user: User;
   company: Company;
+  companyUsers: User[];
   onClose: () => void;
   onSuccess: () => void;
 }
 
-export default function EditUserModal({ user, company, onClose, onSuccess }: EditUserModalProps) {
+export default function EditUserModal({ user, company, companyUsers, onClose, onSuccess }: EditUserModalProps) {
   const [fullName, setFullName] = useState(user.full_name);
   const [role, setRole] = useState(user.role || 'agent');
+  
+  // Check if another user (not the current one) is already owner
+  const existingOwner = companyUsers.find(u => u.role === 'owner' && u.id !== user.id);
+  const currentUserIsOwner = user.role === 'owner';
+  
+  // Show owner option only if: current user is owner OR no other owner exists
+  const showOwnerOption = currentUserIsOwner || !existingOwner;
   const [active, setActive] = useState(user.active);
   const [isLoading, setIsLoading] = useState(false);
   const [pendingRequestId, setPendingRequestId] = useState<string | null>(null);
@@ -236,7 +244,7 @@ export default function EditUserModal({ user, company, onClose, onSuccess }: Edi
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="owner">Proprietário</SelectItem>
+                {showOwnerOption && <SelectItem value="owner">Proprietário</SelectItem>}
                 <SelectItem value="admin">Administrador</SelectItem>
                 <SelectItem value="supervisor">Supervisor</SelectItem>
                 <SelectItem value="agent">Atendente</SelectItem>
