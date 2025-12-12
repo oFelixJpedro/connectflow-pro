@@ -1,6 +1,7 @@
 import { Globe, User, Users, Smartphone } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { QuickReplyVisibility } from '@/hooks/useQuickRepliesData';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface VisibilityTabsProps {
   activeTab: QuickReplyVisibility;
@@ -54,11 +55,15 @@ export function VisibilityTabs({
   hasDepartments,
   hasConnection,
 }: VisibilityTabsProps) {
+  const { userRole } = useAuth();
+  const isAdminOrOwner = userRole?.role === 'owner' || userRole?.role === 'admin';
+
   return (
     <div className="flex gap-1 p-1 bg-muted rounded-lg">
       {tabs.map((tab) => {
+        // Admin/owner always have access to departments tab
         const isDisabled = 
-          (tab.id === 'department' && !hasDepartments) ||
+          (tab.id === 'department' && !hasDepartments && !isAdminOrOwner) ||
           (tab.id === 'connection' && !hasConnection);
         const count = counts[tab.id];
         
@@ -72,7 +77,7 @@ export function VisibilityTabs({
               : tab.description
             }
             className={cn(
-              "flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors flex-1",
+              "flex items-center justify-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors flex-1",
               activeTab === tab.id
                 ? "bg-background text-foreground shadow-sm"
                 : "text-muted-foreground hover:text-foreground",
