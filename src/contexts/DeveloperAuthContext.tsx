@@ -11,45 +11,34 @@ interface DeveloperAuthContextType {
   isLoading: boolean;
   isAuthenticated: boolean;
   login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
-  logout: () => void;
+  logout: () => Promise<void>;
+  checkAuth: () => Promise<void>;
 }
 
 const DeveloperAuthContext = createContext<DeveloperAuthContextType | undefined>(undefined);
-
-const DEVELOPER_TOKEN_KEY = 'developer_auth_token';
 
 export function DeveloperAuthProvider({ children }: { children: ReactNode }) {
   const [developer, setDeveloper] = useState<Developer | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    // Check for existing token on mount
-    const token = localStorage.getItem(DEVELOPER_TOKEN_KEY);
-    if (token) {
-      verifyToken(token);
-    } else {
-      setIsLoading(false);
-    }
+    // Check for existing session on mount via httpOnly cookie
+    checkAuth();
   }, []);
 
-  const verifyToken = async (token: string) => {
+  const checkAuth = async () => {
     try {
       const { data, error } = await supabase.functions.invoke('developer-auth', {
-        body: { action: 'verify' },
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
+        body: { action: 'verify' }
       });
 
       if (error || !data?.valid) {
-        localStorage.removeItem(DEVELOPER_TOKEN_KEY);
         setDeveloper(null);
       } else {
         setDeveloper(data.developer);
       }
     } catch (err) {
-      console.error('Token verification failed:', err);
-      localStorage.removeItem(DEVELOPER_TOKEN_KEY);
+      console.error('Auth verification failed:', err);
       setDeveloper(null);
     } finally {
       setIsLoading(false);
@@ -70,8 +59,9 @@ export function DeveloperAuthProvider({ children }: { children: ReactNode }) {
         return { success: false, error: data.error };
       }
 
-      if (data.success && data.token) {
-        localStorage.setItem(DEVELOPER_TOKEN_KEY, data.token);
+      if (data.success) {
+        // Cookie is set automatically by the server via Set-Cookie header
+        // No localStorage needed!
         setDeveloper(data.developer);
         return { success: true };
       }
@@ -83,9 +73,18 @@ export function DeveloperAuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const logout = () => {
-    localStorage.removeItem(DEVELOPER_TOKEN_KEY);
-    setDeveloper(null);
+  const logout = async () => {
+    try {
+      // Call logout endpoint to delete httpOnly cookie
+      await supabase.functions.invoke('developer-auth', {
+        body: { action: 'logout' }
+      });
+    } catch (error) {
+      console.error('Logout error:', error);
+    } finally {
+      // Always clear local state regardless of server response
+      setDeveloper(null);
+    }
   };
 
   return (
@@ -95,7 +94,8 @@ export function DeveloperAuthProvider({ children }: { children: ReactNode }) {
         isLoading,
         isAuthenticated: !!developer,
         login,
-        logout
+        logout,
+        checkAuth
       }}
     >
       {children}
@@ -111,6 +111,11 @@ export function useDeveloperAuth() {
   return context;
 }
 
+// Note: getDeveloperToken is no longer needed since token is in httpOnly cookie
+// Keeping for backwards compatibility but it always returns null now
 export function getDeveloperToken(): string | null {
-  return localStorage.getItem(DEVELOPER_TOKEN_KEY);
+  // Token is now stored in httpOnly cookie - JavaScript cannot access it
+  // This function is deprecated and will return null
+  console.warn('getDeveloperToken is deprecated. Token is now stored in httpOnly cookie.');
+  return null;
 }
