@@ -235,8 +235,8 @@ export default function CreateCompanyModal({ onClose, onSuccess }: CreateCompany
 
   return (
     <Dialog open onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
+      <DialogContent className="sm:max-w-lg max-h-[90vh] flex flex-col">
+        <DialogHeader className="flex-shrink-0">
           <DialogTitle className="flex items-center gap-2">
             <Building2 className="h-5 w-5" />
             Nova Empresa
@@ -246,7 +246,7 @@ export default function CreateCompanyModal({ onClose, onSuccess }: CreateCompany
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-6">
+        <div className="space-y-6 overflow-y-auto flex-1 pr-2">
           {/* Company Data */}
           <div className="space-y-4">
             <h3 className="font-medium text-sm">Dados da Empresa</h3>
