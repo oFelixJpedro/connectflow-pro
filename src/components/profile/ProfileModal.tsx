@@ -11,21 +11,11 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import { Camera, Loader2, Save, X, Circle } from 'lucide-react';
+import { Camera, Loader2, Save, X } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
-import type { Database } from '@/integrations/supabase/types';
-
-type UserStatus = Database['public']['Enums']['user_status'];
 
 interface ProfileModalProps {
   isOpen: boolean;
@@ -37,22 +27,13 @@ interface ProfileMetadata {
   bio?: string;
 }
 
-const STATUS_OPTIONS: { value: UserStatus; label: string; color: string }[] = [
-  { value: 'online', label: 'Online', color: 'text-green-500' },
-  { value: 'away', label: 'Ausente', color: 'text-yellow-500' },
-  { value: 'busy', label: 'Ocupado', color: 'text-red-500' },
-  { value: 'offline', label: 'Offline', color: 'text-gray-400' },
-];
-
 export function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
-  const { profile, updateProfile, updateStatus } = useAuth();
+  const { profile, updateProfile } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [fullName, setFullName] = useState('');
   const [signature, setSignature] = useState('');
   const [bio, setBio] = useState('');
-  // Status is tracked separately - only updated when user explicitly changes it
-  const [selectedStatus, setSelectedStatus] = useState<UserStatus | null>(null);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
@@ -63,8 +44,6 @@ export function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
     if (isOpen && profile) {
       setFullName(profile.full_name || '');
       setAvatarUrl(profile.avatar_url);
-      // Reset selected status to null - we'll use profile.status directly
-      setSelectedStatus(null);
       
       // Parse metadata for signature and bio
       const metadata = profile.metadata as ProfileMetadata | null;
@@ -77,9 +56,6 @@ export function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
     }
   }, [isOpen, profile]);
 
-  // Current status to display - use selectedStatus if user changed it, otherwise profile.status
-  const currentStatus = selectedStatus ?? profile?.status;
-
   const getInitials = (name: string) => {
     return name
       .split(' ')
@@ -87,13 +63,6 @@ export function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
       .join('')
       .toUpperCase()
       .slice(0, 2);
-  };
-
-  const sanitizeFileName = (fileName: string): string => {
-    return fileName
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .replace(/[^a-zA-Z0-9._-]/g, '_');
   };
 
   const handleAvatarClick = () => {
@@ -140,7 +109,7 @@ export function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
     try {
       let newAvatarUrl = avatarUrl;
 
-      // Upload avatar if changed - using same pattern as company logo
+      // Upload avatar if changed
       if (avatarFile) {
         const fileExt = avatarFile.name.split('.').pop() || 'jpg';
         const fileName = `${profile.id}/avatar.${fileExt}`;
@@ -182,11 +151,6 @@ export function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
         toast.error('Erro ao salvar perfil');
         console.error('Update error:', error);
         return;
-      }
-
-      // Update status only if user explicitly changed it (selectedStatus is not null)
-      if (selectedStatus !== null && selectedStatus !== profile.status) {
-        await updateStatus(selectedStatus);
       }
 
       toast.success('Perfil atualizado com sucesso!');
@@ -268,29 +232,6 @@ export function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
               />
               <p className="text-xs text-muted-foreground">
                 O e-mail não pode ser alterado
-              </p>
-            </div>
-
-            {/* Status Field */}
-            <div className="space-y-2">
-              <Label htmlFor="status">Status</Label>
-              <Select value={currentStatus ?? undefined} onValueChange={(value) => setSelectedStatus(value as UserStatus)}>
-                <SelectTrigger id="status">
-                  <SelectValue placeholder="Selecione seu status" />
-                </SelectTrigger>
-                <SelectContent>
-                  {STATUS_OPTIONS.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      <div className="flex items-center gap-2">
-                        <Circle className={cn("w-3 h-3 fill-current", option.color)} />
-                        {option.label}
-                      </div>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-muted-foreground">
-                Seu status será visível para toda a equipe em tempo real
               </p>
             </div>
 

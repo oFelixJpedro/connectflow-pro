@@ -14,7 +14,6 @@ export interface Company {
 
 // User types
 export type UserRole = 'owner' | 'admin' | 'supervisor' | 'agent' | 'viewer';
-export type UserStatus = 'online' | 'offline' | 'away' | 'busy';
 
 export interface User {
   id: string;
@@ -24,7 +23,6 @@ export interface User {
   avatarUrl?: string;
   role: UserRole;
   departmentId?: string;
-  status: UserStatus;
   maxConversations: number;
   active: boolean;
   lastSeenAt?: string;
