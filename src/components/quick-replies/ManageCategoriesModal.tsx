@@ -159,8 +159,8 @@ export function ManageCategoriesModal({ trigger }: ManageCategoriesModalProps) {
             </DialogDescription>
           </DialogHeader>
           
-          <ScrollArea className="flex-1 max-h-[60vh]">
-            <div className="flex flex-col gap-4 pb-2 pr-4">
+          <div className="flex-1 overflow-y-auto pr-2">
+            <div className="flex flex-col gap-4 pb-2">
             {/* Create new category button/form */}
             {!isCreating ? (
               <Button 
@@ -323,7 +323,7 @@ export function ManageCategoriesModal({ trigger }: ManageCategoriesModalProps) {
               )}
             </div>
           </div>
-          </ScrollArea>
+          </div>
         </DialogContent>
       </Dialog>
       
