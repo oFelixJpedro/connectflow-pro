@@ -1552,6 +1552,7 @@ export type Database = {
           name: string
           phone_number: string
           qr_code: string | null
+          receive_group_messages: boolean | null
           session_id: string
           settings: Json | null
           status: Database["public"]["Enums"]["connection_status"] | null
@@ -1570,6 +1571,7 @@ export type Database = {
           name: string
           phone_number: string
           qr_code?: string | null
+          receive_group_messages?: boolean | null
           session_id: string
           settings?: Json | null
           status?: Database["public"]["Enums"]["connection_status"] | null
@@ -1588,6 +1590,7 @@ export type Database = {
           name?: string
           phone_number?: string
           qr_code?: string | null
+          receive_group_messages?: boolean | null
           session_id?: string
           settings?: Json | null
           status?: Database["public"]["Enums"]["connection_status"] | null

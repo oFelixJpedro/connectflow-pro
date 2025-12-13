@@ -585,14 +585,103 @@ Deno.serve(async (req) => {
       )
     }
 
+    // ========== ACTION: UPDATE_WEBHOOK ==========
+    if (action === 'update_webhook') {
+      const { receiveGroupMessages, connectionId } = requestBody
+      console.log('📡 [UPDATE_WEBHOOK] Updating webhook settings...')
+      console.log('   - Connection ID:', connectionId)
+      console.log('   - Receive group messages:', receiveGroupMessages)
+      
+      // Fetch connection from database
+      const { data: connection, error: fetchError } = await supabaseClient
+        .from('whatsapp_connections')
+        .select('instance_token, session_id')
+        .eq('id', connectionId)
+        .single()
+      
+      if (fetchError || !connection || !connection.instance_token) {
+        console.error('Connection not found or missing token:', fetchError)
+        return new Response(
+          JSON.stringify({ error: 'Connection not found' }),
+          { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+      
+      const webhookUrl = `${SUPABASE_URL}/functions/v1/whatsapp-webhook`
+      
+      // Build excludeMessages array based on setting
+      const excludeMessages = receiveGroupMessages 
+        ? ['wasSentByApi'] 
+        : ['wasSentByApi', 'isGroupYes']
+      
+      console.log('   - Webhook URL:', webhookUrl)
+      console.log('   - Exclude messages:', excludeMessages)
+      
+      try {
+        const response = await fetch(`${UAZAPI_BASE_URL}/webhook`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'token': connection.instance_token
+          },
+          body: JSON.stringify({
+            enabled: true,
+            url: webhookUrl,
+            events: ['messages', 'messages_update', 'connection'],
+            excludeMessages: excludeMessages
+          })
+        })
+        
+        const responseText = await response.text()
+        console.log('   - Response status:', response.status)
+        console.log('   - Response:', responseText)
+        
+        if (!response.ok) {
+          console.error('❌ Failed to update webhook:', responseText)
+          return new Response(
+            JSON.stringify({ error: 'Failed to update webhook settings' }),
+            { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
+        }
+        
+        // Update database
+        const { error: updateError } = await supabaseClient
+          .from('whatsapp_connections')
+          .update({ receive_group_messages: receiveGroupMessages })
+          .eq('id', connectionId)
+        
+        if (updateError) {
+          console.error('❌ Failed to update database:', updateError)
+          return new Response(
+            JSON.stringify({ error: 'Failed to save setting' }),
+            { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
+        }
+        
+        console.log('✅ Webhook updated successfully!')
+        return new Response(
+          JSON.stringify({ success: true }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+        console.error('❌ Error updating webhook:', errorMessage)
+        return new Response(
+          JSON.stringify({ error: errorMessage }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+    }
+
     console.error('Invalid action received:', action)
-    console.error('Valid actions are: init, status, logout, delete')
+    console.error('Valid actions are: init, status, logout, delete, update_webhook')
 
     return new Response(
       JSON.stringify({ 
         error: 'Invalid action',
         received: action,
-        valid: ['init', 'status', 'logout', 'delete']
+        valid: ['init', 'status', 'logout', 'delete', 'update_webhook']
       }),
       { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )
