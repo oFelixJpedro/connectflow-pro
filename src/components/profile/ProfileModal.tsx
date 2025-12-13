@@ -45,9 +45,11 @@ export function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
       setFullName(profile.full_name || '');
       setAvatarUrl(profile.avatar_url);
       
-      // Parse metadata for signature and bio
+      // Load signature from profiles table (new field)
+      setSignature(profile.signature || '');
+      
+      // Parse metadata for bio
       const metadata = profile.metadata as ProfileMetadata | null;
-      setSignature(metadata?.signature || '');
       setBio(metadata?.bio || '');
       
       // Reset file state
@@ -132,19 +134,19 @@ export function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
         newAvatarUrl = urlData.publicUrl;
       }
 
-      // Build new metadata
+      // Build new metadata (signature is now stored in its own column)
       const currentMetadata = (profile.metadata as ProfileMetadata) || {};
       const newMetadata = {
         ...currentMetadata,
-        signature: signature.trim() || undefined,
         bio: bio.trim() || undefined,
       };
 
-      // Update profile
+      // Update profile (signature is now a direct column)
       const { error } = await updateProfile({
         full_name: fullName.trim(),
         avatar_url: newAvatarUrl,
         metadata: newMetadata,
+        signature: signature.trim() || null,
       });
 
       if (error) {
@@ -243,16 +245,29 @@ export function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
                 value={signature}
                 onChange={(e) => setSignature(e.target.value)}
                 placeholder="Ex: Dr. João Silva, Atendente Maria"
-                maxLength={50}
+                maxLength={100}
               />
               <div className="flex justify-between">
                 <p className="text-xs text-muted-foreground">
                   Esta assinatura pode ser usada nas suas mensagens
                 </p>
                 <span className="text-xs text-muted-foreground">
-                  {signature.length}/50
+                  {signature.length}/100
                 </span>
               </div>
+              
+              {/* Status da assinatura */}
+              {profile?.signature_enabled && (
+                <div className="text-xs text-green-700 bg-green-50 p-2 rounded mt-2 border border-green-200">
+                  ✅ Assinatura ativada pelo administrador
+                </div>
+              )}
+              
+              {!profile?.signature_enabled && signature.trim() && (
+                <div className="text-xs text-muted-foreground bg-muted/50 p-2 rounded mt-2">
+                  ℹ️ Assinatura definida mas não ativada. Solicite a um administrador para ativar.
+                </div>
+              )}
             </div>
 
             {/* Bio Field */}

@@ -1274,6 +1274,8 @@ export type Database = {
           max_conversations: number | null
           metadata: Json | null
           needs_password_change: boolean
+          signature: string | null
+          signature_enabled: boolean | null
           updated_at: string | null
         }
         Insert: {
@@ -1289,6 +1291,8 @@ export type Database = {
           max_conversations?: number | null
           metadata?: Json | null
           needs_password_change?: boolean
+          signature?: string | null
+          signature_enabled?: boolean | null
           updated_at?: string | null
         }
         Update: {
@@ -1304,6 +1308,8 @@ export type Database = {
           max_conversations?: number | null
           metadata?: Json | null
           needs_password_change?: boolean
+          signature?: string | null
+          signature_enabled?: boolean | null
           updated_at?: string | null
         }
         Relationships: [
