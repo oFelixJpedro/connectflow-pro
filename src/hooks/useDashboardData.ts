@@ -33,6 +33,7 @@ interface RecentConversation {
   contact: {
     name: string | null;
     phoneNumber: string;
+    avatarUrl: string | null;
   };
   lastMessageAt: string;
 }
@@ -182,7 +183,7 @@ export function useDashboardData() {
             status,
             unread_count,
             last_message_at,
-            contact:contacts(name, phone_number)
+            contact:contacts(name, phone_number, avatar_url)
           `)
           .eq('company_id', company.id)
           .order('last_message_at', { ascending: false })
@@ -387,6 +388,7 @@ export function useDashboardData() {
           contact: {
             name: conv.contact?.name || null,
             phoneNumber: conv.contact?.phone_number || '',
+            avatarUrl: conv.contact?.avatar_url || null,
           },
           lastMessageAt: conv.last_message_at || '',
         }));
