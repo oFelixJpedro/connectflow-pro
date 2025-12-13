@@ -694,6 +694,7 @@ export type Database = {
       }
       kanban_boards: {
         Row: {
+          auto_add_new_contacts: boolean
           company_id: string
           created_at: string | null
           id: string
@@ -701,6 +702,7 @@ export type Database = {
           whatsapp_connection_id: string
         }
         Insert: {
+          auto_add_new_contacts?: boolean
           company_id: string
           created_at?: string | null
           id?: string
@@ -708,6 +710,7 @@ export type Database = {
           whatsapp_connection_id: string
         }
         Update: {
+          auto_add_new_contacts?: boolean
           company_id?: string
           created_at?: string | null
           id?: string
