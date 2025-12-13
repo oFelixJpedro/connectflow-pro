@@ -70,6 +70,7 @@ export function useNotifications() {
   // Track processed message IDs to avoid duplicate sounds
   const processedMessageIds = useRef<Set<string>>(new Set());
   const isInitialLoad = useRef(true);
+  const subscriptionReadyAt = useRef<number>(0);
 
   // Check if WhatsApp sound is enabled
   const isWhatsAppSoundEnabled = useCallback((): boolean => {
@@ -449,6 +450,12 @@ export function useNotifications() {
   useEffect(() => {
     if (!company?.id || !profile?.id) return;
 
+    // Mark when subscription becomes ready - ignore messages in first 3 seconds
+    subscriptionReadyAt.current = Date.now();
+    const INITIAL_DELAY_MS = 3000;
+
+    console.log('[Notifications] Setting up WhatsApp message subscription for company:', company.id);
+
     const channel = supabase
       .channel('notifications-messages')
       .on(
@@ -461,12 +468,18 @@ export function useNotifications() {
         async (payload) => {
           const message = payload.new as any;
           
+          console.log('[Notifications] Received message event:', message.id, 'direction:', message.direction, 'sender_type:', message.sender_type);
+          
           // Skip if already processed
-          if (processedMessageIds.current.has(message.id)) return;
+          if (processedMessageIds.current.has(message.id)) {
+            console.log('[Notifications] Already processed, skipping:', message.id);
+            return;
+          }
           processedMessageIds.current.add(message.id);
           
           // Only notify for inbound messages from contacts
           if (message.direction !== 'inbound' || message.sender_type !== 'contact') {
+            console.log('[Notifications] Not inbound contact message, skipping');
             return;
           }
 
@@ -482,11 +495,15 @@ export function useNotifications() {
             return;
           }
 
-          console.log('[Notifications] New WhatsApp message received:', message.id, 'conversation:', message.conversation_id);
+          console.log('[Notifications] Valid WhatsApp message received:', message.id, 'conversation:', message.conversation_id);
           
-          // Play sound only after initial load
-          if (!isInitialLoad.current) {
+          // Play sound only after initial delay to avoid sounds on page load
+          const timeSinceReady = Date.now() - subscriptionReadyAt.current;
+          if (timeSinceReady > INITIAL_DELAY_MS) {
+            console.log('[Notifications] Playing sound for message:', message.id);
             playWhatsAppSound(message.conversation_id);
+          } else {
+            console.log('[Notifications] Skipping sound - still in initial delay period');
           }
           
           // Refresh counts
@@ -494,7 +511,9 @@ export function useNotifications() {
           loadRecentNotifications();
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        console.log('[Notifications] WhatsApp subscription status:', status);
+      });
 
     return () => {
       supabase.removeChannel(channel);
@@ -530,6 +549,11 @@ export function useNotifications() {
   useEffect(() => {
     if (!company?.id || !profile?.id) return;
 
+    const internalChatReadyAt = Date.now();
+    const INITIAL_DELAY_MS = 3000;
+
+    console.log('[Notifications] Setting up internal chat subscription');
+
     const channel = supabase
       .channel('notifications-internal-chat')
       .on(
@@ -548,8 +572,9 @@ export function useNotifications() {
           
           processedMessageIds.current.add(message.id);
           
-          // Play sound only after initial load (no conversation ID check for internal chat)
-          if (!isInitialLoad.current) {
+          // Play sound only after initial delay
+          const timeSinceReady = Date.now() - internalChatReadyAt;
+          if (timeSinceReady > INITIAL_DELAY_MS) {
             console.log('[Notifications] New internal chat message received:', message.id);
             playInternalChatSound();
           }
@@ -558,7 +583,9 @@ export function useNotifications() {
           refreshCounts();
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        console.log('[Notifications] Internal chat subscription status:', status);
+      });
 
     return () => {
       supabase.removeChannel(channel);
