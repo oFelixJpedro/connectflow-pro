@@ -13,6 +13,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { cn } from '@/lib/utils';
 import { useDashboardData } from '@/hooks/useDashboardData';
 import { DashboardFilters } from '@/components/dashboard/DashboardFilters';
@@ -460,9 +461,14 @@ export default function Dashboard() {
                   key={conv.id}
                   className="flex items-center gap-4 p-3 rounded-lg hover:bg-muted/50 transition-colors cursor-pointer"
                 >
-                  <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center text-sm font-medium text-primary">
-                    {conv.contact?.name?.charAt(0) || '?'}
-                  </div>
+                  <Avatar className="w-10 h-10">
+                    {conv.contact?.avatarUrl && (
+                      <AvatarImage src={conv.contact.avatarUrl} alt={conv.contact?.name || 'Contato'} />
+                    )}
+                    <AvatarFallback className="bg-primary/10 text-primary text-sm font-medium">
+                      {conv.contact?.name?.charAt(0) || '?'}
+                    </AvatarFallback>
+                  </Avatar>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-foreground truncate">
                       {conv.contact?.name || conv.contact?.phoneNumber}
