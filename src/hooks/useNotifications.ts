@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
-import { useAppStore } from '@/stores/appStore';
 
 interface Notification {
   id: string;
@@ -26,111 +25,14 @@ interface UserAccessPermissions {
   allowedDepartmentIds: string[] | null; // null = all departments
 }
 
-interface NotificationSettings {
-  whatsappSoundNotifications?: boolean;
-  internalChatSoundNotifications?: boolean;
-}
-
-// Throttle tracking for sound notifications
-let lastWhatsAppSoundAt = 0;
-let lastInternalChatSoundAt = 0;
-const SOUND_THROTTLE_MS = 2000; // Minimum 2 seconds between sounds
-
-// Play notification sound using Web Audio API
-export const playNotificationSound = () => {
-  try {
-    const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-    const oscillator = audioContext.createOscillator();
-    const gainNode = audioContext.createGain();
-    
-    oscillator.connect(gainNode);
-    gainNode.connect(audioContext.destination);
-    
-    // Pleasant notification tone - A5 note
-    oscillator.frequency.value = 880;
-    oscillator.type = 'sine';
-    
-    gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
-    gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.4);
-    
-    oscillator.start(audioContext.currentTime);
-    oscillator.stop(audioContext.currentTime + 0.4);
-  } catch (e) {
-    console.warn('[Notifications] Sound not supported:', e);
-  }
-};
-
 export function useNotifications() {
   const { profile, company, userRole } = useAuth();
-  const selectedConversation = useAppStore(state => state.selectedConversation);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCounts, setUnreadCounts] = useState<UnreadCounts>({ whatsapp: 0, internalChat: 0, total: 0 });
   const [isLoading, setIsLoading] = useState(true);
   
-  // Track processed message IDs to avoid duplicate sounds
+  // Track processed message IDs to avoid duplicates
   const processedMessageIds = useRef<Set<string>>(new Set());
-  const isInitialLoad = useRef(true);
-  const subscriptionReadyAt = useRef<number>(0);
-
-  // Check if WhatsApp sound is enabled
-  const isWhatsAppSoundEnabled = useCallback((): boolean => {
-    if (!profile?.metadata) return true; // Default enabled
-    const metadata = profile.metadata as { notifications?: NotificationSettings };
-    return metadata.notifications?.whatsappSoundNotifications !== false;
-  }, [profile?.metadata]);
-
-  // Check if Internal Chat sound is enabled
-  const isInternalChatSoundEnabled = useCallback((): boolean => {
-    if (!profile?.metadata) return true; // Default enabled
-    const metadata = profile.metadata as { notifications?: NotificationSettings };
-    return metadata.notifications?.internalChatSoundNotifications !== false;
-  }, [profile?.metadata]);
-
-  // Play WhatsApp notification sound with throttling
-  const playWhatsAppSound = useCallback((forConversationId?: string) => {
-    // Don't play if user is viewing this conversation
-    if (forConversationId && selectedConversation?.id === forConversationId) {
-      console.log('[Notifications] Skipping sound - user is viewing this conversation');
-      return;
-    }
-
-    // Check user preference
-    if (!isWhatsAppSoundEnabled()) {
-      console.log('[Notifications] Skipping WhatsApp sound - disabled in settings');
-      return;
-    }
-
-    // Throttle
-    const now = Date.now();
-    if (now - lastWhatsAppSoundAt < SOUND_THROTTLE_MS) {
-      console.log('[Notifications] Skipping WhatsApp sound - throttled');
-      return;
-    }
-    
-    console.log('[Notifications] Playing WhatsApp notification sound');
-    lastWhatsAppSoundAt = now;
-    playNotificationSound();
-  }, [selectedConversation?.id, isWhatsAppSoundEnabled]);
-
-  // Play Internal Chat notification sound with throttling
-  const playInternalChatSound = useCallback(() => {
-    // Check user preference
-    if (!isInternalChatSoundEnabled()) {
-      console.log('[Notifications] Skipping internal chat sound - disabled in settings');
-      return;
-    }
-
-    // Throttle
-    const now = Date.now();
-    if (now - lastInternalChatSoundAt < SOUND_THROTTLE_MS) {
-      console.log('[Notifications] Skipping internal chat sound - throttled');
-      return;
-    }
-    
-    console.log('[Notifications] Playing internal chat notification sound');
-    lastInternalChatSoundAt = now;
-    playNotificationSound();
-  }, [isInternalChatSoundEnabled]);
 
   // Get user's access permissions for connections and departments
   const getUserAccessPermissions = useCallback(async (): Promise<UserAccessPermissions> => {
@@ -405,6 +307,7 @@ export function useNotifications() {
   }, []);
 
   // Initial load
+  // Initial load
   useEffect(() => {
     if (!company?.id || !profile?.id) return;
 
@@ -415,7 +318,6 @@ export function useNotifications() {
         loadRecentNotifications(),
       ]);
       setIsLoading(false);
-      isInitialLoad.current = false;
     };
 
     loadAll();
@@ -450,12 +352,6 @@ export function useNotifications() {
   useEffect(() => {
     if (!company?.id || !profile?.id) return;
 
-    // Mark when subscription becomes ready - ignore messages in first 3 seconds
-    subscriptionReadyAt.current = Date.now();
-    const INITIAL_DELAY_MS = 3000;
-
-    console.log('[Notifications] Setting up WhatsApp message subscription for company:', company.id);
-
     const channel = supabase
       .channel('notifications-messages')
       .on(
@@ -468,18 +364,12 @@ export function useNotifications() {
         async (payload) => {
           const message = payload.new as any;
           
-          console.log('[Notifications] Received message event:', message.id, 'direction:', message.direction, 'sender_type:', message.sender_type);
-          
           // Skip if already processed
-          if (processedMessageIds.current.has(message.id)) {
-            console.log('[Notifications] Already processed, skipping:', message.id);
-            return;
-          }
+          if (processedMessageIds.current.has(message.id)) return;
           processedMessageIds.current.add(message.id);
           
           // Only notify for inbound messages from contacts
           if (message.direction !== 'inbound' || message.sender_type !== 'contact') {
-            console.log('[Notifications] Not inbound contact message, skipping');
             return;
           }
 
@@ -491,19 +381,7 @@ export function useNotifications() {
             .single();
 
           if (!conversation || conversation.company_id !== company.id) {
-            console.log('[Notifications] Message not from user company, ignoring');
             return;
-          }
-
-          console.log('[Notifications] Valid WhatsApp message received:', message.id, 'conversation:', message.conversation_id);
-          
-          // Play sound only after initial delay to avoid sounds on page load
-          const timeSinceReady = Date.now() - subscriptionReadyAt.current;
-          if (timeSinceReady > INITIAL_DELAY_MS) {
-            console.log('[Notifications] Playing sound for message:', message.id);
-            playWhatsAppSound(message.conversation_id);
-          } else {
-            console.log('[Notifications] Skipping sound - still in initial delay period');
           }
           
           // Refresh counts
@@ -511,14 +389,12 @@ export function useNotifications() {
           loadRecentNotifications();
         }
       )
-      .subscribe((status) => {
-        console.log('[Notifications] WhatsApp subscription status:', status);
-      });
+      .subscribe();
 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [company?.id, profile?.id, refreshCounts, loadRecentNotifications, playWhatsAppSound]);
+  }, [company?.id, profile?.id, refreshCounts, loadRecentNotifications]);
 
   // Real-time subscription for conversation updates (unread count changes)
   useEffect(() => {
@@ -549,11 +425,6 @@ export function useNotifications() {
   useEffect(() => {
     if (!company?.id || !profile?.id) return;
 
-    const internalChatReadyAt = Date.now();
-    const INITIAL_DELAY_MS = 3000;
-
-    console.log('[Notifications] Setting up internal chat subscription');
-
     const channel = supabase
       .channel('notifications-internal-chat')
       .on(
@@ -572,25 +443,16 @@ export function useNotifications() {
           
           processedMessageIds.current.add(message.id);
           
-          // Play sound only after initial delay
-          const timeSinceReady = Date.now() - internalChatReadyAt;
-          if (timeSinceReady > INITIAL_DELAY_MS) {
-            console.log('[Notifications] New internal chat message received:', message.id);
-            playInternalChatSound();
-          }
-          
           // Refresh counts
           refreshCounts();
         }
       )
-      .subscribe((status) => {
-        console.log('[Notifications] Internal chat subscription status:', status);
-      });
+      .subscribe();
 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [company?.id, profile?.id, refreshCounts, playInternalChatSound]);
+  }, [company?.id, profile?.id, refreshCounts]);
 
   return {
     notifications,
@@ -601,6 +463,5 @@ export function useNotifications() {
     clearAll,
     markRoomAsRead,
     refreshCounts,
-    playNotificationSound,
   };
 }
