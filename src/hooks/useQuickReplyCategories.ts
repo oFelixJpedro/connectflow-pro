@@ -2,14 +2,31 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from '@/hooks/use-toast';
+import { QuickReplyVisibility } from './useQuickRepliesData';
 
 export interface QuickReplyCategory {
   id: string;
   name: string;
   company_id: string;
   created_by_user_id: string | null;
+  visibility_type: QuickReplyVisibility | null;
+  department_id: string | null;
+  whatsapp_connection_id: string | null;
   created_at: string;
   updated_at: string;
+}
+
+interface CategoryCreateOptions {
+  visibility_type?: QuickReplyVisibility;
+  department_id?: string | null;
+  whatsapp_connection_id?: string | null;
+}
+
+interface CategoryUpdateData {
+  name?: string;
+  visibility_type?: QuickReplyVisibility;
+  department_id?: string | null;
+  whatsapp_connection_id?: string | null;
 }
 
 export function useQuickReplyCategories() {
@@ -66,7 +83,7 @@ export function useQuickReplyCategories() {
     };
   }, [profile?.company_id, loadCategories]);
 
-  const createCategory = async (name: string): Promise<QuickReplyCategory | null> => {
+  const createCategory = async (name: string, options?: CategoryCreateOptions): Promise<QuickReplyCategory | null> => {
     if (!profile?.company_id || !user?.id) return null;
 
     const trimmedName = name.trim();
@@ -95,6 +112,9 @@ export function useQuickReplyCategories() {
           name: trimmedName,
           company_id: profile.company_id,
           created_by_user_id: user.id,
+          visibility_type: options?.visibility_type || 'all',
+          department_id: options?.department_id || null,
+          whatsapp_connection_id: options?.whatsapp_connection_id || null,
         })
         .select()
         .single();
@@ -127,6 +147,73 @@ export function useQuickReplyCategories() {
         variant: 'destructive',
       });
       return null;
+    }
+  };
+
+  const updateCategory = async (id: string, data: CategoryUpdateData): Promise<boolean> => {
+    try {
+      const categoryToUpdate = categories.find(c => c.id === id);
+
+      if (data.name) {
+        const trimmedName = data.name.trim();
+        if (trimmedName.length < 3) {
+          toast({
+            title: 'Nome muito curto',
+            description: 'O nome da categoria deve ter pelo menos 3 caracteres.',
+            variant: 'destructive',
+          });
+          return false;
+        }
+
+        if (trimmedName.length > 50) {
+          toast({
+            title: 'Nome muito longo',
+            description: 'O nome da categoria deve ter no máximo 50 caracteres.',
+            variant: 'destructive',
+          });
+          return false;
+        }
+        data.name = trimmedName;
+      }
+
+      const { error } = await supabase
+        .from('quick_reply_categories')
+        .update(data)
+        .eq('id', id);
+
+      if (error) {
+        if (error.code === '23505') {
+          toast({
+            title: 'Categoria já existe',
+            description: 'Já existe uma categoria com esse nome.',
+            variant: 'destructive',
+          });
+          return false;
+        }
+        throw error;
+      }
+
+      setCategories(prev => 
+        prev.map(c => c.id === id ? { ...c, ...data } : c)
+          .sort((a, b) => a.name.localeCompare(b.name))
+      );
+
+      toast({
+        title: 'Categoria atualizada',
+        description: categoryToUpdate 
+          ? `A categoria "${categoryToUpdate.name}" foi atualizada.`
+          : 'A categoria foi atualizada com sucesso.',
+      });
+
+      return true;
+    } catch (error) {
+      console.error('Erro ao atualizar categoria:', error);
+      toast({
+        title: 'Erro ao atualizar categoria',
+        description: 'Não foi possível atualizar a categoria.',
+        variant: 'destructive',
+      });
+      return false;
     }
   };
 
@@ -166,6 +253,7 @@ export function useQuickReplyCategories() {
     categories,
     loading,
     createCategory,
+    updateCategory,
     deleteCategory,
     refresh: loadCategories,
   };

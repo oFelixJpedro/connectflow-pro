@@ -69,7 +69,7 @@ import { cn } from '@/lib/utils';
 import { VisibilityTabs } from '@/components/quick-replies/VisibilityTabs';
 import { VisibilitySelector } from '@/components/quick-replies/VisibilitySelector';
 import { VisibilityBadge } from '@/components/quick-replies/VisibilityBadge';
-import { CreateCategoryModal } from '@/components/quick-replies/CreateCategoryModal';
+import { ManageCategoriesModal } from '@/components/quick-replies/ManageCategoriesModal';
 
 
 
@@ -511,7 +511,7 @@ export default function QuickReplies() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <CreateCategoryModal />
+          <ManageCategoriesModal />
           <Dialog open={isAddDialogOpen} onOpenChange={(open) => {
             setIsAddDialogOpen(open);
             if (!open) resetAddForm();
