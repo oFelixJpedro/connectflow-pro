@@ -308,22 +308,6 @@ serve(async (req) => {
       console.log('🔍 [PAYLOAD COMPLETO]:', JSON.stringify(payload, null, 2))
       console.log('🔍 ==========================================')
       
-      // Check for edit-related fields
-      const editFields = {
-        editedMessage: payload.message?.editedMessage,
-        protocolMessage: payload.message?.protocolMessage,
-        contextEdit: payload.message?.context?.edit,
-        isEdited: payload.message?.isEdited,
-        editMessageId: payload.message?.editMessageId,
-        originalId: payload.message?.originalId,
-        editedTimestamp: payload.message?.editedTimestamp,
-      }
-      
-      const hasEditFields = Object.values(editFields).some(v => v !== undefined && v !== null)
-      if (hasEditFields) {
-        console.log('📝 [CAMPOS DE EDIÇÃO DETECTADOS]:', JSON.stringify(editFields, null, 2))
-      }
-      
     } catch (e) {
       console.log(`❌ Failed to parse JSON: ${e}`)
       return new Response(
@@ -1263,17 +1247,17 @@ serve(async (req) => {
     }
     
     // ═══════════════════════════════════════════════════════════════════
-    // 7️⃣ ETAPA 4: VERIFICAR DUPLICATA OU EDIÇÃO
+    // 7️⃣ ETAPA 4: VERIFICAR DUPLICATA
     // ═══════════════════════════════════════════════════════════════════
     console.log('\n┌─────────────────────────────────────────────────────────────────┐')
-    console.log('│ 7️⃣  ETAPA 4: VERIFICAR DUPLICATA OU EDIÇÃO                      │')
+    console.log('│ 7️⃣  ETAPA 4: VERIFICAR DUPLICATA                                │')
     console.log('└─────────────────────────────────────────────────────────────────┘')
     
     console.log(`🔍 Verificando se mensagem já existe: ${messageId}`)
     
     const { data: existingMessage, error: msgSearchError } = await supabase
       .from('messages')
-      .select('id, content, original_content, edit_count')
+      .select('id')
       .eq('whatsapp_message_id', messageId)
       .maybeSingle()
     
@@ -1290,71 +1274,15 @@ serve(async (req) => {
     }
     
     if (existingMessage) {
-      // Message exists - check if it's a duplicate or an edit
-      const newContent = payload.message?.text || payload.message?.content?.text || ''
-      const oldContent = existingMessage.content || ''
-      
-      // Compare contents to detect edit
-      if (newContent && newContent !== oldContent) {
-        // CONTENT IS DIFFERENT = IT'S AN EDIT! 📝
-        console.log('📝 [EDIÇÃO DETECTADA]')
-        console.log(`   - Conteúdo original: ${oldContent.substring(0, 100)}...`)
-        console.log(`   - Conteúdo editado: ${newContent.substring(0, 100)}...`)
-        console.log(`   - wa_message_id: ${messageId}`)
-        
-        const currentEditCount = existingMessage.edit_count || 0
-        const originalContent = existingMessage.original_content || oldContent
-        
-        const { data: updatedMessage, error: updateError } = await supabase
-          .from('messages')
-          .update({
-            content: newContent,
-            is_edited: true,
-            edited_at: new Date().toISOString(),
-            original_content: originalContent,
-            edit_count: currentEditCount + 1,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', existingMessage.id)
-          .select()
-          .single()
-        
-        if (updateError) {
-          console.error('❌ Erro ao atualizar mensagem editada:', updateError)
-          return new Response(
-            JSON.stringify({ 
-              success: false, 
-              error: 'Error updating edited message',
-              details: updateError.message 
-            }),
-            { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-          )
-        }
-        
-        console.log('✅ Mensagem editada salva com sucesso!')
-        console.log(`   - is_edited: true`)
-        console.log(`   - edit_count: ${currentEditCount + 1}`)
-        
-        return new Response(
-          JSON.stringify({ 
-            success: true, 
-            action: 'message_edited',
-            data: { message_id: existingMessage.id, edit_count: currentEditCount + 1 }
-          }),
-          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        )
-      } else {
-        // Same content = true duplicate, ignore
-        console.log(`⚠️ Mensagem duplicada ignorada (mesmo conteúdo) - messageid: ${messageId}`)
-        return new Response(
-          JSON.stringify({ 
-            success: true, 
-            message: 'Duplicate message ignored',
-            data: { message_id: existingMessage.id, duplicate: true }
-          }),
-          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        )
-      }
+      console.log(`⚠️ Mensagem duplicada ignorada - messageid: ${messageId}`)
+      return new Response(
+        JSON.stringify({ 
+          success: true, 
+          message: 'Duplicate message ignored',
+          data: { message_id: existingMessage.id, duplicate: true }
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
     }
     
     console.log('✅ Mensagem não é duplicata')

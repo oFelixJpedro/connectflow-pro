@@ -146,10 +146,6 @@ export interface Message {
   isDeleted?: boolean;
   deletedAt?: string;
   deletedByType?: 'client' | 'agent';
-  isEdited?: boolean;
-  editedAt?: string;
-  originalContent?: string;
-  editCount?: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -161,7 +157,6 @@ export interface QuotedMessage {
   senderType: SenderType;
   mediaUrl?: string;
   isDeleted?: boolean;
-  isEdited?: boolean;
   createdAt: string;
 }
 
