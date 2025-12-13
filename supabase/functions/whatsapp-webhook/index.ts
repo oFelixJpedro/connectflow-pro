@@ -860,7 +860,7 @@ serve(async (req) => {
     
     const { data: connection, error: connectionError } = await supabase
       .from('whatsapp_connections')
-      .select('id, company_id, instance_token')
+      .select('id, company_id, instance_token, name')
       .eq('session_id', instanceName)
       .maybeSingle()
     
@@ -923,7 +923,7 @@ serve(async (req) => {
     // Buscar departamento padrão da conexão
     const { data: defaultDepartment, error: deptError } = await supabase
       .from('departments')
-      .select('id')
+      .select('id, name')
       .eq('whatsapp_connection_id', whatsappConnectionId)
       .eq('is_default', true)
       .limit(1)
@@ -1244,6 +1244,31 @@ serve(async (req) => {
       
       conversationId = newConversation.id
       console.log(`✅ Nova conversa criada: ${conversationId}`)
+      
+      // Log conversation creation in history
+      const { error: historyError } = await supabase
+        .from('conversation_history')
+        .insert({
+          conversation_id: conversationId,
+          event_type: 'created',
+          event_data: {
+            connection_id: whatsappConnectionId,
+            connection_name: connection.name || 'WhatsApp',
+            department_id: defaultDepartmentId,
+            department_name: defaultDepartment?.name || 'Geral',
+            contact_name: contactName,
+            contact_phone: phoneNumber
+          },
+          performed_by: null,
+          performed_by_name: 'Sistema',
+          is_automatic: true
+        })
+      
+      if (historyError) {
+        console.log(`⚠️ Erro ao registrar histórico (não fatal): ${historyError.message}`)
+      } else {
+        console.log(`✅ Histórico de criação registrado`)
+      }
     }
     
     // ═══════════════════════════════════════════════════════════════════
