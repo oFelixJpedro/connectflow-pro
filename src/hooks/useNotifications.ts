@@ -465,19 +465,33 @@ export function useNotifications() {
           if (processedMessageIds.current.has(message.id)) return;
           processedMessageIds.current.add(message.id);
           
-          // Only notify for inbound messages not from the user
-          if (message.direction === 'inbound' && message.sender_type === 'contact') {
-            console.log('[Notifications] New WhatsApp message received:', message.id, 'isInitialLoad:', isInitialLoad.current);
-            
-            // Play sound only after initial load, with conversation check
-            if (!isInitialLoad.current) {
-              playWhatsAppSound(message.conversation_id);
-            }
-            
-            // Refresh counts
-            refreshCounts();
-            loadRecentNotifications();
+          // Only notify for inbound messages from contacts
+          if (message.direction !== 'inbound' || message.sender_type !== 'contact') {
+            return;
           }
+
+          // Verify message belongs to user's company by checking conversation
+          const { data: conversation } = await supabase
+            .from('conversations')
+            .select('id, company_id')
+            .eq('id', message.conversation_id)
+            .single();
+
+          if (!conversation || conversation.company_id !== company.id) {
+            console.log('[Notifications] Message not from user company, ignoring');
+            return;
+          }
+
+          console.log('[Notifications] New WhatsApp message received:', message.id, 'conversation:', message.conversation_id);
+          
+          // Play sound only after initial load
+          if (!isInitialLoad.current) {
+            playWhatsAppSound(message.conversation_id);
+          }
+          
+          // Refresh counts
+          refreshCounts();
+          loadRecentNotifications();
         }
       )
       .subscribe();
