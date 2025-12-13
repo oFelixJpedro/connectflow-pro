@@ -1020,6 +1020,7 @@ export function ChatPanel({
                                 isOutbound={isOutbound}
                                 status={message.status}
                                 errorMessage={message.errorMessage}
+                                variant={message.isInternalNote ? 'amber' : 'default'}
                               />
                             ) : message.messageType === 'audio' ? (
                               // Audio without URL (loading or failed)
