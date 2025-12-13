@@ -43,6 +43,7 @@ import { ReactionPicker } from './ReactionPicker';
 import { EmojiMessagePicker } from './EmojiMessagePicker';
 import { QuickRepliesPicker } from './QuickRepliesPicker';
 import { QuickReplyConfirmModal } from './QuickReplyConfirmModal';
+import { InternalNoteAttachment } from './InternalNoteAttachment';
 import { QuickReply } from '@/hooks/useQuickRepliesData';
 import { cn } from '@/lib/utils';
 import type { Conversation, Message, QuotedMessage } from '@/types';
@@ -122,6 +123,12 @@ export function ChatPanel({
   const [isInternalNoteMode, setIsInternalNoteMode] = useState(false);
   const [pendingQuickReply, setPendingQuickReply] = useState<QuickReply | null>(null);
   const [isQuickReplyConfirmOpen, setIsQuickReplyConfirmOpen] = useState(false);
+  const [noteAttachment, setNoteAttachment] = useState<{
+    messageType: 'image' | 'video' | 'audio' | 'document';
+    mediaUrl: string;
+    mediaMimeType: string;
+    metadata: Record<string, unknown>;
+  } | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messageRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -472,14 +479,25 @@ export function ChatPanel({
   }, [messages, scrollToBottom]);
 
   const handleSend = async () => {
-    if (!inputValue.trim() || isSendingMessage) return;
+    // Allow sending with attachment even without text
+    const hasText = inputValue.trim().length > 0;
+    const hasAttachment = !!noteAttachment;
+    
+    if ((!hasText && !hasAttachment) || isSendingMessage) return;
     
     if (isInternalNoteMode && onSendInternalNote) {
-      // Send as internal note
-      const success = await onSendInternalNote(inputValue.trim());
+      // Send as internal note (with optional attachment)
+      const success = await onSendInternalNote(
+        inputValue.trim(),
+        noteAttachment?.messageType || 'text',
+        noteAttachment?.mediaUrl,
+        noteAttachment?.mediaMimeType,
+        noteAttachment?.metadata
+      );
       if (success) {
         setInputValue('');
         setReplyingTo(null);
+        setNoteAttachment(null);
         // Keep internal note mode active for convenience
         // Restore focus after state update
         setTimeout(() => textareaRef.current?.focus(), 0);
@@ -1259,6 +1277,20 @@ export function ChatPanel({
           </div>
         )}
 
+        {/* Note attachment preview */}
+        {isInternalNoteMode && noteAttachment && (
+          <div className="mb-3">
+            <InternalNoteAttachment
+              onAttachmentReady={(messageType, mediaUrl, mediaMimeType, metadata) => {
+                setNoteAttachment({ messageType, mediaUrl, mediaMimeType, metadata });
+              }}
+              onClearAttachment={() => setNoteAttachment(null)}
+              disabled={isSendingMessage}
+              hasAttachment={!!noteAttachment}
+            />
+          </div>
+        )}
+
         {!isRecordingAudio && !audioFile && (
           <div className="flex items-end gap-2">
             <AttachmentMenu
@@ -1266,7 +1298,7 @@ export function ChatPanel({
               onVideoSelect={handleVideoSelect}
               onAudioSelect={handleAudioFileSelect}
               onDocumentSelect={handleDocumentSelect}
-              disabled={!canReply}
+              disabled={!canReply || isInternalNoteMode}
             />
             
             <div className="flex-1 relative">
@@ -1285,7 +1317,13 @@ export function ChatPanel({
                     type="button"
                     variant={isInternalNoteMode ? "default" : "ghost"}
                     size="icon"
-                    onClick={() => setIsInternalNoteMode(!isInternalNoteMode)}
+                    onClick={() => {
+                      setIsInternalNoteMode(!isInternalNoteMode);
+                      // Clear attachment when leaving note mode
+                      if (isInternalNoteMode) {
+                        setNoteAttachment(null);
+                      }
+                    }}
                     className={cn(
                       "h-8 w-8 flex-shrink-0",
                       isInternalNoteMode && "bg-amber-500 hover:bg-amber-600 text-white"
@@ -1298,6 +1336,18 @@ export function ChatPanel({
                   {isInternalNoteMode ? 'Desativar nota interna' : 'Ativar nota interna'}
                 </TooltipContent>
               </Tooltip>
+
+              {/* Internal Note Attachment Button - only show in note mode */}
+              {isInternalNoteMode && (
+                <InternalNoteAttachment
+                  onAttachmentReady={(messageType, mediaUrl, mediaMimeType, metadata) => {
+                    setNoteAttachment({ messageType, mediaUrl, mediaMimeType, metadata });
+                  }}
+                  onClearAttachment={() => setNoteAttachment(null)}
+                  disabled={isSendingMessage}
+                  hasAttachment={!!noteAttachment}
+                />
+              )}
 
               <Textarea
                 ref={textareaRef}
@@ -1333,13 +1383,13 @@ export function ChatPanel({
               />
             </div>
 
-            {/* Mic button - show when no text */}
-            {!inputValue.trim() ? (
+            {/* Mic button - show when no text and not in internal note mode with attachment */}
+            {!inputValue.trim() && !noteAttachment ? (
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button 
                     onClick={() => setIsRecordingAudio(true)}
-                    disabled={!canReply}
+                    disabled={!canReply || isInternalNoteMode}
                     variant="ghost"
                     className="flex-shrink-0"
                   >
@@ -1351,8 +1401,11 @@ export function ChatPanel({
             ) : (
               <Button 
                 onClick={handleSend}
-                disabled={!inputValue.trim() || isSendingMessage || !canReply}
-                className="flex-shrink-0"
+                disabled={(!inputValue.trim() && !noteAttachment) || isSendingMessage || (!canReply && !isInternalNoteMode)}
+                className={cn(
+                  "flex-shrink-0",
+                  isInternalNoteMode && "bg-amber-500 hover:bg-amber-600"
+                )}
               >
                 {isSendingMessage ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
