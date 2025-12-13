@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
+import { useAppStore } from '@/stores/appStore';
 
 interface Notification {
   id: string;
@@ -25,8 +26,17 @@ interface UserAccessPermissions {
   allowedDepartmentIds: string[] | null; // null = all departments
 }
 
-// Simple notification sound using Web Audio API
-const playNotificationSound = () => {
+interface NotificationSettings {
+  soundNotifications?: boolean;
+  desktopNotifications?: boolean;
+}
+
+// Throttle tracking for sound notifications
+let lastSoundPlayedAt = 0;
+const SOUND_THROTTLE_MS = 1000; // Minimum 1 second between sounds
+
+// Play notification sound using Web Audio API
+export const playNotificationSound = () => {
   try {
     const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
     const oscillator = audioContext.createOscillator();
@@ -35,14 +45,15 @@ const playNotificationSound = () => {
     oscillator.connect(gainNode);
     gainNode.connect(audioContext.destination);
     
-    oscillator.frequency.value = 800;
+    // Pleasant notification tone
+    oscillator.frequency.value = 880; // A5 note
     oscillator.type = 'sine';
     
-    gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
-    gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.3);
+    gainNode.gain.setValueAtTime(0.2, audioContext.currentTime);
+    gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.4);
     
     oscillator.start(audioContext.currentTime);
-    oscillator.stop(audioContext.currentTime + 0.3);
+    oscillator.stop(audioContext.currentTime + 0.4);
   } catch (e) {
     console.warn('[Notifications] Sound not supported:', e);
   }
@@ -50,15 +61,43 @@ const playNotificationSound = () => {
 
 export function useNotifications() {
   const { profile, company, userRole } = useAuth();
+  const selectedConversation = useAppStore(state => state.selectedConversation);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCounts, setUnreadCounts] = useState<UnreadCounts>({ whatsapp: 0, internalChat: 0, total: 0 });
   const [isLoading, setIsLoading] = useState(true);
   
-  // Track last seen message per internal chat room (stored in database)
-
   // Track processed message IDs to avoid duplicate sounds
   const processedMessageIds = useRef<Set<string>>(new Set());
   const isInitialLoad = useRef(true);
+
+  // Get user's sound notification preference
+  const getSoundEnabled = useCallback((): boolean => {
+    if (!profile?.metadata) return true; // Default enabled
+    const metadata = profile.metadata as { notifications?: NotificationSettings };
+    return metadata.notifications?.soundNotifications !== false;
+  }, [profile?.metadata]);
+
+  // Play sound with throttling and preference check
+  const playSound = useCallback((forConversationId?: string) => {
+    // Don't play if user is viewing this conversation
+    if (forConversationId && selectedConversation?.id === forConversationId) {
+      return;
+    }
+
+    // Check user preference
+    if (!getSoundEnabled()) {
+      return;
+    }
+
+    // Throttle: don't play if we played recently
+    const now = Date.now();
+    if (now - lastSoundPlayedAt < SOUND_THROTTLE_MS) {
+      return;
+    }
+    
+    lastSoundPlayedAt = now;
+    playNotificationSound();
+  }, [selectedConversation?.id, getSoundEnabled]);
 
   // Get user's access permissions for connections and departments
   const getUserAccessPermissions = useCallback(async (): Promise<UserAccessPermissions> => {
@@ -396,9 +435,9 @@ export function useNotifications() {
           
           // Only notify for inbound messages not from the user
           if (message.direction === 'inbound' && message.sender_type === 'contact') {
-            // Play sound only after initial load
+            // Play sound only after initial load, with conversation check
             if (!isInitialLoad.current) {
-              playNotificationSound();
+              playSound(message.conversation_id);
             }
             
             // Refresh counts
@@ -412,7 +451,7 @@ export function useNotifications() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [company?.id, profile?.id, refreshCounts, loadRecentNotifications]);
+  }, [company?.id, profile?.id, refreshCounts, loadRecentNotifications, playSound]);
 
   // Real-time subscription for conversation updates (unread count changes)
   useEffect(() => {
@@ -461,9 +500,9 @@ export function useNotifications() {
           
           processedMessageIds.current.add(message.id);
           
-          // Play sound only after initial load
+          // Play sound only after initial load (no conversation ID check for internal chat)
           if (!isInitialLoad.current) {
-            playNotificationSound();
+            playSound();
           }
           
           // Refresh counts
@@ -475,7 +514,7 @@ export function useNotifications() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [company?.id, profile?.id, refreshCounts]);
+  }, [company?.id, profile?.id, refreshCounts, playSound]);
 
   return {
     notifications,
