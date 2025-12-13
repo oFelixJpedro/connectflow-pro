@@ -89,9 +89,13 @@ function transformMessage(db: any, reactions?: MessageReaction[]): Message {
       messageType: db.quoted_message.message_type as Message['messageType'],
       senderType: db.quoted_message.sender_type as Message['senderType'],
       mediaUrl: db.quoted_message.media_url || undefined,
+      isDeleted: db.quoted_message.is_deleted || false,
       createdAt: db.quoted_message.created_at,
     } : undefined,
     reactions: reactions || [],
+    isDeleted: db.is_deleted || false,
+    deletedAt: db.deleted_at || undefined,
+    deletedByType: db.deleted_by_type || undefined,
     createdAt: db.created_at,
     updatedAt: db.updated_at,
   };
@@ -343,6 +347,7 @@ export function useInboxData() {
             message_type,
             sender_type,
             media_url,
+            is_deleted,
             created_at
           )
         `)

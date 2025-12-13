@@ -1082,9 +1082,12 @@ export type Database = {
           content: string | null
           conversation_id: string
           created_at: string | null
+          deleted_at: string | null
+          deleted_by_type: string | null
           direction: Database["public"]["Enums"]["message_direction"]
           error_message: string | null
           id: string
+          is_deleted: boolean | null
           is_internal_note: boolean | null
           media_mime_type: string | null
           media_url: string | null
@@ -1102,9 +1105,12 @@ export type Database = {
           content?: string | null
           conversation_id: string
           created_at?: string | null
+          deleted_at?: string | null
+          deleted_by_type?: string | null
           direction: Database["public"]["Enums"]["message_direction"]
           error_message?: string | null
           id?: string
+          is_deleted?: boolean | null
           is_internal_note?: boolean | null
           media_mime_type?: string | null
           media_url?: string | null
@@ -1122,9 +1128,12 @@ export type Database = {
           content?: string | null
           conversation_id?: string
           created_at?: string | null
+          deleted_at?: string | null
+          deleted_by_type?: string | null
           direction?: Database["public"]["Enums"]["message_direction"]
           error_message?: string | null
           id?: string
+          is_deleted?: boolean | null
           is_internal_note?: boolean | null
           media_mime_type?: string | null
           media_url?: string | null

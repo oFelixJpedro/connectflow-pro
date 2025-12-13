@@ -327,6 +327,83 @@ serve(async (req) => {
     console.log('│ 2️⃣  VALIDATIONS                                                 │')
     console.log('└─────────────────────────────────────────────────────────────────┘')
     
+    // ═══════════════════════════════════════════════════════════════════
+    // HANDLE messages_update EVENT (for deleted messages)
+    // ═══════════════════════════════════════════════════════════════════
+    if (payload.EventType === 'messages_update') {
+      console.log('📝 [MESSAGES_UPDATE] Evento recebido')
+      console.log(`   - type: ${payload.type}`)
+      console.log(`   - state: ${payload.state}`)
+      console.log(`   - event.Type: ${payload.event?.Type}`)
+      
+      // Check for deleted message
+      const isDeleted = 
+        payload.type === 'DeletedMessage' || 
+        payload.state === 'Deleted' || 
+        payload.event?.Type === 'Deleted'
+      
+      if (isDeleted) {
+        console.log('🗑️ [MENSAGEM APAGADA DETECTADA]')
+        
+        const messageIds = payload.event?.MessageIDs || []
+        const isFromMe = payload.event?.IsFromMe === true
+        const deletedByType = isFromMe ? 'agent' : 'client'
+        
+        console.log(`   - MessageIDs: ${JSON.stringify(messageIds)}`)
+        console.log(`   - IsFromMe: ${isFromMe}`)
+        console.log(`   - deleted_by_type: ${deletedByType}`)
+        
+        // Create Supabase client with service role
+        const supabaseUrl = Deno.env.get('SUPABASE_URL') || ''
+        const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
+        const supabase = createClient(supabaseUrl, supabaseServiceKey)
+        
+        for (const waMessageId of messageIds) {
+          console.log(`   🔄 Processando messageId: ${waMessageId}`)
+          
+          const { data: updatedMessage, error } = await supabase
+            .from('messages')
+            .update({
+              is_deleted: true,
+              deleted_at: new Date().toISOString(),
+              deleted_by_type: deletedByType
+            })
+            .eq('whatsapp_message_id', waMessageId)
+            .select()
+            .single()
+          
+          if (error) {
+            console.error(`   ❌ Erro ao marcar mensagem como deletada:`, error)
+          } else if (updatedMessage) {
+            console.log(`   ✅ Mensagem marcada como deletada: ${waMessageId}`)
+            console.log(`      - message_id: ${updatedMessage.id}`)
+            console.log(`      - conversation_id: ${updatedMessage.conversation_id}`)
+          } else {
+            console.log(`   ⚠️ Mensagem não encontrada no banco: ${waMessageId}`)
+          }
+        }
+        
+        return new Response(
+          JSON.stringify({ 
+            success: true, 
+            action: 'message_deleted',
+            processed: messageIds.length 
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+      
+      // Other messages_update types (ReadReceipt, etc) - just log and ignore
+      console.log(`ℹ️ messages_update type "${payload.type}" ignorado (não é deleção)`)
+      return new Response(
+        JSON.stringify({ 
+          success: true, 
+          message: `messages_update type "${payload.type}" ignored` 
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+    
     // Check if it's a message event
     if (payload.EventType !== 'messages') {
       console.log(`ℹ️ Event type "${payload.EventType}" - não é mensagem, ignorando`)
