@@ -1316,25 +1316,34 @@ export type Database = {
           company_id: string
           created_at: string | null
           created_by_user_id: string | null
+          department_id: string | null
           id: string
           name: string
           updated_at: string | null
+          visibility_type: Database["public"]["Enums"]["quick_reply_visibility"]
+          whatsapp_connection_id: string | null
         }
         Insert: {
           company_id: string
           created_at?: string | null
           created_by_user_id?: string | null
+          department_id?: string | null
           id?: string
           name: string
           updated_at?: string | null
+          visibility_type?: Database["public"]["Enums"]["quick_reply_visibility"]
+          whatsapp_connection_id?: string | null
         }
         Update: {
           company_id?: string
           created_at?: string | null
           created_by_user_id?: string | null
+          department_id?: string | null
           id?: string
           name?: string
           updated_at?: string | null
+          visibility_type?: Database["public"]["Enums"]["quick_reply_visibility"]
+          whatsapp_connection_id?: string | null
         }
         Relationships: [
           {
@@ -1349,6 +1358,20 @@ export type Database = {
             columns: ["created_by_user_id"]
             isOneToOne: false
             referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "quick_reply_categories_department_id_fkey"
+            columns: ["department_id"]
+            isOneToOne: false
+            referencedRelation: "departments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "quick_reply_categories_whatsapp_connection_id_fkey"
+            columns: ["whatsapp_connection_id"]
+            isOneToOne: false
+            referencedRelation: "whatsapp_connections"
             referencedColumns: ["id"]
           },
         ]
