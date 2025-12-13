@@ -49,10 +49,8 @@ interface CompanySettings {
 }
 
 interface NotificationSettings {
-  desktopNotifications: boolean;
-  soundNotifications: boolean;
-  emailNotifications: boolean;
-  unassignedAlerts: boolean;
+  whatsappSoundNotifications: boolean;
+  internalChatSoundNotifications: boolean;
 }
 
 const defaultBusinessHours: BusinessHours = {
@@ -70,10 +68,8 @@ const defaultBusinessHours: BusinessHours = {
 };
 
 const defaultNotificationSettings: NotificationSettings = {
-  desktopNotifications: true,
-  soundNotifications: true,
-  emailNotifications: false,
-  unassignedAlerts: true,
+  whatsappSoundNotifications: true,
+  internalChatSoundNotifications: true,
 };
 
 export default function SettingsGeneral() {
@@ -231,13 +227,6 @@ export default function SettingsGeneral() {
       });
 
       if (error) throw error;
-
-      // Request browser notification permission if enabled
-      if (notifications.desktopNotifications && 'Notification' in window) {
-        if (Notification.permission === 'default') {
-          await Notification.requestPermission();
-        }
-      }
 
       toast({
         title: 'Preferências salvas',
@@ -507,30 +496,16 @@ export default function SettingsGeneral() {
               <CardHeader>
                 <CardTitle>Preferências de Notificação</CardTitle>
                 <CardDescription>
-                  Configure como você deseja receber notificações
+                  Configure como você deseja receber notificações sonoras
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
+                {/* WhatsApp Sound */}
                 <div className="flex items-center justify-between">
                   <div className="space-y-0.5">
-                    <Label>Notificações de Desktop</Label>
+                    <Label>Som de Notificação - WhatsApp</Label>
                     <p className="text-sm text-muted-foreground">
-                      Receba notificações no navegador quando novas mensagens chegarem
-                    </p>
-                  </div>
-                  <Switch 
-                    checked={notifications.desktopNotifications}
-                    onCheckedChange={(checked) => 
-                      setNotifications((prev) => ({ ...prev, desktopNotifications: checked }))
-                    }
-                  />
-                </div>
-                <Separator />
-                <div className="flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <Label>Som de Notificação</Label>
-                    <p className="text-sm text-muted-foreground">
-                      Toque um som quando novas mensagens chegarem
+                      Toque um som quando novas mensagens de clientes chegarem
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
@@ -544,42 +519,40 @@ export default function SettingsGeneral() {
                       Testar
                     </Button>
                     <Switch 
-                      checked={notifications.soundNotifications}
+                      checked={notifications.whatsappSoundNotifications}
                       onCheckedChange={(checked) => 
-                        setNotifications((prev) => ({ ...prev, soundNotifications: checked }))
+                        setNotifications((prev) => ({ ...prev, whatsappSoundNotifications: checked }))
                       }
                     />
                   </div>
                 </div>
                 <Separator />
+                
+                {/* Internal Chat Sound */}
                 <div className="flex items-center justify-between">
                   <div className="space-y-0.5">
-                    <Label>Notificações por E-mail</Label>
+                    <Label>Som de Notificação - Chat Interno</Label>
                     <p className="text-sm text-muted-foreground">
-                      Receba um resumo diário por e-mail
+                      Toque um som quando mensagens da equipe chegarem
                     </p>
                   </div>
-                  <Switch 
-                    checked={notifications.emailNotifications}
-                    onCheckedChange={(checked) => 
-                      setNotifications((prev) => ({ ...prev, emailNotifications: checked }))
-                    }
-                  />
-                </div>
-                <Separator />
-                <div className="flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <Label>Notificar conversas sem atendente</Label>
-                    <p className="text-sm text-muted-foreground">
-                      Alerta quando conversas não forem atribuídas
-                    </p>
+                  <div className="flex items-center gap-2">
+                    <Button 
+                      variant="outline" 
+                      size="sm"
+                      onClick={() => playNotificationSound()}
+                      className="gap-1"
+                    >
+                      <Volume2 className="w-3 h-3" />
+                      Testar
+                    </Button>
+                    <Switch 
+                      checked={notifications.internalChatSoundNotifications}
+                      onCheckedChange={(checked) => 
+                        setNotifications((prev) => ({ ...prev, internalChatSoundNotifications: checked }))
+                      }
+                    />
                   </div>
-                  <Switch 
-                    checked={notifications.unassignedAlerts}
-                    onCheckedChange={(checked) => 
-                      setNotifications((prev) => ({ ...prev, unassignedAlerts: checked }))
-                    }
-                  />
                 </div>
 
                 <div className="flex justify-end pt-4">
