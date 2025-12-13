@@ -430,6 +430,128 @@ serve(async (req) => {
     }
     
     console.log('✅ Conversa atualizada com sucesso!')
+    
+    // ═══════════════════════════════════════════════════════════════════
+    // 5.5 REGISTRAR HISTÓRICO DA CONVERSA
+    // ═══════════════════════════════════════════════════════════════════
+    console.log('\n┌─────────────────────────────────────────────────────────────────┐')
+    console.log('│ 📜 REGISTRAR HISTÓRICO                                          │')
+    console.log('└─────────────────────────────────────────────────────────────────┘')
+    
+    let historyEventType: string | null = null
+    let historyEventData: Record<string, unknown> = {}
+    
+    // Buscar nome do usuário alvo se necessário
+    const getTargetUserName = async (targetId: string): Promise<string> => {
+      const { data } = await supabase
+        .from('profiles')
+        .select('full_name')
+        .eq('id', targetId)
+        .single()
+      return data?.full_name || 'Usuário'
+    }
+    
+    // Buscar nome do departamento se necessário
+    const getDepartmentName = async (deptId: string): Promise<string> => {
+      const { data } = await supabase
+        .from('departments')
+        .select('name')
+        .eq('id', deptId)
+        .single()
+      return data?.name || 'Departamento'
+    }
+    
+    switch (action) {
+      case 'assign': {
+        const assignToId = targetUserId || userId
+        const assignToName = assignToId === userId ? profile.full_name : await getTargetUserName(assignToId)
+        
+        historyEventType = 'assigned'
+        historyEventData = {
+          to_user_id: assignToId,
+          to_user_name: assignToName,
+          assigned_by: userId,
+          assigned_by_name: profile.full_name
+        }
+        break
+      }
+      
+      case 'transfer': {
+        const fromUserName = conversation.profiles?.full_name || 'Desconhecido'
+        const toUserName = await getTargetUserName(targetUserId!)
+        
+        historyEventType = 'transferred'
+        historyEventData = {
+          from_user_id: conversation.assigned_user_id,
+          from_user_name: fromUserName,
+          to_user_id: targetUserId,
+          to_user_name: toUserName
+        }
+        break
+      }
+      
+      case 'release': {
+        historyEventType = 'assigned'
+        historyEventData = {
+          to_user_id: null,
+          to_user_name: 'Fila',
+          from_user_id: conversation.assigned_user_id,
+          from_user_name: conversation.profiles?.full_name || 'Desconhecido',
+          released: true
+        }
+        break
+      }
+      
+      case 'close': {
+        historyEventType = 'closed'
+        historyEventData = {
+          previous_status: conversation.status
+        }
+        break
+      }
+      
+      case 'reopen': {
+        historyEventType = 'reopened'
+        historyEventData = {
+          assigned_to_user_id: userId,
+          assigned_to_user_name: profile.full_name
+        }
+        break
+      }
+      
+      case 'move_department': {
+        const fromDeptName = conversation.departments?.name || 'Sem departamento'
+        const toDeptName = await getDepartmentName(departmentId!)
+        
+        historyEventType = 'department_changed'
+        historyEventData = {
+          from_department_id: conversation.department_id,
+          from_department_name: fromDeptName,
+          to_department_id: departmentId,
+          to_department_name: toDeptName
+        }
+        break
+      }
+    }
+    
+    if (historyEventType) {
+      const { error: historyError } = await supabase
+        .from('conversation_history')
+        .insert({
+          conversation_id: conversationId,
+          event_type: historyEventType,
+          event_data: historyEventData,
+          performed_by: userId,
+          performed_by_name: profile.full_name,
+          is_automatic: false
+        })
+      
+      if (historyError) {
+        console.log('⚠️ Erro ao registrar histórico (não fatal):', historyError.message)
+      } else {
+        console.log('✅ Histórico registrado:', historyEventType)
+      }
+    }
     console.log('   - id:', updatedConversation.id)
     console.log('   - status:', updatedConversation.status)
     console.log('   - assigned_user_id:', updatedConversation.assigned_user_id || '(não atribuída)')

@@ -160,6 +160,54 @@ export type Database = {
           },
         ]
       }
+      conversation_history: {
+        Row: {
+          conversation_id: string
+          created_at: string | null
+          event_data: Json
+          event_type: string
+          id: string
+          is_automatic: boolean | null
+          performed_by: string | null
+          performed_by_name: string | null
+        }
+        Insert: {
+          conversation_id: string
+          created_at?: string | null
+          event_data?: Json
+          event_type: string
+          id?: string
+          is_automatic?: boolean | null
+          performed_by?: string | null
+          performed_by_name?: string | null
+        }
+        Update: {
+          conversation_id?: string
+          created_at?: string | null
+          event_data?: Json
+          event_type?: string
+          id?: string
+          is_automatic?: boolean | null
+          performed_by?: string | null
+          performed_by_name?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "conversation_history_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "conversation_history_performed_by_fkey"
+            columns: ["performed_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       conversations: {
         Row: {
           assigned_at: string | null
