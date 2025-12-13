@@ -44,6 +44,7 @@ import { EmojiMessagePicker } from './EmojiMessagePicker';
 import { QuickRepliesPicker } from './QuickRepliesPicker';
 import { QuickReplyConfirmModal } from './QuickReplyConfirmModal';
 import { InternalNoteAttachment } from './InternalNoteAttachment';
+import { InternalNoteAudioRecorder } from './InternalNoteAudioRecorder';
 import { QuickReply } from '@/hooks/useQuickRepliesData';
 import { cn } from '@/lib/utils';
 import type { Conversation, Message, QuotedMessage } from '@/types';
@@ -123,6 +124,8 @@ export function ChatPanel({
   const [isInternalNoteMode, setIsInternalNoteMode] = useState(false);
   const [pendingQuickReply, setPendingQuickReply] = useState<QuickReply | null>(null);
   const [isQuickReplyConfirmOpen, setIsQuickReplyConfirmOpen] = useState(false);
+  const [isRecordingNoteAudio, setIsRecordingNoteAudio] = useState(false);
+  const [isSendingNoteAudio, setIsSendingNoteAudio] = useState(false);
   const [noteAttachment, setNoteAttachment] = useState<{
     messageType: 'image' | 'video' | 'audio' | 'document';
     mediaUrl: string;
@@ -429,6 +432,66 @@ export function ChatPanel({
   const handleDocumentSelect = (file: File) => {
     setDocumentFile(file);
     setIsDocumentPreviewOpen(true);
+  };
+
+  // Send internal note audio handler
+  const handleSendNoteAudio = async (audioBlob: Blob, duration: number) => {
+    if (!conversation || !onSendInternalNote) return;
+
+    setIsSendingNoteAudio(true);
+    try {
+      // Upload to storage
+      const profile = await supabase.auth.getUser();
+      const companyId = (await supabase
+        .from('profiles')
+        .select('company_id')
+        .eq('id', profile.data.user?.id)
+        .single()).data?.company_id;
+
+      if (!companyId) throw new Error('Company ID not found');
+
+      const timestamp = Date.now();
+      const sanitizedFileName = `voice-note-${timestamp}.webm`;
+      const filePath = `${companyId}/${conversation.id}/${sanitizedFileName}`;
+
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('internal-notes-media')
+        .upload(filePath, audioBlob, {
+          contentType: audioBlob.type || 'audio/webm',
+          upsert: false,
+        });
+
+      if (uploadError) throw uploadError;
+
+      const { data: publicUrlData } = supabase.storage
+        .from('internal-notes-media')
+        .getPublicUrl(filePath);
+
+      const mediaUrl = publicUrlData.publicUrl;
+
+      // Send internal note with audio
+      const success = await onSendInternalNote(
+        '',
+        'audio',
+        mediaUrl,
+        audioBlob.type || 'audio/webm',
+        {
+          fileName: sanitizedFileName,
+          fileSize: audioBlob.size,
+          duration,
+          storagePath: filePath,
+        }
+      );
+
+      if (success) {
+        setIsRecordingNoteAudio(false);
+      }
+    } catch (error: any) {
+      console.error('❌ Erro ao enviar nota de voz:', error);
+      throw error;
+    } finally {
+      setIsSendingNoteAudio(false);
+    }
   };
 
   // Scroll para o final
@@ -1291,7 +1354,18 @@ export function ChatPanel({
           </div>
         )}
 
-        {!isRecordingAudio && !audioFile && (
+        {/* Internal note audio recorder */}
+        {isInternalNoteMode && isRecordingNoteAudio && (
+          <div className="mb-3">
+            <InternalNoteAudioRecorder
+              onSend={handleSendNoteAudio}
+              onCancel={() => setIsRecordingNoteAudio(false)}
+              disabled={isSendingNoteAudio}
+            />
+          </div>
+        )}
+
+        {!isRecordingAudio && !audioFile && !isRecordingNoteAudio && (
           <div className="flex items-end gap-2">
             <AttachmentMenu
               onImageSelect={handleImageSelect}
@@ -1383,20 +1457,31 @@ export function ChatPanel({
               />
             </div>
 
-            {/* Mic button - show when no text and not in internal note mode with attachment */}
-            {!inputValue.trim() && !noteAttachment ? (
+            {/* Mic button - show when no text and not with attachment */}
+            {!inputValue.trim() && !noteAttachment && !isRecordingNoteAudio ? (
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button 
-                    onClick={() => setIsRecordingAudio(true)}
-                    disabled={!canReply || isInternalNoteMode}
+                    onClick={() => {
+                      if (isInternalNoteMode) {
+                        setIsRecordingNoteAudio(true);
+                      } else {
+                        setIsRecordingAudio(true);
+                      }
+                    }}
+                    disabled={!canReply && !isInternalNoteMode}
                     variant="ghost"
-                    className="flex-shrink-0"
+                    className={cn(
+                      "flex-shrink-0",
+                      isInternalNoteMode && "text-amber-600 hover:text-amber-700 hover:bg-amber-100"
+                    )}
                   >
                     <Mic className="w-5 h-5" />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent>Gravar áudio</TooltipContent>
+                <TooltipContent>
+                  {isInternalNoteMode ? 'Gravar nota de voz' : 'Gravar áudio'}
+                </TooltipContent>
               </Tooltip>
             ) : (
               <Button 
