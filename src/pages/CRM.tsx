@@ -5,6 +5,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { KanbanBoard } from '@/components/crm/KanbanBoard';
 import { KanbanFilters } from '@/components/crm/KanbanFilters';
 import { AddCardDialog } from '@/components/crm/AddCardDialog';
+import { ManageCRMModal } from '@/components/crm/ManageCRMModal';
 import { Button } from '@/components/ui/button';
 import { 
   Select, 
@@ -13,7 +14,7 @@ import {
   SelectTrigger, 
   SelectValue 
 } from '@/components/ui/select';
-import { Loader2, LayoutGrid, Plus, Smartphone, Building2 } from 'lucide-react';
+import { Loader2, LayoutGrid, Plus, Smartphone, Building2, Settings } from 'lucide-react';
 import { toast } from 'sonner';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
@@ -39,6 +40,7 @@ export default function CRM() {
   const [loadingConnections, setLoadingConnections] = useState(true);
   const [hasCRMAccess, setHasCRMAccess] = useState<boolean | null>(null);
   const [addCardOpen, setAddCardOpen] = useState(false);
+  const [manageCRMOpen, setManageCRMOpen] = useState(false);
 
   // Filters
   const [searchQuery, setSearchQuery] = useState('');
@@ -380,14 +382,24 @@ export default function CRM() {
           </span>
         </div>
 
-        {/* Add Card Button */}
-        <Button 
-          onClick={() => setAddCardOpen(true)}
-          disabled={!selectedConnectionId}
-        >
-          <Plus className="w-4 h-4 mr-2" />
-          Adicionar Card
-        </Button>
+        {/* Action Buttons */}
+        <div className="flex items-center gap-2">
+          <Button 
+            onClick={() => setAddCardOpen(true)}
+            disabled={!selectedConnectionId}
+          >
+            <Plus className="w-4 h-4 mr-2" />
+            Adicionar Card
+          </Button>
+          <Button 
+            variant="outline"
+            onClick={() => setManageCRMOpen(true)}
+            disabled={!selectedConnectionId}
+          >
+            <Settings className="w-4 h-4 mr-2" />
+            Gerenciar CRM
+          </Button>
+        </div>
       </div>
 
       {/* Add Card Dialog */}
@@ -398,6 +410,13 @@ export default function CRM() {
         onAddCard={createCard}
         connectionId={selectedConnectionId}
         departmentId={selectedDepartmentId}
+      />
+
+      {/* Manage CRM Modal */}
+      <ManageCRMModal
+        open={manageCRMOpen}
+        onOpenChange={setManageCRMOpen}
+        connectionId={selectedConnectionId}
       />
 
       {/* Filters */}

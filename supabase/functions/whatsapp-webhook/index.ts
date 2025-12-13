@@ -995,6 +995,77 @@ serve(async (req) => {
       }
       
       contactId = newContact.id
+      
+      // Auto-add contact to CRM if enabled
+      console.log('🔍 Verificando se deve adicionar ao CRM automaticamente...')
+      
+      const { data: boardData, error: boardError } = await supabase
+        .from('kanban_boards')
+        .select('id, auto_add_new_contacts')
+        .eq('whatsapp_connection_id', whatsappConnectionId)
+        .maybeSingle()
+      
+      if (boardError) {
+        console.log(`⚠️ Erro ao buscar board: ${boardError.message}`)
+      } else if (boardData?.auto_add_new_contacts) {
+        console.log(`📋 Board encontrado: ${boardData.id}, auto_add_new_contacts: ${boardData.auto_add_new_contacts}`)
+        
+        // Get the first column (lowest position) of the board
+        const { data: firstColumn, error: columnError } = await supabase
+          .from('kanban_columns')
+          .select('id')
+          .eq('board_id', boardData.id)
+          .order('position', { ascending: true })
+          .limit(1)
+          .maybeSingle()
+        
+        if (columnError) {
+          console.log(`⚠️ Erro ao buscar primeira coluna: ${columnError.message}`)
+        } else if (firstColumn) {
+          console.log(`📋 Primeira coluna encontrada: ${firstColumn.id}`)
+          
+          // Check if card already exists for this contact
+          const { data: existingCard } = await supabase
+            .from('kanban_cards')
+            .select('id')
+            .eq('contact_id', contactId)
+            .maybeSingle()
+          
+          if (!existingCard) {
+            // Get max position in the column
+            const { data: maxPosData } = await supabase
+              .from('kanban_cards')
+              .select('position')
+              .eq('column_id', firstColumn.id)
+              .order('position', { ascending: false })
+              .limit(1)
+              .maybeSingle()
+            
+            const newPosition = (maxPosData?.position ?? -1) + 1
+            
+            const { error: cardError } = await supabase
+              .from('kanban_cards')
+              .insert({
+                contact_id: contactId,
+                column_id: firstColumn.id,
+                position: newPosition,
+                priority: 'medium'
+              })
+            
+            if (cardError) {
+              console.log(`⚠️ Erro ao criar card no CRM: ${cardError.message}`)
+            } else {
+              console.log(`✅ Card criado automaticamente no CRM para o novo contato`)
+            }
+          } else {
+            console.log(`ℹ️ Card já existe para este contato: ${existingCard.id}`)
+          }
+        } else {
+          console.log(`⚠️ Nenhuma coluna encontrada no board`)
+        }
+      } else {
+        console.log(`ℹ️ Auto-add desativado ou board não encontrado`)
+      }
     }
     
     console.log(`✅ Contato processado!`)
