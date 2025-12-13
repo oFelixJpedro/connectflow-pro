@@ -16,7 +16,7 @@ async function configureWebhook(instanceToken: string, adminToken: string): Prom
   
   console.log('🔗 Configuring webhook on UAZAPI...')
   console.log('   - Webhook URL:', webhookUrl)
-  console.log('   - Events: messages, connection')
+  console.log('   - Events: messages, messages_update, connection')
   console.log('   - Exclude: wasSentByApi, isGroupYes')
   
   try {
@@ -30,7 +30,7 @@ async function configureWebhook(instanceToken: string, adminToken: string): Prom
       body: JSON.stringify({
         enabled: true,
         url: webhookUrl,
-        events: ['messages', 'connection'],
+        events: ['messages', 'messages_update', 'connection'],
         excludeMessages: ['wasSentByApi', 'isGroupYes']
       })
     })
