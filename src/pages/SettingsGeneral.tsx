@@ -224,7 +224,7 @@ export default function SettingsGeneral() {
             </TabsTrigger>
             <TabsTrigger value="billing" className="gap-2">
               <CreditCard className="w-4 h-4" />
-              <span className="hidden sm:inline">Faturamento</span>
+              <span className="hidden sm:inline">Acesso e Limites</span>
             </TabsTrigger>
           </TabsList>
 
@@ -434,7 +434,7 @@ export default function SettingsGeneral() {
               <CardHeader>
                 <CardTitle>Plano Atual</CardTitle>
                 <CardDescription>
-                  Gerencie sua assinatura e faturamento
+                  Gerencie sua assinatura e limites
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
