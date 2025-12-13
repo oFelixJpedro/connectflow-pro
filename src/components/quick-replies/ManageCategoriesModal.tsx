@@ -151,16 +151,16 @@ export function ManageCategoriesModal({ trigger }: ManageCategoriesModalProps) {
             </Button>
           )}
         </DialogTrigger>
-        <DialogContent className="sm:max-w-lg max-h-[85vh] flex flex-col">
-          <DialogHeader>
+        <DialogContent className="sm:max-w-lg max-h-[85vh] flex flex-col overflow-hidden">
+          <DialogHeader className="flex-shrink-0">
             <DialogTitle>Gerenciar Categorias</DialogTitle>
             <DialogDescription>
               Crie, edite e gerencie as categorias das respostas rápidas
             </DialogDescription>
           </DialogHeader>
           
-          <ScrollArea className="flex-1 pr-4">
-            <div className="flex flex-col gap-4 pb-2">
+          <ScrollArea className="flex-1 max-h-[60vh]">
+            <div className="flex flex-col gap-4 pb-2 pr-4">
             {/* Create new category button/form */}
             {!isCreating ? (
               <Button 
