@@ -159,7 +159,8 @@ export function ManageCategoriesModal({ trigger }: ManageCategoriesModalProps) {
             </DialogDescription>
           </DialogHeader>
           
-          <div className="flex-1 overflow-hidden flex flex-col gap-4">
+          <ScrollArea className="flex-1 pr-4">
+            <div className="flex flex-col gap-4 pb-2">
             {/* Create new category button/form */}
             {!isCreating ? (
               <Button 
@@ -222,7 +223,7 @@ export function ManageCategoriesModal({ trigger }: ManageCategoriesModalProps) {
             <Separator />
             
             {/* Categories list */}
-            <ScrollArea className="flex-1 pr-4">
+            <div className="space-y-2 min-h-[100px]">
               {loading ? (
                 <div className="flex items-center justify-center py-8">
                   <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
@@ -320,8 +321,9 @@ export function ManageCategoriesModal({ trigger }: ManageCategoriesModalProps) {
                   ))}
                 </div>
               )}
-            </ScrollArea>
+            </div>
           </div>
+          </ScrollArea>
         </DialogContent>
       </Dialog>
       
