@@ -11,7 +11,10 @@ import {
   ArrowDown,
   Reply,
   Mic,
-  StickyNote
+  StickyNote,
+  Camera,
+  FileText,
+  X
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -43,7 +46,7 @@ import { ReactionPicker } from './ReactionPicker';
 import { EmojiMessagePicker } from './EmojiMessagePicker';
 import { QuickRepliesPicker } from './QuickRepliesPicker';
 import { QuickReplyConfirmModal } from './QuickReplyConfirmModal';
-import { InternalNoteAttachment } from './InternalNoteAttachment';
+
 import { InternalNoteAudioRecorder } from './InternalNoteAudioRecorder';
 import { QuickReply } from '@/hooks/useQuickRepliesData';
 import { cn } from '@/lib/utils';
@@ -1346,15 +1349,27 @@ export function ChatPanel({
 
         {/* Note attachment preview */}
         {isInternalNoteMode && noteAttachment && (
-          <div className="mb-3">
-            <InternalNoteAttachment
-              onAttachmentReady={(messageType, mediaUrl, mediaMimeType, metadata) => {
-                setNoteAttachment({ messageType, mediaUrl, mediaMimeType, metadata });
-              }}
-              onClearAttachment={() => setNoteAttachment(null)}
-              disabled={isSendingMessage}
-              hasAttachment={!!noteAttachment}
-            />
+          <div className="mb-3 flex items-center gap-2 p-2 bg-amber-50 dark:bg-amber-950/30 rounded-lg border border-amber-200 dark:border-amber-800">
+            <div className="flex-shrink-0">
+              {noteAttachment.messageType === 'image' && <Camera className="w-4 h-4 text-amber-600" />}
+              {noteAttachment.messageType === 'video' && <Camera className="w-4 h-4 text-amber-600" />}
+              {noteAttachment.messageType === 'audio' && <Mic className="w-4 h-4 text-amber-600" />}
+              {noteAttachment.messageType === 'document' && <FileText className="w-4 h-4 text-amber-600" />}
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-medium truncate text-amber-900 dark:text-amber-100">
+                {(noteAttachment.metadata as { fileName?: string })?.fileName || 'Arquivo anexado'}
+              </p>
+            </div>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6 text-amber-600 hover:text-amber-800 hover:bg-amber-100"
+              onClick={() => setNoteAttachment(null)}
+            >
+              <X className="w-3 h-3" />
+            </Button>
           </div>
         )}
 
@@ -1376,7 +1391,12 @@ export function ChatPanel({
               onVideoSelect={handleVideoSelect}
               onAudioSelect={handleAudioFileSelect}
               onDocumentSelect={handleDocumentSelect}
-              disabled={!canReply || isInternalNoteMode}
+              disabled={!canReply && !isInternalNoteMode}
+              variant={isInternalNoteMode ? 'amber' : 'default'}
+              onNoteAttachmentReady={isInternalNoteMode ? (messageType, mediaUrl, mediaMimeType, metadata) => {
+                setNoteAttachment({ messageType, mediaUrl, mediaMimeType, metadata });
+              } : undefined}
+              conversationId={conversation?.id}
             />
             
             <div className="flex-1 relative">
@@ -1415,17 +1435,6 @@ export function ChatPanel({
                 </TooltipContent>
               </Tooltip>
 
-              {/* Internal Note Attachment Button - only show in note mode */}
-              {isInternalNoteMode && (
-                <InternalNoteAttachment
-                  onAttachmentReady={(messageType, mediaUrl, mediaMimeType, metadata) => {
-                    setNoteAttachment({ messageType, mediaUrl, mediaMimeType, metadata });
-                  }}
-                  onClearAttachment={() => setNoteAttachment(null)}
-                  disabled={isSendingMessage}
-                  hasAttachment={!!noteAttachment}
-                />
-              )}
 
               <Textarea
                 ref={textareaRef}
