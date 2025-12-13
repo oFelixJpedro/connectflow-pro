@@ -123,10 +123,46 @@ export default function InternalChat() {
     }
   };
 
+  // File size limits (in bytes)
+  const MAX_MEDIA_SIZE = 16 * 1024 * 1024; // 16 MB for image/video/audio
+  const MAX_DOCUMENT_SIZE = 100 * 1024 * 1024; // 100 MB for documents
+
+  // Allowed file types
+  const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
+  const ALLOWED_VIDEO_TYPES = ['video/mp4', 'video/3gpp', 'video/avi', 'video/quicktime', 'video/x-matroska'];
+  const ALLOWED_AUDIO_TYPES = ['audio/mpeg', 'audio/mp3', 'audio/aac', 'audio/mp4', 'audio/x-m4a', 'audio/ogg', 'audio/opus', 'audio/wav', 'audio/webm'];
+  const ALLOWED_DOCUMENT_EXTENSIONS = ['.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.txt', '.csv', '.md', '.zip', '.rar'];
+
+  const formatFileSize = (bytes: number) => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
   // Image handlers
   const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      // Validate type
+      if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
+        toast({ 
+          title: 'Tipo de arquivo não suportado', 
+          description: 'Use: JPEG, PNG, GIF ou WEBP',
+          variant: 'destructive' 
+        });
+        e.target.value = '';
+        return;
+      }
+      // Validate size
+      if (file.size > MAX_MEDIA_SIZE) {
+        toast({ 
+          title: 'Arquivo muito grande', 
+          description: `Máximo: 16 MB. Seu arquivo: ${formatFileSize(file.size)}`,
+          variant: 'destructive' 
+        });
+        e.target.value = '';
+        return;
+      }
       setImageFile(file);
       setIsImagePreviewOpen(true);
       setAttachmentMenuOpen(false);
@@ -149,6 +185,26 @@ export default function InternalChat() {
   const handleVideoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      // Validate type
+      if (!ALLOWED_VIDEO_TYPES.includes(file.type)) {
+        toast({ 
+          title: 'Tipo de arquivo não suportado', 
+          description: 'Use: MP4, 3GP, AVI, MOV ou MKV',
+          variant: 'destructive' 
+        });
+        e.target.value = '';
+        return;
+      }
+      // Validate size
+      if (file.size > MAX_MEDIA_SIZE) {
+        toast({ 
+          title: 'Arquivo muito grande', 
+          description: `Máximo: 16 MB. Seu arquivo: ${formatFileSize(file.size)}`,
+          variant: 'destructive' 
+        });
+        e.target.value = '';
+        return;
+      }
       setVideoFile(file);
       setIsVideoPreviewOpen(true);
       setAttachmentMenuOpen(false);
@@ -171,6 +227,26 @@ export default function InternalChat() {
   const handleAudioFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      // Validate type
+      if (!ALLOWED_AUDIO_TYPES.includes(file.type)) {
+        toast({ 
+          title: 'Tipo de arquivo não suportado', 
+          description: 'Use: MP3, AAC, M4A, OGG, OPUS ou WAV',
+          variant: 'destructive' 
+        });
+        e.target.value = '';
+        return;
+      }
+      // Validate size
+      if (file.size > MAX_MEDIA_SIZE) {
+        toast({ 
+          title: 'Arquivo muito grande', 
+          description: `Máximo: 16 MB. Seu arquivo: ${formatFileSize(file.size)}`,
+          variant: 'destructive' 
+        });
+        e.target.value = '';
+        return;
+      }
       setAudioFile(file);
       setAttachmentMenuOpen(false);
     }
@@ -181,6 +257,28 @@ export default function InternalChat() {
   const handleDocumentSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      // Validate extension
+      const fileName = file.name.toLowerCase();
+      const hasValidExtension = ALLOWED_DOCUMENT_EXTENSIONS.some(ext => fileName.endsWith(ext));
+      if (!hasValidExtension) {
+        toast({ 
+          title: 'Tipo de arquivo não suportado', 
+          description: 'Use: PDF, DOC, DOCX, XLS, XLSX, PPT, PPTX, TXT, CSV, MD, ZIP ou RAR',
+          variant: 'destructive' 
+        });
+        e.target.value = '';
+        return;
+      }
+      // Validate size
+      if (file.size > MAX_DOCUMENT_SIZE) {
+        toast({ 
+          title: 'Arquivo muito grande', 
+          description: `Máximo: 100 MB. Seu arquivo: ${formatFileSize(file.size)}`,
+          variant: 'destructive' 
+        });
+        e.target.value = '';
+        return;
+      }
       setDocumentFile(file);
       setIsDocumentPreviewOpen(true);
       setAttachmentMenuOpen(false);
