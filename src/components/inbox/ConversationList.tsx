@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Search } from 'lucide-react';
+import { Search, Star } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -12,6 +12,7 @@ import { ContactAvatar } from '@/components/ui/contact-avatar';
 import { cn } from '@/lib/utils';
 import type { Conversation, ConversationFilters } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
+import { useFollowedConversations } from '@/hooks/useFollowedConversations';
 import type { Tag } from '@/hooks/useTagsData';
 
 interface ConversationListProps {
@@ -62,6 +63,7 @@ export function ConversationList({
   tags = [],
 }: ConversationListProps) {
   const { user } = useAuth();
+  const { isFollowed, isAdminOrOwner } = useFollowedConversations();
   const [searchQuery, setSearchQuery] = useState('');
 
   // Filter by local search only (other filters are applied in backend)
@@ -224,9 +226,15 @@ export function ConversationList({
                     {/* Content */}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between gap-2">
-                        <p className="font-medium text-sm text-foreground truncate">
-                          {conversation.contact?.name || conversation.contact?.phoneNumber}
-                        </p>
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          {/* Star indicator for followed conversations */}
+                          {isAdminOrOwner && isFollowed(conversation.id) && (
+                            <Star className="w-3.5 h-3.5 text-violet-500 fill-violet-500 flex-shrink-0" />
+                          )}
+                          <p className="font-medium text-sm text-foreground truncate">
+                            {conversation.contact?.name || conversation.contact?.phoneNumber}
+                          </p>
+                        </div>
                         <span className="text-xs text-muted-foreground whitespace-nowrap flex-shrink-0">
                           {formatTimestamp(conversation.lastMessageAt)}
                         </span>

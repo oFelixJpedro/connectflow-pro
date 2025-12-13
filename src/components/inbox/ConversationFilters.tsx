@@ -115,6 +115,7 @@ export function ConversationFiltersComponent({
     filters.status && filters.status !== 'all',
     filters.departmentId && filters.departmentId !== 'all',
     isAdminOrOwner && filters.filterByAgentId,
+    isAdminOrOwner && filters.isFollowing,
   ].filter(Boolean).length;
 
   const handleApply = () => {
@@ -128,6 +129,7 @@ export function ConversationFiltersComponent({
       status: 'all',
       departmentId: undefined,
       filterByAgentId: undefined,
+      isFollowing: undefined,
     };
     setLocalFilters(clearedFilters);
     onFiltersChange(clearedFilters);
@@ -300,6 +302,39 @@ export function ConversationFiltersComponent({
                       </div>
                     ))}
                   </RadioGroup>
+                </div>
+              </>
+            )}
+
+            {/* OUTROS Filter - Only for admin/owner */}
+            {isAdminOrOwner && (
+              <>
+                <Separator />
+
+                <div className="space-y-2">
+                  <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                    Outros
+                  </Label>
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="checkbox"
+                      id="filter-following"
+                      checked={localFilters.isFollowing || false}
+                      onChange={(e) => 
+                        setLocalFilters(prev => ({ 
+                          ...prev, 
+                          isFollowing: e.target.checked ? true : undefined 
+                        }))
+                      }
+                      className="h-4 w-4 rounded border-border text-primary focus:ring-primary"
+                    />
+                    <Label 
+                      htmlFor="filter-following"
+                      className="text-sm font-normal cursor-pointer"
+                    >
+                      Seguindo
+                    </Label>
+                  </div>
                 </div>
               </>
             )}

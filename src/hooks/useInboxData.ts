@@ -314,7 +314,23 @@ export function useInboxData() {
 
       console.log('[useInboxData] Conversas carregadas:', data?.length || 0);
       
-      const transformedConversations = (data || []).map(transformConversation);
+      let transformedConversations = (data || []).map(transformConversation);
+
+      // Apply "isFollowing" filter if active (filter by conversation_followers)
+      if (conversationFilters.isFollowing && user?.id) {
+        const { data: followedConversations } = await supabase
+          .from('conversation_followers')
+          .select('conversation_id')
+          .eq('user_id', user.id);
+
+        if (followedConversations) {
+          const followedIds = new Set(followedConversations.map(f => f.conversation_id));
+          transformedConversations = transformedConversations.filter(c => followedIds.has(c.id));
+        } else {
+          transformedConversations = [];
+        }
+      }
+
       setConversations(transformedConversations);
     } catch (err) {
       console.error('[useInboxData] Erro inesperado:', err);
