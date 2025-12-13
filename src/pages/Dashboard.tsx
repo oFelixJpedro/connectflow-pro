@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { 
   MessageSquare, 
   Users, 
@@ -17,6 +18,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { cn } from '@/lib/utils';
 import { useDashboardData } from '@/hooks/useDashboardData';
 import { DashboardFilters } from '@/components/dashboard/DashboardFilters';
+import { ConversationPreviewModal } from '@/components/crm/ConversationPreviewModal';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { 
@@ -70,6 +72,28 @@ export default function Dashboard() {
     setFilter,
     isAdmin,
   } = useDashboardData();
+
+  // State for conversation preview modal
+  const [previewModal, setPreviewModal] = useState<{
+    open: boolean;
+    contactId: string;
+    contactName?: string;
+    contactPhone?: string;
+    contactAvatarUrl?: string;
+  }>({
+    open: false,
+    contactId: '',
+  });
+
+  const handleConversationClick = (conv: typeof recentConversations[0]) => {
+    setPreviewModal({
+      open: true,
+      contactId: conv.contactId,
+      contactName: conv.contact?.name || undefined,
+      contactPhone: conv.contact?.phoneNumber,
+      contactAvatarUrl: conv.contact?.avatarUrl || undefined,
+    });
+  };
 
   const todayChange = metrics.yesterdayConversations > 0
     ? Math.round(((metrics.todayConversations - metrics.yesterdayConversations) / metrics.yesterdayConversations) * 100)
@@ -459,6 +483,7 @@ export default function Dashboard() {
               recentConversations.map((conv) => (
                 <div 
                   key={conv.id}
+                  onClick={() => handleConversationClick(conv)}
                   className="flex items-center gap-4 p-3 rounded-lg hover:bg-muted/50 transition-colors cursor-pointer"
                 >
                   <Avatar className="w-10 h-10">
@@ -601,6 +626,16 @@ export default function Dashboard() {
           </Card>
         )}
       </div>
+
+      {/* Conversation Preview Modal */}
+      <ConversationPreviewModal
+        open={previewModal.open}
+        onOpenChange={(open) => setPreviewModal(prev => ({ ...prev, open }))}
+        contactId={previewModal.contactId}
+        contactName={previewModal.contactName}
+        contactPhone={previewModal.contactPhone}
+        contactAvatarUrl={previewModal.contactAvatarUrl}
+      />
     </div>
   );
 }

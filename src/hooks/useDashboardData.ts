@@ -28,6 +28,7 @@ interface HourlyData {
 
 interface RecentConversation {
   id: string;
+  contactId: string;
   status: string;
   unreadCount: number;
   contact: {
@@ -180,6 +181,7 @@ export function useDashboardData() {
           .from('conversations')
           .select(`
             id,
+            contact_id,
             status,
             unread_count,
             last_message_at,
@@ -383,6 +385,7 @@ export function useDashboardData() {
         // Process recent conversations
         const recentConvs: RecentConversation[] = (recentConvsResult.data || []).map(conv => ({
           id: conv.id,
+          contactId: conv.contact_id,
           status: conv.status || 'open',
           unreadCount: conv.unread_count || 0,
           contact: {
