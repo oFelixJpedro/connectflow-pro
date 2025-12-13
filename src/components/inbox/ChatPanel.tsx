@@ -1006,6 +1006,16 @@ export function ChatPanel({
                                 <span className="text-[10px] font-medium uppercase tracking-wide">Nota interna</span>
                               </div>
                             )}
+
+                            {/* Quoted message preview */}
+                            {message.quotedMessage && (
+                              <QuotedMessagePreview
+                                quotedMessage={message.quotedMessage}
+                                isOutbound={isOutbound}
+                                onClick={() => scrollToMessage(message.quotedMessage!.id)}
+                              />
+                            )}
+
                             {/* Check if message is deleted first */}
                             {message.isDeleted ? (
                               <DeletedMessageIndicator
