@@ -13,9 +13,9 @@ import {
   SelectTrigger, 
   SelectValue 
 } from '@/components/ui/select';
-import { Loader2, LayoutGrid, Plus, Globe, Smartphone, Building2 } from 'lucide-react';
+import { Loader2, LayoutGrid, Plus, Smartphone, Building2 } from 'lucide-react';
 import { toast } from 'sonner';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 interface Connection {
   id: string;
@@ -30,13 +30,11 @@ interface Department {
   whatsapp_connection_id: string;
 }
 
-const ALL_CONNECTIONS = 'all';
-
 export default function CRM() {
   const { profile, company, userRole } = useAuth();
   const [connections, setConnections] = useState<Connection[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
-  const [selectedConnectionId, setSelectedConnectionId] = useState<string>(ALL_CONNECTIONS);
+  const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(null);
   const [selectedDepartmentId, setSelectedDepartmentId] = useState<string | null>(null);
   const [loadingConnections, setLoadingConnections] = useState(true);
   const [hasCRMAccess, setHasCRMAccess] = useState<boolean | null>(null);
@@ -49,11 +47,9 @@ export default function CRM() {
   const [filterTags, setFilterTags] = useState<string[]>([]);
 
   const isAdminOrOwner = userRole?.role === 'owner' || userRole?.role === 'admin';
-  const canAccessGlobalView = isAdminOrOwner;
-  const isGlobalView = selectedConnectionId === ALL_CONNECTIONS;
 
-  // Get connection ID for kanban hook - null for global view to load all boards
-  const kanbanConnectionId = isGlobalView ? null : selectedConnectionId;
+  // Connection ID for kanban hook
+  const kanbanConnectionId = selectedConnectionId;
 
   const {
     board,
@@ -85,7 +81,7 @@ export default function CRM() {
     allCards,
     allColumns,
     connectionMap,
-  } = useKanbanData(kanbanConnectionId, isGlobalView);
+  } = useKanbanData(kanbanConnectionId, false);
 
   // Load connections with CRM access check
   useEffect(() => {
@@ -109,12 +105,10 @@ export default function CRM() {
           setConnections(data || []);
           setHasCRMAccess((data?.length || 0) > 0);
 
-          // Auto-select: admin/owner defaults to global view
+          // Auto-select first connection or saved connection
           const savedId = localStorage.getItem('crm_selectedConnectionId');
-          if (savedId && savedId !== ALL_CONNECTIONS && data?.find(c => c.id === savedId)) {
+          if (savedId && data?.find(c => c.id === savedId)) {
             setSelectedConnectionId(savedId);
-          } else if (canAccessGlobalView) {
-            setSelectedConnectionId(ALL_CONNECTIONS);
           } else if (data?.length) {
             setSelectedConnectionId(data[0].id);
           }
@@ -150,10 +144,10 @@ export default function CRM() {
           setConnections(data || []);
           setHasCRMAccess((data?.length || 0) > 0);
 
-          // Auto-select first connection for non-admin users (no global view)
+          // Auto-select first connection or saved connection
           if (data?.length) {
             const savedId = localStorage.getItem('crm_selectedConnectionId');
-            const validSaved = savedId && savedId !== ALL_CONNECTIONS && data.find(c => c.id === savedId);
+            const validSaved = savedId && data.find(c => c.id === savedId);
             setSelectedConnectionId(validSaved ? savedId : data[0].id);
           }
         }
@@ -166,7 +160,7 @@ export default function CRM() {
     };
 
     loadConnectionsWithCRMAccess();
-  }, [company?.id, profile?.id, userRole, canAccessGlobalView]);
+  }, [company?.id, profile?.id, userRole]);
 
   // Load departments
   useEffect(() => {
@@ -206,9 +200,9 @@ export default function CRM() {
     setSelectedDepartmentId(null);
   };
 
-  // Get cards to display based on filters
-  const displayCards = isGlobalView ? allCards : cards;
-  const displayColumns = isGlobalView ? allColumns : columns;
+  // Get cards to display
+  const displayCards = cards;
+  const displayColumns = columns;
 
   // Filter cards by department if selected
   const departmentFilteredCards = displayCards.filter(card => {
@@ -269,9 +263,9 @@ export default function CRM() {
   const allTags = [...new Set(displayCards.flatMap(c => c.tags?.map(t => t.name) || []))];
 
   // Get filtered departments based on selected connection
-  const filteredDepartments = isGlobalView 
-    ? departments 
-    : departments.filter(d => d.whatsapp_connection_id === selectedConnectionId);
+  const filteredDepartments = selectedConnectionId 
+    ? departments.filter(d => d.whatsapp_connection_id === selectedConnectionId)
+    : [];
 
   const clearFilters = () => {
     setSearchQuery('');
@@ -290,15 +284,6 @@ export default function CRM() {
     
     if (hasActiveFilters && count !== total) {
       return `${count} de ${total} cards (filtrados)`;
-    }
-    
-    if (isGlobalView && !selectedDepartmentId) {
-      return `${count} cards no total (visão global)`;
-    }
-    
-    if (isGlobalView && selectedDepartmentId) {
-      const deptName = departments.find(d => d.id === selectedDepartmentId)?.name;
-      return `${count} cards no departamento ${deptName} (todas as conexões)`;
     }
     
     if (!selectedDepartmentId) {
@@ -352,29 +337,14 @@ export default function CRM() {
           <h1 className="text-xl font-semibold">CRM</h1>
           
           {/* Connection Selector */}
-          <Select value={selectedConnectionId} onValueChange={handleConnectionChange}>
+          <Select value={selectedConnectionId || ''} onValueChange={handleConnectionChange}>
             <SelectTrigger className="w-[220px]">
               <div className="flex items-center gap-2">
-                {isGlobalView ? (
-                  <Globe className="w-4 h-4 text-primary" />
-                ) : (
-                  <Smartphone className="w-4 h-4 text-green-500" />
-                )}
+                <Smartphone className="w-4 h-4 text-green-500" />
                 <SelectValue placeholder="Selecionar conexão" />
               </div>
             </SelectTrigger>
             <SelectContent className="bg-popover">
-              {canAccessGlobalView && (
-                <>
-                  <SelectItem value={ALL_CONNECTIONS}>
-                    <div className="flex items-center gap-2">
-                      <Globe className="w-4 h-4 text-primary" />
-                      <span>Todas as conexões</span>
-                    </div>
-                  </SelectItem>
-                  <div className="my-1 border-t" />
-                </>
-              )}
               {connections.map(conn => (
                 <SelectItem key={conn.id} value={conn.id}>
                   <div className="flex items-center gap-2">
@@ -422,26 +392,13 @@ export default function CRM() {
         </div>
 
         {/* Add Card Button */}
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span>
-                <Button 
-                  onClick={() => setAddCardOpen(true)}
-                  disabled={isGlobalView}
-                >
-                  <Plus className="w-4 h-4 mr-2" />
-                  Adicionar Card
-                </Button>
-              </span>
-            </TooltipTrigger>
-            {isGlobalView && (
-              <TooltipContent>
-                <p>Selecione uma conexão específica para adicionar contatos</p>
-              </TooltipContent>
-            )}
-          </Tooltip>
-        </TooltipProvider>
+        <Button 
+          onClick={() => setAddCardOpen(true)}
+          disabled={!selectedConnectionId}
+        >
+          <Plus className="w-4 h-4 mr-2" />
+          Adicionar Card
+        </Button>
       </div>
 
       {/* Add Card Dialog */}
@@ -450,7 +407,7 @@ export default function CRM() {
         onOpenChange={setAddCardOpen}
         existingContactIds={displayCards.map(c => c.contact_id)}
         onAddCard={createCard}
-        connectionId={isGlobalView ? null : selectedConnectionId}
+        connectionId={selectedConnectionId}
         departmentId={selectedDepartmentId}
       />
 
@@ -481,7 +438,7 @@ export default function CRM() {
           cards={filteredCards}
           teamMembers={teamMembers}
           isAdminOrOwner={!!kanbanIsAdmin}
-          isGlobalView={isGlobalView}
+          isGlobalView={false}
           connectionMap={connectionMap}
           connections={connections}
           onCreateColumn={createColumn}
