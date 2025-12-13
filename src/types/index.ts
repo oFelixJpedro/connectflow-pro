@@ -143,6 +143,9 @@ export interface Message {
   quotedMessageId?: string;
   quotedMessage?: QuotedMessage;
   reactions?: MessageReaction[];
+  isDeleted?: boolean;
+  deletedAt?: string;
+  deletedByType?: 'client' | 'agent';
   createdAt: string;
   updatedAt: string;
 }
@@ -153,6 +156,7 @@ export interface QuotedMessage {
   messageType: MessageType;
   senderType: SenderType;
   mediaUrl?: string;
+  isDeleted?: boolean;
   createdAt: string;
 }
 

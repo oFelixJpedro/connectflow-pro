@@ -46,6 +46,7 @@ import { ReactionPicker } from './ReactionPicker';
 import { EmojiMessagePicker } from './EmojiMessagePicker';
 import { QuickRepliesPicker } from './QuickRepliesPicker';
 import { QuickReplyConfirmModal } from './QuickReplyConfirmModal';
+import { DeletedMessageIndicator } from './DeletedMessageIndicator';
 
 import { InternalNoteAudioRecorder } from './InternalNoteAudioRecorder';
 import { QuickReply } from '@/hooks/useQuickRepliesData';
@@ -1006,16 +1007,18 @@ export function ChatPanel({
                                 <span className="text-[10px] font-medium uppercase tracking-wide">Nota interna</span>
                               </div>
                             )}
-                            {/* Quoted message preview */}
-                            {message.quotedMessage && (
-                              <QuotedMessagePreview
-                                quotedMessage={message.quotedMessage}
+                            {/* Check if message is deleted first */}
+                            {message.isDeleted ? (
+                              <DeletedMessageIndicator
+                                originalContent={message.content}
+                                deletedByType={message.deletedByType}
+                                deletedAt={message.deletedAt}
+                                messageType={message.messageType}
                                 isOutbound={isOutbound}
-                                onClick={() => message.quotedMessageId && scrollToMessage(message.quotedMessageId)}
+                                canViewOriginal={true}
                               />
-                            )}
-                            {/* Audio message */}
-                            {message.messageType === 'audio' && message.mediaUrl ? (
+                            ) : message.messageType === 'audio' && message.mediaUrl ? (
+                              /* Audio message */
                               <AudioPlayer
                                 src={message.mediaUrl}
                                 mimeType={message.mediaMimeType}

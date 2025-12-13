@@ -1,5 +1,5 @@
 import { cn } from '@/lib/utils';
-import { FileText, Image, Video, Mic, Sticker, File } from 'lucide-react';
+import { FileText, Image, Video, Mic, Sticker, File, Trash2 } from 'lucide-react';
 import type { QuotedMessage } from '@/types';
 
 interface QuotedMessagePreviewProps {
@@ -18,6 +18,16 @@ export function QuotedMessagePreview({
   };
 
   const getPreviewContent = () => {
+    // If message is deleted, show deleted indicator
+    if (quotedMessage.isDeleted) {
+      return (
+        <span className="flex items-center gap-1 italic text-muted-foreground">
+          <Trash2 className="w-3 h-3" />
+          <span>Mensagem apagada</span>
+        </span>
+      );
+    }
+    
     const messageType = quotedMessage.messageType;
     
     // For text messages, show content preview
@@ -93,6 +103,11 @@ export function ReplyInputPreview({ quotedMessage, onCancel }: ReplyInputPreview
   };
 
   const getPreviewContent = () => {
+    // If message is deleted, show deleted indicator
+    if (quotedMessage.isDeleted) {
+      return '🗑️ Mensagem apagada';
+    }
+    
     const messageType = quotedMessage.messageType;
     
     if (messageType === 'text' && quotedMessage.content) {
