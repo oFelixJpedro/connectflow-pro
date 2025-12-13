@@ -463,11 +463,14 @@ export function ChatPanel({
 
       if (uploadError) throw uploadError;
 
-      const { data: publicUrlData } = supabase.storage
+      // Generate signed URL (bucket is private)
+      const { data: signedUrlData, error: signedUrlError } = await supabase.storage
         .from('internal-notes-media')
-        .getPublicUrl(filePath);
+        .createSignedUrl(filePath, 60 * 60 * 24 * 365); // 1 year expiry
 
-      const mediaUrl = publicUrlData.publicUrl;
+      if (signedUrlError) throw signedUrlError;
+
+      const mediaUrl = signedUrlData.signedUrl;
 
       // Send internal note with audio
       const success = await onSendInternalNote(
