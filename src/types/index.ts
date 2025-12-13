@@ -207,4 +207,5 @@ export interface ConversationFilters {
   priority?: ConversationPriority;
   search?: string;
   inboxColumn?: InboxColumn;
+  isFollowing?: boolean; // Filter by followed conversations (admin/owner only)
 }

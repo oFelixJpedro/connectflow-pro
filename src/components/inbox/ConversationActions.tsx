@@ -11,6 +11,7 @@ import {
   Download,
   ImageIcon,
   RotateCcw,
+  Star,
 } from 'lucide-react';
 import { MediaGalleryModal } from './MediaGalleryModal';
 import { Button } from '@/components/ui/button';
@@ -73,6 +74,7 @@ export function ConversationActions({
   const [agents, setAgents] = useState<Agent[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [mediaGalleryOpen, setMediaGalleryOpen] = useState(false);
+  const [isFollowing, setIsFollowing] = useState(false);
   const [confirmDialog, setConfirmDialog] = useState<{
     open: boolean;
     action: string;
@@ -84,6 +86,27 @@ export function ConversationActions({
   const isAssignedToMe = conversation.assignedUserId === currentUserId;
   const isClosed = conversation.status === 'closed';
   const isAdminOrOwner = ['owner', 'admin'].includes(currentUserRole);
+
+  // Check if user is following this conversation
+  useEffect(() => {
+    async function checkFollowing() {
+      if (!isAdminOrOwner) return;
+      
+      const { data, error } = await supabase
+        .from('conversation_followers')
+        .select('id')
+        .eq('conversation_id', conversation.id)
+        .eq('user_id', currentUserId)
+        .maybeSingle();
+
+      if (!error && data) {
+        setIsFollowing(true);
+      } else {
+        setIsFollowing(false);
+      }
+    }
+    checkFollowing();
+  }, [conversation.id, currentUserId, isAdminOrOwner]);
 
   // Carregar agentes
   useEffect(() => {
@@ -232,6 +255,56 @@ export function ConversationActions({
       .join('')
       .toUpperCase()
       .slice(0, 2);
+  };
+
+  const handleToggleFollow = async () => {
+    setIsLoading(true);
+    setLoadingAction('follow');
+
+    try {
+      if (isFollowing) {
+        // Unfollow
+        const { error } = await supabase
+          .from('conversation_followers')
+          .delete()
+          .eq('conversation_id', conversation.id)
+          .eq('user_id', currentUserId);
+
+        if (error) throw error;
+
+        setIsFollowing(false);
+        toast({
+          title: 'Conversa removida dos seguidos',
+          description: 'Você não está mais seguindo esta conversa.',
+        });
+      } else {
+        // Follow
+        const { error } = await supabase
+          .from('conversation_followers')
+          .insert({
+            conversation_id: conversation.id,
+            user_id: currentUserId,
+          });
+
+        if (error) throw error;
+
+        setIsFollowing(true);
+        toast({
+          title: 'Conversa adicionada aos seguidos',
+          description: 'Você está seguindo esta conversa.',
+        });
+      }
+    } catch (error: any) {
+      console.error('[ConversationActions] Erro ao seguir/deixar de seguir:', error);
+      toast({
+        title: 'Erro',
+        description: error.message || 'Não foi possível atualizar o status de seguindo.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsLoading(false);
+      setLoadingAction(null);
+    }
   };
 
   // Pode transferir/atribuir: owners/admins podem sempre, agents apenas se estiver atribuída a eles
@@ -468,6 +541,18 @@ export function ConversationActions({
             >
               <CheckCircle className="w-4 h-4 mr-2" />
               <span>Concluir atendimento</span>
+            </DropdownMenuItem>
+          )}
+
+          {/* Seguir/Deixar de seguir - apenas admin/owner */}
+          {isAdminOrOwner && (
+            <DropdownMenuItem
+              onClick={handleToggleFollow}
+              disabled={loadingAction === 'follow'}
+              className="text-violet-600 focus:text-violet-600 dark:text-violet-400 dark:focus:text-violet-400"
+            >
+              <Star className={`w-4 h-4 mr-2 ${isFollowing ? 'fill-current' : ''}`} />
+              <span>{isFollowing ? 'Deixar de seguir' : 'Seguir atendimento'}</span>
             </DropdownMenuItem>
           )}
 
