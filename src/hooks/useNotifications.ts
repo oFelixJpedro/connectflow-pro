@@ -27,13 +27,14 @@ interface UserAccessPermissions {
 }
 
 interface NotificationSettings {
-  soundNotifications?: boolean;
-  desktopNotifications?: boolean;
+  whatsappSoundNotifications?: boolean;
+  internalChatSoundNotifications?: boolean;
 }
 
 // Throttle tracking for sound notifications
-let lastSoundPlayedAt = 0;
-const SOUND_THROTTLE_MS = 1000; // Minimum 1 second between sounds
+let lastWhatsAppSoundAt = 0;
+let lastInternalChatSoundAt = 0;
+const SOUND_THROTTLE_MS = 2000; // Minimum 2 seconds between sounds
 
 // Play notification sound using Web Audio API
 export const playNotificationSound = () => {
@@ -45,11 +46,11 @@ export const playNotificationSound = () => {
     oscillator.connect(gainNode);
     gainNode.connect(audioContext.destination);
     
-    // Pleasant notification tone
-    oscillator.frequency.value = 880; // A5 note
+    // Pleasant notification tone - A5 note
+    oscillator.frequency.value = 880;
     oscillator.type = 'sine';
     
-    gainNode.gain.setValueAtTime(0.2, audioContext.currentTime);
+    gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
     gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.4);
     
     oscillator.start(audioContext.currentTime);
@@ -70,34 +71,65 @@ export function useNotifications() {
   const processedMessageIds = useRef<Set<string>>(new Set());
   const isInitialLoad = useRef(true);
 
-  // Get user's sound notification preference
-  const getSoundEnabled = useCallback((): boolean => {
+  // Check if WhatsApp sound is enabled
+  const isWhatsAppSoundEnabled = useCallback((): boolean => {
     if (!profile?.metadata) return true; // Default enabled
     const metadata = profile.metadata as { notifications?: NotificationSettings };
-    return metadata.notifications?.soundNotifications !== false;
+    return metadata.notifications?.whatsappSoundNotifications !== false;
   }, [profile?.metadata]);
 
-  // Play sound with throttling and preference check
-  const playSound = useCallback((forConversationId?: string) => {
+  // Check if Internal Chat sound is enabled
+  const isInternalChatSoundEnabled = useCallback((): boolean => {
+    if (!profile?.metadata) return true; // Default enabled
+    const metadata = profile.metadata as { notifications?: NotificationSettings };
+    return metadata.notifications?.internalChatSoundNotifications !== false;
+  }, [profile?.metadata]);
+
+  // Play WhatsApp notification sound with throttling
+  const playWhatsAppSound = useCallback((forConversationId?: string) => {
     // Don't play if user is viewing this conversation
     if (forConversationId && selectedConversation?.id === forConversationId) {
+      console.log('[Notifications] Skipping sound - user is viewing this conversation');
       return;
     }
 
     // Check user preference
-    if (!getSoundEnabled()) {
+    if (!isWhatsAppSoundEnabled()) {
+      console.log('[Notifications] Skipping WhatsApp sound - disabled in settings');
       return;
     }
 
-    // Throttle: don't play if we played recently
+    // Throttle
     const now = Date.now();
-    if (now - lastSoundPlayedAt < SOUND_THROTTLE_MS) {
+    if (now - lastWhatsAppSoundAt < SOUND_THROTTLE_MS) {
+      console.log('[Notifications] Skipping WhatsApp sound - throttled');
       return;
     }
     
-    lastSoundPlayedAt = now;
+    console.log('[Notifications] Playing WhatsApp notification sound');
+    lastWhatsAppSoundAt = now;
     playNotificationSound();
-  }, [selectedConversation?.id, getSoundEnabled]);
+  }, [selectedConversation?.id, isWhatsAppSoundEnabled]);
+
+  // Play Internal Chat notification sound with throttling
+  const playInternalChatSound = useCallback(() => {
+    // Check user preference
+    if (!isInternalChatSoundEnabled()) {
+      console.log('[Notifications] Skipping internal chat sound - disabled in settings');
+      return;
+    }
+
+    // Throttle
+    const now = Date.now();
+    if (now - lastInternalChatSoundAt < SOUND_THROTTLE_MS) {
+      console.log('[Notifications] Skipping internal chat sound - throttled');
+      return;
+    }
+    
+    console.log('[Notifications] Playing internal chat notification sound');
+    lastInternalChatSoundAt = now;
+    playNotificationSound();
+  }, [isInternalChatSoundEnabled]);
 
   // Get user's access permissions for connections and departments
   const getUserAccessPermissions = useCallback(async (): Promise<UserAccessPermissions> => {
@@ -435,9 +467,11 @@ export function useNotifications() {
           
           // Only notify for inbound messages not from the user
           if (message.direction === 'inbound' && message.sender_type === 'contact') {
+            console.log('[Notifications] New WhatsApp message received:', message.id, 'isInitialLoad:', isInitialLoad.current);
+            
             // Play sound only after initial load, with conversation check
             if (!isInitialLoad.current) {
-              playSound(message.conversation_id);
+              playWhatsAppSound(message.conversation_id);
             }
             
             // Refresh counts
@@ -451,7 +485,7 @@ export function useNotifications() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [company?.id, profile?.id, refreshCounts, loadRecentNotifications, playSound]);
+  }, [company?.id, profile?.id, refreshCounts, loadRecentNotifications, playWhatsAppSound]);
 
   // Real-time subscription for conversation updates (unread count changes)
   useEffect(() => {
@@ -502,7 +536,8 @@ export function useNotifications() {
           
           // Play sound only after initial load (no conversation ID check for internal chat)
           if (!isInitialLoad.current) {
-            playSound();
+            console.log('[Notifications] New internal chat message received:', message.id);
+            playInternalChatSound();
           }
           
           // Refresh counts
@@ -514,7 +549,7 @@ export function useNotifications() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [company?.id, profile?.id, refreshCounts, playSound]);
+  }, [company?.id, profile?.id, refreshCounts, playInternalChatSound]);
 
   return {
     notifications,
