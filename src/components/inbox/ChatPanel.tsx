@@ -47,7 +47,7 @@ import { EmojiMessagePicker } from './EmojiMessagePicker';
 import { QuickRepliesPicker } from './QuickRepliesPicker';
 import { QuickReplyConfirmModal } from './QuickReplyConfirmModal';
 import { DeletedMessageIndicator } from './DeletedMessageIndicator';
-
+import { EditedMessageIndicator } from './EditedMessageIndicator';
 import { InternalNoteAudioRecorder } from './InternalNoteAudioRecorder';
 import { QuickReply } from '@/hooks/useQuickRepliesData';
 import { cn } from '@/lib/utils';
@@ -1184,9 +1184,14 @@ export function ChatPanel({
                               </div>
                             ) : (
                               /* Text message content */
-                              <p className="text-sm whitespace-pre-wrap break-words">
-                                {message.content}
-                              </p>
+                              <div>
+                                <p className="text-sm whitespace-pre-wrap break-words">
+                                  {message.content}
+                                </p>
+                                {message.isEdited && (
+                                  <EditedMessageIndicator message={message} isOutbound={isOutbound} />
+                                )}
+                              </div>
                             )}
                             
                             {/* Message footer - only for non-audio/image/video or audio/image/video without URL */}

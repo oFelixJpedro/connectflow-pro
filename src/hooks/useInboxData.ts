@@ -90,12 +90,17 @@ function transformMessage(db: any, reactions?: MessageReaction[]): Message {
       senderType: db.quoted_message.sender_type as Message['senderType'],
       mediaUrl: db.quoted_message.media_url || undefined,
       isDeleted: db.quoted_message.is_deleted || false,
+      isEdited: db.quoted_message.is_edited || false,
       createdAt: db.quoted_message.created_at,
     } : undefined,
     reactions: reactions || [],
     isDeleted: db.is_deleted || false,
     deletedAt: db.deleted_at || undefined,
     deletedByType: db.deleted_by_type || undefined,
+    isEdited: db.is_edited || false,
+    editedAt: db.edited_at || undefined,
+    originalContent: db.original_content || undefined,
+    editCount: db.edit_count || 0,
     createdAt: db.created_at,
     updatedAt: db.updated_at,
   };
@@ -348,6 +353,7 @@ export function useInboxData() {
             sender_type,
             media_url,
             is_deleted,
+            is_edited,
             created_at
           )
         `)
@@ -920,7 +926,7 @@ export function useInboxData() {
               console.log('[Realtime] Buscando mensagem citada:', newMessage.quotedMessageId);
               const { data: quotedData } = await supabase
                 .from('messages')
-                .select('id, content, message_type, sender_type, media_url, created_at')
+                .select('id, content, message_type, sender_type, media_url, is_deleted, is_edited, created_at')
                 .eq('id', newMessage.quotedMessageId)
                 .maybeSingle();
               
@@ -933,6 +939,8 @@ export function useInboxData() {
                     messageType: quotedData.message_type as Message['messageType'],
                     senderType: quotedData.sender_type as Message['senderType'],
                     mediaUrl: quotedData.media_url || undefined,
+                    isDeleted: quotedData.is_deleted || false,
+                    isEdited: quotedData.is_edited || false,
                     createdAt: quotedData.created_at,
                   },
                 };

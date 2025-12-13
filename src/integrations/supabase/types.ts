@@ -1085,14 +1085,18 @@ export type Database = {
           deleted_at: string | null
           deleted_by_type: string | null
           direction: Database["public"]["Enums"]["message_direction"]
+          edit_count: number | null
+          edited_at: string | null
           error_message: string | null
           id: string
           is_deleted: boolean | null
+          is_edited: boolean | null
           is_internal_note: boolean | null
           media_mime_type: string | null
           media_url: string | null
           message_type: Database["public"]["Enums"]["message_type"]
           metadata: Json | null
+          original_content: string | null
           quoted_message_id: string | null
           sender_id: string | null
           sender_type: Database["public"]["Enums"]["sender_type"]
@@ -1108,14 +1112,18 @@ export type Database = {
           deleted_at?: string | null
           deleted_by_type?: string | null
           direction: Database["public"]["Enums"]["message_direction"]
+          edit_count?: number | null
+          edited_at?: string | null
           error_message?: string | null
           id?: string
           is_deleted?: boolean | null
+          is_edited?: boolean | null
           is_internal_note?: boolean | null
           media_mime_type?: string | null
           media_url?: string | null
           message_type: Database["public"]["Enums"]["message_type"]
           metadata?: Json | null
+          original_content?: string | null
           quoted_message_id?: string | null
           sender_id?: string | null
           sender_type: Database["public"]["Enums"]["sender_type"]
@@ -1131,14 +1139,18 @@ export type Database = {
           deleted_at?: string | null
           deleted_by_type?: string | null
           direction?: Database["public"]["Enums"]["message_direction"]
+          edit_count?: number | null
+          edited_at?: string | null
           error_message?: string | null
           id?: string
           is_deleted?: boolean | null
+          is_edited?: boolean | null
           is_internal_note?: boolean | null
           media_mime_type?: string | null
           media_url?: string | null
           message_type?: Database["public"]["Enums"]["message_type"]
           metadata?: Json | null
+          original_content?: string | null
           quoted_message_id?: string | null
           sender_id?: string | null
           sender_type?: Database["public"]["Enums"]["sender_type"]
