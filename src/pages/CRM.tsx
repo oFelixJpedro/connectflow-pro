@@ -208,19 +208,8 @@ export default function CRM() {
   const departmentFilteredCards = displayCards.filter(card => {
     if (!selectedDepartmentId) return true;
     
-    // Get connection for this card's column
-    const column = displayColumns.find(c => c.id === card.column_id);
-    if (!column) return false;
-    
-    // Get connection for this board
-    const connection = connectionMap?.get(column.board_id);
-    if (!connection) return false;
-    
-    // Check if connection belongs to selected department
-    const connectionDept = departments.find(d => 
-      d.whatsapp_connection_id === connection.id
-    );
-    return connectionDept?.id === selectedDepartmentId;
+    // Filter by the conversation's department_id
+    return card.conversation_department_id === selectedDepartmentId;
   });
 
   // Apply other filters
