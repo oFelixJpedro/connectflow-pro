@@ -75,21 +75,37 @@ export function KanbanCard({ card, isDragging, onClick, connectionName }: Kanban
         (isDragging || isSortableDragging) && 'opacity-50 shadow-lg'
       )}
     >
-      {/* Priority Indicator */}
-      <div className="flex items-center gap-2 mb-2">
-        <div className={cn('w-2 h-2 rounded-full', priority.color)} />
-        <span className="text-xs text-muted-foreground">{priority.label}</span>
-      </div>
+      {/* Header with Avatar and Priority */}
+      <div className="flex items-start gap-3 mb-2">
+        {/* Contact Avatar */}
+        <Avatar className="w-10 h-10 flex-shrink-0">
+          <AvatarImage 
+            src={card.contact?.avatar_url || undefined} 
+            className="object-cover object-top" 
+          />
+          <AvatarFallback className="text-sm bg-primary/10 text-primary">
+            {getInitials(card.contact?.name || 'SN')}
+          </AvatarFallback>
+        </Avatar>
+        
+        <div className="flex-1 min-w-0">
+          {/* Priority Indicator */}
+          <div className="flex items-center gap-2 mb-1">
+            <div className={cn('w-2 h-2 rounded-full', priority.color)} />
+            <span className="text-xs text-muted-foreground">{priority.label}</span>
+          </div>
 
-      {/* Contact Name */}
-      <h4 className="font-medium truncate mb-1">
-        {card.contact?.name || 'Sem nome'}
-      </h4>
+          {/* Contact Name */}
+          <h4 className="font-medium truncate">
+            {card.contact?.name || 'Sem nome'}
+          </h4>
 
-      {/* Phone */}
-      <div className="flex items-center gap-1 text-xs text-muted-foreground mb-2">
-        <Phone className="w-3 h-3" />
-        <span>{formatPhone(card.contact?.phone_number || '')}</span>
+          {/* Phone */}
+          <div className="flex items-center gap-1 text-xs text-muted-foreground">
+            <Phone className="w-3 h-3" />
+            <span>{formatPhone(card.contact?.phone_number || '')}</span>
+          </div>
+        </div>
       </div>
 
       {/* Connection Badge (only in global view) */}
