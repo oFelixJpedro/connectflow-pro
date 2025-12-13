@@ -5,8 +5,10 @@ import {
   CreditCard,
   Save,
   Upload,
-  Loader2
+  Loader2,
+  Volume2
 } from 'lucide-react';
+import { playNotificationSound } from '@/hooks/useNotifications';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -531,12 +533,23 @@ export default function SettingsGeneral() {
                       Toque um som quando novas mensagens chegarem
                     </p>
                   </div>
-                  <Switch 
-                    checked={notifications.soundNotifications}
-                    onCheckedChange={(checked) => 
-                      setNotifications((prev) => ({ ...prev, soundNotifications: checked }))
-                    }
-                  />
+                  <div className="flex items-center gap-2">
+                    <Button 
+                      variant="outline" 
+                      size="sm"
+                      onClick={() => playNotificationSound()}
+                      className="gap-1"
+                    >
+                      <Volume2 className="w-3 h-3" />
+                      Testar
+                    </Button>
+                    <Switch 
+                      checked={notifications.soundNotifications}
+                      onCheckedChange={(checked) => 
+                        setNotifications((prev) => ({ ...prev, soundNotifications: checked }))
+                      }
+                    />
+                  </div>
                 </div>
                 <Separator />
                 <div className="flex items-center justify-between">
