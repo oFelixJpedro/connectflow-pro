@@ -308,6 +308,22 @@ serve(async (req) => {
       console.log('🔍 [PAYLOAD COMPLETO]:', JSON.stringify(payload, null, 2))
       console.log('🔍 ==========================================')
       
+      // Check for edit-related fields
+      const editFields = {
+        editedMessage: payload.message?.editedMessage,
+        protocolMessage: payload.message?.protocolMessage,
+        contextEdit: payload.message?.context?.edit,
+        isEdited: payload.message?.isEdited,
+        editMessageId: payload.message?.editMessageId,
+        originalId: payload.message?.originalId,
+        editedTimestamp: payload.message?.editedTimestamp,
+      }
+      
+      const hasEditFields = Object.values(editFields).some(v => v !== undefined && v !== null)
+      if (hasEditFields) {
+        console.log('📝 [CAMPOS DE EDIÇÃO DETECTADOS]:', JSON.stringify(editFields, null, 2))
+      }
+      
     } catch (e) {
       console.log(`❌ Failed to parse JSON: ${e}`)
       return new Response(
