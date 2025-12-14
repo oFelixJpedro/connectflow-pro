@@ -100,6 +100,55 @@ export function useInternalChat() {
     setIsLoading(true);
 
     try {
+      // Ensure the user is added to the general room
+      // Check if general room exists
+      const { data: existingGeneralRoom } = await supabase
+        .from('internal_chat_rooms')
+        .select('id')
+        .eq('company_id', company.id)
+        .eq('type', 'general')
+        .maybeSingle();
+
+      let generalRoomId = existingGeneralRoom?.id;
+
+      if (!generalRoomId) {
+        // Create general room
+        const { data: newRoom, error } = await supabase
+          .from('internal_chat_rooms')
+          .insert({
+            company_id: company.id,
+            type: 'general',
+            name: 'Chat Geral',
+          })
+          .select('id')
+          .single();
+
+        if (!error) {
+          generalRoomId = newRoom?.id;
+        }
+      }
+
+      if (generalRoomId) {
+        // Check if current user is a participant of general room
+        const { data: isParticipant } = await supabase
+          .from('internal_chat_participants')
+          .select('id')
+          .eq('room_id', generalRoomId)
+          .eq('user_id', profile.id)
+          .maybeSingle();
+
+        if (!isParticipant) {
+          // Add current user as participant
+          await supabase
+            .from('internal_chat_participants')
+            .insert({
+              room_id: generalRoomId,
+              user_id: profile.id,
+            });
+          console.log('[InternalChat] Usuário adicionado ao Chat Geral');
+        }
+      }
+
       // Get last seen timestamps from database
       const { data: readStates } = await supabase
         .from('internal_chat_read_states')
@@ -214,39 +263,6 @@ export function useInternalChat() {
       setIsLoading(false);
     }
   }, [company?.id, profile?.id]);
-
-  // Create or get general room
-  const ensureGeneralRoom = useCallback(async () => {
-    if (!company?.id) return null;
-
-    // Check if general room exists
-    const { data: existingRoom } = await supabase
-      .from('internal_chat_rooms')
-      .select('id')
-      .eq('company_id', company.id)
-      .eq('type', 'general')
-      .single();
-
-    if (existingRoom) return existingRoom.id;
-
-    // Create general room
-    const { data: newRoom, error } = await supabase
-      .from('internal_chat_rooms')
-      .insert({
-        company_id: company.id,
-        type: 'general',
-        name: 'Chat Geral',
-      })
-      .select('id')
-      .single();
-
-    if (error) {
-      console.error('[InternalChat] Erro ao criar sala geral:', error);
-      return null;
-    }
-
-    return newRoom?.id;
-  }, [company?.id]);
 
   // Create or get direct room with another user
   const getOrCreateDirectRoom = useCallback(async (otherUserId: string) => {
@@ -531,11 +547,9 @@ export function useInternalChat() {
   useEffect(() => {
     if (company?.id && profile?.id) {
       console.log('[InternalChat] Carregando salas - profile disponível:', profile.id);
-      ensureGeneralRoom().then(() => {
-        loadRooms();
-      });
+      loadRooms();
     }
-  }, [company?.id, profile?.id, ensureGeneralRoom, loadRooms]);
+  }, [company?.id, profile?.id, loadRooms]);
 
   // Mark room as read when room changes
   const markRoomAsRead = useCallback(async (roomId: string) => {
