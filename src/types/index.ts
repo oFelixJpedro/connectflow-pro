@@ -149,6 +149,8 @@ export interface Message {
   deletedBy?: string;
   deletedByName?: string;
   originalContent?: string;
+  mentions?: string[]; // Array of user IDs who were mentioned
+  mentionNames?: string[]; // Array of user names for display highlighting
   createdAt: string;
   updatedAt: string;
 }

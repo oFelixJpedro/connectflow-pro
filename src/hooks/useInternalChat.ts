@@ -36,6 +36,8 @@ export interface ChatMessage {
   createdAt: string;
   isOwnMessage: boolean;
   metadata?: Record<string, unknown>;
+  mentions?: string[]; // Array of user IDs who were mentioned
+  mentionNames?: string[]; // Array of user names for display highlighting
 }
 
 interface TeamMember {
@@ -414,6 +416,7 @@ export function useInternalChat() {
           message_type,
           media_url,
           media_mime_type,
+          mentions,
           created_at,
           profiles:sender_id(full_name, avatar_url)
         `)
@@ -422,19 +425,28 @@ export function useInternalChat() {
 
       if (error) throw error;
 
-      const transformedMessages: ChatMessage[] = (data || []).map(msg => ({
-        id: msg.id,
-        roomId: msg.room_id,
-        senderId: msg.sender_id,
-        senderName: (msg.profiles as any)?.full_name || 'Usuário',
-        senderAvatar: (msg.profiles as any)?.avatar_url,
-        content: msg.content,
-        messageType: msg.message_type,
-        mediaUrl: msg.media_url,
-        mediaMimeType: msg.media_mime_type,
-        createdAt: msg.created_at,
-        isOwnMessage: msg.sender_id === profile.id,
-      }));
+      const transformedMessages: ChatMessage[] = (data || []).map(msg => {
+        const mentionIds = Array.isArray(msg.mentions) ? msg.mentions as string[] : [];
+        const mentionNames = mentionIds
+          .map(id => teamMembers.find(m => m.id === id)?.fullName)
+          .filter(Boolean) as string[];
+
+        return {
+          id: msg.id,
+          roomId: msg.room_id,
+          senderId: msg.sender_id,
+          senderName: (msg.profiles as any)?.full_name || 'Usuário',
+          senderAvatar: (msg.profiles as any)?.avatar_url,
+          content: msg.content,
+          messageType: msg.message_type,
+          mediaUrl: msg.media_url,
+          mediaMimeType: msg.media_mime_type,
+          createdAt: msg.created_at,
+          isOwnMessage: msg.sender_id === profile.id,
+          mentions: mentionIds,
+          mentionNames: mentionNames,
+        };
+      });
 
       setMessages(transformedMessages);
     } catch (error) {
@@ -442,7 +454,7 @@ export function useInternalChat() {
     } finally {
       setIsLoadingMessages(false);
     }
-  }, [profile?.id]);
+  }, [profile?.id, teamMembers]);
 
   // Send text message
   const sendMessage = useCallback(async (

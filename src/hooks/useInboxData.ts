@@ -66,7 +66,13 @@ function transformConversation(db: any): Conversation {
   };
 }
 
-function transformMessage(db: any, reactions?: MessageReaction[]): Message {
+function transformMessage(db: any, reactions?: MessageReaction[], teamMembers?: { id: string; fullName: string }[]): Message {
+  // Convert mention user IDs to names for display
+  const mentionIds = Array.isArray(db.mentions) ? db.mentions : [];
+  const mentionNames = teamMembers 
+    ? mentionIds.map((id: string) => teamMembers.find(m => m.id === id)?.fullName).filter(Boolean) as string[]
+    : [];
+
   return {
     id: db.id,
     conversationId: db.conversation_id,
@@ -99,6 +105,8 @@ function transformMessage(db: any, reactions?: MessageReaction[]): Message {
     deletedBy: db.deleted_by || undefined,
     deletedByName: db.deleted_by_name || undefined,
     originalContent: db.original_content || undefined,
+    mentions: mentionIds,
+    mentionNames: mentionNames,
     createdAt: db.created_at,
     updatedAt: db.updated_at,
   };

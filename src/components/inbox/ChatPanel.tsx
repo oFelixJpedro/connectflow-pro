@@ -1322,6 +1322,13 @@ export function ChatPanel({
                                   text={message.content || ''} 
                                   className="text-sm" 
                                   variant="internal-note"
+                                  knownMentionNames={
+                                    message.mentions && message.mentions.length > 0
+                                      ? message.mentions
+                                          .map(id => teamMembers.find(m => m.id === id)?.fullName)
+                                          .filter(Boolean) as string[]
+                                      : undefined
+                                  }
                                 />
                               ) : (
                                 <p className="text-sm whitespace-pre-wrap break-words">
