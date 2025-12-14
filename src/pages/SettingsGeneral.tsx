@@ -205,6 +205,37 @@ export default function SettingsGeneral() {
     }));
   };
 
+  // If not owner or admin, show "Coming Soon" page
+  if (!isOwnerOrAdmin) {
+    return (
+      <div className="h-full overflow-auto">
+        <div className="max-w-4xl mx-auto p-4 md:p-6 flex items-center justify-center min-h-[60vh]">
+          <div className="text-center space-y-6 px-4">
+            <div className="w-20 h-20 md:w-24 md:h-24 mx-auto rounded-full bg-primary/10 flex items-center justify-center">
+              <Building2 className="w-10 h-10 md:w-12 md:h-12 text-primary" />
+            </div>
+            <div className="space-y-2">
+              <h1 className="text-2xl md:text-3xl font-bold text-foreground">Em breve</h1>
+              <p className="text-sm md:text-base text-muted-foreground max-w-md mx-auto">
+                Novas configurações estarão disponíveis em breve para você. 
+                Fique atento às atualizações!
+              </p>
+            </div>
+            <div className="flex flex-col sm:flex-row gap-3 justify-center pt-4">
+              <Button 
+                variant="outline" 
+                onClick={() => window.history.back()}
+                className="w-full sm:w-auto"
+              >
+                Voltar
+              </Button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="h-full overflow-auto">
       <div className="max-w-4xl mx-auto p-4 md:p-6 space-y-4 md:space-y-6">
@@ -229,7 +260,6 @@ export default function SettingsGeneral() {
           </TabsList>
 
           {/* Company Settings */}
-          {isOwnerOrAdmin && (
           <TabsContent value="company" className="space-y-6">
             <Card>
               <CardHeader>
@@ -425,11 +455,8 @@ export default function SettingsGeneral() {
               </CardContent>
             </Card>
           </TabsContent>
-          )}
-
 
           {/* Billing Settings (Mockup) */}
-          {isOwnerOrAdmin && (
           <TabsContent value="billing" className="space-y-6">
             <Card>
               <CardHeader>
@@ -477,7 +504,6 @@ export default function SettingsGeneral() {
               </CardContent>
             </Card>
           </TabsContent>
-          )}
         </Tabs>
       </div>
     </div>
