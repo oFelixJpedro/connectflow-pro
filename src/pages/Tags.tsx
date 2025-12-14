@@ -152,12 +152,12 @@ export default function Tags() {
   }
 
   return (
-    <div className="h-full overflow-auto p-6 space-y-6">
+    <div className="h-full overflow-auto p-4 md:p-6 space-y-4 md:space-y-6">
       {/* Page Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Tags</h1>
-          <p className="text-muted-foreground">
+          <h1 className="text-xl md:text-2xl font-bold text-foreground">Tags</h1>
+          <p className="text-sm md:text-base text-muted-foreground">
             Organize conversas e contatos com etiquetas
           </p>
         </div>
@@ -166,12 +166,12 @@ export default function Tags() {
           if (!open) resetAddForm();
         }}>
           <DialogTrigger asChild>
-            <Button>
+            <Button className="w-full sm:w-auto">
               <Plus className="w-4 h-4 mr-2" />
               Nova Tag
             </Button>
           </DialogTrigger>
-          <DialogContent className="sm:max-w-md">
+          <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Nova Tag</DialogTitle>
               <DialogDescription>
@@ -240,11 +240,11 @@ export default function Tags() {
               </div>
             </div>
             
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setIsAddDialogOpen(false)} disabled={isSubmitting}>
+            <DialogFooter className="flex-col sm:flex-row gap-2">
+              <Button variant="outline" onClick={() => setIsAddDialogOpen(false)} disabled={isSubmitting} className="w-full sm:w-auto">
                 Cancelar
               </Button>
-              <Button onClick={handleAdd} disabled={!tagName.trim() || isSubmitting}>
+              <Button onClick={handleAdd} disabled={!tagName.trim() || isSubmitting} className="w-full sm:w-auto">
                 {isSubmitting ? (
                   <>
                     <Loader2 className="w-4 h-4 mr-2 animate-spin" />
@@ -261,14 +261,14 @@ export default function Tags() {
 
       {/* Info */}
       <Card className="bg-warning/5 border-warning/20">
-        <CardContent className="pt-6">
-          <div className="flex items-start gap-4">
-            <div className="w-10 h-10 bg-warning/10 rounded-lg flex items-center justify-center flex-shrink-0">
-              <TagIcon className="w-5 h-5 text-warning" />
+        <CardContent className="pt-4 md:pt-6 px-4 md:px-6">
+          <div className="flex items-start gap-3 md:gap-4">
+            <div className="w-8 h-8 md:w-10 md:h-10 bg-warning/10 rounded-lg flex items-center justify-center flex-shrink-0">
+              <TagIcon className="w-4 h-4 md:w-5 md:h-5 text-warning" />
             </div>
             <div>
-              <h3 className="font-medium text-foreground">Dica</h3>
-              <p className="text-sm text-muted-foreground mt-1">
+              <h3 className="font-medium text-foreground text-sm md:text-base">Dica</h3>
+              <p className="text-xs md:text-sm text-muted-foreground mt-1">
                 Use tags para categorizar conversas por tipo de atendimento, prioridade, 
                 status do cliente ou qualquer outra classificação relevante para sua equipe.
               </p>
@@ -278,7 +278,7 @@ export default function Tags() {
       </Card>
 
       {/* Search */}
-      <div className="relative max-w-md">
+      <div className="relative w-full md:max-w-md">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
         <Input
           placeholder="Buscar tags..."
@@ -289,7 +289,7 @@ export default function Tags() {
       </div>
 
       {/* Tags Grid */}
-      <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+      <div className="grid gap-3 md:gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {filteredTags.map((tag) => (
           <Card key={tag.id} className="card-hover">
             <CardContent className="pt-6">

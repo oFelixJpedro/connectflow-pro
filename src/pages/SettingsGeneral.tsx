@@ -207,24 +207,24 @@ export default function SettingsGeneral() {
 
   return (
     <div className="h-full overflow-auto">
-      <div className="max-w-4xl mx-auto p-6 space-y-6">
+      <div className="max-w-4xl mx-auto p-4 md:p-6 space-y-4 md:space-y-6">
         {/* Page Header */}
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Configurações Gerais</h1>
-          <p className="text-muted-foreground">
+          <h1 className="text-xl md:text-2xl font-bold text-foreground">Configurações Gerais</h1>
+          <p className="text-sm md:text-base text-muted-foreground">
             Gerencie as configurações da sua conta e empresa
           </p>
         </div>
 
-        <Tabs defaultValue="company" className="space-y-6">
-          <TabsList className="grid w-full lg:w-auto lg:inline-flex grid-cols-2">
-            <TabsTrigger value="company" className="gap-2">
+        <Tabs defaultValue="company" className="space-y-4 md:space-y-6">
+          <TabsList className="grid w-full grid-cols-2 h-auto">
+            <TabsTrigger value="company" className="gap-2 py-2">
               <Building2 className="w-4 h-4" />
-              <span className="hidden sm:inline">Empresa</span>
+              <span className="text-xs sm:text-sm">Empresa</span>
             </TabsTrigger>
-            <TabsTrigger value="billing" className="gap-2">
+            <TabsTrigger value="billing" className="gap-2 py-2">
               <CreditCard className="w-4 h-4" />
-              <span className="hidden sm:inline">Acesso e Limites</span>
+              <span className="text-xs sm:text-sm">Acesso</span>
             </TabsTrigger>
           </TabsList>
 
@@ -238,16 +238,16 @@ export default function SettingsGeneral() {
                   Configure as informações básicas da sua empresa
                 </CardDescription>
               </CardHeader>
-              <CardContent className="space-y-6">
+              <CardContent className="space-y-6 px-4 md:px-6">
                 {/* Logo */}
-                <div className="flex items-center gap-6">
-                  <Avatar className="w-20 h-20">
+                <div className="flex flex-col sm:flex-row items-center gap-4 sm:gap-6">
+                  <Avatar className="w-16 h-16 md:w-20 md:h-20">
                     <AvatarImage src={companyLogo || undefined} className="object-cover object-top" />
-                    <AvatarFallback className="bg-primary/10 text-primary text-xl">
+                    <AvatarFallback className="bg-primary/10 text-primary text-lg md:text-xl">
                       {companyName?.charAt(0) || 'E'}
                     </AvatarFallback>
                   </Avatar>
-                  <div className="space-y-2">
+                  <div className="space-y-2 text-center sm:text-left">
                     <input
                       ref={fileInputRef}
                       type="file"
@@ -259,6 +259,7 @@ export default function SettingsGeneral() {
                       variant="outline" 
                       onClick={() => fileInputRef.current?.click()}
                       disabled={uploadingLogo}
+                      size="sm"
                     >
                       {uploadingLogo ? (
                         <Loader2 className="w-4 h-4 mr-2 animate-spin" />
@@ -276,7 +277,7 @@ export default function SettingsGeneral() {
                 <Separator />
 
                 {/* Company Name */}
-                <div className="grid gap-4 sm:grid-cols-2">
+                <div className="grid gap-4 grid-cols-1 sm:grid-cols-2">
                   <div className="space-y-2">
                     <Label htmlFor="company-name">Nome da Empresa</Label>
                     <Input
@@ -327,10 +328,10 @@ export default function SettingsGeneral() {
                     </div>
                   </div>
                   
-                  <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="grid gap-4 grid-cols-1 sm:grid-cols-2">
                     <div className="space-y-2">
                       <Label>Dias úteis (Seg-Sex)</Label>
-                      <div className="flex gap-2">
+                      <div className="flex gap-2 items-center">
                         <Select 
                           value={businessHours.schedule.monday.open || '09:00'}
                           onValueChange={(value) => {
@@ -374,7 +375,7 @@ export default function SettingsGeneral() {
                     </div>
                     <div className="space-y-2">
                       <Label>Sábados</Label>
-                      <div className="flex gap-2">
+                      <div className="flex gap-2 items-center">
                         <Select 
                           value={businessHours.schedule.saturday.open || '09:00'}
                           onValueChange={(value) => updateBusinessHour('saturday', 'open', value)}
@@ -411,14 +412,14 @@ export default function SettingsGeneral() {
                   </div>
                 </div>
 
-                <div className="flex justify-end">
-                  <Button onClick={handleSaveCompany} disabled={savingCompany}>
+                <div className="flex justify-end pt-4">
+                  <Button onClick={handleSaveCompany} disabled={savingCompany} className="w-full sm:w-auto">
                     {savingCompany ? (
                       <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                     ) : (
                       <Save className="w-4 h-4 mr-2" />
                     )}
-                    {savingCompany ? 'Salvando...' : 'Salvar Alterações'}
+                    {savingCompany ? 'Salvando...' : 'Salvar'}
                   </Button>
                 </div>
               </CardContent>
@@ -437,18 +438,18 @@ export default function SettingsGeneral() {
                   Gerencie sua assinatura e limites
                 </CardDescription>
               </CardHeader>
-              <CardContent className="space-y-6">
+              <CardContent className="space-y-6 px-4 md:px-6">
                 <div className="p-4 rounded-lg bg-primary/5 border border-primary/20">
-                  <div className="flex items-center justify-between">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <div>
-                      <p className="font-semibold text-lg capitalize">
+                      <p className="font-semibold text-base md:text-lg capitalize">
                         Plano {company?.plan}
                       </p>
-                      <p className="text-sm text-muted-foreground">
+                      <p className="text-xs md:text-sm text-muted-foreground">
                         Até 50 usuários • Integrações ilimitadas
                       </p>
                     </div>
-                    <Button variant="outline">
+                    <Button variant="outline" size="sm" className="w-full sm:w-auto">
                       Alterar Plano
                     </Button>
                   </div>
@@ -457,8 +458,8 @@ export default function SettingsGeneral() {
                 <Separator />
 
                 <div className="space-y-4">
-                  <h4 className="font-medium">Uso Atual</h4>
-                  <div className="grid gap-4 sm:grid-cols-3">
+                  <h4 className="font-medium text-sm md:text-base">Uso Atual</h4>
+                  <div className="grid gap-4 grid-cols-1 sm:grid-cols-3">
                     <div className="p-4 rounded-lg border">
                       <p className="text-2xl font-bold">1</p>
                       <p className="text-sm text-muted-foreground">de 50 usuários</p>

@@ -11,6 +11,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { UserConfigDrawer } from '@/components/team/UserConfigDrawer';
 import { InviteUserModal } from '@/components/team/InviteUserModal';
 import { DeleteUserModal } from '@/components/team/DeleteUserModal';
+import { cn } from '@/lib/utils';
 import type { Tables } from '@/integrations/supabase/types';
 
 interface TeamMember {
@@ -195,27 +196,27 @@ export default function Team() {
   }
 
   return (
-    <div className="container max-w-5xl py-6 space-y-6">
-      <div className="flex items-start justify-between">
+    <div className="container max-w-5xl py-4 md:py-6 px-4 md:px-6 space-y-4 md:space-y-6">
+      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            <Users className="w-6 h-6" />
+          <h1 className="text-xl md:text-2xl font-bold flex items-center gap-2">
+            <Users className="w-5 h-5 md:w-6 md:h-6" />
             Gestão de Equipe
           </h1>
-          <p className="text-muted-foreground mt-1">
+          <p className="text-sm md:text-base text-muted-foreground mt-1">
             Gerencie permissões e acesso dos membros da sua equipe
           </p>
         </div>
         
-        <Button onClick={() => setIsInviteModalOpen(true)} className="gap-2">
+        <Button onClick={() => setIsInviteModalOpen(true)} className="gap-2 w-full sm:w-auto">
           <UserPlus className="w-4 h-4" />
-          Convidar membro
+          <span className="sm:inline">Convidar</span>
         </Button>
       </div>
 
       <Card>
-        <CardHeader>
-          <CardTitle>Membros da Equipe</CardTitle>
+        <CardHeader className="px-4 md:px-6">
+          <CardTitle className="text-base md:text-lg">Membros da Equipe</CardTitle>
           <CardDescription>
             {members.length} {members.length === 1 ? 'membro' : 'membros'} na equipe
           </CardDescription>
@@ -230,40 +231,44 @@ export default function Team() {
               return (
                 <div
                   key={member.id}
-                  className="flex items-center justify-between p-4 hover:bg-muted/50 transition-colors"
+                  className="flex flex-col sm:flex-row sm:items-center justify-between p-4 gap-3 hover:bg-muted/50 transition-colors"
                 >
-                  <div className="flex items-center gap-4">
-                    <Avatar className="w-10 h-10">
+                  {/* User Info */}
+                  <div className="flex items-center gap-3 md:gap-4 min-w-0">
+                    <Avatar className="w-9 h-9 md:w-10 md:h-10 shrink-0">
                       <AvatarImage src={member.avatar_url || undefined} className="object-cover object-top" />
-                      <AvatarFallback className="bg-muted text-muted-foreground">
+                      <AvatarFallback className="bg-muted text-muted-foreground text-sm">
                         {getInitials(member.full_name)}
                       </AvatarFallback>
                     </Avatar>
 
-                    <div>
-                      <p className="font-medium">{member.full_name}</p>
-                      <p className="text-sm text-muted-foreground">{member.email}</p>
+                    <div className="min-w-0">
+                      <p className="font-medium text-sm md:text-base truncate">{member.full_name}</p>
+                      <p className="text-xs md:text-sm text-muted-foreground truncate">{member.email}</p>
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-3">
+                  {/* Badges and Actions */}
+                  <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap pl-12 sm:pl-0">
                     {/* Role badge */}
-                    <Badge variant="secondary" className={`${roleConfig.color} gap-1`}>
+                    <Badge variant="secondary" className={`${roleConfig.color} gap-1 text-xs`}>
                       <RoleIcon className="w-3 h-3" />
-                      {roleConfig.label}
+                      <span className="hidden sm:inline">{roleConfig.label}</span>
+                      <span className="sm:hidden">{roleConfig.label.slice(0, 3)}</span>
                     </Badge>
 
-                    {/* Connection access badge */}
+                    {/* Connection access badge - hidden on mobile */}
                     {member.role !== 'owner' && member.role !== 'admin' && (
                       <Badge 
                         variant="outline" 
-                        className={
+                        className={cn(
+                          'text-xs hidden md:flex',
                           member.connectionCount === 0 
                             ? 'text-red-600 border-red-300' 
                             : member.hasRestrictedAccess 
                             ? 'text-amber-600 border-amber-300' 
                             : 'text-green-600 border-green-300'
-                        }
+                        )}
                       >
                         {member.connectionCount === 0 
                           ? 'Sem acesso' 
@@ -273,41 +278,43 @@ export default function Team() {
                       </Badge>
                     )}
 
-                    {member.role === 'owner' || member.role === 'admin' ? (
-                      <Badge variant="outline" className="text-blue-600 border-blue-300">
+                    {(member.role === 'owner' || member.role === 'admin') && (
+                      <Badge variant="outline" className="text-blue-600 border-blue-300 text-xs hidden md:flex">
                         Todas as conexões
                       </Badge>
-                    ) : null}
+                    )}
 
                     {/* Active/Inactive badge */}
                     {!member.active && (
-                      <Badge variant="secondary" className="bg-gray-100 text-gray-600">
+                      <Badge variant="secondary" className="bg-gray-100 text-gray-600 text-xs">
                         Inativo
                       </Badge>
                     )}
 
-                    {/* Config button */}
-                    {isEditableByCurrentUser && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => handleConfigMember(member)}
-                      >
-                        <Settings2 className="w-4 h-4" />
-                      </Button>
-                    )}
+                    {/* Actions */}
+                    <div className="flex items-center gap-1 ml-auto sm:ml-0">
+                      {isEditableByCurrentUser && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
+                          onClick={() => handleConfigMember(member)}
+                        >
+                          <Settings2 className="w-4 h-4" />
+                        </Button>
+                      )}
 
-                    {/* Delete button */}
-                    {canDeleteMember(member) && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                        onClick={() => handleDeleteMember(member)}
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                    )}
+                      {canDeleteMember(member) && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
+                          onClick={() => handleDeleteMember(member)}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      )}
+                    </div>
                   </div>
                 </div>
               );

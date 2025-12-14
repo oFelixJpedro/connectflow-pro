@@ -501,12 +501,12 @@ export default function QuickReplies() {
   }
 
   return (
-    <div className="h-full overflow-auto p-6 space-y-6">
+    <div className="h-full overflow-auto p-4 md:p-6 space-y-4 md:space-y-6">
       {/* Page Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Respostas Rápidas</h1>
-          <p className="text-muted-foreground">
+          <h1 className="text-xl md:text-2xl font-bold text-foreground">Respostas Rápidas</h1>
+          <p className="text-sm md:text-base text-muted-foreground">
             Crie atalhos para mensagens frequentes
           </p>
         </div>
@@ -517,9 +517,9 @@ export default function QuickReplies() {
             if (!open) resetAddForm();
           }}>
             <DialogTrigger asChild>
-              <Button>
+              <Button className="flex-1 sm:flex-none">
                 <Plus className="w-4 h-4 mr-2" />
-                Nova Resposta
+                <span className="sm:inline">Nova Resposta</span>
               </Button>
             </DialogTrigger>
           <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
@@ -531,7 +531,7 @@ export default function QuickReplies() {
             </DialogHeader>
             
             <div className="space-y-4 py-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="shortcut">Atalho *</Label>
                   <Input
@@ -548,7 +548,7 @@ export default function QuickReplies() {
                     <SelectTrigger>
                       <SelectValue placeholder="Selecione" />
                     </SelectTrigger>
-                    <SelectContent>
+                    <SelectContent className="bg-popover">
                       <SelectItem value="__none__">Sem categoria</SelectItem>
                       {allCategories.map((cat) => (
                         <SelectItem key={cat.id} value={cat.id}>
