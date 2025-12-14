@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -31,7 +31,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { X, Loader2, LayoutGrid, Trash2, Smartphone, AlertTriangle } from 'lucide-react';
+import { X, Loader2, LayoutGrid, Trash2, Smartphone, AlertTriangle, Users } from 'lucide-react';
 import { Contact, ContactFormData } from '@/hooks/useContactsData';
 import { useContactCRM } from '@/hooks/useContactCRM';
 import { supabase } from '@/integrations/supabase/client';
@@ -49,6 +49,12 @@ interface WhatsAppConnection {
   id: string;
   name: string;
   phone_number: string;
+}
+
+interface Department {
+  id: string;
+  name: string;
+  whatsapp_connection_id: string;
 }
 
 const PRIORITY_OPTIONS = [
@@ -75,13 +81,19 @@ export function ContactFormModal({
     notes: ''
   });
 
-  // Migration state
+  // Migration state - Connection
   const [allConnections, setAllConnections] = useState<WhatsAppConnection[]>([]);
   const [currentConnectionId, setCurrentConnectionId] = useState<string | null>(null);
-  const [migrationEnabled, setMigrationEnabled] = useState(false);
+  const [connectionMigrationEnabled, setConnectionMigrationEnabled] = useState(false);
   const [targetConnectionId, setTargetConnectionId] = useState<string>('');
   const [showMigrationConfirm, setShowMigrationConfirm] = useState(false);
   const [pendingFormData, setPendingFormData] = useState<ContactFormData | null>(null);
+
+  // Migration state - Department
+  const [allDepartments, setAllDepartments] = useState<Department[]>([]);
+  const [currentDepartmentId, setCurrentDepartmentId] = useState<string | null>(null);
+  const [departmentMigrationEnabled, setDepartmentMigrationEnabled] = useState(false);
+  const [targetDepartmentId, setTargetDepartmentId] = useState<string>('');
 
   // CRM state
   const {
@@ -93,67 +105,92 @@ export function ContactFormModal({
     removeFromCRM
   } = useContactCRM(contact?.id || null);
 
-  const [selectedConnection, setSelectedConnection] = useState<string>('');
   const [selectedColumn, setSelectedColumn] = useState<string>('');
   const [selectedPriority, setSelectedPriority] = useState<'low' | 'medium' | 'high' | 'urgent'>('medium');
   const [crmEnabled, setCrmEnabled] = useState(false);
+  const [kanbanChanged, setKanbanChanged] = useState(false);
 
-  // Load all connections
+  // Track original values to detect changes
+  const [originalColumn, setOriginalColumn] = useState<string>('');
+  const [originalPriority, setOriginalPriority] = useState<'low' | 'medium' | 'high' | 'urgent'>('medium');
+
+  // Load all connections and departments
   useEffect(() => {
-    const loadConnections = async () => {
+    const loadData = async () => {
       if (!profile?.company_id) return;
       
-      const { data } = await supabase
-        .from('whatsapp_connections')
-        .select('id, name, phone_number')
-        .eq('company_id', profile.company_id)
-        .eq('status', 'connected')
-        .order('name');
+      const [connectionsRes, departmentsRes] = await Promise.all([
+        supabase
+          .from('whatsapp_connections')
+          .select('id, name, phone_number')
+          .eq('company_id', profile.company_id)
+          .eq('status', 'connected')
+          .order('name'),
+        supabase
+          .from('departments')
+          .select('id, name, whatsapp_connection_id')
+          .eq('active', true)
+          .order('name')
+      ]);
       
-      if (data) {
-        setAllConnections(data);
+      if (connectionsRes.data) {
+        setAllConnections(connectionsRes.data);
+      }
+      if (departmentsRes.data) {
+        // Filter to only departments from user's company connections
+        const companyConnectionIds = connectionsRes.data?.map(c => c.id) || [];
+        const filteredDepts = departmentsRes.data.filter(d => 
+          companyConnectionIds.includes(d.whatsapp_connection_id)
+        );
+        setAllDepartments(filteredDepts);
       }
     };
     
     if (open) {
-      loadConnections();
+      loadData();
     }
   }, [open, profile?.company_id]);
 
-  // Load current connection for the contact
+  // Load current connection and department for the contact
   useEffect(() => {
-    const loadContactConnection = async () => {
+    const loadContactData = async () => {
       if (!contact?.id) {
         setCurrentConnectionId(null);
+        setCurrentDepartmentId(null);
         return;
       }
       
-      // Get the connection from the contact's most recent conversation
+      // Get the connection and department from the contact's most recent conversation
       const { data } = await supabase
         .from('conversations')
-        .select('whatsapp_connection_id')
+        .select('whatsapp_connection_id, department_id')
         .eq('contact_id', contact.id)
         .order('last_message_at', { ascending: false })
         .limit(1)
         .single();
       
-      if (data?.whatsapp_connection_id) {
+      if (data) {
         setCurrentConnectionId(data.whatsapp_connection_id);
+        setCurrentDepartmentId(data.department_id);
       } else {
         setCurrentConnectionId(null);
+        setCurrentDepartmentId(null);
       }
     };
     
     if (open && contact) {
-      loadContactConnection();
+      loadContactData();
     }
   }, [open, contact?.id]);
 
   // Reset migration state when modal opens/closes
   useEffect(() => {
     if (open) {
-      setMigrationEnabled(false);
+      setConnectionMigrationEnabled(false);
       setTargetConnectionId('');
+      setDepartmentMigrationEnabled(false);
+      setTargetDepartmentId('');
+      setKanbanChanged(false);
     }
   }, [open]);
 
@@ -181,33 +218,46 @@ export function ContactFormModal({
   // Initialize CRM selection when position loads
   useEffect(() => {
     if (currentPosition) {
-      setSelectedConnection(currentPosition.connection_id);
       setSelectedColumn(currentPosition.column_id);
       setSelectedPriority(currentPosition.priority);
+      setOriginalColumn(currentPosition.column_id);
+      setOriginalPriority(currentPosition.priority);
       setCrmEnabled(true);
     } else {
-      // Set defaults for new card
-      if (connections.length > 0 && !selectedConnection) {
-        const firstConn = connections[0].id;
-        setSelectedConnection(firstConn);
-        const board = boards.get(firstConn);
-        if (board && board.columns.length > 0) {
-          setSelectedColumn(board.columns[0].id);
-        }
-      }
       setCrmEnabled(false);
+      setOriginalColumn('');
+      setOriginalPriority('medium');
     }
-  }, [currentPosition, connections, boards]);
+  }, [currentPosition]);
 
-  // Update columns when connection changes
+  // Detect kanban changes
   useEffect(() => {
-    if (selectedConnection && !currentPosition) {
-      const board = boards.get(selectedConnection);
-      if (board && board.columns.length > 0) {
-        setSelectedColumn(board.columns[0].id);
-      }
+    if (!currentPosition) {
+      setKanbanChanged(crmEnabled);
+    } else {
+      const columnChanged = selectedColumn !== originalColumn;
+      const priorityChanged = selectedPriority !== originalPriority;
+      setKanbanChanged(columnChanged || priorityChanged || !crmEnabled);
     }
-  }, [selectedConnection, boards]);
+  }, [selectedColumn, selectedPriority, crmEnabled, currentPosition, originalColumn, originalPriority]);
+
+  // Validation logic
+  const validationError = useMemo(() => {
+    const connectionChanging = connectionMigrationEnabled && targetConnectionId && targetConnectionId !== currentConnectionId;
+    const departmentChanging = departmentMigrationEnabled && targetDepartmentId && targetDepartmentId !== currentDepartmentId;
+    
+    // Rule: Cannot change connection + department together
+    if (connectionChanging && departmentChanging) {
+      return 'Não é possível alterar conexão e departamento ao mesmo tempo. Altere um de cada vez.';
+    }
+    
+    // Rule: Cannot change connection + kanban position together
+    if (connectionChanging && kanbanChanged) {
+      return 'Não é possível alterar conexão e posição no Kanban ao mesmo tempo. Ao migrar de conexão, o contato será automaticamente adicionado à primeira coluna do novo Kanban.';
+    }
+    
+    return null;
+  }, [connectionMigrationEnabled, targetConnectionId, currentConnectionId, departmentMigrationEnabled, targetDepartmentId, currentDepartmentId, kanbanChanged]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -216,8 +266,13 @@ export function ContactFormModal({
       return;
     }
 
-    // If migration is enabled and target connection is selected, show confirmation
-    if (migrationEnabled && targetConnectionId && targetConnectionId !== currentConnectionId) {
+    if (validationError) {
+      return;
+    }
+
+    // If connection migration is enabled, show confirmation
+    const connectionChanging = connectionMigrationEnabled && targetConnectionId && targetConnectionId !== currentConnectionId;
+    if (connectionChanging) {
       setPendingFormData(formData);
       setShowMigrationConfirm(true);
       return;
@@ -232,20 +287,64 @@ export function ContactFormModal({
     const success = result === true || typeof result === 'string';
     const contactId = contact?.id || (typeof result === 'string' ? result : null);
     
-    // Handle CRM after save
-    if (success && contactId && crmEnabled && selectedConnection && selectedColumn) {
-      await setCardPosition(contactId, selectedConnection, selectedColumn, selectedPriority);
-    } else if (success && contactId && !crmEnabled && currentPosition) {
-      await removeFromCRM(contactId);
-    }
+    const connectionChanging = connectionMigrationEnabled && targetConnectionId && targetConnectionId !== currentConnectionId;
+    const departmentChanging = departmentMigrationEnabled && targetDepartmentId && targetDepartmentId !== currentDepartmentId;
 
-    // Handle connection migration
-    if (success && contactId && migrationEnabled && targetConnectionId && targetConnectionId !== currentConnectionId) {
+    // Handle connection migration first
+    if (success && contactId && connectionChanging) {
       // Update all conversations for this contact to the new connection
       await supabase
         .from('conversations')
         .update({ whatsapp_connection_id: targetConnectionId })
         .eq('contact_id', contactId);
+      
+      // Remove from old kanban and add to first column of new kanban
+      if (currentPosition) {
+        await removeFromCRM(contactId);
+      }
+      
+      // Get the first column of the new connection's board
+      const newBoard = boards.get(targetConnectionId);
+      if (newBoard && newBoard.columns.length > 0) {
+        const firstColumn = newBoard.columns[0];
+        await setCardPosition(contactId, targetConnectionId, firstColumn.id, 'medium');
+      } else {
+        // Try to get board from database if not in cache
+        const { data: boardData } = await supabase
+          .from('kanban_boards')
+          .select('id')
+          .eq('whatsapp_connection_id', targetConnectionId)
+          .single();
+        
+        if (boardData) {
+          const { data: columnsData } = await supabase
+            .from('kanban_columns')
+            .select('id')
+            .eq('board_id', boardData.id)
+            .order('position')
+            .limit(1);
+          
+          if (columnsData && columnsData.length > 0) {
+            await setCardPosition(contactId, targetConnectionId, columnsData[0].id, 'medium');
+          }
+        }
+      }
+    }
+    // Handle department migration
+    else if (success && contactId && departmentChanging) {
+      await supabase
+        .from('conversations')
+        .update({ department_id: targetDepartmentId })
+        .eq('contact_id', contactId);
+    }
+    
+    // Handle CRM changes (only if not migrating connection)
+    if (success && contactId && !connectionChanging) {
+      if (crmEnabled && currentConnectionId && selectedColumn) {
+        await setCardPosition(contactId, currentConnectionId, selectedColumn, selectedPriority);
+      } else if (!crmEnabled && currentPosition) {
+        await removeFromCRM(contactId);
+      }
     }
 
     setLoading(false);
@@ -285,12 +384,22 @@ export function ContactFormModal({
     return `+${digits.slice(0, 2)} (${digits.slice(2, 4)}) ${digits.slice(4, 9)}-${digits.slice(9, 13)}`;
   };
 
-  const selectedBoard = boards.get(selectedConnection);
-  const availableColumns = selectedBoard?.columns || [];
+  // Get columns for current connection's board
+  const currentBoard = currentConnectionId ? boards.get(currentConnectionId) : null;
+  const availableColumns = currentBoard?.columns || [];
   
   const currentConnection = allConnections.find(c => c.id === currentConnectionId);
   const targetConnection = allConnections.find(c => c.id === targetConnectionId);
   const availableConnectionsForMigration = allConnections.filter(c => c.id !== currentConnectionId);
+  
+  const currentDepartment = allDepartments.find(d => d.id === currentDepartmentId);
+  const targetDepartment = allDepartments.find(d => d.id === targetDepartmentId);
+  // Only show departments from current connection
+  const availableDepartmentsForMigration = allDepartments.filter(
+    d => d.whatsapp_connection_id === currentConnectionId && d.id !== currentDepartmentId
+  );
+
+  const canSave = !validationError && !loading;
 
   return (
     <>
@@ -395,24 +504,24 @@ export function ContactFormModal({
 
                   <div className="flex items-center space-x-2">
                     <Checkbox
-                      id="migration-enabled"
-                      checked={migrationEnabled}
+                      id="connection-migration-enabled"
+                      checked={connectionMigrationEnabled}
                       onCheckedChange={(checked) => {
-                        setMigrationEnabled(checked === true);
+                        setConnectionMigrationEnabled(checked === true);
                         if (!checked) {
                           setTargetConnectionId('');
                         }
                       }}
                     />
                     <Label 
-                      htmlFor="migration-enabled" 
+                      htmlFor="connection-migration-enabled" 
                       className="text-sm font-normal cursor-pointer"
                     >
                       Migrar para outra conexão
                     </Label>
                   </div>
 
-                  {migrationEnabled && (
+                  {connectionMigrationEnabled && (
                     <div className="space-y-3 pl-6 border-l-2 border-muted">
                       <div className="space-y-2">
                         <Label htmlFor="target-connection" className="text-sm">Nova Conexão</Label>
@@ -437,7 +546,7 @@ export function ContactFormModal({
                         <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
                           <p className="text-sm text-amber-800 flex items-center gap-2">
                             <AlertTriangle className="w-4 h-4" />
-                            As conversas deste contato serão migradas para a nova conexão
+                            As conversas e o card do CRM serão migrados para a nova conexão
                           </p>
                         </div>
                       )}
@@ -447,8 +556,79 @@ export function ContactFormModal({
               </>
             )}
 
-            {/* CRM Section */}
-            {connections.length > 0 && (
+            {/* Department Migration Section - Only for existing contacts */}
+            {contact && currentConnectionId && availableDepartmentsForMigration.length > 0 && (
+              <>
+                <Separator className="my-4" />
+                
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2">
+                    <Users className="w-4 h-4 text-muted-foreground" />
+                    <Label className="text-base font-medium">Departamento Atual</Label>
+                  </div>
+                  
+                  <div className="bg-muted/50 p-3 rounded-md">
+                    <p className="text-sm font-medium">
+                      {currentDepartment?.name || 'Sem departamento'}
+                    </p>
+                  </div>
+
+                  <div className="flex items-center space-x-2">
+                    <Checkbox
+                      id="department-migration-enabled"
+                      checked={departmentMigrationEnabled}
+                      onCheckedChange={(checked) => {
+                        setDepartmentMigrationEnabled(checked === true);
+                        if (!checked) {
+                          setTargetDepartmentId('');
+                        }
+                      }}
+                    />
+                    <Label 
+                      htmlFor="department-migration-enabled" 
+                      className="text-sm font-normal cursor-pointer"
+                    >
+                      Migrar para outro departamento
+                    </Label>
+                  </div>
+
+                  {departmentMigrationEnabled && (
+                    <div className="space-y-3 pl-6 border-l-2 border-muted">
+                      <div className="space-y-2">
+                        <Label htmlFor="target-department" className="text-sm">Novo Departamento</Label>
+                        <Select
+                          value={targetDepartmentId}
+                          onValueChange={setTargetDepartmentId}
+                        >
+                          <SelectTrigger id="target-department">
+                            <SelectValue placeholder="Selecione o novo departamento" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {availableDepartmentsForMigration.map((dept) => (
+                              <SelectItem key={dept.id} value={dept.id}>
+                                {dept.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      {targetDepartmentId && (
+                        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                          <p className="text-sm text-blue-800 flex items-center gap-2">
+                            <Users className="w-4 h-4" />
+                            As conversas serão migradas para o novo departamento
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+
+            {/* CRM Section - Only show if current connection has a board */}
+            {contact && currentConnectionId && availableColumns.length > 0 && (
               <>
                 <Separator className="my-4" />
                 
@@ -468,12 +648,10 @@ export function ContactFormModal({
                   </div>
 
                   <div className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
+                    <Checkbox
                       id="crm-enabled"
                       checked={crmEnabled}
-                      onChange={(e) => setCrmEnabled(e.target.checked)}
-                      className="h-4 w-4 rounded border-input"
+                      onCheckedChange={(checked) => setCrmEnabled(checked === true)}
                     />
                     <Label htmlFor="crm-enabled" className="text-sm font-normal cursor-pointer">
                       {currentPosition ? 'Manter no Kanban do CRM' : 'Adicionar ao Kanban do CRM'}
@@ -483,50 +661,29 @@ export function ContactFormModal({
                   {crmEnabled && (
                     <div className="space-y-3 pl-6 border-l-2 border-muted">
                       <div className="space-y-2">
-                        <Label htmlFor="connection" className="text-sm">Conexão</Label>
+                        <Label htmlFor="column" className="text-sm">Coluna</Label>
                         <Select
-                          value={selectedConnection}
-                          onValueChange={setSelectedConnection}
+                          value={selectedColumn}
+                          onValueChange={setSelectedColumn}
                         >
-                          <SelectTrigger id="connection">
-                            <SelectValue placeholder="Selecione a conexão" />
+                          <SelectTrigger id="column">
+                            <SelectValue placeholder="Selecione a coluna" />
                           </SelectTrigger>
                           <SelectContent>
-                            {connections.map((conn) => (
-                              <SelectItem key={conn.id} value={conn.id}>
-                                {conn.name} ({conn.phone_number})
+                            {availableColumns.map((col) => (
+                              <SelectItem key={col.id} value={col.id}>
+                                <div className="flex items-center gap-2">
+                                  <div 
+                                    className="w-3 h-3 rounded-full" 
+                                    style={{ backgroundColor: col.color }}
+                                  />
+                                  {col.name}
+                                </div>
                               </SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
                       </div>
-
-                      {availableColumns.length > 0 && (
-                        <div className="space-y-2">
-                          <Label htmlFor="column" className="text-sm">Coluna</Label>
-                          <Select
-                            value={selectedColumn}
-                            onValueChange={setSelectedColumn}
-                          >
-                            <SelectTrigger id="column">
-                              <SelectValue placeholder="Selecione a coluna" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {availableColumns.map((col) => (
-                                <SelectItem key={col.id} value={col.id}>
-                                  <div className="flex items-center gap-2">
-                                    <div 
-                                      className="w-3 h-3 rounded-full" 
-                                      style={{ backgroundColor: col.color }}
-                                    />
-                                    {col.name}
-                                  </div>
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      )}
 
                       <div className="space-y-2">
                         <Label htmlFor="priority" className="text-sm">Prioridade</Label>
@@ -550,13 +707,6 @@ export function ContactFormModal({
                           </SelectContent>
                         </Select>
                       </div>
-
-                      {availableColumns.length === 0 && selectedConnection && (
-                        <p className="text-sm text-muted-foreground">
-                          Nenhum quadro CRM encontrado para esta conexão. 
-                          Um novo quadro será criado automaticamente.
-                        </p>
-                      )}
                     </div>
                   )}
 
@@ -570,6 +720,16 @@ export function ContactFormModal({
               </>
             )}
 
+            {/* Validation Error Alert */}
+            {validationError && (
+              <div className="bg-destructive/10 border border-destructive/30 rounded-lg p-3">
+                <p className="text-sm text-destructive flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                  {validationError}
+                </p>
+              </div>
+            )}
+
             <DialogFooter className="pt-4">
               <Button
                 type="button"
@@ -579,7 +739,7 @@ export function ContactFormModal({
               >
                 Cancelar
               </Button>
-              <Button type="submit" disabled={loading}>
+              <Button type="submit" disabled={!canSave}>
                 {loading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
                 {contact ? 'Salvar' : 'Criar'}
               </Button>
@@ -613,7 +773,7 @@ export function ContactFormModal({
 
                 <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
                   <p className="text-sm text-amber-800">
-                    <strong>Atenção:</strong> Todas as conversas deste contato serão transferidas para a nova conexão.
+                    <strong>Atenção:</strong> Todas as conversas deste contato serão transferidas para a nova conexão e o card do CRM será movido para a primeira coluna do novo Kanban.
                   </p>
                 </div>
               </div>
