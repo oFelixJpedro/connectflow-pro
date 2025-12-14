@@ -130,17 +130,15 @@ export function useMentions(): UseMentionsResult {
 
 // Helper to parse mentions from text and return array of user IDs
 export function parseMentionsFromText(text: string, teamMembers: { id: string; fullName: string }[]): string[] {
-  // Match @Name - any text after @ until space
-  const mentionRegex = /@(\S+(?:\s+\S+)?)/g;
   const mentionedIds: string[] = [];
-  let match;
-
-  while ((match = mentionRegex.exec(text)) !== null) {
-    const mentionedName = match[1].trim();
-    const member = teamMembers.find(m => 
-      m.fullName.toLowerCase() === mentionedName.toLowerCase()
-    );
-    if (member && !mentionedIds.includes(member.id)) {
+  
+  // For each team member, check if their name appears after @ in the text
+  for (const member of teamMembers) {
+    // Create a regex that matches @FullName (case insensitive)
+    const escapedName = member.fullName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(`@${escapedName}(?:\\s|$|[.,!?;:])`, 'i');
+    
+    if (regex.test(text) && !mentionedIds.includes(member.id)) {
       mentionedIds.push(member.id);
     }
   }
