@@ -31,6 +31,13 @@ interface Department {
   whatsapp_connection_id: string;
 }
 
+interface ConnectionUserAccess {
+  connection_id: string;
+  access_level: string;
+  crm_access: boolean;
+  department_access_mode: string;
+}
+
 export default function CRM() {
   const { profile, company, userRole } = useAuth();
   const [connections, setConnections] = useState<Connection[]>([]);
@@ -41,6 +48,12 @@ export default function CRM() {
   const [hasCRMAccess, setHasCRMAccess] = useState<boolean | null>(null);
   const [addCardOpen, setAddCardOpen] = useState(false);
   const [manageCRMOpen, setManageCRMOpen] = useState(false);
+  
+  // User access permissions
+  const [connectionUserAccess, setConnectionUserAccess] = useState<ConnectionUserAccess[]>([]);
+  const [userDepartmentIds, setUserDepartmentIds] = useState<Set<string>>(new Set());
+  const [assignedOnlyConnectionIds, setAssignedOnlyConnectionIds] = useState<Set<string>>(new Set());
+  const [assignedContactIds, setAssignedContactIds] = useState<Set<string>>(new Set());
 
   // Filters
   const [searchQuery, setSearchQuery] = useState('');
@@ -85,7 +98,7 @@ export default function CRM() {
     connectionMap,
   } = useKanbanData(kanbanConnectionId, false);
 
-  // Load connections with CRM access check
+  // Load connections with CRM access check and user permissions
   useEffect(() => {
     const loadConnectionsWithCRMAccess = async () => {
       if (!company?.id || !profile?.id || !userRole) return;
@@ -94,7 +107,7 @@ export default function CRM() {
 
       try {
         // Owner and admin always have access to all connections
-        if (userRole.role === 'owner' || userRole.role === 'admin') {
+        if (isAdminOrOwner) {
           const { data, error } = await supabase
             .from('whatsapp_connections')
             .select('id, name, phone_number, status')
@@ -106,6 +119,8 @@ export default function CRM() {
 
           setConnections(data || []);
           setHasCRMAccess((data?.length || 0) > 0);
+          setConnectionUserAccess([]);
+          setAssignedOnlyConnectionIds(new Set());
 
           // Auto-select first connection or saved connection
           const savedId = localStorage.getItem('crm_selectedConnectionId');
@@ -118,7 +133,7 @@ export default function CRM() {
           // For other roles, get only connections where user has crm_access = true
           const { data: connectionUsers, error: cuError } = await supabase
             .from('connection_users')
-            .select('connection_id')
+            .select('connection_id, access_level, crm_access, department_access_mode')
             .eq('user_id', profile.id)
             .eq('crm_access', true);
 
@@ -130,6 +145,17 @@ export default function CRM() {
             setLoadingConnections(false);
             return;
           }
+
+          setConnectionUserAccess(connectionUsers);
+          
+          // Track which connections have assigned_only access
+          const assignedOnly = new Set<string>();
+          connectionUsers.forEach(cu => {
+            if (cu.access_level === 'assigned_only') {
+              assignedOnly.add(cu.connection_id);
+            }
+          });
+          setAssignedOnlyConnectionIds(assignedOnly);
 
           const allowedConnectionIds = connectionUsers.map(cu => cu.connection_id);
 
@@ -152,6 +178,16 @@ export default function CRM() {
             const validSaved = savedId && data.find(c => c.id === savedId);
             setSelectedConnectionId(validSaved ? savedId : data[0].id);
           }
+
+          // Load user's department access
+          const { data: departmentUsers } = await supabase
+            .from('department_users')
+            .select('department_id')
+            .eq('user_id', profile.id);
+
+          if (departmentUsers) {
+            setUserDepartmentIds(new Set(departmentUsers.map(du => du.department_id)));
+          }
         }
       } catch (error) {
         console.error('Error loading connections:', error);
@@ -162,31 +198,91 @@ export default function CRM() {
     };
 
     loadConnectionsWithCRMAccess();
-  }, [company?.id, profile?.id, userRole]);
+  }, [company?.id, profile?.id, userRole, isAdminOrOwner]);
 
-  // Load departments
+  // Load departments with permission filtering
   useEffect(() => {
     const loadDepartments = async () => {
-      if (!company?.id) return;
+      if (!company?.id || connections.length === 0) return;
 
       try {
-        const { data, error } = await supabase
+        const { data: allDepts, error } = await supabase
           .from('departments')
           .select('id, name, whatsapp_connection_id')
           .eq('active', true)
           .in('whatsapp_connection_id', connections.map(c => c.id));
 
         if (error) throw error;
-        setDepartments(data || []);
+
+        // For admin/owner, show all departments
+        if (isAdminOrOwner) {
+          setDepartments(allDepts || []);
+          return;
+        }
+
+        // For agents, filter based on department_access_mode and department_users
+        const filteredDepts = (allDepts || []).filter(dept => {
+          const connAccess = connectionUserAccess.find(cu => cu.connection_id === dept.whatsapp_connection_id);
+          if (!connAccess) return false;
+
+          // If department_access_mode is 'all', show all departments for that connection
+          if (connAccess.department_access_mode === 'all') return true;
+
+          // If 'none', show no departments
+          if (connAccess.department_access_mode === 'none') return false;
+
+          // If 'specific', check if user has access to this department
+          return userDepartmentIds.has(dept.id);
+        });
+
+        setDepartments(filteredDepts);
       } catch (error) {
         console.error('Error loading departments:', error);
       }
     };
 
-    if (connections.length > 0) {
-      loadDepartments();
-    }
-  }, [connections, company?.id]);
+    loadDepartments();
+  }, [connections, company?.id, isAdminOrOwner, connectionUserAccess, userDepartmentIds]);
+
+  // Load assigned contact IDs for assigned_only connections
+  useEffect(() => {
+    const loadAssignedContacts = async () => {
+      if (!profile?.id || isAdminOrOwner || assignedOnlyConnectionIds.size === 0) {
+        setAssignedContactIds(new Set());
+        return;
+      }
+
+      // Get contacts from conversations assigned to this user in assigned_only connections
+      const { data: conversations } = await supabase
+        .from('conversations')
+        .select('contact_id')
+        .eq('assigned_user_id', profile.id)
+        .in('whatsapp_connection_id', Array.from(assignedOnlyConnectionIds));
+
+      if (conversations) {
+        setAssignedContactIds(new Set(conversations.map(c => c.contact_id)));
+      }
+    };
+
+    loadAssignedContacts();
+
+    // Subscribe to conversation changes for real-time updates
+    const channel = supabase
+      .channel('crm-assigned-conversations')
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'conversations',
+        filter: `assigned_user_id=eq.${profile?.id}`,
+      }, () => {
+        loadAssignedContacts();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [profile?.id, isAdminOrOwner, assignedOnlyConnectionIds]);
 
   // Persist selected connection
   useEffect(() => {
@@ -202,8 +298,19 @@ export default function CRM() {
     setSelectedDepartmentId(null);
   };
 
-  // Get cards to display
-  const displayCards = cards;
+  // Get cards to display with permission filtering
+  const displayCards = cards.filter(card => {
+    // Admin/owner see all cards
+    if (isAdminOrOwner) return true;
+
+    // Check if current connection is assigned_only
+    if (selectedConnectionId && assignedOnlyConnectionIds.has(selectedConnectionId)) {
+      // Only show cards where the contact has a conversation assigned to this user
+      return assignedContactIds.has(card.contact_id);
+    }
+
+    return true;
+  });
   const displayColumns = columns;
 
   // Filter cards by department if selected
@@ -410,6 +517,7 @@ export default function CRM() {
         onAddCard={createCard}
         connectionId={selectedConnectionId}
         departmentId={selectedDepartmentId}
+        isAssignedOnly={selectedConnectionId ? assignedOnlyConnectionIds.has(selectedConnectionId) : false}
       />
 
       {/* Manage CRM Modal */}

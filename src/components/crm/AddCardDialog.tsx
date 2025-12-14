@@ -25,6 +25,7 @@ interface AddCardDialogProps {
   onAddCard: (contactId: string) => Promise<boolean>;
   connectionId?: string | null;
   departmentId?: string | null;
+  isAssignedOnly?: boolean;
 }
 
 export function AddCardDialog({ 
@@ -33,9 +34,10 @@ export function AddCardDialog({
   existingContactIds,
   onAddCard,
   connectionId,
-  departmentId
+  departmentId,
+  isAssignedOnly = false
 }: AddCardDialogProps) {
-  const { company } = useAuth();
+  const { company, profile } = useAuth();
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -45,7 +47,7 @@ export function AddCardDialog({
     if (open && company?.id && connectionId) {
       loadContacts();
     }
-  }, [open, company?.id, connectionId, departmentId]);
+  }, [open, company?.id, connectionId, departmentId, isAssignedOnly]);
 
   const loadContacts = async () => {
     if (!company?.id || !connectionId) return;
@@ -71,13 +73,18 @@ export function AddCardDialog({
       // Get conversations to find which contacts are associated with this connection AND department
       let conversationsQuery = supabase
         .from('conversations')
-        .select('contact_id, whatsapp_connection_id, department_id')
+        .select('contact_id, whatsapp_connection_id, department_id, assigned_user_id')
         .eq('company_id', company.id)
         .eq('whatsapp_connection_id', connectionId);
 
       // Add department filter if a specific department is selected
       if (departmentId) {
         conversationsQuery = conversationsQuery.eq('department_id', departmentId);
+      }
+
+      // Add assigned_user_id filter if user has assigned_only access
+      if (isAssignedOnly && profile?.id) {
+        conversationsQuery = conversationsQuery.eq('assigned_user_id', profile.id);
       }
 
       const { data: conversations } = await conversationsQuery;
