@@ -68,11 +68,10 @@ export function MentionText({
       });
     }
 
-    // Fallback: heuristic matching
-    // Match either:
-    // 1. @CapitalizedWord(s) - for names like "João Pedro Félix Barbosa"
-    // 2. @lowercaseword - for names like "teste2"
-    const mentionRegex = /@([A-ZÀ-ÖØ-Þ][a-zà-öø-ÿ0-9]*(?:\s+[A-ZÀ-ÖØ-Þ][a-zà-öø-ÿ0-9]*)*|[a-zà-öø-ÿ][a-zà-öø-ÿ0-9]*)/g;
+    // Fallback: heuristic matching (limited to max 4 words to prevent over-matching)
+    // Match @Word followed by up to 3 more words starting with uppercase
+    // This prevents capturing extra words like "Ainda" after the name
+    const mentionRegex = /@([A-ZÀ-ÖØ-Þa-zà-öø-ÿ][a-zà-öø-ÿ0-9]*(?: [A-ZÀ-ÖØ-Þ][a-zà-öø-ÿ0-9]*){0,3})/g;
     
     const parts: (string | JSX.Element)[] = [];
     let lastIndex = 0;
