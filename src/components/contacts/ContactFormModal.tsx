@@ -94,6 +94,7 @@ export function ContactFormModal({
   const [currentDepartmentId, setCurrentDepartmentId] = useState<string | null>(null);
   const [departmentMigrationEnabled, setDepartmentMigrationEnabled] = useState(false);
   const [targetDepartmentId, setTargetDepartmentId] = useState<string>('');
+  const [targetConnectionDepartmentId, setTargetConnectionDepartmentId] = useState<string>('');
 
   // CRM state
   const {
@@ -188,6 +189,7 @@ export function ContactFormModal({
     if (open) {
       setConnectionMigrationEnabled(false);
       setTargetConnectionId('');
+      setTargetConnectionDepartmentId('');
       setDepartmentMigrationEnabled(false);
       setTargetDepartmentId('');
       setKanbanChanged(false);
@@ -245,14 +247,15 @@ export function ContactFormModal({
   const validationError = useMemo(() => {
     const connectionChanging = connectionMigrationEnabled && targetConnectionId && targetConnectionId !== currentConnectionId;
     const departmentChanging = departmentMigrationEnabled && targetDepartmentId && targetDepartmentId !== currentDepartmentId;
+    const crmChanging = kanbanChanged;
     
     // Rule: Cannot change connection + department together
     if (connectionChanging && departmentChanging) {
       return 'Não é possível alterar conexão e departamento ao mesmo tempo. Altere um de cada vez.';
     }
     
-    // Rule: Cannot change connection + kanban position together
-    if (connectionChanging && kanbanChanged) {
+    // Rule: Cannot change connection + kanban position together (CRM is auto-managed on connection migration)
+    if (connectionChanging && crmChanging) {
       return 'Não é possível alterar conexão e posição no Kanban ao mesmo tempo. Ao migrar de conexão, o contato será automaticamente adicionado à primeira coluna do novo Kanban.';
     }
     
@@ -292,10 +295,19 @@ export function ContactFormModal({
 
     // Handle connection migration first
     if (success && contactId && connectionChanging) {
-      // Update all conversations for this contact to the new connection
+      // Update all conversations for this contact to the new connection and department
+      const updateData: { whatsapp_connection_id: string; department_id?: string } = { 
+        whatsapp_connection_id: targetConnectionId 
+      };
+      
+      // If a department was selected for the new connection, set it
+      if (targetConnectionDepartmentId) {
+        updateData.department_id = targetConnectionDepartmentId;
+      }
+      
       await supabase
         .from('conversations')
-        .update({ whatsapp_connection_id: targetConnectionId })
+        .update(updateData)
         .eq('contact_id', contactId);
       
       // Remove from old kanban and add to first column of new kanban
@@ -398,6 +410,13 @@ export function ContactFormModal({
   const availableDepartmentsForMigration = allDepartments.filter(
     d => d.whatsapp_connection_id === currentConnectionId && d.id !== currentDepartmentId
   );
+  // Departments for target connection (when migrating connection)
+  const targetConnectionDepartments = allDepartments.filter(
+    d => d.whatsapp_connection_id === targetConnectionId
+  );
+  
+  // Check if connection migration is active - to disable CRM section
+  const isConnectionMigrationActive = connectionMigrationEnabled && targetConnectionId && targetConnectionId !== currentConnectionId;
 
   const canSave = !validationError && !loading;
 
@@ -527,7 +546,10 @@ export function ContactFormModal({
                         <Label htmlFor="target-connection" className="text-sm">Nova Conexão</Label>
                         <Select
                           value={targetConnectionId}
-                          onValueChange={setTargetConnectionId}
+                          onValueChange={(value) => {
+                            setTargetConnectionId(value);
+                            setTargetConnectionDepartmentId('');
+                          }}
                         >
                           <SelectTrigger id="target-connection">
                             <SelectValue placeholder="Selecione a nova conexão" />
@@ -541,6 +563,27 @@ export function ContactFormModal({
                           </SelectContent>
                         </Select>
                       </div>
+
+                      {targetConnectionId && targetConnectionDepartments.length > 0 && (
+                        <div className="space-y-2">
+                          <Label htmlFor="target-connection-department" className="text-sm">Departamento na Nova Conexão</Label>
+                          <Select
+                            value={targetConnectionDepartmentId}
+                            onValueChange={setTargetConnectionDepartmentId}
+                          >
+                            <SelectTrigger id="target-connection-department">
+                              <SelectValue placeholder="Selecione o departamento" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {targetConnectionDepartments.map((dept) => (
+                                <SelectItem key={dept.id} value={dept.id}>
+                                  {dept.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      )}
 
                       {targetConnectionId && (
                         <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
@@ -556,8 +599,8 @@ export function ContactFormModal({
               </>
             )}
 
-            {/* Department Migration Section - Only for existing contacts */}
-            {contact && currentConnectionId && availableDepartmentsForMigration.length > 0 && (
+            {/* Department Migration Section - Only for existing contacts when NOT migrating connection */}
+            {contact && currentConnectionId && !isConnectionMigrationActive && (
               <>
                 <Separator className="my-4" />
                 
@@ -573,62 +616,66 @@ export function ContactFormModal({
                     </p>
                   </div>
 
-                  <div className="flex items-center space-x-2">
-                    <Checkbox
-                      id="department-migration-enabled"
-                      checked={departmentMigrationEnabled}
-                      onCheckedChange={(checked) => {
-                        setDepartmentMigrationEnabled(checked === true);
-                        if (!checked) {
-                          setTargetDepartmentId('');
-                        }
-                      }}
-                    />
-                    <Label 
-                      htmlFor="department-migration-enabled" 
-                      className="text-sm font-normal cursor-pointer"
-                    >
-                      Migrar para outro departamento
-                    </Label>
-                  </div>
-
-                  {departmentMigrationEnabled && (
-                    <div className="space-y-3 pl-6 border-l-2 border-muted">
-                      <div className="space-y-2">
-                        <Label htmlFor="target-department" className="text-sm">Novo Departamento</Label>
-                        <Select
-                          value={targetDepartmentId}
-                          onValueChange={setTargetDepartmentId}
+                  {availableDepartmentsForMigration.length > 0 && (
+                    <>
+                      <div className="flex items-center space-x-2">
+                        <Checkbox
+                          id="department-migration-enabled"
+                          checked={departmentMigrationEnabled}
+                          onCheckedChange={(checked) => {
+                            setDepartmentMigrationEnabled(checked === true);
+                            if (!checked) {
+                              setTargetDepartmentId('');
+                            }
+                          }}
+                        />
+                        <Label 
+                          htmlFor="department-migration-enabled" 
+                          className="text-sm font-normal cursor-pointer"
                         >
-                          <SelectTrigger id="target-department">
-                            <SelectValue placeholder="Selecione o novo departamento" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {availableDepartmentsForMigration.map((dept) => (
-                              <SelectItem key={dept.id} value={dept.id}>
-                                {dept.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                          Migrar para outro departamento
+                        </Label>
                       </div>
 
-                      {targetDepartmentId && (
-                        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                          <p className="text-sm text-blue-800 flex items-center gap-2">
-                            <Users className="w-4 h-4" />
-                            As conversas serão migradas para o novo departamento
-                          </p>
+                      {departmentMigrationEnabled && (
+                        <div className="space-y-3 pl-6 border-l-2 border-muted">
+                          <div className="space-y-2">
+                            <Label htmlFor="target-department" className="text-sm">Novo Departamento</Label>
+                            <Select
+                              value={targetDepartmentId}
+                              onValueChange={setTargetDepartmentId}
+                            >
+                              <SelectTrigger id="target-department">
+                                <SelectValue placeholder="Selecione o novo departamento" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {availableDepartmentsForMigration.map((dept) => (
+                                  <SelectItem key={dept.id} value={dept.id}>
+                                    {dept.name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+
+                          {targetDepartmentId && (
+                            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                              <p className="text-sm text-blue-800 flex items-center gap-2">
+                                <Users className="w-4 h-4" />
+                                As conversas serão migradas para o novo departamento
+                              </p>
+                            </div>
+                          )}
                         </div>
                       )}
-                    </div>
+                    </>
                   )}
                 </div>
               </>
             )}
 
-            {/* CRM Section - Only show if current connection has a board */}
-            {contact && currentConnectionId && availableColumns.length > 0 && (
+            {/* CRM Section - Only show if current connection has a board AND not migrating connection */}
+            {contact && currentConnectionId && availableColumns.length > 0 && !isConnectionMigrationActive && (
               <>
                 <Separator className="my-4" />
                 
