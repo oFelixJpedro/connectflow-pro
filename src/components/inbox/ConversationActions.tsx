@@ -189,19 +189,11 @@ export function ConversationActions({
     console.log('[ConversationActions] Executando ação:', action, 'para conversa:', conversation.id);
 
     try {
-      const { data: sessionData } = await supabase.auth.getSession();
-      if (!sessionData.session?.access_token) {
-        throw new Error('Não autenticado');
-      }
-
       const response = await supabase.functions.invoke('conversation-management', {
         body: {
           action,
           conversationId: conversation.id,
           ...payload,
-        },
-        headers: {
-          Authorization: `Bearer ${sessionData.session.access_token}`,
         },
       });
 
