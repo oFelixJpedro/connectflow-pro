@@ -108,21 +108,59 @@ export function ConversationActions({
     checkFollowing();
   }, [conversation.id, currentUserId, isAdminOrOwner]);
 
-  // Carregar agentes
+  // Carregar agentes que têm acesso à conexão da conversa
   useEffect(() => {
     async function loadAgents() {
-      const { data, error } = await supabase
+      if (!conversation.whatsappConnectionId) return;
+
+      // Buscar o company_id do usuário atual
+      const { data: profileData } = await supabase
+        .from('profiles')
+        .select('company_id')
+        .eq('id', currentUserId)
+        .single();
+
+      if (!profileData) return;
+
+      // Buscar todos os profiles da empresa
+      const { data: allProfiles, error: profilesError } = await supabase
         .from('profiles')
         .select('id, full_name, avatar_url')
+        .eq('company_id', profileData.company_id)
         .neq('id', currentUserId)
+        .eq('active', true)
         .order('full_name');
 
-      if (!error && data) {
-        setAgents(data);
-      }
+      if (profilesError || !allProfiles) return;
+
+      // Buscar roles de todos os usuários
+      const { data: userRoles } = await supabase
+        .from('user_roles')
+        .select('user_id, role');
+
+      const rolesMap = new Map((userRoles || []).map(r => [r.user_id, r.role]));
+
+      // Buscar quem tem acesso a esta conexão
+      const { data: connectionUsers } = await supabase
+        .from('connection_users')
+        .select('user_id')
+        .eq('connection_id', conversation.whatsappConnectionId!);
+
+      const usersWithConnectionAccess = new Set((connectionUsers || []).map(cu => cu.user_id));
+
+      // Filtrar: owner/admin têm acesso automático, outros precisam de connection_users
+      const filteredAgents = allProfiles.filter(agent => {
+        const role = rolesMap.get(agent.id);
+        // Owner e admin sempre têm acesso
+        if (role === 'owner' || role === 'admin') return true;
+        // Outros roles precisam de acesso explícito à conexão
+        return usersWithConnectionAccess.has(agent.id);
+      });
+
+      setAgents(filteredAgents);
     }
     loadAgents();
-  }, [currentUserId]);
+  }, [currentUserId, conversation.whatsappConnectionId]);
 
   // Carregar departamentos
   useEffect(() => {
