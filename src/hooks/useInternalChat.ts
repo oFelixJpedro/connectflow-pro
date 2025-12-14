@@ -2,10 +2,13 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 
-interface ChatRoom {
+export interface ChatRoom {
   id: string;
-  type: 'general' | 'direct';
+  type: 'general' | 'direct' | 'group';
   name: string | null;
+  description?: string | null;
+  createdBy?: string | null;
+  createdAt?: string;
   participants?: {
     id: string;
     fullName: string;
@@ -108,10 +111,10 @@ export function useInternalChat() {
         lastSeenByRoom[rs.room_id] = rs.last_seen_at;
       });
 
-      // Get all rooms for the company
+      // Get all rooms for the company (including groups the user is participant of)
       const { data: roomsData, error: roomsError } = await supabase
         .from('internal_chat_rooms')
-        .select('id, type, name, created_at')
+        .select('id, type, name, description, created_by, created_at')
         .eq('company_id', company.id)
         .order('created_at', { ascending: true });
 
@@ -174,8 +177,11 @@ export function useInternalChat() {
 
           return {
             id: room.id,
-            type: room.type as 'general' | 'direct',
+            type: room.type as 'general' | 'direct' | 'group',
             name: displayName,
+            description: room.description,
+            createdBy: room.created_by,
+            createdAt: room.created_at,
             participants,
             lastMessage: lastMsg ? {
               content: lastMsg.content || '[Mídia]',
