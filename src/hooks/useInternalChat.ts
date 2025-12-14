@@ -647,6 +647,7 @@ export function useInternalChat() {
               message_type,
               media_url,
               media_mime_type,
+              mentions,
               created_at,
               profiles:sender_id(full_name, avatar_url)
             `)
@@ -654,6 +655,16 @@ export function useInternalChat() {
             .single();
 
           if (newMsg) {
+            // Include current user in members list for mention name resolution
+            const allMembers = profile?.full_name 
+              ? [...teamMembers, { id: profile.id, fullName: profile.full_name, avatarUrl: profile.avatar_url || null, email: profile.email }]
+              : teamMembers;
+
+            const mentionIds = Array.isArray(newMsg.mentions) ? newMsg.mentions as string[] : [];
+            const mentionNames = mentionIds
+              .map(id => allMembers.find(m => m.id === id)?.fullName)
+              .filter(Boolean) as string[];
+
             const transformedMsg: ChatMessage = {
               id: newMsg.id,
               roomId: newMsg.room_id,
@@ -666,6 +677,8 @@ export function useInternalChat() {
               mediaMimeType: newMsg.media_mime_type,
               createdAt: newMsg.created_at,
               isOwnMessage: newMsg.sender_id === profile?.id,
+              mentions: mentionIds,
+              mentionNames: mentionNames,
             };
 
             setMessages(prev => [...prev, transformedMsg]);
@@ -677,7 +690,7 @@ export function useInternalChat() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [selectedRoom?.id, profile?.id]);
+  }, [selectedRoom?.id, profile, teamMembers]);
 
   return {
     rooms,
