@@ -109,11 +109,11 @@ export default function InternalChat() {
     const messageContent = messageInput.trim();
     setIsSending(true);
     
-    // Parse mentions from text
-    const mentionedUserIds = parseMentionsFromText(messageContent, teamMembers.map(m => ({
-      id: m.id,
-      fullName: m.fullName
-    })));
+    // Parse mentions from text - include current user in the list for self-mentions
+    const allMembersForMentions = profile 
+      ? [...teamMembers.map(m => ({ id: m.id, fullName: m.fullName })), { id: profile.id, fullName: profile.full_name }]
+      : teamMembers.map(m => ({ id: m.id, fullName: m.fullName }));
+    const mentionedUserIds = parseMentionsFromText(messageContent, allMembersForMentions);
     
     const success = await sendMessage(messageContent, 'text', undefined, undefined, mentionedUserIds);
     setIsSending(false);
