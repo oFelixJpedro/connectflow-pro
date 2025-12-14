@@ -31,7 +31,7 @@ import { AddGroupMembersModal } from '@/components/internal-chat/AddGroupMembers
 
 export default function InternalChat() {
   const navigate = useNavigate();
-  const { userRole } = useAuth();
+  const { userRole, profile } = useAuth();
   const {
     rooms,
     messages,
@@ -583,36 +583,52 @@ export default function InternalChat() {
               {/* Chat header */}
               <div className="h-14 px-4 flex items-center justify-between border-b bg-card">
                 <div className="flex items-center gap-3">
-                  <Avatar className="w-10 h-10">
-                    {selectedRoom.type === 'general' ? (
-                      <AvatarFallback className="bg-emerald-100 text-emerald-700">
-                        <Users className="w-5 h-5" />
-                      </AvatarFallback>
-                    ) : selectedRoom.type === 'group' ? (
-                      <AvatarFallback className="bg-purple-100 text-purple-700">
-                        <UsersRound className="w-5 h-5" />
-                      </AvatarFallback>
-                    ) : (
+                  {(() => {
+                    // For direct chats, find the other participant (not current user)
+                    const otherParticipant = selectedRoom.type === 'direct' 
+                      ? selectedRoom.participants?.find(p => p.id !== profile?.id)
+                      : null;
+                    
+                    return (
                       <>
-                        <AvatarImage
-                          src={selectedRoom.participants?.find(p => p.id !== selectedRoom.id)?.avatarUrl || undefined}
-                        />
-                        <AvatarFallback className="bg-emerald-100 text-emerald-700">
-                          {getInitials(selectedRoom.name || 'CD')}
-                        </AvatarFallback>
+                        <Avatar className="w-10 h-10">
+                          {selectedRoom.type === 'general' ? (
+                            <AvatarFallback className="bg-emerald-100 text-emerald-700">
+                              <Users className="w-5 h-5" />
+                            </AvatarFallback>
+                          ) : selectedRoom.type === 'group' ? (
+                            <AvatarFallback className="bg-purple-100 text-purple-700">
+                              <UsersRound className="w-5 h-5" />
+                            </AvatarFallback>
+                          ) : (
+                            <>
+                              <AvatarImage
+                                src={otherParticipant?.avatarUrl || undefined}
+                                className="object-cover object-top"
+                              />
+                              <AvatarFallback className="bg-emerald-100 text-emerald-700">
+                                {getInitials(otherParticipant?.fullName || 'CD')}
+                              </AvatarFallback>
+                            </>
+                          )}
+                        </Avatar>
+                        <div>
+                          <h2 className="font-semibold">
+                            {selectedRoom.type === 'general' 
+                              ? 'Chat Geral' 
+                              : selectedRoom.type === 'group'
+                                ? selectedRoom.name
+                                : otherParticipant?.fullName || 'Chat Direto'}
+                          </h2>
+                          {(selectedRoom.type === 'general' || selectedRoom.type === 'group') && (
+                            <p className="text-xs text-muted-foreground">
+                              {selectedRoom.participants?.length || 0} participantes
+                            </p>
+                          )}
+                        </div>
                       </>
-                    )}
-                  </Avatar>
-                  <div>
-                    <h2 className="font-semibold">
-                      {selectedRoom.type === 'general' ? 'Chat Geral' : selectedRoom.name || 'Chat Direto'}
-                    </h2>
-                    {(selectedRoom.type === 'general' || selectedRoom.type === 'group') && (
-                      <p className="text-xs text-muted-foreground">
-                        {selectedRoom.participants?.length || 0} participantes
-                      </p>
-                    )}
-                  </div>
+                    );
+                  })()}
                 </div>
                 {selectedRoom.type === 'group' && (
                   <Button
