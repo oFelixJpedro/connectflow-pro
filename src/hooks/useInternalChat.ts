@@ -120,12 +120,20 @@ export function useInternalChat() {
 
       if (roomsError) throw roomsError;
 
-      // Get participants for direct rooms
+      // Get participants for all rooms
       const roomIds = (roomsData || []).map(r => r.id);
-      const { data: participantsData } = await supabase
+      console.log('[InternalChat] Buscando participantes para rooms:', roomIds.length);
+      
+      const { data: participantsData, error: participantsError } = await supabase
         .from('internal_chat_participants')
-        .select('room_id, user_id, profiles:user_id(id, full_name, avatar_url, status)')
+        .select('room_id, user_id, profiles:user_id(id, full_name, avatar_url)')
         .in('room_id', roomIds);
+
+      if (participantsError) {
+        console.error('[InternalChat] Erro ao carregar participantes:', participantsError);
+      }
+
+      console.log('[InternalChat] Participantes encontrados:', participantsData?.length);
 
       // Get last message and unread count for each room
       const roomsWithDetails: ChatRoom[] = await Promise.all(
@@ -136,7 +144,7 @@ export function useInternalChat() {
             .eq('room_id', room.id)
             .order('created_at', { ascending: false })
             .limit(1)
-            .single();
+            .maybeSingle();
 
           // Calculate unread count
           const lastSeen = lastSeenByRoom[room.id];
@@ -160,19 +168,23 @@ export function useInternalChat() {
             unreadCount = count || 0;
           }
 
-          const participants = (participantsData || [])
+          // Get participants for this room
+          const roomParticipants = (participantsData || [])
             .filter(p => p.room_id === room.id)
             .map(p => ({
-              id: (p.profiles as any)?.id,
+              id: (p.profiles as any)?.id || p.user_id,
               fullName: (p.profiles as any)?.full_name || 'Usuário',
-              avatarUrl: (p.profiles as any)?.avatar_url,
+              avatarUrl: (p.profiles as any)?.avatar_url || null,
             }));
+
+          console.log(`[InternalChat] Room ${room.id} (${room.type}): ${roomParticipants.length} participantes, profile.id=${profile.id}`);
 
           // For direct chats, get the other participant's name
           let displayName = room.name;
           if (room.type === 'direct') {
-            const otherParticipant = participants.find(p => p.id !== profile.id);
-            displayName = otherParticipant?.fullName || 'Chat Direto';
+            const otherParticipant = roomParticipants.find(p => p.id !== profile.id);
+            console.log('[InternalChat] Outro participante:', otherParticipant);
+            displayName = otherParticipant?.fullName || null;
           }
 
           return {
@@ -182,7 +194,7 @@ export function useInternalChat() {
             description: room.description,
             createdBy: room.created_by,
             createdAt: room.created_at,
-            participants,
+            participants: roomParticipants,
             lastMessage: lastMsg ? {
               content: lastMsg.content || '[Mídia]',
               createdAt: lastMsg.created_at,
@@ -194,6 +206,7 @@ export function useInternalChat() {
         })
       );
 
+      console.log('[InternalChat] Rooms carregados:', roomsWithDetails.map(r => ({ id: r.id, type: r.type, name: r.name, participants: r.participants?.length })));
       setRooms(roomsWithDetails);
     } catch (error) {
       console.error('[InternalChat] Erro ao carregar salas:', error);
