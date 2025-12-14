@@ -96,6 +96,9 @@ function transformMessage(db: any, reactions?: MessageReaction[]): Message {
     isDeleted: db.is_deleted || false,
     deletedAt: db.deleted_at || undefined,
     deletedByType: db.deleted_by_type || undefined,
+    deletedBy: db.deleted_by || undefined,
+    deletedByName: db.deleted_by_name || undefined,
+    originalContent: db.original_content || undefined,
     createdAt: db.created_at,
     updatedAt: db.updated_at,
   };

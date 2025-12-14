@@ -50,3 +50,6 @@ verify_jwt = true
 
 [functions.send-whatsapp-reaction]
 verify_jwt = true
+
+[functions.delete-whatsapp-message]
+verify_jwt = true

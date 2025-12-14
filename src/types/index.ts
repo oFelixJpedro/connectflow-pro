@@ -146,6 +146,9 @@ export interface Message {
   isDeleted?: boolean;
   deletedAt?: string;
   deletedByType?: 'client' | 'agent';
+  deletedBy?: string;
+  deletedByName?: string;
+  originalContent?: string;
   createdAt: string;
   updatedAt: string;
 }
