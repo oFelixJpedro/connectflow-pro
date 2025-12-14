@@ -502,14 +502,20 @@ export default function InternalChat() {
                           <UsersRound className="w-5 h-5" />
                         </AvatarFallback>
                       ) : (
-                        <>
-                          <AvatarImage
-                            src={room.participants?.find(p => p.id !== room.id)?.avatarUrl || undefined}
-                          />
-                          <AvatarFallback className="bg-emerald-100 text-emerald-700">
-                            {getInitials(room.name || 'CD')}
-                          </AvatarFallback>
-                        </>
+                        (() => {
+                          const otherPerson = room.participants?.find(p => p.id !== profile?.id);
+                          return (
+                            <>
+                              <AvatarImage
+                                src={otherPerson?.avatarUrl || undefined}
+                                className="object-cover object-top"
+                              />
+                              <AvatarFallback className="bg-emerald-100 text-emerald-700">
+                                {getInitials(otherPerson?.fullName || room.name || 'CD')}
+                              </AvatarFallback>
+                            </>
+                          );
+                        })()
                       )}
                     </Avatar>
                     <div className="flex-1 min-w-0">
