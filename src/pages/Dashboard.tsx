@@ -144,21 +144,21 @@ export default function Dashboard() {
   };
 
   return (
-    <div className="h-full overflow-auto p-6 space-y-6">
+    <div className="h-full overflow-auto p-3 md:p-6 space-y-4 md:space-y-6">
       {/* Page Header */}
-      <div className="flex flex-col gap-4">
-        <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 md:gap-4">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
           <div>
-            <h1 className="text-2xl font-bold text-foreground">{getPageTitle()}</h1>
-            <p className="text-muted-foreground">
+            <h1 className="text-xl md:text-2xl font-bold text-foreground">{getPageTitle()}</h1>
+            <p className="text-sm text-muted-foreground">
               {getPageDescription()}
             </p>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 md:gap-3">
             {getFilterIndicator()}
-            <Badge variant="outline" className="text-sm flex items-center gap-2">
+            <Badge variant="outline" className="text-xs md:text-sm flex items-center gap-1 md:gap-2">
               {loading && <Loader2 className="w-3 h-3 animate-spin" />}
-              Atualizado {format(lastUpdated, "HH:mm", { locale: ptBR })}
+              <span className="hidden sm:inline">Atualizado</span> {format(lastUpdated, "HH:mm", { locale: ptBR })}
             </Badge>
           </div>
         </div>
@@ -174,7 +174,7 @@ export default function Dashboard() {
       </div>
 
       {/* Metrics Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
         {loading ? (
           <>
             <MetricCardSkeleton />

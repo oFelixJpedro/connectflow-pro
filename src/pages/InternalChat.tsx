@@ -500,13 +500,34 @@ export default function InternalChat() {
     )
   );
 
+  const [mobileView, setMobileView] = useState<'list' | 'chat'>('list');
+  const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
+
+  // Handle room selection for mobile
+  const handleRoomSelect = (room: ChatRoom) => {
+    setSelectedRoom(room);
+    if (isMobile) {
+      setMobileView('chat');
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 bg-background flex flex-col">
       {/* Header */}
-      <div className="internal-chat-header h-14 px-4 flex items-center justify-between shrink-0 border-b">
-        <div className="flex items-center gap-3">
-          <MessageSquare className="w-6 h-6 text-white" />
-          <h1 className="text-lg font-semibold text-white">Chat da Equipe</h1>
+      <div className="internal-chat-header h-12 md:h-14 px-3 md:px-4 flex items-center justify-between shrink-0 border-b">
+        <div className="flex items-center gap-2 md:gap-3">
+          {isMobile && mobileView === 'chat' && (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setMobileView('list')}
+              className="text-white hover:bg-white/20 -ml-1"
+            >
+              <X className="w-5 h-5" />
+            </Button>
+          )}
+          <MessageSquare className="w-5 h-5 md:w-6 md:h-6 text-white" />
+          <h1 className="text-base md:text-lg font-semibold text-white">Chat da Equipe</h1>
         </div>
         <Button
           variant="ghost"
@@ -518,10 +539,24 @@ export default function InternalChat() {
         </Button>
       </div>
 
-      {/* Main content - two columns */}
+      {/* Main content - responsive layout */}
       <div className="flex flex-1 min-h-0">
-        {/* Left column - Chat list */}
-        <div className="w-80 border-r bg-card flex flex-col">
+        {/* Left column - Chat list (hidden on mobile when viewing chat) */}
+        <div className={`${isMobile && mobileView === 'chat' ? 'hidden' : 'flex'} w-full md:w-80 border-r bg-card flex-col`}>
+          <div className="p-3 border-b flex items-center justify-between">
+            <h2 className="font-medium text-sm text-muted-foreground">Conversas</h2>
+            {isAdminOrOwner && (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setIsCreateGroupOpen(true)}
+                className="h-7 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50"
+              >
+                <Plus className="w-4 h-4 mr-1" />
+                Grupo
+              </Button>
+            )}
+          </div>
           <div className="p-3 border-b flex items-center justify-between">
             <h2 className="font-medium text-sm text-muted-foreground">Conversas</h2>
             {isAdminOrOwner && (
@@ -553,7 +588,7 @@ export default function InternalChat() {
                         ? 'bg-emerald-50 dark:bg-emerald-950/30 border-l-2 border-emerald-600' 
                         : 'hover:bg-muted/50'
                     }`}
-                    onClick={() => setSelectedRoom(room)}
+                    onClick={() => handleRoomSelect(room)}
                   >
                     <Avatar className="w-10 h-10">
                       {room.type === 'general' ? (
@@ -645,8 +680,8 @@ export default function InternalChat() {
           </ScrollArea>
         </div>
 
-        {/* Right column - Chat area */}
-        <div className="flex-1 flex flex-col bg-muted/20">
+        {/* Right column - Chat area (full width on mobile when viewing chat) */}
+        <div className={`${isMobile && mobileView === 'list' ? 'hidden' : 'flex'} flex-1 flex-col bg-muted/20`}>
           {selectedRoom ? (
             <>
               {/* Chat header */}

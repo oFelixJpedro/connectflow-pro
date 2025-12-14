@@ -207,17 +207,17 @@ export default function Auth() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-info/5 flex flex-col">
       {/* Header */}
-      <header className="py-6 px-8">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-primary rounded-xl flex items-center justify-center">
-            <MessageCircle className="w-6 h-6 text-primary-foreground" />
+      <header className="py-4 md:py-6 px-4 md:px-8">
+        <div className="flex items-center gap-2 md:gap-3">
+          <div className="w-8 h-8 md:w-10 md:h-10 bg-primary rounded-xl flex items-center justify-center">
+            <MessageCircle className="w-5 h-5 md:w-6 md:h-6 text-primary-foreground" />
           </div>
-          <span className="text-xl font-bold text-foreground">Multiatendimento</span>
+          <span className="text-lg md:text-xl font-bold text-foreground">Multiatendimento</span>
         </div>
       </header>
 
       {/* Main Content */}
-      <main className="flex-1 flex items-center justify-center px-4 py-12">
+      <main className="flex-1 flex items-center justify-center px-4 py-6 md:py-12">
         <div className="w-full max-w-md">
           <Card className="border-0 shadow-xl bg-card/80 backdrop-blur-sm">
             <CardHeader className="text-center pb-2">

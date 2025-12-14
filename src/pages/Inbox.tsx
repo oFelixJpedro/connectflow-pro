@@ -10,13 +10,17 @@ import { useAppStore } from '@/stores/appStore';
 import { useInboxData } from '@/hooks/useInboxData';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTagsData } from '@/hooks/useTagsData';
-import type { ConversationFilters } from '@/types';
+import { useIsMobile } from '@/hooks/use-mobile';
+import type { ConversationFilters, Conversation } from '@/types';
 import { toast } from '@/hooks/use-toast';
-import { Loader2, MessageSquare } from 'lucide-react';
+import { Loader2, MessageSquare, ArrowLeft, User } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
+import { Button } from '@/components/ui/button';
+import { Sheet, SheetContent } from '@/components/ui/sheet';
 
 export default function Inbox() {
   const { user } = useAuth();
+  const isMobile = useIsMobile();
   const [searchParams, setSearchParams] = useSearchParams();
   const { 
     contactPanelOpen,
@@ -32,6 +36,7 @@ export default function Inbox() {
   } = useAppStore();
 
   const [hasNoConnections, setHasNoConnections] = useState(false);
+  const [mobileView, setMobileView] = useState<'list' | 'chat' | 'contact'>('list');
   const scrollToMessageRef = useRef<((messageId: string) => void) | null>(null);
   const { tags } = useTagsData();
   const hasProcessedUrlConversation = useRef(false);
@@ -59,6 +64,13 @@ export default function Inbox() {
     sendReaction,
   } = useInboxData();
 
+  // Handle mobile view changes when conversation is selected
+  useEffect(() => {
+    if (isMobile && selectedConversation) {
+      setMobileView('chat');
+    }
+  }, [selectedConversation, isMobile]);
+
   // Handle URL parameter for opening specific conversation
   useEffect(() => {
     const conversationId = searchParams.get('conversation');
@@ -78,6 +90,34 @@ export default function Inbox() {
       }
     }
   }, [searchParams, conversations, isLoadingConversations, selectConversation, setSearchParams, inboxColumn, setInboxColumn]);
+
+  const handleSelectConversation = (conversation: Conversation) => {
+    selectConversation(conversation);
+    if (isMobile) {
+      setMobileView('chat');
+    }
+  };
+
+  const handleBackToList = () => {
+    setMobileView('list');
+    selectConversation(null);
+  };
+
+  const handleOpenContactPanel = () => {
+    if (isMobile) {
+      setMobileView('contact');
+    } else {
+      openContactPanel();
+    }
+  };
+
+  const handleCloseContactPanel = () => {
+    if (isMobile) {
+      setMobileView('chat');
+    } else {
+      toggleContactPanel();
+    }
+  };
 
   const handleSendMessage = async (content: string, quotedMessageId?: string) => {
     const success = await sendMessage(content, quotedMessageId);
@@ -114,6 +154,9 @@ export default function Inbox() {
     });
 
     selectConversation(null);
+    if (isMobile) {
+      setMobileView('list');
+    }
   };
 
   const handleFilterChange = (filters: ConversationFilters) => {
@@ -143,6 +186,111 @@ export default function Inbox() {
 
   const isRestricted = currentAccessLevel === 'assigned_only';
 
+  // Mobile Layout
+  if (isMobile) {
+    return (
+      <div className="flex flex-col h-full">
+        {/* Restricted access banner */}
+        {isRestricted && (
+          <div className="shrink-0 px-2 pt-2">
+            <RestrictedAccessBanner />
+          </div>
+        )}
+
+        {/* Mobile Views */}
+        {mobileView === 'list' && (
+          <div className="flex-1 min-h-0">
+            <ConversationList
+              conversations={conversations}
+              selectedId={selectedConversation?.id}
+              onSelect={handleSelectConversation}
+              filters={conversationFilters}
+              onFilterChange={handleFilterChange}
+              selectedConnectionId={selectedConnectionId}
+              onConnectionChange={handleConnectionChange}
+              onNoConnections={handleNoConnections}
+              isLoading={isLoadingConversations}
+              isRestricted={isRestricted}
+              inboxColumn={inboxColumn}
+              onColumnChange={setInboxColumn}
+              tags={tags}
+            />
+          </div>
+        )}
+
+        {mobileView === 'chat' && selectedConversation && (
+          <div className="flex-1 flex flex-col min-h-0">
+            {/* Mobile Chat Header */}
+            <div className="flex items-center gap-2 p-2 border-b bg-card">
+              <Button variant="ghost" size="icon" onClick={handleBackToList}>
+                <ArrowLeft className="w-5 h-5" />
+              </Button>
+              <div className="flex-1 min-w-0">
+                <p className="font-medium truncate text-sm">
+                  {selectedConversation.contact?.name || selectedConversation.contact?.phoneNumber}
+                </p>
+              </div>
+              <Button variant="ghost" size="icon" onClick={handleOpenContactPanel}>
+                <User className="w-5 h-5" />
+              </Button>
+            </div>
+            
+            <div className="flex-1 min-h-0">
+              <ChatPanel
+                conversation={selectedConversation}
+                messages={messages}
+                onSendMessage={handleSendMessage}
+                onSendInternalNote={sendInternalNote}
+                onResendMessage={resendMessage}
+                onAssign={handleAssign}
+                onClose={handleCloseConversation}
+                onRefresh={loadConversations}
+                onOpenContactDetails={handleOpenContactPanel}
+                onSendReaction={sendReaction}
+                onRegisterScrollToMessage={handleRegisterScrollToMessage}
+                isLoadingMessages={isLoadingMessages}
+                isSendingMessage={isSendingMessage}
+                isRestricted={isRestricted}
+              />
+            </div>
+          </div>
+        )}
+
+        {mobileView === 'contact' && selectedConversation && (
+          <Sheet open={true} onOpenChange={(open) => !open && handleCloseContactPanel()}>
+            <SheetContent side="bottom" className="h-[85vh] p-0">
+              <ContactPanel
+                conversation={selectedConversation}
+                onClose={handleCloseContactPanel}
+                onScrollToMessage={handleScrollToMessage}
+              />
+            </SheetContent>
+          </Sheet>
+        )}
+
+        {/* No connection state for mobile */}
+        {!selectedConnectionId && mobileView === 'list' && (
+          <div className="flex-1 flex items-center justify-center bg-muted/30 p-4">
+            <div className="text-center">
+              <div className="w-12 h-12 bg-muted rounded-full flex items-center justify-center mx-auto mb-3">
+                <MessageSquare className="w-6 h-6 text-muted-foreground" />
+              </div>
+              <h3 className="font-medium text-foreground mb-1 text-sm">
+                {hasNoConnections ? 'Sem acesso a conexões' : 'Selecione uma conexão'}
+              </h3>
+              <p className="text-xs text-muted-foreground">
+                {hasNoConnections 
+                  ? 'Você não tem acesso a nenhuma conexão WhatsApp.'
+                  : 'Selecione uma conexão para ver as conversas'}
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // Desktop Layout
   return (
     <div className="flex flex-col h-full">
       {/* Restricted access banner */}
@@ -157,7 +305,7 @@ export default function Inbox() {
         <ConversationList
           conversations={conversations}
           selectedId={selectedConversation?.id}
-          onSelect={selectConversation}
+          onSelect={handleSelectConversation}
           filters={conversationFilters}
           onFilterChange={handleFilterChange}
           selectedConnectionId={selectedConnectionId}
@@ -181,7 +329,7 @@ export default function Inbox() {
           onAssign={handleAssign}
           onClose={handleCloseConversation}
           onRefresh={loadConversations}
-          onOpenContactDetails={openContactPanel}
+          onOpenContactDetails={handleOpenContactPanel}
           onSendReaction={sendReaction}
           onRegisterScrollToMessage={handleRegisterScrollToMessage}
           isLoadingMessages={isLoadingMessages}
