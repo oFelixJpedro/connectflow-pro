@@ -118,8 +118,3 @@ export function MentionText({
     </span>
   );
 }
-
-// Simple version that returns plain text with @ markers for accessibility
-export function getMentionDisplayText(text: string): string {
-  return text;
-}
