@@ -745,6 +745,8 @@ export type Database = {
         Row: {
           company_id: string
           created_at: string | null
+          created_by: string | null
+          description: string | null
           id: string
           name: string | null
           type: string
@@ -753,6 +755,8 @@ export type Database = {
         Insert: {
           company_id: string
           created_at?: string | null
+          created_by?: string | null
+          description?: string | null
           id?: string
           name?: string | null
           type: string
@@ -761,6 +765,8 @@ export type Database = {
         Update: {
           company_id?: string
           created_at?: string | null
+          created_by?: string | null
+          description?: string | null
           id?: string
           name?: string | null
           type?: string
@@ -772,6 +778,13 @@ export type Database = {
             columns: ["company_id"]
             isOneToOne: false
             referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "internal_chat_rooms_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
         ]

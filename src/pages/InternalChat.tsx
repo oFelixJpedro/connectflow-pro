@@ -1,12 +1,13 @@
 import { useState, useRef, useEffect } from 'react';
-import { X, MessageSquare, Users, Send, Circle, Mic, Paperclip, Image, Video, FileText, Loader2 } from 'lucide-react';
+import { X, MessageSquare, Users, Send, Circle, Mic, Paperclip, Image, Video, FileText, Loader2, Plus, MoreVertical, UsersRound } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { useInternalChat, ChatMessage } from '@/hooks/useInternalChat';
+import { useInternalChat, ChatMessage, ChatRoom } from '@/hooks/useInternalChat';
+import { useAuth } from '@/contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -23,8 +24,14 @@ import { VideoPreviewModal } from '@/components/inbox/VideoPreviewModal';
 import { DocumentPreviewModal } from '@/components/inbox/DocumentPreviewModal';
 import { AudioFilePreview } from '@/components/inbox/AudioFilePreview';
 
+// Import group modals
+import { CreateGroupModal } from '@/components/internal-chat/CreateGroupModal';
+import { GroupInfoModal } from '@/components/internal-chat/GroupInfoModal';
+import { AddGroupMembersModal } from '@/components/internal-chat/AddGroupMembersModal';
+
 export default function InternalChat() {
   const navigate = useNavigate();
+  const { userRole } = useAuth();
   const {
     rooms,
     messages,
@@ -52,6 +59,12 @@ export default function InternalChat() {
   const [isDocumentPreviewOpen, setIsDocumentPreviewOpen] = useState(false);
   const [attachmentMenuOpen, setAttachmentMenuOpen] = useState(false);
   
+  // Group modals
+  const [isCreateGroupOpen, setIsCreateGroupOpen] = useState(false);
+  const [isGroupInfoOpen, setIsGroupInfoOpen] = useState(false);
+  const [isAddMembersOpen, setIsAddMembersOpen] = useState(false);
+
+  const isAdminOrOwner = userRole?.role === 'owner' || userRole?.role === 'admin';
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const videoInputRef = useRef<HTMLInputElement>(null);
@@ -404,10 +417,12 @@ export default function InternalChat() {
     return typeLabels[messageType] || content || '';
   };
 
-  // Sort rooms: general first, then direct rooms by last message
+  // Sort rooms: general first, then groups, then direct rooms by last message
   const sortedRooms = [...rooms].sort((a, b) => {
     if (a.type === 'general') return -1;
     if (b.type === 'general') return 1;
+    if (a.type === 'group' && b.type !== 'group') return -1;
+    if (b.type === 'group' && a.type !== 'group') return 1;
     
     const aTime = a.lastMessage?.createdAt ? new Date(a.lastMessage.createdAt).getTime() : 0;
     const bTime = b.lastMessage?.createdAt ? new Date(b.lastMessage.createdAt).getTime() : 0;
@@ -444,8 +459,19 @@ export default function InternalChat() {
       <div className="flex flex-1 min-h-0">
         {/* Left column - Chat list */}
         <div className="w-80 border-r bg-card flex flex-col">
-          <div className="p-3 border-b">
+          <div className="p-3 border-b flex items-center justify-between">
             <h2 className="font-medium text-sm text-muted-foreground">Conversas</h2>
+            {isAdminOrOwner && (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setIsCreateGroupOpen(true)}
+                className="h-7 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50"
+              >
+                <Plus className="w-4 h-4 mr-1" />
+                Grupo
+              </Button>
+            )}
           </div>
           
           <ScrollArea className="flex-1">
@@ -471,6 +497,10 @@ export default function InternalChat() {
                         <AvatarFallback className="bg-emerald-100 text-emerald-700">
                           <Users className="w-5 h-5" />
                         </AvatarFallback>
+                      ) : room.type === 'group' ? (
+                        <AvatarFallback className="bg-purple-100 text-purple-700">
+                          <UsersRound className="w-5 h-5" />
+                        </AvatarFallback>
                       ) : (
                         <>
                           <AvatarImage
@@ -485,7 +515,7 @@ export default function InternalChat() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between">
                         <p className="font-medium text-sm truncate">
-                          {room.type === 'general' ? '👥 Chat Geral' : room.name || 'Chat Direto'}
+                          {room.type === 'general' ? '👥 Chat Geral' : room.type === 'group' ? `🔒 ${room.name}` : room.name || 'Chat Direto'}
                         </p>
                         <div className="flex items-center gap-2">
                           {room.lastMessage && (
@@ -551,33 +581,48 @@ export default function InternalChat() {
           {selectedRoom ? (
             <>
               {/* Chat header */}
-              <div className="h-14 px-4 flex items-center gap-3 border-b bg-card">
-                <Avatar className="w-10 h-10">
-                  {selectedRoom.type === 'general' ? (
-                    <AvatarFallback className="bg-emerald-100 text-emerald-700">
-                      <Users className="w-5 h-5" />
-                    </AvatarFallback>
-                  ) : (
-                    <>
-                      <AvatarImage
-                        src={selectedRoom.participants?.find(p => p.id !== selectedRoom.id)?.avatarUrl || undefined}
-                      />
+              <div className="h-14 px-4 flex items-center justify-between border-b bg-card">
+                <div className="flex items-center gap-3">
+                  <Avatar className="w-10 h-10">
+                    {selectedRoom.type === 'general' ? (
                       <AvatarFallback className="bg-emerald-100 text-emerald-700">
-                        {getInitials(selectedRoom.name || 'CD')}
+                        <Users className="w-5 h-5" />
                       </AvatarFallback>
-                    </>
-                  )}
-                </Avatar>
-                <div>
-                  <h2 className="font-semibold">
-                    {selectedRoom.type === 'general' ? 'Chat Geral' : selectedRoom.name || 'Chat Direto'}
-                  </h2>
-                  {selectedRoom.type === 'general' && (
-                    <p className="text-xs text-muted-foreground">
-                      {teamMembers.length + 1} membros
-                    </p>
-                  )}
+                    ) : selectedRoom.type === 'group' ? (
+                      <AvatarFallback className="bg-purple-100 text-purple-700">
+                        <UsersRound className="w-5 h-5" />
+                      </AvatarFallback>
+                    ) : (
+                      <>
+                        <AvatarImage
+                          src={selectedRoom.participants?.find(p => p.id !== selectedRoom.id)?.avatarUrl || undefined}
+                        />
+                        <AvatarFallback className="bg-emerald-100 text-emerald-700">
+                          {getInitials(selectedRoom.name || 'CD')}
+                        </AvatarFallback>
+                      </>
+                    )}
+                  </Avatar>
+                  <div>
+                    <h2 className="font-semibold">
+                      {selectedRoom.type === 'general' ? 'Chat Geral' : selectedRoom.name || 'Chat Direto'}
+                    </h2>
+                    {(selectedRoom.type === 'general' || selectedRoom.type === 'group') && (
+                      <p className="text-xs text-muted-foreground">
+                        {selectedRoom.participants?.length || 0} participantes
+                      </p>
+                    )}
+                  </div>
                 </div>
+                {selectedRoom.type === 'group' && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setIsGroupInfoOpen(true)}
+                  >
+                    <MoreVertical className="w-5 h-5" />
+                  </Button>
+                )}
               </div>
 
               {/* Messages area */}
@@ -826,6 +871,41 @@ export default function InternalChat() {
         }}
         onSend={handleSendDocument}
         onChangeFile={() => documentInputRef.current?.click()}
+      />
+
+      {/* Group Modals */}
+      <CreateGroupModal
+        isOpen={isCreateGroupOpen}
+        onClose={() => setIsCreateGroupOpen(false)}
+        onGroupCreated={loadRooms}
+      />
+
+      <GroupInfoModal
+        isOpen={isGroupInfoOpen}
+        onClose={() => setIsGroupInfoOpen(false)}
+        room={selectedRoom?.type === 'group' ? {
+          id: selectedRoom.id,
+          name: selectedRoom.name || '',
+          description: selectedRoom.description || null,
+          createdAt: selectedRoom.createdAt || new Date().toISOString(),
+          createdBy: selectedRoom.createdBy || null,
+        } : null}
+        onGroupUpdated={loadRooms}
+        onGroupDeleted={() => {
+          setSelectedRoom(null);
+          loadRooms();
+        }}
+        onAddMembers={() => {
+          setIsGroupInfoOpen(false);
+          setIsAddMembersOpen(true);
+        }}
+      />
+
+      <AddGroupMembersModal
+        isOpen={isAddMembersOpen}
+        onClose={() => setIsAddMembersOpen(false)}
+        roomId={selectedRoom?.id || null}
+        onMembersAdded={loadRooms}
       />
     </div>
   );
