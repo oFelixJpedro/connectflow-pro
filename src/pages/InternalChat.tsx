@@ -456,7 +456,14 @@ export default function InternalChat() {
 
       case 'text':
       default:
-        return <MentionText text={msg.content || ''} className="text-sm" variant="internal-chat" />;
+        return (
+          <MentionText 
+            text={msg.content || ''} 
+            className="text-sm" 
+            variant="internal-chat"
+            knownMentionNames={msg.mentionNames}
+          />
+        );
     }
   };
 
