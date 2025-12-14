@@ -61,56 +61,18 @@ export function DeleteUserModal({ open, onOpenChange, user, onSuccess }: DeleteU
 
     setIsDeleting(true);
     try {
-      // 1. Unassign all conversations from this user
-      const { error: unassignError } = await supabase
-        .from('conversations')
-        .update({ assigned_user_id: null, assigned_at: null })
-        .eq('assigned_user_id', user.id);
+      // Call Edge Function to delete user completely (including auth.users)
+      const { data, error } = await supabase.functions.invoke('delete-user', {
+        body: { userId: user.id }
+      });
 
-      if (unassignError) {
-        console.error('Error unassigning conversations:', unassignError);
-        throw new Error('Erro ao desatribuir conversas');
+      if (error) {
+        console.error('Error deleting user:', error);
+        throw new Error(error.message || 'Erro ao deletar usuário');
       }
 
-      // 2. Delete connection_users assignments
-      const { error: connUsersError } = await supabase
-        .from('connection_users')
-        .delete()
-        .eq('user_id', user.id);
-
-      if (connUsersError) {
-        console.error('Error deleting connection_users:', connUsersError);
-      }
-
-      // 3. Delete department_users assignments
-      const { error: deptUsersError } = await supabase
-        .from('department_users')
-        .delete()
-        .eq('user_id', user.id);
-
-      if (deptUsersError) {
-        console.error('Error deleting department_users:', deptUsersError);
-      }
-
-      // 4. Delete user_roles
-      const { error: rolesError } = await supabase
-        .from('user_roles')
-        .delete()
-        .eq('user_id', user.id);
-
-      if (rolesError) {
-        console.error('Error deleting user_roles:', rolesError);
-      }
-
-      // 5. Delete profile
-      const { error: profileError } = await supabase
-        .from('profiles')
-        .delete()
-        .eq('id', user.id);
-
-      if (profileError) {
-        console.error('Error deleting profile:', profileError);
-        throw new Error('Erro ao deletar perfil do usuário');
+      if (data?.error) {
+        throw new Error(data.error);
       }
 
       toast.success('Usuário deletado com sucesso!');
