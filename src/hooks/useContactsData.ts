@@ -17,6 +17,9 @@ export interface Contact {
   last_interaction_at: string | null;
   created_at: string | null;
   updated_at: string | null;
+  // Virtual fields from conversations join
+  connection_ids?: string[];
+  department_ids?: string[];
 }
 
 export interface ContactFormData {
@@ -27,12 +30,35 @@ export interface ContactFormData {
   notes: string;
 }
 
+export interface Department {
+  id: string;
+  name: string;
+  whatsapp_connection_id: string;
+}
+
+export interface ContactFilters {
+  connectionId: string;
+  departmentId: string;
+}
+
 export function useContactsData() {
   const { profile } = useAuth();
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [tags, setTags] = useState<{ id: string; name: string; color: string }[]>([]);
   const [connections, setConnections] = useState<{ id: string; name: string; phone_number: string }[]>([]);
+  const [departments, setDepartments] = useState<Department[]>([]);
   const [loading, setLoading] = useState(true);
+  const [filters, setFilters] = useState<ContactFilters>(() => {
+    const saved = localStorage.getItem('contactsFilters');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch {
+        return { connectionId: 'all', departmentId: 'all' };
+      }
+    }
+    return { connectionId: 'all', departmentId: 'all' };
+  });
   const [stats, setStats] = useState({
     total: 0,
     withEmail: 0,
@@ -40,42 +66,104 @@ export function useContactsData() {
     activeTags: 0
   });
 
+  // Save filters to localStorage
+  useEffect(() => {
+    localStorage.setItem('contactsFilters', JSON.stringify(filters));
+  }, [filters]);
+
   const loadContacts = useCallback(async () => {
     if (!profile?.company_id) return;
 
     try {
-      const { data, error } = await supabase
-        .from('contacts')
-        .select('*')
-        .eq('company_id', profile.company_id)
-        .order('created_at', { ascending: false });
+      // If filtering by connection or department, we need to get contacts that have conversations
+      if (filters.connectionId !== 'all' || filters.departmentId !== 'all') {
+        // Get contact IDs that match the filter criteria via conversations
+        let conversationQuery = supabase
+          .from('conversations')
+          .select('contact_id')
+          .eq('company_id', profile.company_id);
 
-      if (error) throw error;
+        if (filters.connectionId !== 'all') {
+          conversationQuery = conversationQuery.eq('whatsapp_connection_id', filters.connectionId);
+        }
 
-      const contactsData = (data || []).map(c => ({
-        ...c,
-        tags: c.tags || []
-      }));
+        if (filters.departmentId !== 'all') {
+          conversationQuery = conversationQuery.eq('department_id', filters.departmentId);
+        }
 
-      setContacts(contactsData);
+        const { data: convData, error: convError } = await conversationQuery;
+        if (convError) throw convError;
 
-      // Calculate stats
-      const sevenDaysAgo = new Date();
-      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+        const contactIds = [...new Set((convData || []).map(c => c.contact_id))];
+        
+        if (contactIds.length === 0) {
+          setContacts([]);
+          setStats({ total: 0, withEmail: 0, newLast7Days: 0, activeTags: 0 });
+          return;
+        }
 
-      setStats({
-        total: contactsData.length,
-        withEmail: contactsData.filter(c => c.email).length,
-        newLast7Days: contactsData.filter(c => 
-          c.created_at && new Date(c.created_at) > sevenDaysAgo
-        ).length,
-        activeTags: 0 // Will be updated when tags are loaded
-      });
+        const { data, error } = await supabase
+          .from('contacts')
+          .select('*')
+          .in('id', contactIds)
+          .order('created_at', { ascending: false });
+
+        if (error) throw error;
+
+        const contactsData = (data || []).map(c => ({
+          ...c,
+          tags: c.tags || []
+        }));
+
+        setContacts(contactsData);
+
+        // Calculate stats for filtered contacts
+        const sevenDaysAgo = new Date();
+        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+        setStats({
+          total: contactsData.length,
+          withEmail: contactsData.filter(c => c.email).length,
+          newLast7Days: contactsData.filter(c => 
+            c.created_at && new Date(c.created_at) > sevenDaysAgo
+          ).length,
+          activeTags: 0
+        });
+      } else {
+        // No filters - get all contacts
+        const { data, error } = await supabase
+          .from('contacts')
+          .select('*')
+          .eq('company_id', profile.company_id)
+          .order('created_at', { ascending: false });
+
+        if (error) throw error;
+
+        const contactsData = (data || []).map(c => ({
+          ...c,
+          tags: c.tags || []
+        }));
+
+        setContacts(contactsData);
+
+        // Calculate stats
+        const sevenDaysAgo = new Date();
+        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+        setStats({
+          total: contactsData.length,
+          withEmail: contactsData.filter(c => c.email).length,
+          newLast7Days: contactsData.filter(c => 
+            c.created_at && new Date(c.created_at) > sevenDaysAgo
+          ).length,
+          activeTags: 0
+        });
+      }
     } catch (error) {
       console.error('Error loading contacts:', error);
       toast.error('Erro ao carregar contatos');
     }
-  }, [profile?.company_id]);
+  }, [profile?.company_id, filters]);
 
   const loadTags = useCallback(async () => {
     if (!profile?.company_id) return;
@@ -103,7 +191,6 @@ export function useContactsData() {
         .from('whatsapp_connections')
         .select('id, name, phone_number')
         .eq('company_id', profile.company_id)
-        .eq('status', 'connected')
         .eq('active', true);
 
       if (error) throw error;
@@ -114,15 +201,55 @@ export function useContactsData() {
     }
   }, [profile?.company_id]);
 
+  const loadDepartments = useCallback(async () => {
+    if (!profile?.company_id) return;
+
+    try {
+      // Get all departments from all connections of this company
+      const { data: connectionsData } = await supabase
+        .from('whatsapp_connections')
+        .select('id')
+        .eq('company_id', profile.company_id)
+        .eq('active', true);
+
+      if (!connectionsData || connectionsData.length === 0) {
+        setDepartments([]);
+        return;
+      }
+
+      const connectionIds = connectionsData.map(c => c.id);
+
+      const { data, error } = await supabase
+        .from('departments')
+        .select('id, name, whatsapp_connection_id')
+        .in('whatsapp_connection_id', connectionIds)
+        .eq('active', true)
+        .order('name');
+
+      if (error) throw error;
+
+      setDepartments(data || []);
+    } catch (error) {
+      console.error('Error loading departments:', error);
+    }
+  }, [profile?.company_id]);
+
   const loadData = useCallback(async () => {
     setLoading(true);
-    await Promise.all([loadContacts(), loadTags(), loadConnections()]);
+    await Promise.all([loadContacts(), loadTags(), loadConnections(), loadDepartments()]);
     setLoading(false);
-  }, [loadContacts, loadTags, loadConnections]);
+  }, [loadContacts, loadTags, loadConnections, loadDepartments]);
 
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  // Reload contacts when filters change
+  useEffect(() => {
+    if (profile?.company_id) {
+      loadContacts();
+    }
+  }, [filters.connectionId, filters.departmentId, profile?.company_id]);
 
   const createContact = async (data: ContactFormData): Promise<Contact | null> => {
     if (!profile?.company_id) return null;
@@ -405,8 +532,11 @@ export function useContactsData() {
     contacts,
     tags,
     connections,
+    departments,
     loading,
     stats,
+    filters,
+    setFilters,
     createContact,
     updateContact,
     deleteContact,
