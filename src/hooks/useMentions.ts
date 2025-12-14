@@ -133,7 +133,8 @@ export function useMentions(): UseMentionsResult {
 
 // Helper to parse mentions from text and return array of user IDs
 export function parseMentionsFromText(text: string, teamMembers: { id: string; fullName: string }[]): string[] {
-  const mentionRegex = /@([^@\n]+?)(?=\s|@|$)/g;
+  // Match @Name where Name is capitalized words (matching the display pattern)
+  const mentionRegex = /@([A-ZÀ-ÖØ-Þ][a-zà-öø-ÿ]+(?:\s+[A-ZÀ-ÖØ-Þ][a-zà-öø-ÿ]+){0,3})/g;
   const mentionedIds: string[] = [];
   let match;
 

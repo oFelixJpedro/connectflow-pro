@@ -5,12 +5,14 @@ interface MentionTextProps {
   text: string;
   className?: string;
   mentionClassName?: string;
+  variant?: 'default' | 'internal-note' | 'internal-chat';
 }
 
-// Regex to match @mentions (name can contain spaces until next @ or end)
-const mentionRegex = /@([A-Za-zÀ-ÖØ-öø-ÿ\s]+?)(?=\s@|\s*$|[.,!?;:\n])/g;
+// Match @Name where Name is 2-4 words (first letter uppercase of each word)
+// This properly stops at punctuation, commas, or lowercase words not starting with uppercase
+const mentionRegex = /@([A-ZÀ-ÖØ-Þ][a-zà-öø-ÿ]+(?:\s+[A-ZÀ-ÖØ-Þ][a-zà-öø-ÿ]+){0,3})/g;
 
-export function MentionText({ text, className, mentionClassName }: MentionTextProps) {
+export function MentionText({ text, className, mentionClassName, variant = 'default' }: MentionTextProps) {
   const formattedText = useMemo(() => {
     if (!text) return null;
     
@@ -27,14 +29,23 @@ export function MentionText({ text, className, mentionClassName }: MentionTextPr
         parts.push(text.slice(lastIndex, match.index));
       }
 
-      // Add highlighted mention
+      // Add highlighted mention - use different styles based on variant
       const fullMatch = match[0];
       const mentionName = match[1].trim();
+      
+      // Choose color based on variant for better contrast
+      const variantStyles = {
+        'default': 'text-violet-600 dark:text-violet-400 bg-violet-100 dark:bg-violet-900/30',
+        'internal-note': 'text-violet-700 dark:text-violet-300 bg-violet-100 dark:bg-violet-900/40',
+        'internal-chat': 'text-violet-700 dark:text-violet-300 bg-violet-200/80 dark:bg-violet-800/50',
+      };
+      
       parts.push(
         <span
           key={`mention-${match.index}`}
           className={cn(
-            "font-semibold text-primary bg-primary/10 px-1 rounded",
+            "font-semibold px-1 rounded",
+            variantStyles[variant],
             mentionClassName
           )}
         >
@@ -51,7 +62,7 @@ export function MentionText({ text, className, mentionClassName }: MentionTextPr
     }
 
     return parts.length > 0 ? parts : text;
-  }, [text, mentionClassName]);
+  }, [text, mentionClassName, variant]);
 
   return (
     <span className={cn("whitespace-pre-wrap break-words", className)}>

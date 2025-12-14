@@ -742,7 +742,8 @@ export function useInboxData() {
     messageType: 'text' | 'image' | 'video' | 'audio' | 'document' = 'text',
     mediaUrl?: string,
     mediaMimeType?: string,
-    metadata?: Record<string, unknown>
+    metadata?: Record<string, unknown>,
+    mentions?: string[]
   ): Promise<boolean> => {
     if (!selectedConversation || !user?.id) {
       console.error('[useInboxData] Sem conversa selecionada ou usuário');
@@ -773,6 +774,7 @@ export function useInboxData() {
           is_internal_note: true,
           media_url: mediaUrl || null,
           media_mime_type: mediaMimeType || null,
+          mentions: mentions || [],
         }])
         .select()
         .single();
@@ -788,6 +790,20 @@ export function useInboxData() {
       }
 
       console.log('[useInboxData] Nota interna salva:', newMessage.id);
+
+      // Create mention notifications if there are mentions
+      if (mentions && mentions.length > 0 && newMessage?.id && profile?.company_id) {
+        const { createMentionNotifications } = await import('@/hooks/useMentions');
+        await createMentionNotifications(
+          mentions,
+          user.id,
+          'internal_note',
+          newMessage.id,
+          selectedConversation.id,
+          undefined,
+          profile.company_id
+        );
+      }
 
       // Adicionar mensagem ao estado local imediatamente
       const transformedMessage: Message = transformMessage(newMessage);
@@ -810,7 +826,7 @@ export function useInboxData() {
     } finally {
       setIsSendingMessage(false);
     }
-  }, [selectedConversation, user?.id]);
+  }, [selectedConversation, user?.id, profile?.company_id]);
 
   // ============================================================
   // 5. SELECIONAR CONVERSA

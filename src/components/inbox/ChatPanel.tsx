@@ -67,7 +67,7 @@ interface ChatPanelProps {
   conversation: Conversation | null;
   messages: Message[];
   onSendMessage: (content: string, quotedMessageId?: string) => void | Promise<void>;
-  onSendInternalNote?: (content: string, messageType?: 'text' | 'image' | 'video' | 'audio' | 'document', mediaUrl?: string, mediaMimeType?: string, metadata?: Record<string, unknown>) => Promise<boolean>;
+  onSendInternalNote?: (content: string, messageType?: 'text' | 'image' | 'video' | 'audio' | 'document', mediaUrl?: string, mediaMimeType?: string, metadata?: Record<string, unknown>, mentions?: string[]) => Promise<boolean>;
   onResendMessage?: (messageId: string) => void;
   onAssign: () => void;
   onClose: () => void;
@@ -637,18 +637,23 @@ export function ChatPanel({
     if ((!hasText && !hasAttachment) || isSendingMessage) return;
     
     if (isInternalNoteMode && onSendInternalNote) {
+      // Parse mentions from text for internal notes
+      const mentionedUserIds = parseMentionsFromText(inputValue.trim(), teamMembers);
+      
       // Send as internal note (with optional attachment)
       const success = await onSendInternalNote(
         inputValue.trim(),
         noteAttachment?.messageType || 'text',
         noteAttachment?.mediaUrl,
         noteAttachment?.mediaMimeType,
-        noteAttachment?.metadata
+        noteAttachment?.metadata,
+        mentionedUserIds
       );
       if (success) {
         setInputValue('');
         setReplyingTo(null);
         setNoteAttachment(null);
+        resetMentions();
         // Keep internal note mode active for convenience
         // Restore focus after state update
         setTimeout(() => textareaRef.current?.focus(), 0);
@@ -715,6 +720,19 @@ export function ChatPanel({
   }, [onRegisterScrollToMessage]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    // Don't handle Enter/Escape if mention picker is open
+    if (showMentionPicker && isInternalNoteMode) {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        closeMentionPicker();
+        return;
+      }
+      // Let MentionPicker handle Arrow keys and Enter
+      if (e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'Enter') {
+        return;
+      }
+    }
+    
     // Don't handle Enter/Escape if quick replies picker is open
     if (showQuickReplies) {
       if (e.key === 'Escape') {
@@ -733,9 +751,10 @@ export function ChatPanel({
     }
   };
 
-  // Handle input change to detect "/" trigger
+  // Handle input change to detect "/" trigger and "@" mentions
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const value = e.target.value;
+    const cursorPosition = e.target.selectionStart || 0;
     setInputValue(value);
     
     // Show quick replies when typing "/" at the start or alone
@@ -743,6 +762,11 @@ export function ChatPanel({
       setShowQuickReplies(true);
     } else {
       setShowQuickReplies(false);
+    }
+    
+    // Handle mention detection for internal notes
+    if (isInternalNoteMode) {
+      handleMentionInputChange(value, cursorPosition);
     }
   };
 
@@ -1292,10 +1316,18 @@ export function ChatPanel({
                                 )}
                               </div>
                             ) : (
-                              /* Text message content */
-                              <p className="text-sm whitespace-pre-wrap break-words">
-                                {message.content}
-                              </p>
+                              /* Text message content - use MentionText for internal notes */
+                              message.isInternalNote ? (
+                                <MentionText 
+                                  text={message.content || ''} 
+                                  className="text-sm" 
+                                  variant="internal-note"
+                                />
+                              ) : (
+                                <p className="text-sm whitespace-pre-wrap break-words">
+                                  {message.content}
+                                </p>
+                              )
                             )}
                             
                             {/* Message footer - only for non-audio/image/video or audio/image/video without URL */}
@@ -1570,12 +1602,7 @@ export function ChatPanel({
               <Textarea
                 ref={textareaRef}
                 value={inputValue}
-                onChange={(e) => {
-                  handleInputChange(e);
-                  if (isInternalNoteMode) {
-                    handleMentionInputChange(e.target.value, e.target.selectionStart || 0);
-                  }
-                }}
+                onChange={handleInputChange}
                 onKeyDown={handleKeyDown}
                 placeholder={
                   isInternalNoteMode
