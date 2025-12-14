@@ -537,63 +537,55 @@ export default function Connections() {
   }
 
   return (
-    <div className="h-full overflow-auto p-6 space-y-6">
+    <div className="h-full overflow-auto p-4 md:p-6 space-y-4 md:space-y-6">
       {/* Page Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Conexões WhatsApp</h1>
-          <p className="text-muted-foreground">
+          <h1 className="text-xl md:text-2xl font-bold text-foreground">Conexões WhatsApp</h1>
+          <p className="text-sm md:text-base text-muted-foreground">
             Conecte números do WhatsApp para atender seus clientes
           </p>
         </div>
-        <Button onClick={() => { resetDialogState(); setIsDialogOpen(true); }}>
+        <Button onClick={() => { resetDialogState(); setIsDialogOpen(true); }} className="w-full sm:w-auto">
           <Plus className="w-4 h-4 mr-2" />
-          + Conectar WhatsApp
+          Conectar WhatsApp
         </Button>
       </div>
 
       {/* Info Card */}
       <Card className="bg-primary/5 border-primary/20">
-        <CardContent className="pt-6">
-          <div className="flex items-start gap-4">
-            <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center flex-shrink-0">
-              <Smartphone className="w-5 h-5 text-primary" />
+        <CardContent className="pt-4 md:pt-6 px-4 md:px-6">
+          <div className="flex items-start gap-3 md:gap-4">
+            <div className="w-8 h-8 md:w-10 md:h-10 bg-primary/10 rounded-lg flex items-center justify-center flex-shrink-0">
+              <Smartphone className="w-4 h-4 md:w-5 md:h-5 text-primary" />
             </div>
             <div>
-              <h3 className="font-medium text-foreground">Como funciona?</h3>
-              <p className="text-sm text-muted-foreground mt-1">
+              <h3 className="font-medium text-foreground text-sm md:text-base">Como funciona?</h3>
+              <p className="text-xs md:text-sm text-muted-foreground mt-1">
                 Conecte seu WhatsApp escaneando o QR Code. Uma vez conectado, todas as mensagens 
-                serão sincronizadas automaticamente com a plataforma. Você pode conectar múltiplos 
-                números WhatsApp de acordo com seu plano.
+                serão sincronizadas automaticamente com a plataforma.
               </p>
             </div>
           </div>
         </CardContent>
       </Card>
 
-      {/* Connections Table */}
+      {/* Connections - Cards on mobile, Table on desktop */}
       {connections.length > 0 ? (
-        <Card>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Nome</TableHead>
-                <TableHead>Número</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Ações</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {connections.map((connection) => {
-                const status = statusConfig[connection.status || 'disconnected'];
-                const StatusIcon = status.icon;
-                
-                return (
-                  <TableRow key={connection.id}>
-                    <TableCell className="font-medium">
-                      <div className="flex items-center gap-3">
+        <>
+          {/* Mobile: Cards */}
+          <div className="grid gap-3 md:hidden">
+            {connections.map((connection) => {
+              const status = statusConfig[connection.status || 'disconnected'];
+              const StatusIcon = status.icon;
+              
+              return (
+                <Card key={connection.id}>
+                  <CardContent className="p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-center gap-3 min-w-0">
                         <div className={cn(
-                          'w-10 h-10 rounded-lg flex items-center justify-center',
+                          'w-10 h-10 rounded-lg flex items-center justify-center shrink-0',
                           connection.status === 'connected' ? 'bg-success/10' : 'bg-muted'
                         )}>
                           <Smartphone className={cn(
@@ -601,27 +593,18 @@ export default function Connections() {
                             connection.status === 'connected' ? 'text-success' : 'text-muted-foreground'
                           )} />
                         </div>
-                        {connection.name}
+                        <div className="min-w-0">
+                          <p className="font-medium truncate">{connection.name}</p>
+                          <p className="text-sm text-muted-foreground truncate">{connection.phone_number}</p>
+                        </div>
                       </div>
-                    </TableCell>
-                    <TableCell>{connection.phone_number}</TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className={status.className}>
-                        <StatusIcon className={cn(
-                          'w-3 h-3 mr-1',
-                          connection.status === 'connecting' && 'animate-spin'
-                        )} />
-                        {status.label}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-right">
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" className="h-8 w-8">
+                          <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0">
                             <MoreHorizontal className="w-4 h-4" />
                           </Button>
                         </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
+                        <DropdownMenuContent align="end" className="bg-popover">
                           <DropdownMenuItem onClick={() => {
                             setSelectedConnectionForSettings(connection);
                             setIsSettingsDialogOpen(true);
@@ -651,18 +634,114 @@ export default function Connections() {
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
-        </Card>
+                    </div>
+                    <div className="mt-3">
+                      <Badge variant="outline" className={status.className}>
+                        <StatusIcon className={cn(
+                          'w-3 h-3 mr-1',
+                          connection.status === 'connecting' && 'animate-spin'
+                        )} />
+                        {status.label}
+                      </Badge>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+
+          {/* Desktop: Table */}
+          <Card className="hidden md:block">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Nome</TableHead>
+                  <TableHead>Número</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-right">Ações</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {connections.map((connection) => {
+                  const status = statusConfig[connection.status || 'disconnected'];
+                  const StatusIcon = status.icon;
+                  
+                  return (
+                    <TableRow key={connection.id}>
+                      <TableCell className="font-medium">
+                        <div className="flex items-center gap-3">
+                          <div className={cn(
+                            'w-10 h-10 rounded-lg flex items-center justify-center',
+                            connection.status === 'connected' ? 'bg-success/10' : 'bg-muted'
+                          )}>
+                            <Smartphone className={cn(
+                              'w-5 h-5',
+                              connection.status === 'connected' ? 'text-success' : 'text-muted-foreground'
+                            )} />
+                          </div>
+                          {connection.name}
+                        </div>
+                      </TableCell>
+                      <TableCell>{connection.phone_number}</TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className={status.className}>
+                          <StatusIcon className={cn(
+                            'w-3 h-3 mr-1',
+                            connection.status === 'connecting' && 'animate-spin'
+                          )} />
+                          {status.label}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon" className="h-8 w-8">
+                              <MoreHorizontal className="w-4 h-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="bg-popover">
+                            <DropdownMenuItem onClick={() => {
+                              setSelectedConnectionForSettings(connection);
+                              setIsSettingsDialogOpen(true);
+                            }}>
+                              <Settings className="w-4 h-4 mr-2" />
+                              Configurações
+                            </DropdownMenuItem>
+                            {connection.status === 'connected' && (
+                              <DropdownMenuItem onClick={() => handleDisconnect(connection)}>
+                                <WifiOff className="w-4 h-4 mr-2" />
+                                Desconectar
+                              </DropdownMenuItem>
+                            )}
+                            {(connection.status === 'disconnected' || connection.status === 'error') && (
+                              <DropdownMenuItem onClick={() => handleReconnect(connection)}>
+                                <RefreshCw className="w-4 h-4 mr-2" />
+                                Reconectar
+                              </DropdownMenuItem>
+                            )}
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem 
+                              className="text-destructive"
+                              onClick={() => handleRemove(connection)}
+                            >
+                              <Trash2 className="w-4 h-4 mr-2" />
+                              Remover
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </Card>
+        </>
       ) : (
         <Card className="border-dashed">
-          <CardContent className="pt-12 pb-12 flex flex-col items-center justify-center text-center">
-            <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center mb-4">
-              <Smartphone className="w-8 h-8 text-muted-foreground" />
+          <CardContent className="py-8 md:py-12 flex flex-col items-center justify-center text-center px-4">
+            <div className="w-12 h-12 md:w-16 md:h-16 bg-muted rounded-full flex items-center justify-center mb-4">
+              <Smartphone className="w-6 h-6 md:w-8 md:h-8 text-muted-foreground" />
             </div>
             <h3 className="font-medium text-foreground mb-1">Nenhuma conexão ainda</h3>
             <p className="text-sm text-muted-foreground mb-4">
