@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
@@ -41,8 +41,18 @@ export interface ContactFilters {
   departmentId: string;
 }
 
+interface ConnectionUserAccess {
+  connection_id: string;
+  access_level: string;
+  department_access_mode: string;
+}
+
+interface DepartmentUserAccess {
+  department_id: string;
+}
+
 export function useContactsData() {
-  const { profile } = useAuth();
+  const { profile, userRole } = useAuth();
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [tags, setTags] = useState<{ id: string; name: string; color: string }[]>([]);
   const [connections, setConnections] = useState<{ id: string; name: string; phone_number: string }[]>([]);
@@ -66,22 +76,180 @@ export function useContactsData() {
     activeTags: 0
   });
 
+  // User permissions state
+  const [connectionUserAccess, setConnectionUserAccess] = useState<ConnectionUserAccess[]>([]);
+  const [departmentUserAccess, setDepartmentUserAccess] = useState<DepartmentUserAccess[]>([]);
+
+  // Check if user is admin or owner
+  const isAdminOrOwner = useMemo(() => {
+    return userRole?.role === 'owner' || userRole?.role === 'admin';
+  }, [userRole?.role]);
+
   // Save filters to localStorage
   useEffect(() => {
     localStorage.setItem('contactsFilters', JSON.stringify(filters));
   }, [filters]);
 
+  // Load user permissions
+  const loadUserPermissions = useCallback(async () => {
+    if (!profile?.id || isAdminOrOwner) return;
+
+    try {
+      // Load connection_users for this user
+      const { data: connUsers, error: connError } = await supabase
+        .from('connection_users')
+        .select('connection_id, access_level, department_access_mode')
+        .eq('user_id', profile.id);
+
+      if (connError) throw connError;
+      setConnectionUserAccess(connUsers || []);
+
+      // Load department_users for this user
+      const { data: deptUsers, error: deptError } = await supabase
+        .from('department_users')
+        .select('department_id')
+        .eq('user_id', profile.id);
+
+      if (deptError) throw deptError;
+      setDepartmentUserAccess(deptUsers || []);
+    } catch (error) {
+      console.error('Error loading user permissions:', error);
+    }
+  }, [profile?.id, isAdminOrOwner]);
+
+  // Get accessible connection IDs for this user
+  const accessibleConnectionIds = useMemo(() => {
+    if (isAdminOrOwner) return null; // null means all connections
+    return connectionUserAccess.map(cu => cu.connection_id);
+  }, [isAdminOrOwner, connectionUserAccess]);
+
+  // Get accessible department IDs for this user
+  const getAccessibleDepartmentIds = useCallback((connectionId: string): string[] | null => {
+    if (isAdminOrOwner) return null; // null means all departments
+    
+    const connAccess = connectionUserAccess.find(cu => cu.connection_id === connectionId);
+    if (!connAccess) return [];
+
+    if (connAccess.department_access_mode === 'all') {
+      return null; // all departments for this connection
+    }
+    
+    if (connAccess.department_access_mode === 'none') {
+      return []; // no departments
+    }
+
+    // specific departments
+    return departmentUserAccess.map(du => du.department_id);
+  }, [isAdminOrOwner, connectionUserAccess, departmentUserAccess]);
+
+  // Check if user has assigned_only access for any connection
+  const hasAssignedOnlyAccess = useMemo(() => {
+    if (isAdminOrOwner) return false;
+    return connectionUserAccess.some(cu => cu.access_level === 'assigned_only');
+  }, [isAdminOrOwner, connectionUserAccess]);
+
+  // Get connection IDs with assigned_only access
+  const assignedOnlyConnectionIds = useMemo(() => {
+    if (isAdminOrOwner) return [];
+    return connectionUserAccess
+      .filter(cu => cu.access_level === 'assigned_only')
+      .map(cu => cu.connection_id);
+  }, [isAdminOrOwner, connectionUserAccess]);
+
   const loadContacts = useCallback(async () => {
     if (!profile?.company_id) return;
 
     try {
-      // If filtering by connection or department, we need to get contacts that have conversations
-      if (filters.connectionId !== 'all' || filters.departmentId !== 'all') {
-        // Get contact IDs that match the filter criteria via conversations
+      // For non-admin users with assigned_only access, we need to get contacts through conversations
+      if (!isAdminOrOwner && hasAssignedOnlyAccess) {
+        // Get contacts from conversations assigned to this user
         let conversationQuery = supabase
           .from('conversations')
-          .select('contact_id')
+          .select('contact_id, whatsapp_connection_id, department_id')
           .eq('company_id', profile.company_id);
+
+        // Build filter for connections
+        if (accessibleConnectionIds && accessibleConnectionIds.length > 0) {
+          // For assigned_only connections, filter by assigned_user_id
+          // For full access connections, include all
+          const fullAccessConnIds = connectionUserAccess
+            .filter(cu => cu.access_level === 'full')
+            .map(cu => cu.connection_id);
+
+          if (assignedOnlyConnectionIds.length > 0 && fullAccessConnIds.length > 0) {
+            // User has mixed access - need complex filter
+            // Get conversations where:
+            // 1. Connection is full access, OR
+            // 2. Connection is assigned_only AND assigned to user
+            const { data: convData, error: convError } = await supabase
+              .from('conversations')
+              .select('contact_id, whatsapp_connection_id, department_id')
+              .eq('company_id', profile.company_id)
+              .or(`whatsapp_connection_id.in.(${fullAccessConnIds.join(',')}),and(whatsapp_connection_id.in.(${assignedOnlyConnectionIds.join(',')}),assigned_user_id.eq.${profile.id})`);
+
+            if (convError) throw convError;
+            
+            // Apply additional filters
+            let filteredConvData = convData || [];
+            
+            if (filters.connectionId !== 'all') {
+              filteredConvData = filteredConvData.filter(c => c.whatsapp_connection_id === filters.connectionId);
+            }
+            
+            if (filters.departmentId !== 'all') {
+              filteredConvData = filteredConvData.filter(c => c.department_id === filters.departmentId);
+            }
+
+            // Apply department access restrictions
+            filteredConvData = filteredConvData.filter(c => {
+              if (!c.whatsapp_connection_id) return false;
+              const accessibleDepts = getAccessibleDepartmentIds(c.whatsapp_connection_id);
+              if (accessibleDepts === null) return true; // all departments accessible
+              if (!c.department_id) return true; // no department set
+              return accessibleDepts.includes(c.department_id);
+            });
+
+            const contactIds = [...new Set(filteredConvData.map(c => c.contact_id))];
+            
+            if (contactIds.length === 0) {
+              setContacts([]);
+              setStats({ total: 0, withEmail: 0, newLast7Days: 0, activeTags: 0 });
+              return;
+            }
+
+            const { data, error } = await supabase
+              .from('contacts')
+              .select('*')
+              .in('id', contactIds)
+              .order('created_at', { ascending: false });
+
+            if (error) throw error;
+
+            const contactsData = (data || []).map(c => ({
+              ...c,
+              tags: c.tags || []
+            }));
+
+            setContacts(contactsData);
+            calculateStats(contactsData);
+            return;
+
+          } else if (assignedOnlyConnectionIds.length > 0) {
+            // User only has assigned_only access
+            conversationQuery = conversationQuery
+              .in('whatsapp_connection_id', assignedOnlyConnectionIds)
+              .eq('assigned_user_id', profile.id);
+          } else {
+            // User only has full access to some connections
+            conversationQuery = conversationQuery
+              .in('whatsapp_connection_id', fullAccessConnIds);
+          }
+        } else if (accessibleConnectionIds && accessibleConnectionIds.length === 0) {
+          // No access to any connections
+          setContacts([]);
+          setStats({ total: 0, withEmail: 0, newLast7Days: 0, activeTags: 0 });
+          return;
+        }
 
         if (filters.connectionId !== 'all') {
           conversationQuery = conversationQuery.eq('whatsapp_connection_id', filters.connectionId);
@@ -94,7 +262,16 @@ export function useContactsData() {
         const { data: convData, error: convError } = await conversationQuery;
         if (convError) throw convError;
 
-        const contactIds = [...new Set((convData || []).map(c => c.contact_id))];
+        // Apply department access restrictions
+        let filteredConvData = (convData || []).filter(c => {
+          if (!c.whatsapp_connection_id) return false;
+          const accessibleDepts = getAccessibleDepartmentIds(c.whatsapp_connection_id);
+          if (accessibleDepts === null) return true;
+          if (!c.department_id) return true;
+          return accessibleDepts.includes(c.department_id);
+        });
+
+        const contactIds = [...new Set(filteredConvData.map(c => c.contact_id))];
         
         if (contactIds.length === 0) {
           setContacts([]);
@@ -116,21 +293,75 @@ export function useContactsData() {
         }));
 
         setContacts(contactsData);
+        calculateStats(contactsData);
+        return;
+      }
 
-        // Calculate stats for filtered contacts
-        const sevenDaysAgo = new Date();
-        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+      // If filtering by connection or department, we need to get contacts that have conversations
+      if (filters.connectionId !== 'all' || filters.departmentId !== 'all' || (!isAdminOrOwner && accessibleConnectionIds)) {
+        // Get contact IDs that match the filter criteria via conversations
+        let conversationQuery = supabase
+          .from('conversations')
+          .select('contact_id, whatsapp_connection_id, department_id')
+          .eq('company_id', profile.company_id);
 
-        setStats({
-          total: contactsData.length,
-          withEmail: contactsData.filter(c => c.email).length,
-          newLast7Days: contactsData.filter(c => 
-            c.created_at && new Date(c.created_at) > sevenDaysAgo
-          ).length,
-          activeTags: 0
-        });
+        // Apply connection access restrictions for non-admin users
+        if (!isAdminOrOwner && accessibleConnectionIds && accessibleConnectionIds.length > 0) {
+          conversationQuery = conversationQuery.in('whatsapp_connection_id', accessibleConnectionIds);
+        } else if (!isAdminOrOwner && accessibleConnectionIds && accessibleConnectionIds.length === 0) {
+          setContacts([]);
+          setStats({ total: 0, withEmail: 0, newLast7Days: 0, activeTags: 0 });
+          return;
+        }
+
+        if (filters.connectionId !== 'all') {
+          conversationQuery = conversationQuery.eq('whatsapp_connection_id', filters.connectionId);
+        }
+
+        if (filters.departmentId !== 'all') {
+          conversationQuery = conversationQuery.eq('department_id', filters.departmentId);
+        }
+
+        const { data: convData, error: convError } = await conversationQuery;
+        if (convError) throw convError;
+
+        // Apply department access restrictions for non-admin users
+        let filteredConvData = convData || [];
+        if (!isAdminOrOwner) {
+          filteredConvData = filteredConvData.filter(c => {
+            if (!c.whatsapp_connection_id) return false;
+            const accessibleDepts = getAccessibleDepartmentIds(c.whatsapp_connection_id);
+            if (accessibleDepts === null) return true;
+            if (!c.department_id) return true;
+            return accessibleDepts.includes(c.department_id);
+          });
+        }
+
+        const contactIds = [...new Set(filteredConvData.map(c => c.contact_id))];
+        
+        if (contactIds.length === 0) {
+          setContacts([]);
+          setStats({ total: 0, withEmail: 0, newLast7Days: 0, activeTags: 0 });
+          return;
+        }
+
+        const { data, error } = await supabase
+          .from('contacts')
+          .select('*')
+          .in('id', contactIds)
+          .order('created_at', { ascending: false });
+
+        if (error) throw error;
+
+        const contactsData = (data || []).map(c => ({
+          ...c,
+          tags: c.tags || []
+        }));
+
+        setContacts(contactsData);
+        calculateStats(contactsData);
       } else {
-        // No filters - get all contacts
+        // No filters - get all contacts (admin/owner only)
         const { data, error } = await supabase
           .from('contacts')
           .select('*')
@@ -145,25 +376,27 @@ export function useContactsData() {
         }));
 
         setContacts(contactsData);
-
-        // Calculate stats
-        const sevenDaysAgo = new Date();
-        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-
-        setStats({
-          total: contactsData.length,
-          withEmail: contactsData.filter(c => c.email).length,
-          newLast7Days: contactsData.filter(c => 
-            c.created_at && new Date(c.created_at) > sevenDaysAgo
-          ).length,
-          activeTags: 0
-        });
+        calculateStats(contactsData);
       }
     } catch (error) {
       console.error('Error loading contacts:', error);
       toast.error('Erro ao carregar contatos');
     }
-  }, [profile?.company_id, filters]);
+  }, [profile?.company_id, profile?.id, filters, isAdminOrOwner, accessibleConnectionIds, hasAssignedOnlyAccess, assignedOnlyConnectionIds, connectionUserAccess, getAccessibleDepartmentIds]);
+
+  const calculateStats = (contactsData: Contact[]) => {
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+    setStats({
+      total: contactsData.length,
+      withEmail: contactsData.filter(c => c.email).length,
+      newLast7Days: contactsData.filter(c => 
+        c.created_at && new Date(c.created_at) > sevenDaysAgo
+      ).length,
+      activeTags: 0
+    });
+  };
 
   const loadTags = useCallback(async () => {
     if (!profile?.company_id) return;
@@ -187,37 +420,57 @@ export function useContactsData() {
     if (!profile?.company_id) return;
 
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from('whatsapp_connections')
         .select('id, name, phone_number')
         .eq('company_id', profile.company_id)
         .eq('active', true);
 
+      const { data, error } = await query;
+
       if (error) throw error;
 
-      setConnections(data || []);
+      // Filter connections based on user permissions
+      let filteredConnections = data || [];
+      if (!isAdminOrOwner && accessibleConnectionIds) {
+        filteredConnections = filteredConnections.filter(c => accessibleConnectionIds.includes(c.id));
+      }
+
+      setConnections(filteredConnections);
     } catch (error) {
       console.error('Error loading connections:', error);
     }
-  }, [profile?.company_id]);
+  }, [profile?.company_id, isAdminOrOwner, accessibleConnectionIds]);
 
   const loadDepartments = useCallback(async () => {
     if (!profile?.company_id) return;
 
     try {
       // Get all departments from all connections of this company
-      const { data: connectionsData } = await supabase
+      let connectionQuery = supabase
         .from('whatsapp_connections')
         .select('id')
         .eq('company_id', profile.company_id)
         .eq('active', true);
+
+      const { data: connectionsData } = await connectionQuery;
 
       if (!connectionsData || connectionsData.length === 0) {
         setDepartments([]);
         return;
       }
 
-      const connectionIds = connectionsData.map(c => c.id);
+      let connectionIds = connectionsData.map(c => c.id);
+      
+      // Filter connections based on user permissions
+      if (!isAdminOrOwner && accessibleConnectionIds) {
+        connectionIds = connectionIds.filter(id => accessibleConnectionIds.includes(id));
+      }
+
+      if (connectionIds.length === 0) {
+        setDepartments([]);
+        return;
+      }
 
       const { data, error } = await supabase
         .from('departments')
@@ -228,21 +481,43 @@ export function useContactsData() {
 
       if (error) throw error;
 
-      setDepartments(data || []);
+      // Filter departments based on user permissions
+      let filteredDepartments = data || [];
+      if (!isAdminOrOwner) {
+        filteredDepartments = filteredDepartments.filter(dept => {
+          const accessibleDepts = getAccessibleDepartmentIds(dept.whatsapp_connection_id);
+          if (accessibleDepts === null) return true; // all departments accessible
+          return accessibleDepts.includes(dept.id);
+        });
+      }
+
+      setDepartments(filteredDepartments);
     } catch (error) {
       console.error('Error loading departments:', error);
     }
-  }, [profile?.company_id]);
+  }, [profile?.company_id, isAdminOrOwner, accessibleConnectionIds, getAccessibleDepartmentIds]);
 
   const loadData = useCallback(async () => {
     setLoading(true);
+    await loadUserPermissions();
     await Promise.all([loadContacts(), loadTags(), loadConnections(), loadDepartments()]);
     setLoading(false);
-  }, [loadContacts, loadTags, loadConnections, loadDepartments]);
+  }, [loadContacts, loadTags, loadConnections, loadDepartments, loadUserPermissions]);
 
   useEffect(() => {
-    loadData();
-  }, [loadData]);
+    if (profile?.company_id && userRole) {
+      loadData();
+    }
+  }, [profile?.company_id, userRole]);
+
+  // Reload when permissions change
+  useEffect(() => {
+    if (profile?.company_id && connectionUserAccess.length >= 0) {
+      loadConnections();
+      loadDepartments();
+      loadContacts();
+    }
+  }, [connectionUserAccess, departmentUserAccess]);
 
   // Reload contacts when filters change
   useEffect(() => {
