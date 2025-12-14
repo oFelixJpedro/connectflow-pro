@@ -243,24 +243,11 @@ export function ContactFormModal({
     }
   }, [selectedColumn, selectedPriority, crmEnabled, currentPosition, originalColumn, originalPriority]);
 
-  // Validation logic
-  const validationError = useMemo(() => {
-    const connectionChanging = connectionMigrationEnabled && targetConnectionId && targetConnectionId !== currentConnectionId;
-    const departmentChanging = departmentMigrationEnabled && targetDepartmentId && targetDepartmentId !== currentDepartmentId;
-    const crmChanging = kanbanChanged;
-    
-    // Rule: Cannot change connection + department together
-    if (connectionChanging && departmentChanging) {
-      return 'Não é possível alterar conexão e departamento ao mesmo tempo. Altere um de cada vez.';
-    }
-    
-    // Rule: Cannot change connection + kanban position together (CRM is auto-managed on connection migration)
-    if (connectionChanging && crmChanging) {
-      return 'Não é possível alterar conexão e posição no Kanban ao mesmo tempo. Ao migrar de conexão, o contato será automaticamente adicionado à primeira coluna do novo Kanban.';
-    }
-    
-    return null;
-  }, [connectionMigrationEnabled, targetConnectionId, currentConnectionId, departmentMigrationEnabled, targetDepartmentId, currentDepartmentId, kanbanChanged]);
+  // Check if connection migration is active (user intends to migrate connection)
+  const isConnectionMigrationActive = connectionMigrationEnabled;
+  
+  // Check if department or CRM changes are active (user is modifying these sections)
+  const isDepartmentOrCrmActive = departmentMigrationEnabled || kanbanChanged;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -269,13 +256,8 @@ export function ContactFormModal({
       return;
     }
 
-    if (validationError) {
-      return;
-    }
-
     // If connection migration is enabled, show confirmation
-    const connectionChanging = connectionMigrationEnabled && targetConnectionId && targetConnectionId !== currentConnectionId;
-    if (connectionChanging) {
+    if (isConnectionMigrationActive) {
       setPendingFormData(formData);
       setShowMigrationConfirm(true);
       return;
@@ -415,10 +397,8 @@ export function ContactFormModal({
     d => d.whatsapp_connection_id === targetConnectionId
   );
   
-  // Check if connection migration is active - to disable CRM section
-  const isConnectionMigrationActive = connectionMigrationEnabled && targetConnectionId && targetConnectionId !== currentConnectionId;
 
-  const canSave = !validationError && !loading;
+  const canSave = !loading;
 
   return (
     <>
@@ -525,20 +505,28 @@ export function ContactFormModal({
                     <Checkbox
                       id="connection-migration-enabled"
                       checked={connectionMigrationEnabled}
+                      disabled={isDepartmentOrCrmActive}
                       onCheckedChange={(checked) => {
                         setConnectionMigrationEnabled(checked === true);
                         if (!checked) {
                           setTargetConnectionId('');
+                          setTargetConnectionDepartmentId('');
                         }
                       }}
                     />
                     <Label 
                       htmlFor="connection-migration-enabled" 
-                      className="text-sm font-normal cursor-pointer"
+                      className={`text-sm font-normal cursor-pointer ${isDepartmentOrCrmActive ? 'text-muted-foreground' : ''}`}
                     >
                       Migrar para outra conexão
                     </Label>
                   </div>
+
+                  {isDepartmentOrCrmActive && !connectionMigrationEnabled && (
+                    <p className="text-xs text-muted-foreground pl-6">
+                      Desabilitado enquanto departamento ou CRM estiver sendo alterado
+                    </p>
+                  )}
 
                   {connectionMigrationEnabled && (
                     <div className="space-y-3 pl-6 border-l-2 border-muted">
@@ -767,15 +755,6 @@ export function ContactFormModal({
               </>
             )}
 
-            {/* Validation Error Alert */}
-            {validationError && (
-              <div className="bg-destructive/10 border border-destructive/30 rounded-lg p-3">
-                <p className="text-sm text-destructive flex items-start gap-2">
-                  <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                  {validationError}
-                </p>
-              </div>
-            )}
 
             <DialogFooter className="pt-4">
               <Button
