@@ -132,14 +132,23 @@ export function useMentions(): UseMentionsResult {
 export function parseMentionsFromText(text: string, teamMembers: { id: string; fullName: string }[]): string[] {
   const mentionedIds: string[] = [];
   
-  // For each team member, check if their name appears after @ in the text
+  // Validate inputs
+  if (!text || !teamMembers || teamMembers.length === 0) {
+    return mentionedIds;
+  }
+  
+  // For each team member, check if @FullName exists in the text
   for (const member of teamMembers) {
-    // Create a regex that matches @FullName (case insensitive)
-    const escapedName = member.fullName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const regex = new RegExp(`@${escapedName}(?:\\s|$|[.,!?;:])`, 'i');
+    if (!member.fullName || !member.id) continue;
     
-    if (regex.test(text) && !mentionedIds.includes(member.id)) {
-      mentionedIds.push(member.id);
+    // Build the mention pattern: @FullName (exact match, case-insensitive)
+    const mentionPattern = `@${member.fullName}`;
+    
+    // Use simple includes check (case-insensitive)
+    if (text.toLowerCase().includes(mentionPattern.toLowerCase())) {
+      if (!mentionedIds.includes(member.id)) {
+        mentionedIds.push(member.id);
+      }
     }
   }
 
