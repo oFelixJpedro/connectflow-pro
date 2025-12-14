@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Users, Settings2, Loader2, Shield, ShieldCheck, UserCheck, Eye, UserPlus } from 'lucide-react';
+import { Users, Settings2, Loader2, Shield, ShieldCheck, UserCheck, Eye, UserPlus, Trash2 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { UserConfigDrawer } from '@/components/team/UserConfigDrawer';
 import { InviteUserModal } from '@/components/team/InviteUserModal';
+import { DeleteUserModal } from '@/components/team/DeleteUserModal';
 import type { Tables } from '@/integrations/supabase/types';
 
 interface TeamMember {
@@ -40,6 +41,8 @@ export default function Team() {
   const [selectedMember, setSelectedMember] = useState<TeamMember | null>(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [memberToDelete, setMemberToDelete] = useState<TeamMember | null>(null);
 
   const isOwner = userRole?.role === 'owner';
   const isAdmin = userRole?.role === 'admin';
@@ -157,6 +160,32 @@ export default function Team() {
     return false;
   };
 
+  // Check if current user can delete target member
+  const canDeleteMember = (member: TeamMember) => {
+    // Can't delete yourself
+    if (member.id === profile?.id) return false;
+    
+    // Owner can delete anyone except themselves
+    if (isOwner) return true;
+    
+    // Admin can only delete agents/supervisors and viewers
+    if (isAdmin) {
+      return member.role !== 'owner' && member.role !== 'admin';
+    }
+    
+    return false;
+  };
+
+  const handleDeleteMember = (member: TeamMember) => {
+    setMemberToDelete(member);
+    setDeleteModalOpen(true);
+  };
+
+  const handleDeleteSuccess = () => {
+    loadMembers();
+    setMemberToDelete(null);
+  };
+
   if (isLoading) {
     return (
       <div className="flex h-full items-center justify-center">
@@ -267,6 +296,18 @@ export default function Team() {
                         <Settings2 className="w-4 h-4" />
                       </Button>
                     )}
+
+                    {/* Delete button */}
+                    {canDeleteMember(member) && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                        onClick={() => handleDeleteMember(member)}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    )}
                   </div>
                 </div>
               );
@@ -289,6 +330,14 @@ export default function Team() {
         open={isInviteModalOpen}
         onOpenChange={setIsInviteModalOpen}
         onSuccess={loadMembers}
+      />
+
+      {/* Delete User Modal */}
+      <DeleteUserModal
+        open={deleteModalOpen}
+        onOpenChange={setDeleteModalOpen}
+        user={memberToDelete}
+        onSuccess={handleDeleteSuccess}
       />
     </div>
   );

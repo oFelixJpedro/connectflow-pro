@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { 
   MessageSquare, 
   Users, 
@@ -13,8 +14,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { cn } from '@/lib/utils';
 import { useDashboardData } from '@/hooks/useDashboardData';
+import { DashboardFilters } from '@/components/dashboard/DashboardFilters';
+import { ConversationPreviewModal } from '@/components/crm/ConversationPreviewModal';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { 
@@ -64,7 +68,32 @@ export default function Dashboard() {
     recentConversations,
     agentPerformance,
     lastUpdated,
+    filter,
+    setFilter,
+    isAdmin,
   } = useDashboardData();
+
+  // State for conversation preview modal
+  const [previewModal, setPreviewModal] = useState<{
+    open: boolean;
+    contactId: string;
+    contactName?: string;
+    contactPhone?: string;
+    contactAvatarUrl?: string;
+  }>({
+    open: false,
+    contactId: '',
+  });
+
+  const handleConversationClick = (conv: typeof recentConversations[0]) => {
+    setPreviewModal({
+      open: true,
+      contactId: conv.contactId,
+      contactName: conv.contact?.name || undefined,
+      contactPhone: conv.contact?.phoneNumber,
+      contactAvatarUrl: conv.contact?.avatarUrl || undefined,
+    });
+  };
 
   const todayChange = metrics.yesterdayConversations > 0
     ? Math.round(((metrics.todayConversations - metrics.yesterdayConversations) / metrics.yesterdayConversations) * 100)
@@ -77,20 +106,71 @@ export default function Dashboard() {
     return `${hours}h ${mins}min`;
   };
 
+  // Get filter display label for non-admin users
+  const getPageTitle = () => {
+    if (!isAdmin) {
+      return 'Dashboard - Minhas Métricas';
+    }
+    return 'Dashboard';
+  };
+
+  const getPageDescription = () => {
+    if (!isAdmin) {
+      return 'Suas métricas de atendimento';
+    }
+    return 'Visão geral do seu atendimento';
+  };
+
+  // Get filter indicator for admin
+  const getFilterIndicator = () => {
+    if (!isAdmin || filter.type === 'general') return null;
+    
+    let label = '';
+    if (filter.type === 'agent' && filter.agentId) {
+      label = 'Filtrado por atendente';
+    } else if (filter.type === 'connection' && filter.connectionId) {
+      label = 'Filtrado por conexão';
+    } else if (filter.type === 'department' && filter.departmentId) {
+      label = 'Filtrado por departamento';
+    }
+    
+    if (!label) return null;
+    
+    return (
+      <Badge variant="secondary" className="text-xs">
+        📊 {label}
+      </Badge>
+    );
+  };
+
   return (
     <div className="h-full overflow-auto p-6 space-y-6">
       {/* Page Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">Dashboard</h1>
-          <p className="text-muted-foreground">
-            Visão geral do seu atendimento
-          </p>
+      <div className="flex flex-col gap-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-foreground">{getPageTitle()}</h1>
+            <p className="text-muted-foreground">
+              {getPageDescription()}
+            </p>
+          </div>
+          <div className="flex items-center gap-3">
+            {getFilterIndicator()}
+            <Badge variant="outline" className="text-sm flex items-center gap-2">
+              {loading && <Loader2 className="w-3 h-3 animate-spin" />}
+              Atualizado {format(lastUpdated, "HH:mm", { locale: ptBR })}
+            </Badge>
+          </div>
         </div>
-        <Badge variant="outline" className="text-sm flex items-center gap-2">
-          {loading && <Loader2 className="w-3 h-3 animate-spin" />}
-          Atualizado {format(lastUpdated, "HH:mm", { locale: ptBR })}
-        </Badge>
+
+        {/* Filters - Only for admin/owner */}
+        {isAdmin && (
+          <DashboardFilters 
+            filter={filter} 
+            onFilterChange={setFilter} 
+            isAdmin={isAdmin} 
+          />
+        )}
       </div>
 
       {/* Metrics Grid */}
@@ -403,11 +483,17 @@ export default function Dashboard() {
               recentConversations.map((conv) => (
                 <div 
                   key={conv.id}
+                  onClick={() => handleConversationClick(conv)}
                   className="flex items-center gap-4 p-3 rounded-lg hover:bg-muted/50 transition-colors cursor-pointer"
                 >
-                  <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center text-sm font-medium text-primary">
-                    {conv.contact?.name?.charAt(0) || '?'}
-                  </div>
+                  <Avatar className="w-10 h-10">
+                    {conv.contact?.avatarUrl && (
+                      <AvatarImage src={conv.contact.avatarUrl} alt={conv.contact?.name || 'Contato'} />
+                    )}
+                    <AvatarFallback className="bg-primary/10 text-primary text-sm font-medium">
+                      {conv.contact?.name?.charAt(0) || '?'}
+                    </AvatarFallback>
+                  </Avatar>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-foreground truncate">
                       {conv.contact?.name || conv.contact?.phoneNumber}
@@ -429,11 +515,6 @@ export default function Dashboard() {
                     >
                       {statusLabels[conv.status] || conv.status}
                     </Badge>
-                    {conv.unreadCount > 0 && (
-                      <Badge className="bg-primary text-primary-foreground text-xs">
-                        {conv.unreadCount}
-                      </Badge>
-                    )}
                   </div>
                 </div>
               ))
@@ -446,57 +527,115 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
-        {/* Team Performance */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Performance da Equipe</CardTitle>
-            <CardDescription>
-              Top atendentes hoje
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            {loading ? (
-              Array.from({ length: 4 }).map((_, i) => (
-                <div key={i} className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <Skeleton className="w-8 h-8 rounded-full" />
-                      <Skeleton className="h-4 w-24" />
+        {/* Team Performance - Only show for general view */}
+        {(filter.type === 'general' || !isAdmin) && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">Desempenho da Equipe</CardTitle>
+              <CardDescription>
+                Atendentes com melhor performance hoje
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {loading ? (
+                Array.from({ length: 4 }).map((_, i) => (
+                  <div key={i} className="flex items-center gap-4 p-3">
+                    <Skeleton className="w-10 h-10 rounded-full" />
+                    <div className="flex-1 space-y-2">
+                      <Skeleton className="h-4 w-32" />
+                      <Skeleton className="h-2 w-full" />
                     </div>
                     <Skeleton className="h-4 w-12" />
                   </div>
-                  <Skeleton className="h-2 w-full" />
-                </div>
-              ))
-            ) : agentPerformance.length > 0 ? (
-              agentPerformance.map((agent) => (
-                <div key={agent.id} className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 bg-primary/10 rounded-full flex items-center justify-center text-xs font-medium text-primary">
-                        {agent.avatar}
+                ))
+              ) : agentPerformance.length > 0 ? (
+                agentPerformance.map((agent, index) => {
+                  const resolveRate = agent.conversations > 0 
+                    ? Math.round((agent.resolved / agent.conversations) * 100) 
+                    : 0;
+                  
+                  return (
+                    <div 
+                      key={agent.id}
+                      className="flex items-center gap-4 p-3 rounded-lg hover:bg-muted/50 transition-colors"
+                    >
+                      <div className="relative">
+                        <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center text-sm font-medium text-primary">
+                          {agent.avatar}
+                        </div>
+                        {index === 0 && (
+                          <div className="absolute -top-1 -right-1 w-5 h-5 bg-warning rounded-full flex items-center justify-center text-[10px]">
+                            🏆
+                          </div>
+                        )}
                       </div>
-                      <span className="text-sm font-medium">{agent.name}</span>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-foreground truncate">
+                          {agent.name}
+                        </p>
+                        <div className="flex items-center gap-2 mt-1">
+                          <Progress value={resolveRate} className="h-1.5 flex-1" />
+                          <span className="text-xs text-muted-foreground whitespace-nowrap">
+                            {agent.resolved}/{agent.conversations}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-sm font-bold text-foreground">{resolveRate}%</p>
+                        <p className="text-xs text-muted-foreground">resolvidas</p>
+                      </div>
                     </div>
-                    <span className="text-sm text-muted-foreground">
-                      {agent.resolved}/{agent.conversations}
-                    </span>
-                  </div>
-                  <Progress 
-                    value={agent.conversations > 0 ? (agent.resolved / agent.conversations) * 100 : 0} 
-                    className="h-2"
-                  />
+                  );
+                })
+              ) : (
+                <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
+                  <Users className="w-12 h-12 mb-2 opacity-50" />
+                  <p>Sem dados de performance</p>
                 </div>
-              ))
-            ) : (
+              )}
+            </CardContent>
+          </Card>
+        )}
+
+        {/* When filtered, show a placeholder or different card */}
+        {filter.type !== 'general' && isAdmin && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">Detalhes do Filtro</CardTitle>
+              <CardDescription>
+                Informações sobre a visualização atual
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
               <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
-                <Users className="w-12 h-12 mb-2 opacity-50" />
-                <p>Sem dados de performance hoje</p>
+                <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mb-4">
+                  {filter.type === 'agent' && <Users className="w-8 h-8 text-primary" />}
+                  {filter.type === 'connection' && <MessageSquare className="w-8 h-8 text-primary" />}
+                  {filter.type === 'department' && <Users className="w-8 h-8 text-primary" />}
+                </div>
+                <p className="text-sm font-medium text-foreground mb-1">
+                  {filter.type === 'agent' && 'Visualizando por Atendente'}
+                  {filter.type === 'connection' && 'Visualizando por Conexão'}
+                  {filter.type === 'department' && 'Visualizando por Departamento'}
+                </p>
+                <p className="text-xs text-center">
+                  Selecione um item no filtro acima para ver os dados segmentados
+                </p>
               </div>
-            )}
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        )}
       </div>
+
+      {/* Conversation Preview Modal */}
+      <ConversationPreviewModal
+        open={previewModal.open}
+        onOpenChange={(open) => setPreviewModal(prev => ({ ...prev, open }))}
+        contactId={previewModal.contactId}
+        contactName={previewModal.contactName}
+        contactPhone={previewModal.contactPhone}
+        contactAvatarUrl={previewModal.contactAvatarUrl}
+      />
     </div>
   );
 }

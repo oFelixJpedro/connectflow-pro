@@ -160,6 +160,90 @@ export type Database = {
           },
         ]
       }
+      conversation_followers: {
+        Row: {
+          conversation_id: string
+          created_at: string
+          id: string
+          user_id: string
+        }
+        Insert: {
+          conversation_id: string
+          created_at?: string
+          id?: string
+          user_id: string
+        }
+        Update: {
+          conversation_id?: string
+          created_at?: string
+          id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "conversation_followers_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "conversation_followers_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      conversation_history: {
+        Row: {
+          conversation_id: string
+          created_at: string | null
+          event_data: Json
+          event_type: string
+          id: string
+          is_automatic: boolean | null
+          performed_by: string | null
+          performed_by_name: string | null
+        }
+        Insert: {
+          conversation_id: string
+          created_at?: string | null
+          event_data?: Json
+          event_type: string
+          id?: string
+          is_automatic?: boolean | null
+          performed_by?: string | null
+          performed_by_name?: string | null
+        }
+        Update: {
+          conversation_id?: string
+          created_at?: string | null
+          event_data?: Json
+          event_type?: string
+          id?: string
+          is_automatic?: boolean | null
+          performed_by?: string | null
+          performed_by_name?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "conversation_history_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "conversation_history_performed_by_fkey"
+            columns: ["performed_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       conversations: {
         Row: {
           assigned_at: string | null
@@ -694,6 +778,7 @@ export type Database = {
       }
       kanban_boards: {
         Row: {
+          auto_add_new_contacts: boolean
           company_id: string
           created_at: string | null
           id: string
@@ -701,6 +786,7 @@ export type Database = {
           whatsapp_connection_id: string
         }
         Insert: {
+          auto_add_new_contacts?: boolean
           company_id: string
           created_at?: string | null
           id?: string
@@ -708,6 +794,7 @@ export type Database = {
           whatsapp_connection_id: string
         }
         Update: {
+          auto_add_new_contacts?: boolean
           company_id?: string
           created_at?: string | null
           id?: string
@@ -1079,14 +1166,23 @@ export type Database = {
           content: string | null
           conversation_id: string
           created_at: string | null
+          deleted_at: string | null
+          deleted_by: string | null
+          deleted_by_name: string | null
+          deleted_by_type: string | null
           direction: Database["public"]["Enums"]["message_direction"]
+          edit_count: number | null
+          edited_at: string | null
           error_message: string | null
           id: string
+          is_deleted: boolean | null
+          is_edited: boolean | null
           is_internal_note: boolean | null
           media_mime_type: string | null
           media_url: string | null
           message_type: Database["public"]["Enums"]["message_type"]
           metadata: Json | null
+          original_content: string | null
           quoted_message_id: string | null
           sender_id: string | null
           sender_type: Database["public"]["Enums"]["sender_type"]
@@ -1099,14 +1195,23 @@ export type Database = {
           content?: string | null
           conversation_id: string
           created_at?: string | null
+          deleted_at?: string | null
+          deleted_by?: string | null
+          deleted_by_name?: string | null
+          deleted_by_type?: string | null
           direction: Database["public"]["Enums"]["message_direction"]
+          edit_count?: number | null
+          edited_at?: string | null
           error_message?: string | null
           id?: string
+          is_deleted?: boolean | null
+          is_edited?: boolean | null
           is_internal_note?: boolean | null
           media_mime_type?: string | null
           media_url?: string | null
           message_type: Database["public"]["Enums"]["message_type"]
           metadata?: Json | null
+          original_content?: string | null
           quoted_message_id?: string | null
           sender_id?: string | null
           sender_type: Database["public"]["Enums"]["sender_type"]
@@ -1119,14 +1224,23 @@ export type Database = {
           content?: string | null
           conversation_id?: string
           created_at?: string | null
+          deleted_at?: string | null
+          deleted_by?: string | null
+          deleted_by_name?: string | null
+          deleted_by_type?: string | null
           direction?: Database["public"]["Enums"]["message_direction"]
+          edit_count?: number | null
+          edited_at?: string | null
           error_message?: string | null
           id?: string
+          is_deleted?: boolean | null
+          is_edited?: boolean | null
           is_internal_note?: boolean | null
           media_mime_type?: string | null
           media_url?: string | null
           message_type?: Database["public"]["Enums"]["message_type"]
           metadata?: Json | null
+          original_content?: string | null
           quoted_message_id?: string | null
           sender_id?: string | null
           sender_type?: Database["public"]["Enums"]["sender_type"]
@@ -1141,6 +1255,13 @@ export type Database = {
             columns: ["conversation_id"]
             isOneToOne: false
             referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "messages_deleted_by_fkey"
+            columns: ["deleted_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
           {
@@ -1166,6 +1287,8 @@ export type Database = {
           max_conversations: number | null
           metadata: Json | null
           needs_password_change: boolean
+          signature: string | null
+          signature_enabled: boolean | null
           updated_at: string | null
         }
         Insert: {
@@ -1181,6 +1304,8 @@ export type Database = {
           max_conversations?: number | null
           metadata?: Json | null
           needs_password_change?: boolean
+          signature?: string | null
+          signature_enabled?: boolean | null
           updated_at?: string | null
         }
         Update: {
@@ -1196,6 +1321,8 @@ export type Database = {
           max_conversations?: number | null
           metadata?: Json | null
           needs_password_change?: boolean
+          signature?: string | null
+          signature_enabled?: boolean | null
           updated_at?: string | null
         }
         Relationships: [
@@ -1218,6 +1345,7 @@ export type Database = {
       quick_replies: {
         Row: {
           category: string | null
+          category_id: string | null
           company_id: string
           created_at: string | null
           created_by_user_id: string | null
@@ -1236,6 +1364,7 @@ export type Database = {
         }
         Insert: {
           category?: string | null
+          category_id?: string | null
           company_id: string
           created_at?: string | null
           created_by_user_id?: string | null
@@ -1254,6 +1383,7 @@ export type Database = {
         }
         Update: {
           category?: string | null
+          category_id?: string | null
           company_id?: string
           created_at?: string | null
           created_by_user_id?: string | null
@@ -1271,6 +1401,13 @@ export type Database = {
           whatsapp_connection_id?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "quick_replies_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "quick_reply_categories"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "quick_replies_company_id_fkey"
             columns: ["company_id"]
@@ -1294,6 +1431,71 @@ export type Database = {
           },
           {
             foreignKeyName: "quick_replies_whatsapp_connection_id_fkey"
+            columns: ["whatsapp_connection_id"]
+            isOneToOne: false
+            referencedRelation: "whatsapp_connections"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      quick_reply_categories: {
+        Row: {
+          company_id: string
+          created_at: string | null
+          created_by_user_id: string | null
+          department_id: string | null
+          id: string
+          name: string
+          updated_at: string | null
+          visibility_type: Database["public"]["Enums"]["quick_reply_visibility"]
+          whatsapp_connection_id: string | null
+        }
+        Insert: {
+          company_id: string
+          created_at?: string | null
+          created_by_user_id?: string | null
+          department_id?: string | null
+          id?: string
+          name: string
+          updated_at?: string | null
+          visibility_type?: Database["public"]["Enums"]["quick_reply_visibility"]
+          whatsapp_connection_id?: string | null
+        }
+        Update: {
+          company_id?: string
+          created_at?: string | null
+          created_by_user_id?: string | null
+          department_id?: string | null
+          id?: string
+          name?: string
+          updated_at?: string | null
+          visibility_type?: Database["public"]["Enums"]["quick_reply_visibility"]
+          whatsapp_connection_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "quick_reply_categories_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "quick_reply_categories_created_by_user_id_fkey"
+            columns: ["created_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "quick_reply_categories_department_id_fkey"
+            columns: ["department_id"]
+            isOneToOne: false
+            referencedRelation: "departments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "quick_reply_categories_whatsapp_connection_id_fkey"
             columns: ["whatsapp_connection_id"]
             isOneToOne: false
             referencedRelation: "whatsapp_connections"
@@ -1369,6 +1571,7 @@ export type Database = {
           name: string
           phone_number: string
           qr_code: string | null
+          receive_group_messages: boolean | null
           session_id: string
           settings: Json | null
           status: Database["public"]["Enums"]["connection_status"] | null
@@ -1387,6 +1590,7 @@ export type Database = {
           name: string
           phone_number: string
           qr_code?: string | null
+          receive_group_messages?: boolean | null
           session_id: string
           settings?: Json | null
           status?: Database["public"]["Enums"]["connection_status"] | null
@@ -1405,6 +1609,7 @@ export type Database = {
           name?: string
           phone_number?: string
           qr_code?: string | null
+          receive_group_messages?: boolean | null
           session_id?: string
           settings?: Json | null
           status?: Database["public"]["Enums"]["connection_status"] | null

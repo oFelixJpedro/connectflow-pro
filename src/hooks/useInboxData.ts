@@ -88,10 +88,17 @@ function transformMessage(db: any, reactions?: MessageReaction[]): Message {
       content: db.quoted_message.content || undefined,
       messageType: db.quoted_message.message_type as Message['messageType'],
       senderType: db.quoted_message.sender_type as Message['senderType'],
-      mediaUrl: db.quoted_message.media_url || undefined,
+    mediaUrl: db.quoted_message.media_url || undefined,
+      isDeleted: db.quoted_message.is_deleted || false,
       createdAt: db.quoted_message.created_at,
     } : undefined,
     reactions: reactions || [],
+    isDeleted: db.is_deleted || false,
+    deletedAt: db.deleted_at || undefined,
+    deletedByType: db.deleted_by_type || undefined,
+    deletedBy: db.deleted_by || undefined,
+    deletedByName: db.deleted_by_name || undefined,
+    originalContent: db.original_content || undefined,
     createdAt: db.created_at,
     updatedAt: db.updated_at,
   };
@@ -310,7 +317,23 @@ export function useInboxData() {
 
       console.log('[useInboxData] Conversas carregadas:', data?.length || 0);
       
-      const transformedConversations = (data || []).map(transformConversation);
+      let transformedConversations = (data || []).map(transformConversation);
+
+      // Apply "isFollowing" filter if active (filter by conversation_followers)
+      if (conversationFilters.isFollowing && user?.id) {
+        const { data: followedConversations } = await supabase
+          .from('conversation_followers')
+          .select('conversation_id')
+          .eq('user_id', user.id);
+
+        if (followedConversations) {
+          const followedIds = new Set(followedConversations.map(f => f.conversation_id));
+          transformedConversations = transformedConversations.filter(c => followedIds.has(c.id));
+        } else {
+          transformedConversations = [];
+        }
+      }
+
       setConversations(transformedConversations);
     } catch (err) {
       console.error('[useInboxData] Erro inesperado:', err);
@@ -343,6 +366,8 @@ export function useInboxData() {
             message_type,
             sender_type,
             media_url,
+            is_deleted,
+            is_edited,
             created_at
           )
         `)
@@ -915,7 +940,7 @@ export function useInboxData() {
               console.log('[Realtime] Buscando mensagem citada:', newMessage.quotedMessageId);
               const { data: quotedData } = await supabase
                 .from('messages')
-                .select('id, content, message_type, sender_type, media_url, created_at')
+                .select('id, content, message_type, sender_type, media_url, is_deleted, is_edited, created_at')
                 .eq('id', newMessage.quotedMessageId)
                 .maybeSingle();
               
@@ -928,6 +953,7 @@ export function useInboxData() {
                     messageType: quotedData.message_type as Message['messageType'],
                     senderType: quotedData.sender_type as Message['senderType'],
                     mediaUrl: quotedData.media_url || undefined,
+                    isDeleted: quotedData.is_deleted || false,
                     createdAt: quotedData.created_at,
                   },
                 };

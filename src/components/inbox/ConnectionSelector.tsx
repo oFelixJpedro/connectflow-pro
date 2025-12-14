@@ -125,7 +125,7 @@ export function ConnectionSelector({
           }
           data = connectionsData;
         } else {
-          // Agents and viewers: check for explicit assignments first
+          // Agents and viewers: only show connections where they have explicit access
           const { data: userAssignments, error: assignmentsError } = await supabase
             .from('connection_users')
             .select('connection_id')
@@ -137,58 +137,31 @@ export function ConnectionSelector({
 
           console.log('🔵 ConnectionSelector - Atribuições do usuário:', userAssignments);
 
-          // Get all connected connections for the company
-          const { data: allConnections, error: allConnectionsError } = await supabase
-            .from('whatsapp_connections')
-            .select('id, name, phone_number, status')
-            .eq('company_id', profile.company_id)
-            .eq('status', 'connected')
-            .order('name');
+          // If user has no assignments, they have no access
+          if (!userAssignments || userAssignments.length === 0) {
+            console.log('🔵 ConnectionSelector - Usuário sem atribuições, sem conexões disponíveis');
+            data = [];
+          } else {
+            // Get only connections the user has explicit access to
+            const connectionIds = userAssignments.map(a => a.connection_id);
+            
+            const { data: connectionsData, error: connectionsError } = await supabase
+              .from('whatsapp_connections')
+              .select('id, name, phone_number, status')
+              .eq('company_id', profile.company_id)
+              .eq('status', 'connected')
+              .in('id', connectionIds)
+              .order('name');
 
-          if (allConnectionsError) {
-            console.error('🔵 ConnectionSelector - ERRO na query:', allConnectionsError);
-            return;
+            if (connectionsError) {
+              console.error('🔵 ConnectionSelector - ERRO na query:', connectionsError);
+              return;
+            }
+
+            data = connectionsData;
           }
 
-          // Get all connection_users to check which connections have any assignments
-          const { data: allAssignments, error: allAssignmentsError } = await supabase
-            .from('connection_users')
-            .select('connection_id');
-
-          if (allAssignmentsError) {
-            console.error('🔵 ConnectionSelector - ERRO ao buscar todas atribuições:', allAssignmentsError);
-          }
-
-          // Create maps for quick lookup
-          const userAssignedConnections = new Set(
-            (userAssignments || []).map(a => a.connection_id)
-          );
-          const connectionsWithAnyAssignments = new Set(
-            (allAssignments || []).map(a => a.connection_id)
-          );
-
-          console.log('🔵 ConnectionSelector - Conexões com atribuições:', connectionsWithAnyAssignments.size);
-          console.log('🔵 ConnectionSelector - Conexões que o usuário tem acesso:', userAssignedConnections.size);
-
-          // Filter connections based on access rules:
-          // - If user has assignment to connection -> show it
-          // - If connection has NO assignments -> show it (legacy behavior)
-          // - If connection has assignments but user is NOT in them -> hide it
-          data = (allConnections || []).filter(conn => {
-            const userHasAccess = userAssignedConnections.has(conn.id);
-            const connectionHasRestrictions = connectionsWithAnyAssignments.has(conn.id);
-            
-            // User explicitly has access
-            if (userHasAccess) return true;
-            
-            // Connection has no restrictions (legacy mode)
-            if (!connectionHasRestrictions) return true;
-            
-            // Connection has restrictions and user is not in them
-            return false;
-          });
-
-          console.log('🔵 ConnectionSelector - Conexões disponíveis para o usuário:', data.length);
+          console.log('🔵 ConnectionSelector - Conexões disponíveis para o usuário:', data?.length || 0);
         }
 
         console.log('🔵 ConnectionSelector - Query executada:', { data });

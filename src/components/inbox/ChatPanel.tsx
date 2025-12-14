@@ -11,7 +11,11 @@ import {
   ArrowDown,
   Reply,
   Mic,
-  StickyNote
+  StickyNote,
+  Camera,
+  FileText,
+  X,
+  Trash2
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -43,6 +47,9 @@ import { ReactionPicker } from './ReactionPicker';
 import { EmojiMessagePicker } from './EmojiMessagePicker';
 import { QuickRepliesPicker } from './QuickRepliesPicker';
 import { QuickReplyConfirmModal } from './QuickReplyConfirmModal';
+import { DeletedMessageIndicator } from './DeletedMessageIndicator';
+import { DeleteMessageModal } from './DeleteMessageModal';
+import { InternalNoteAudioRecorder } from './InternalNoteAudioRecorder';
 import { QuickReply } from '@/hooks/useQuickRepliesData';
 import { cn } from '@/lib/utils';
 import type { Conversation, Message, QuotedMessage } from '@/types';
@@ -101,7 +108,7 @@ export function ChatPanel({
   isSendingMessage = false,
   isRestricted = false,
 }: ChatPanelProps) {
-  const { user, userRole } = useAuth();
+  const { user, userRole, profile } = useAuth();
   const [inputValue, setInputValue] = useState('');
   const [showScrollButton, setShowScrollButton] = useState(false);
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
@@ -122,6 +129,16 @@ export function ChatPanel({
   const [isInternalNoteMode, setIsInternalNoteMode] = useState(false);
   const [pendingQuickReply, setPendingQuickReply] = useState<QuickReply | null>(null);
   const [isQuickReplyConfirmOpen, setIsQuickReplyConfirmOpen] = useState(false);
+  const [isRecordingNoteAudio, setIsRecordingNoteAudio] = useState(false);
+  const [isSendingNoteAudio, setIsSendingNoteAudio] = useState(false);
+  const [noteAttachment, setNoteAttachment] = useState<{
+    messageType: 'image' | 'video' | 'audio' | 'document';
+    mediaUrl: string;
+    mediaMimeType: string;
+    metadata: Record<string, unknown>;
+  } | null>(null);
+  const [messageToDelete, setMessageToDelete] = useState<Message | null>(null);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messageRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -130,6 +147,52 @@ export function ChatPanel({
 
   const currentUserId = user?.id || '';
   const currentUserRole = userRole?.role || 'agent';
+  const currentUserName = profile?.full_name || '';
+
+  // Check if user can delete a message
+  const canDeleteMessage = useCallback((message: Message): boolean => {
+    // Conversation must be assigned to current user
+    if (conversation?.assignedUserId !== currentUserId) {
+      return false;
+    }
+    
+    // Only outbound messages (sent by system/agent)
+    if (message.direction !== 'outbound') {
+      return false;
+    }
+    
+    // Only messages from user (not system/bot)
+    if (message.senderType !== 'user') {
+      return false;
+    }
+    
+    // Only text messages
+    if (message.messageType !== 'text') {
+      return false;
+    }
+    
+    // Not already deleted
+    if (message.isDeleted) {
+      return false;
+    }
+    
+    // Must have whatsapp_message_id
+    if (!message.whatsappMessageId) {
+      return false;
+    }
+    
+    // Not internal notes
+    if (message.isInternalNote) {
+      return false;
+    }
+    
+    return true;
+  }, [conversation?.assignedUserId, currentUserId]);
+
+  const handleDeleteMessage = (message: Message) => {
+    setMessageToDelete(message);
+    setIsDeleteModalOpen(true);
+  };
 
   // Verificar se pode responder
   const blockInfo = useMessageBlocker(conversation, currentUserId);
@@ -424,6 +487,69 @@ export function ChatPanel({
     setIsDocumentPreviewOpen(true);
   };
 
+  // Send internal note audio handler
+  const handleSendNoteAudio = async (audioBlob: Blob, duration: number) => {
+    if (!conversation || !onSendInternalNote) return;
+
+    setIsSendingNoteAudio(true);
+    try {
+      // Upload to storage
+      const profile = await supabase.auth.getUser();
+      const companyId = (await supabase
+        .from('profiles')
+        .select('company_id')
+        .eq('id', profile.data.user?.id)
+        .single()).data?.company_id;
+
+      if (!companyId) throw new Error('Company ID not found');
+
+      const timestamp = Date.now();
+      const sanitizedFileName = `voice-note-${timestamp}.webm`;
+      const filePath = `${companyId}/${conversation.id}/${sanitizedFileName}`;
+
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('internal-notes-media')
+        .upload(filePath, audioBlob, {
+          contentType: audioBlob.type || 'audio/webm',
+          upsert: false,
+        });
+
+      if (uploadError) throw uploadError;
+
+      // Generate signed URL (bucket is private)
+      const { data: signedUrlData, error: signedUrlError } = await supabase.storage
+        .from('internal-notes-media')
+        .createSignedUrl(filePath, 60 * 60 * 24 * 365); // 1 year expiry
+
+      if (signedUrlError) throw signedUrlError;
+
+      const mediaUrl = signedUrlData.signedUrl;
+
+      // Send internal note with audio
+      const success = await onSendInternalNote(
+        '',
+        'audio',
+        mediaUrl,
+        audioBlob.type || 'audio/webm',
+        {
+          fileName: sanitizedFileName,
+          fileSize: audioBlob.size,
+          duration,
+          storagePath: filePath,
+        }
+      );
+
+      if (success) {
+        setIsRecordingNoteAudio(false);
+      }
+    } catch (error: any) {
+      console.error('❌ Erro ao enviar nota de voz:', error);
+      throw error;
+    } finally {
+      setIsSendingNoteAudio(false);
+    }
+  };
+
   // Scroll para o final
   const scrollToBottom = useCallback((behavior: ScrollBehavior = 'smooth') => {
     const container = scrollContainerRef.current;
@@ -472,14 +598,25 @@ export function ChatPanel({
   }, [messages, scrollToBottom]);
 
   const handleSend = async () => {
-    if (!inputValue.trim() || isSendingMessage) return;
+    // Allow sending with attachment even without text
+    const hasText = inputValue.trim().length > 0;
+    const hasAttachment = !!noteAttachment;
+    
+    if ((!hasText && !hasAttachment) || isSendingMessage) return;
     
     if (isInternalNoteMode && onSendInternalNote) {
-      // Send as internal note
-      const success = await onSendInternalNote(inputValue.trim());
+      // Send as internal note (with optional attachment)
+      const success = await onSendInternalNote(
+        inputValue.trim(),
+        noteAttachment?.messageType || 'text',
+        noteAttachment?.mediaUrl,
+        noteAttachment?.mediaMimeType,
+        noteAttachment?.metadata
+      );
       if (success) {
         setInputValue('');
         setReplyingTo(null);
+        setNoteAttachment(null);
         // Keep internal note mode active for convenience
         // Restore focus after state update
         setTimeout(() => textareaRef.current?.focus(), 0);
@@ -880,6 +1017,23 @@ export function ChatPanel({
                                   <TooltipContent>Responder</TooltipContent>
                                 </Tooltip>
                               )}
+
+                              {/* Delete button */}
+                              {canDeleteMessage(message) && (
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-7 w-7 rounded-full bg-destructive/80 hover:bg-destructive text-destructive-foreground"
+                                      onClick={() => handleDeleteMessage(message)}
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </Button>
+                                  </TooltipTrigger>
+                                  <TooltipContent>Apagar para o cliente</TooltipContent>
+                                </Tooltip>
+                              )}
                               
                               {/* Reaction button */}
                               {onSendReaction && message.whatsappMessageId && (
@@ -919,16 +1073,29 @@ export function ChatPanel({
                                 <span className="text-[10px] font-medium uppercase tracking-wide">Nota interna</span>
                               </div>
                             )}
+
                             {/* Quoted message preview */}
                             {message.quotedMessage && (
                               <QuotedMessagePreview
                                 quotedMessage={message.quotedMessage}
                                 isOutbound={isOutbound}
-                                onClick={() => message.quotedMessageId && scrollToMessage(message.quotedMessageId)}
+                                onClick={() => scrollToMessage(message.quotedMessage!.id)}
                               />
                             )}
-                            {/* Audio message */}
-                            {message.messageType === 'audio' && message.mediaUrl ? (
+
+                            {/* Check if message is deleted first */}
+                            {message.isDeleted ? (
+                              <DeletedMessageIndicator
+                                originalContent={message.originalContent || message.content}
+                                deletedByType={message.deletedByType}
+                                deletedByName={message.deletedByName}
+                                deletedAt={message.deletedAt}
+                                messageType={message.messageType}
+                                isOutbound={isOutbound}
+                                canViewOriginal={true}
+                              />
+                            ) : message.messageType === 'audio' && message.mediaUrl ? (
+                              /* Audio message */
                               <AudioPlayer
                                 src={message.mediaUrl}
                                 mimeType={message.mediaMimeType}
@@ -936,6 +1103,7 @@ export function ChatPanel({
                                 isOutbound={isOutbound}
                                 status={message.status}
                                 errorMessage={message.errorMessage}
+                                variant={message.isInternalNote ? 'amber' : 'default'}
                               />
                             ) : message.messageType === 'audio' ? (
                               // Audio without URL (loading or failed)
@@ -1259,14 +1427,56 @@ export function ChatPanel({
           </div>
         )}
 
-        {!isRecordingAudio && !audioFile && (
+        {/* Note attachment preview */}
+        {isInternalNoteMode && noteAttachment && (
+          <div className="mb-3 flex items-center gap-2 p-2 bg-amber-50 dark:bg-amber-950/30 rounded-lg border border-amber-200 dark:border-amber-800">
+            <div className="flex-shrink-0">
+              {noteAttachment.messageType === 'image' && <Camera className="w-4 h-4 text-amber-600" />}
+              {noteAttachment.messageType === 'video' && <Camera className="w-4 h-4 text-amber-600" />}
+              {noteAttachment.messageType === 'audio' && <Mic className="w-4 h-4 text-amber-600" />}
+              {noteAttachment.messageType === 'document' && <FileText className="w-4 h-4 text-amber-600" />}
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-medium truncate text-amber-900 dark:text-amber-100">
+                {(noteAttachment.metadata as { fileName?: string })?.fileName || 'Arquivo anexado'}
+              </p>
+            </div>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6 text-amber-600 hover:text-amber-800 hover:bg-amber-100"
+              onClick={() => setNoteAttachment(null)}
+            >
+              <X className="w-3 h-3" />
+            </Button>
+          </div>
+        )}
+
+        {/* Internal note audio recorder */}
+        {isInternalNoteMode && isRecordingNoteAudio && (
+          <div className="mb-3">
+            <InternalNoteAudioRecorder
+              onSend={handleSendNoteAudio}
+              onCancel={() => setIsRecordingNoteAudio(false)}
+              disabled={isSendingNoteAudio}
+            />
+          </div>
+        )}
+
+        {!isRecordingAudio && !audioFile && !isRecordingNoteAudio && (
           <div className="flex items-end gap-2">
             <AttachmentMenu
               onImageSelect={handleImageSelect}
               onVideoSelect={handleVideoSelect}
               onAudioSelect={handleAudioFileSelect}
               onDocumentSelect={handleDocumentSelect}
-              disabled={!canReply}
+              disabled={!canReply && !isInternalNoteMode}
+              variant={isInternalNoteMode ? 'amber' : 'default'}
+              onNoteAttachmentReady={isInternalNoteMode ? (messageType, mediaUrl, mediaMimeType, metadata) => {
+                setNoteAttachment({ messageType, mediaUrl, mediaMimeType, metadata });
+              } : undefined}
+              conversationId={conversation?.id}
             />
             
             <div className="flex-1 relative">
@@ -1285,7 +1495,13 @@ export function ChatPanel({
                     type="button"
                     variant={isInternalNoteMode ? "default" : "ghost"}
                     size="icon"
-                    onClick={() => setIsInternalNoteMode(!isInternalNoteMode)}
+                    onClick={() => {
+                      setIsInternalNoteMode(!isInternalNoteMode);
+                      // Clear attachment when leaving note mode
+                      if (isInternalNoteMode) {
+                        setNoteAttachment(null);
+                      }
+                    }}
                     className={cn(
                       "h-8 w-8 flex-shrink-0",
                       isInternalNoteMode && "bg-amber-500 hover:bg-amber-600 text-white"
@@ -1298,6 +1514,7 @@ export function ChatPanel({
                   {isInternalNoteMode ? 'Desativar nota interna' : 'Ativar nota interna'}
                 </TooltipContent>
               </Tooltip>
+
 
               <Textarea
                 ref={textareaRef}
@@ -1333,26 +1550,40 @@ export function ChatPanel({
               />
             </div>
 
-            {/* Mic button - show when no text */}
-            {!inputValue.trim() ? (
+            {/* Mic button - show when no text and not with attachment */}
+            {!inputValue.trim() && !noteAttachment && !isRecordingNoteAudio ? (
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button 
-                    onClick={() => setIsRecordingAudio(true)}
-                    disabled={!canReply}
+                    onClick={() => {
+                      if (isInternalNoteMode) {
+                        setIsRecordingNoteAudio(true);
+                      } else {
+                        setIsRecordingAudio(true);
+                      }
+                    }}
+                    disabled={!canReply && !isInternalNoteMode}
                     variant="ghost"
-                    className="flex-shrink-0"
+                    className={cn(
+                      "flex-shrink-0",
+                      isInternalNoteMode && "text-amber-600 hover:text-amber-700 hover:bg-amber-100"
+                    )}
                   >
                     <Mic className="w-5 h-5" />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent>Gravar áudio</TooltipContent>
+                <TooltipContent>
+                  {isInternalNoteMode ? 'Gravar nota de voz' : 'Gravar áudio'}
+                </TooltipContent>
               </Tooltip>
             ) : (
               <Button 
                 onClick={handleSend}
-                disabled={!inputValue.trim() || isSendingMessage || !canReply}
-                className="flex-shrink-0"
+                disabled={(!inputValue.trim() && !noteAttachment) || isSendingMessage || (!canReply && !isInternalNoteMode)}
+                className={cn(
+                  "flex-shrink-0",
+                  isInternalNoteMode && "bg-amber-500 hover:bg-amber-600"
+                )}
               >
                 {isSendingMessage ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
@@ -1444,6 +1675,20 @@ export function ChatPanel({
         title={pendingQuickReply?.title}
         isSending={isSendingMessage}
         quotedMessage={replyingTo}
+      />
+
+      {/* Delete Message Modal */}
+      <DeleteMessageModal
+        isOpen={isDeleteModalOpen}
+        onClose={() => {
+          setIsDeleteModalOpen(false);
+          setMessageToDelete(null);
+        }}
+        message={messageToDelete}
+        conversation={conversation}
+        currentUserId={currentUserId}
+        currentUserName={currentUserName}
+        onDeleted={onRefresh}
       />
     </div>
   );

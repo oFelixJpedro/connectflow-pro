@@ -153,7 +153,7 @@ export function ConversationPreviewModal({
         .select(`
           *,
           contacts (*),
-          profiles:assigned_user_id (id, full_name, avatar_url, status),
+          profiles:assigned_user_id (id, full_name, avatar_url),
           departments (id, name, color)
         `)
         .eq('contact_id', contactId)

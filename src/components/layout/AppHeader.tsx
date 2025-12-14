@@ -119,24 +119,7 @@ export function AppHeader({ title }: AppHeaderProps) {
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-80">
-            <div className="flex items-center justify-between px-2">
-              <DropdownMenuLabel>Notificações</DropdownMenuLabel>
-              {unreadNotifications.length > 0 && (
-                <Button 
-                  variant="ghost" 
-                  size="sm" 
-                  className="h-6 text-xs text-muted-foreground hover:text-foreground"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    markAllAsRead();
-                  }}
-                >
-                  <Check className="w-3 h-3 mr-1" />
-                  Marcar todas
-                </Button>
-              )}
-            </div>
+            <DropdownMenuLabel>Notificações</DropdownMenuLabel>
             <DropdownMenuSeparator />
             
             {isLoading ? (

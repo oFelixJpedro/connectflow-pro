@@ -1,8 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
-import { startOfDay, endOfDay, subDays, format, startOfWeek, endOfWeek } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
+import { startOfDay, endOfDay, subDays, startOfWeek, endOfWeek } from 'date-fns';
+import type { DashboardFilter, FilterType } from '@/components/dashboard/DashboardFilters';
 
 interface DashboardMetrics {
   todayConversations: number;
@@ -28,11 +28,13 @@ interface HourlyData {
 
 interface RecentConversation {
   id: string;
+  contactId: string;
   status: string;
   unreadCount: number;
   contact: {
     name: string | null;
     phoneNumber: string;
+    avatarUrl: string | null;
   };
   lastMessageAt: string;
 }
@@ -45,8 +47,46 @@ interface AgentPerformance {
   resolved: number;
 }
 
+const FILTER_STORAGE_KEY = 'dashboard_filter';
+
+function loadSavedFilter(userId: string): DashboardFilter {
+  try {
+    const saved = localStorage.getItem(`${FILTER_STORAGE_KEY}_${userId}`);
+    if (saved) {
+      return JSON.parse(saved);
+    }
+  } catch {
+    // Ignore parse errors
+  }
+  return { type: 'general' };
+}
+
+function saveFilter(userId: string, filter: DashboardFilter) {
+  try {
+    localStorage.setItem(`${FILTER_STORAGE_KEY}_${userId}`, JSON.stringify(filter));
+  } catch {
+    // Ignore storage errors
+  }
+}
+
 export function useDashboardData() {
-  const { company } = useAuth();
+  const { company, profile, userRole } = useAuth();
+  const role = userRole?.role;
+  const isAdmin = role === 'owner' || role === 'admin';
+  
+  // Initialize filter based on role
+  const getInitialFilter = useCallback((): DashboardFilter => {
+    if (!isAdmin && profile?.id) {
+      // Non-admin users always see only their own data
+      return { type: 'agent', agentId: profile.id };
+    }
+    if (profile?.id) {
+      return loadSavedFilter(profile.id);
+    }
+    return { type: 'general' };
+  }, [isAdmin, profile?.id]);
+
+  const [filter, setFilter] = useState<DashboardFilter>({ type: 'general' });
   const [loading, setLoading] = useState(true);
   const [metrics, setMetrics] = useState<DashboardMetrics>({
     todayConversations: 0,
@@ -64,6 +104,32 @@ export function useDashboardData() {
   const [agentPerformance, setAgentPerformance] = useState<AgentPerformance[]>([]);
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
 
+  // Set initial filter when profile loads
+  useEffect(() => {
+    if (profile?.id) {
+      setFilter(getInitialFilter());
+    }
+  }, [profile?.id, getInitialFilter]);
+
+  const handleFilterChange = useCallback((newFilter: DashboardFilter) => {
+    setFilter(newFilter);
+    if (profile?.id && isAdmin) {
+      saveFilter(profile.id, newFilter);
+    }
+  }, [profile?.id, isAdmin]);
+
+  // Helper to apply filter to conversation queries
+  const applyConversationFilter = useCallback((query: any) => {
+    if (filter.type === 'agent' && filter.agentId) {
+      query = query.eq('assigned_user_id', filter.agentId);
+    } else if (filter.type === 'connection' && filter.connectionId) {
+      query = query.eq('whatsapp_connection_id', filter.connectionId);
+    } else if (filter.type === 'department' && filter.departmentId) {
+      query = query.eq('department_id', filter.departmentId);
+    }
+    return query;
+  }, [filter]);
+
   useEffect(() => {
     if (!company?.id) return;
 
@@ -76,8 +142,107 @@ export function useDashboardData() {
         const todayEnd = endOfDay(now);
         const yesterdayStart = startOfDay(subDays(now, 1));
         const yesterdayEnd = endOfDay(subDays(now, 1));
-        const weekStart = startOfWeek(now, { weekStartsOn: 1 }); // Monday
+        const weekStart = startOfWeek(now, { weekStartsOn: 1 });
         const weekEnd = endOfWeek(now, { weekStartsOn: 1 });
+
+        // Build queries with filters
+        let todayConvsQuery = supabase
+          .from('conversations')
+          .select('id, status, created_at', { count: 'exact' })
+          .eq('company_id', company.id)
+          .gte('created_at', todayStart.toISOString())
+          .lte('created_at', todayEnd.toISOString());
+        todayConvsQuery = applyConversationFilter(todayConvsQuery);
+
+        let yesterdayConvsQuery = supabase
+          .from('conversations')
+          .select('id', { count: 'exact' })
+          .eq('company_id', company.id)
+          .gte('created_at', yesterdayStart.toISOString())
+          .lte('created_at', yesterdayEnd.toISOString());
+        yesterdayConvsQuery = applyConversationFilter(yesterdayConvsQuery);
+
+        let openConvsQuery = supabase
+          .from('conversations')
+          .select('id, status', { count: 'exact' })
+          .eq('company_id', company.id)
+          .in('status', ['open', 'pending', 'in_progress']);
+        openConvsQuery = applyConversationFilter(openConvsQuery);
+
+        let weeklyConvsQuery = supabase
+          .from('conversations')
+          .select('id, status, created_at, closed_at')
+          .eq('company_id', company.id)
+          .gte('created_at', weekStart.toISOString())
+          .lte('created_at', weekEnd.toISOString());
+        weeklyConvsQuery = applyConversationFilter(weeklyConvsQuery);
+
+        let recentConvsQuery = supabase
+          .from('conversations')
+          .select(`
+            id,
+            contact_id,
+            status,
+            unread_count,
+            last_message_at,
+            contact:contacts(name, phone_number, avatar_url)
+          `)
+          .eq('company_id', company.id)
+          .order('last_message_at', { ascending: false })
+          .limit(5);
+        recentConvsQuery = applyConversationFilter(recentConvsQuery);
+
+        // Build messages query for hourly data
+        // For agent filter, we need to get conversation IDs first, then filter messages
+        let conversationIdsForMessages: string[] | null = null;
+        if (filter.type === 'agent' && filter.agentId) {
+          const { data: agentConvs } = await supabase
+            .from('conversations')
+            .select('id')
+            .eq('company_id', company.id)
+            .eq('assigned_user_id', filter.agentId);
+          conversationIdsForMessages = agentConvs?.map(c => c.id) || [];
+        } else if (filter.type === 'connection' && filter.connectionId) {
+          const { data: connConvs } = await supabase
+            .from('conversations')
+            .select('id')
+            .eq('company_id', company.id)
+            .eq('whatsapp_connection_id', filter.connectionId);
+          conversationIdsForMessages = connConvs?.map(c => c.id) || [];
+        } else if (filter.type === 'department' && filter.departmentId) {
+          const { data: deptConvs } = await supabase
+            .from('conversations')
+            .select('id')
+            .eq('company_id', company.id)
+            .eq('department_id', filter.departmentId);
+          conversationIdsForMessages = deptConvs?.map(c => c.id) || [];
+        }
+
+        let todayMessagesQuery = supabase
+          .from('messages')
+          .select('id, created_at, conversation_id')
+          .gte('created_at', todayStart.toISOString())
+          .lte('created_at', todayEnd.toISOString());
+
+        if (conversationIdsForMessages !== null && conversationIdsForMessages.length > 0) {
+          todayMessagesQuery = todayMessagesQuery.in('conversation_id', conversationIdsForMessages);
+        } else if (conversationIdsForMessages !== null && conversationIdsForMessages.length === 0) {
+          // No conversations match the filter, skip messages query
+          todayMessagesQuery = todayMessagesQuery.eq('conversation_id', 'no-match');
+        }
+
+        let responseTimeMessagesQuery = supabase
+          .from('messages')
+          .select('id, conversation_id, direction, sender_type, created_at')
+          .gte('created_at', todayStart.toISOString())
+          .lte('created_at', todayEnd.toISOString())
+          .order('created_at', { ascending: true });
+
+        if (conversationIdsForMessages !== null && conversationIdsForMessages.length > 0) {
+          responseTimeMessagesQuery = responseTimeMessagesQuery.in('conversation_id', conversationIdsForMessages);
+        } else if (conversationIdsForMessages !== null && conversationIdsForMessages.length === 0) {
+          responseTimeMessagesQuery = responseTimeMessagesQuery.eq('conversation_id', 'no-match');
+        }
 
         // Fetch all data in parallel
         const [
@@ -90,72 +255,18 @@ export function useDashboardData() {
           agentsResult,
           responseTimeMessagesResult,
         ] = await Promise.all([
-          // Today's conversations
-          supabase
-            .from('conversations')
-            .select('id, status, created_at', { count: 'exact' })
-            .eq('company_id', company.id)
-            .gte('created_at', todayStart.toISOString())
-            .lte('created_at', todayEnd.toISOString()),
-
-          // Yesterday's conversations
-          supabase
-            .from('conversations')
-            .select('id', { count: 'exact' })
-            .eq('company_id', company.id)
-            .gte('created_at', yesterdayStart.toISOString())
-            .lte('created_at', yesterdayEnd.toISOString()),
-
-          // Open conversations (open, pending, in_progress)
-          supabase
-            .from('conversations')
-            .select('id, status', { count: 'exact' })
-            .eq('company_id', company.id)
-            .in('status', ['open', 'pending', 'in_progress']),
-
-          // Weekly conversations (last 7 days)
-          supabase
-            .from('conversations')
-            .select('id, status, created_at, closed_at')
-            .eq('company_id', company.id)
-            .gte('created_at', weekStart.toISOString())
-            .lte('created_at', weekEnd.toISOString()),
-
-          // Today's messages for hourly chart
-          supabase
-            .from('messages')
-            .select('id, created_at, conversation_id')
-            .gte('created_at', todayStart.toISOString())
-            .lte('created_at', todayEnd.toISOString()),
-
-          // Recent conversations with contact info
-          supabase
-            .from('conversations')
-            .select(`
-              id,
-              status,
-              unread_count,
-              last_message_at,
-              contact:contacts(name, phone_number)
-            `)
-            .eq('company_id', company.id)
-            .order('last_message_at', { ascending: false })
-            .limit(5),
-
-          // Agent performance - profiles with conversation counts
+          todayConvsQuery,
+          yesterdayConvsQuery,
+          openConvsQuery,
+          weeklyConvsQuery,
+          todayMessagesQuery,
+          recentConvsQuery,
           supabase
             .from('profiles')
             .select('id, full_name, avatar_url')
             .eq('company_id', company.id)
             .eq('active', true),
-
-          // Messages for response time calculation (last 24h)
-          supabase
-            .from('messages')
-            .select('id, conversation_id, direction, sender_type, created_at')
-            .gte('created_at', todayStart.toISOString())
-            .lte('created_at', todayEnd.toISOString())
-            .order('created_at', { ascending: true }),
+          responseTimeMessagesQuery,
         ]);
 
         // Process metrics
@@ -175,7 +286,6 @@ export function useDashboardData() {
         const responseMessages = responseTimeMessagesResult.data || [];
         
         if (responseMessages.length > 0) {
-          // Group messages by conversation
           const messagesByConv: Record<string, typeof responseMessages> = {};
           responseMessages.forEach(msg => {
             if (!messagesByConv[msg.conversation_id]) {
@@ -184,43 +294,35 @@ export function useDashboardData() {
             messagesByConv[msg.conversation_id].push(msg);
           });
 
-          // Calculate response times for each conversation
           const responseTimes: number[] = [];
           
           Object.values(messagesByConv).forEach(convMessages => {
-            // Sort by created_at to ensure correct order
             convMessages.sort((a, b) => 
               new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
             );
             
-            // Find pairs: inbound (contact) message followed by outbound (user) response
             for (let i = 0; i < convMessages.length - 1; i++) {
               const currentMsg = convMessages[i];
               
-              // Check if this is an inbound message from contact
               if (currentMsg.direction === 'inbound' && currentMsg.sender_type === 'contact') {
-                // Find the next outbound message from user
                 for (let j = i + 1; j < convMessages.length; j++) {
                   const nextMsg = convMessages[j];
                   
                   if (nextMsg.direction === 'outbound' && nextMsg.sender_type === 'user') {
-                    // Calculate time difference in minutes
                     const inboundTime = new Date(currentMsg.created_at).getTime();
                     const outboundTime = new Date(nextMsg.created_at).getTime();
                     const diffMinutes = Math.round((outboundTime - inboundTime) / (1000 * 60));
                     
-                    // Only count reasonable response times (< 24h)
                     if (diffMinutes > 0 && diffMinutes < 1440) {
                       responseTimes.push(diffMinutes);
                     }
-                    break; // Found the response, move to next inbound message
+                    break;
                   }
                 }
               }
             }
           });
 
-          // Calculate average
           if (responseTimes.length > 0) {
             avgResponseTimeMinutes = Math.round(
               responseTimes.reduce((sum, time) => sum + time, 0) / responseTimes.length
@@ -283,18 +385,20 @@ export function useDashboardData() {
         // Process recent conversations
         const recentConvs: RecentConversation[] = (recentConvsResult.data || []).map(conv => ({
           id: conv.id,
+          contactId: conv.contact_id,
           status: conv.status || 'open',
           unreadCount: conv.unread_count || 0,
           contact: {
             name: conv.contact?.name || null,
             phoneNumber: conv.contact?.phone_number || '',
+            avatarUrl: conv.contact?.avatar_url || null,
           },
           lastMessageAt: conv.last_message_at || '',
         }));
         setRecentConversations(recentConvs);
 
-        // Process agent performance
-        if (agentsResult.data) {
+        // Process agent performance (only for general/admin view)
+        if (filter.type === 'general' && agentsResult.data) {
           const agentStats = await Promise.all(
             agentsResult.data.map(async (agent) => {
               const [assignedResult, resolvedResult] = await Promise.all([
@@ -330,13 +434,15 @@ export function useDashboardData() {
             })
           );
 
-          // Sort by conversations and take top 4
           const topAgents = agentStats
             .filter(a => a.conversations > 0)
             .sort((a, b) => b.conversations - a.conversations)
             .slice(0, 4);
 
           setAgentPerformance(topAgents);
+        } else {
+          // Clear agent performance for filtered views
+          setAgentPerformance([]);
         }
 
         setLastUpdated(new Date());
@@ -353,7 +459,7 @@ export function useDashboardData() {
     const interval = setInterval(fetchDashboardData, 5 * 60 * 1000);
 
     return () => clearInterval(interval);
-  }, [company?.id]);
+  }, [company?.id, filter, applyConversationFilter]);
 
   return {
     loading,
@@ -363,5 +469,8 @@ export function useDashboardData() {
     recentConversations,
     agentPerformance,
     lastUpdated,
+    filter,
+    setFilter: handleFilterChange,
+    isAdmin,
   };
 }

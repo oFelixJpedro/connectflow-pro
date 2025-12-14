@@ -25,40 +25,14 @@ interface UserAccessPermissions {
   allowedDepartmentIds: string[] | null; // null = all departments
 }
 
-// Simple notification sound using Web Audio API
-const playNotificationSound = () => {
-  try {
-    const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-    const oscillator = audioContext.createOscillator();
-    const gainNode = audioContext.createGain();
-    
-    oscillator.connect(gainNode);
-    gainNode.connect(audioContext.destination);
-    
-    oscillator.frequency.value = 800;
-    oscillator.type = 'sine';
-    
-    gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
-    gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.3);
-    
-    oscillator.start(audioContext.currentTime);
-    oscillator.stop(audioContext.currentTime + 0.3);
-  } catch (e) {
-    console.warn('[Notifications] Sound not supported:', e);
-  }
-};
-
 export function useNotifications() {
   const { profile, company, userRole } = useAuth();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCounts, setUnreadCounts] = useState<UnreadCounts>({ whatsapp: 0, internalChat: 0, total: 0 });
   const [isLoading, setIsLoading] = useState(true);
   
-  // Track last seen message per internal chat room (stored in database)
-
-  // Track processed message IDs to avoid duplicate sounds
+  // Track processed message IDs to avoid duplicates
   const processedMessageIds = useRef<Set<string>>(new Set());
-  const isInitialLoad = useRef(true);
 
   // Get user's access permissions for connections and departments
   const getUserAccessPermissions = useCallback(async (): Promise<UserAccessPermissions> => {
@@ -333,6 +307,7 @@ export function useNotifications() {
   }, []);
 
   // Initial load
+  // Initial load
   useEffect(() => {
     if (!company?.id || !profile?.id) return;
 
@@ -343,7 +318,6 @@ export function useNotifications() {
         loadRecentNotifications(),
       ]);
       setIsLoading(false);
-      isInitialLoad.current = false;
     };
 
     loadAll();
@@ -394,17 +368,25 @@ export function useNotifications() {
           if (processedMessageIds.current.has(message.id)) return;
           processedMessageIds.current.add(message.id);
           
-          // Only notify for inbound messages not from the user
-          if (message.direction === 'inbound' && message.sender_type === 'contact') {
-            // Play sound only after initial load
-            if (!isInitialLoad.current) {
-              playNotificationSound();
-            }
-            
-            // Refresh counts
-            refreshCounts();
-            loadRecentNotifications();
+          // Only notify for inbound messages from contacts
+          if (message.direction !== 'inbound' || message.sender_type !== 'contact') {
+            return;
           }
+
+          // Verify message belongs to user's company by checking conversation
+          const { data: conversation } = await supabase
+            .from('conversations')
+            .select('id, company_id')
+            .eq('id', message.conversation_id)
+            .single();
+
+          if (!conversation || conversation.company_id !== company.id) {
+            return;
+          }
+          
+          // Refresh counts
+          refreshCounts();
+          loadRecentNotifications();
         }
       )
       .subscribe();
@@ -461,11 +443,6 @@ export function useNotifications() {
           
           processedMessageIds.current.add(message.id);
           
-          // Play sound only after initial load
-          if (!isInitialLoad.current) {
-            playNotificationSound();
-          }
-          
           // Refresh counts
           refreshCounts();
         }
@@ -486,6 +463,5 @@ export function useNotifications() {
     clearAll,
     markRoomAsRead,
     refreshCounts,
-    playNotificationSound,
   };
 }

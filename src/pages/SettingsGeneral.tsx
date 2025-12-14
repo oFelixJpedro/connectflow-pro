@@ -5,7 +5,7 @@ import {
   CreditCard,
   Save,
   Upload,
-  Loader2
+  Loader2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -46,13 +46,6 @@ interface CompanySettings {
   description?: string;
 }
 
-interface NotificationSettings {
-  desktopNotifications: boolean;
-  soundNotifications: boolean;
-  emailNotifications: boolean;
-  unassignedAlerts: boolean;
-}
-
 const defaultBusinessHours: BusinessHours = {
   enabled: true,
   timezone: 'America/Sao_Paulo',
@@ -67,15 +60,8 @@ const defaultBusinessHours: BusinessHours = {
   },
 };
 
-const defaultNotificationSettings: NotificationSettings = {
-  desktopNotifications: true,
-  soundNotifications: true,
-  emailNotifications: false,
-  unassignedAlerts: true,
-};
-
 export default function SettingsGeneral() {
-  const { company, profile, userRole, updateCompany, updateProfile } = useAuth();
+  const { company, userRole, updateCompany } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   // Check if user is owner or admin
@@ -88,10 +74,6 @@ export default function SettingsGeneral() {
   const [businessHours, setBusinessHours] = useState<BusinessHours>(defaultBusinessHours);
   const [savingCompany, setSavingCompany] = useState(false);
   const [uploadingLogo, setUploadingLogo] = useState(false);
-  
-  // Notifications state
-  const [notifications, setNotifications] = useState<NotificationSettings>(defaultNotificationSettings);
-  const [savingNotifications, setSavingNotifications] = useState(false);
 
   // Load company data
   useEffect(() => {
@@ -108,16 +90,6 @@ export default function SettingsGeneral() {
       }
     }
   }, [company]);
-
-  // Load notification preferences from profile metadata
-  useEffect(() => {
-    if (profile?.metadata) {
-      const metadata = profile.metadata as { notifications?: NotificationSettings };
-      if (metadata.notifications) {
-        setNotifications(metadata.notifications);
-      }
-    }
-  }, [profile]);
 
   const handleLogoUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -215,43 +187,6 @@ export default function SettingsGeneral() {
     }
   };
 
-  const handleSaveNotifications = async () => {
-    setSavingNotifications(true);
-    try {
-      const currentMetadata = (profile?.metadata as Record<string, any>) || {};
-      const newMetadata = {
-        ...currentMetadata,
-        notifications,
-      };
-
-      const { error } = await updateProfile({
-        metadata: newMetadata as any,
-      });
-
-      if (error) throw error;
-
-      // Request browser notification permission if enabled
-      if (notifications.desktopNotifications && 'Notification' in window) {
-        if (Notification.permission === 'default') {
-          await Notification.requestPermission();
-        }
-      }
-
-      toast({
-        title: 'Preferências salvas',
-        description: 'Suas preferências de notificação foram atualizadas.',
-      });
-    } catch (error) {
-      console.error('Error saving notifications:', error);
-      toast({
-        title: 'Erro ao salvar',
-        description: 'Não foi possível salvar as preferências.',
-        variant: 'destructive',
-      });
-    } finally {
-      setSavingNotifications(false);
-    }
-  };
 
   const updateBusinessHour = (
     day: keyof BusinessHours['schedule'],
@@ -281,24 +216,16 @@ export default function SettingsGeneral() {
           </p>
         </div>
 
-        <Tabs defaultValue={isOwnerOrAdmin ? "company" : "notifications"} className="space-y-6">
-          <TabsList className={`grid w-full lg:w-auto lg:inline-flex ${isOwnerOrAdmin ? 'grid-cols-3' : 'grid-cols-1'}`}>
-            {isOwnerOrAdmin && (
-              <TabsTrigger value="company" className="gap-2">
-                <Building2 className="w-4 h-4" />
-                <span className="hidden sm:inline">Empresa</span>
-              </TabsTrigger>
-            )}
-            <TabsTrigger value="notifications" className="gap-2">
-              <Bell className="w-4 h-4" />
-              <span className="hidden sm:inline">Notificações</span>
+        <Tabs defaultValue="company" className="space-y-6">
+          <TabsList className="grid w-full lg:w-auto lg:inline-flex grid-cols-2">
+            <TabsTrigger value="company" className="gap-2">
+              <Building2 className="w-4 h-4" />
+              <span className="hidden sm:inline">Empresa</span>
             </TabsTrigger>
-            {isOwnerOrAdmin && (
-              <TabsTrigger value="billing" className="gap-2">
-                <CreditCard className="w-4 h-4" />
-                <span className="hidden sm:inline">Faturamento</span>
-              </TabsTrigger>
-            )}
+            <TabsTrigger value="billing" className="gap-2">
+              <CreditCard className="w-4 h-4" />
+              <span className="hidden sm:inline">Acesso e Limites</span>
+            </TabsTrigger>
           </TabsList>
 
           {/* Company Settings */}
@@ -499,89 +426,6 @@ export default function SettingsGeneral() {
           </TabsContent>
           )}
 
-          {/* Notifications Settings */}
-          <TabsContent value="notifications" className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>Preferências de Notificação</CardTitle>
-                <CardDescription>
-                  Configure como você deseja receber notificações
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <Label>Notificações de Desktop</Label>
-                    <p className="text-sm text-muted-foreground">
-                      Receba notificações no navegador quando novas mensagens chegarem
-                    </p>
-                  </div>
-                  <Switch 
-                    checked={notifications.desktopNotifications}
-                    onCheckedChange={(checked) => 
-                      setNotifications((prev) => ({ ...prev, desktopNotifications: checked }))
-                    }
-                  />
-                </div>
-                <Separator />
-                <div className="flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <Label>Som de Notificação</Label>
-                    <p className="text-sm text-muted-foreground">
-                      Toque um som quando novas mensagens chegarem
-                    </p>
-                  </div>
-                  <Switch 
-                    checked={notifications.soundNotifications}
-                    onCheckedChange={(checked) => 
-                      setNotifications((prev) => ({ ...prev, soundNotifications: checked }))
-                    }
-                  />
-                </div>
-                <Separator />
-                <div className="flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <Label>Notificações por E-mail</Label>
-                    <p className="text-sm text-muted-foreground">
-                      Receba um resumo diário por e-mail
-                    </p>
-                  </div>
-                  <Switch 
-                    checked={notifications.emailNotifications}
-                    onCheckedChange={(checked) => 
-                      setNotifications((prev) => ({ ...prev, emailNotifications: checked }))
-                    }
-                  />
-                </div>
-                <Separator />
-                <div className="flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <Label>Notificar conversas sem atendente</Label>
-                    <p className="text-sm text-muted-foreground">
-                      Alerta quando conversas não forem atribuídas
-                    </p>
-                  </div>
-                  <Switch 
-                    checked={notifications.unassignedAlerts}
-                    onCheckedChange={(checked) => 
-                      setNotifications((prev) => ({ ...prev, unassignedAlerts: checked }))
-                    }
-                  />
-                </div>
-
-                <div className="flex justify-end pt-4">
-                  <Button onClick={handleSaveNotifications} disabled={savingNotifications}>
-                    {savingNotifications ? (
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    ) : (
-                      <Save className="w-4 h-4 mr-2" />
-                    )}
-                    {savingNotifications ? 'Salvando...' : 'Salvar Preferências'}
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
 
           {/* Billing Settings (Mockup) */}
           {isOwnerOrAdmin && (
@@ -590,7 +434,7 @@ export default function SettingsGeneral() {
               <CardHeader>
                 <CardTitle>Plano Atual</CardTitle>
                 <CardDescription>
-                  Gerencie sua assinatura e faturamento
+                  Gerencie sua assinatura e limites
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">

@@ -79,6 +79,7 @@ export interface KanbanCard {
   assigned_user_id: string | null;
   position: number;
   created_at: string;
+  conversation_department_id?: string | null;
   contact?: {
     id: string;
     name: string | null;
@@ -331,7 +332,29 @@ export function useKanbanData(connectionId: string | null, isGlobalView: boolean
       return;
     }
 
-    setCards((data || []) as KanbanCard[]);
+    // Get conversation department for each card's contact
+    if (data?.length && connectionId) {
+      const contactIds = data.map(c => c.contact_id);
+      const { data: conversations } = await supabase
+        .from('conversations')
+        .select('contact_id, department_id')
+        .in('contact_id', contactIds)
+        .eq('whatsapp_connection_id', connectionId);
+
+      const contactDeptMap = new Map<string, string | null>();
+      conversations?.forEach(conv => {
+        contactDeptMap.set(conv.contact_id, conv.department_id);
+      });
+
+      const cardsWithDept = data.map(card => ({
+        ...card,
+        conversation_department_id: contactDeptMap.get(card.contact_id) || null,
+      }));
+
+      setCards(cardsWithDept as KanbanCard[]);
+    } else {
+      setCards((data || []) as KanbanCard[]);
+    }
   };
 
   // Create column (admin only)

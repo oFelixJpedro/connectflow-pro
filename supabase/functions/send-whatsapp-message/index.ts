@@ -289,6 +289,29 @@ serve(async (req) => {
     }
 
     // ═══════════════════════════════════════════════════════════════════
+    // 3.8️⃣ VERIFICAR ASSINATURA DO USUÁRIO
+    // ═══════════════════════════════════════════════════════════════════
+    console.log('\n┌─────────────────────────────────────────────────────────────────┐')
+    console.log('│ 3.8️⃣ VERIFICAR ASSINATURA DO USUÁRIO                            │')
+    console.log('└─────────────────────────────────────────────────────────────────┘')
+
+    // Buscar dados de assinatura do usuário
+    const { data: senderProfile } = await supabase
+      .from('profiles')
+      .select('signature, signature_enabled')
+      .eq('id', user.id)
+      .single()
+
+    let finalMessageContent = messageContent
+    if (senderProfile?.signature_enabled && senderProfile?.signature?.trim()) {
+      // Adicionar assinatura: *Assinatura*\n\nMensagem
+      finalMessageContent = `*${senderProfile.signature}*\n\n${messageContent}`
+      console.log('✅ Assinatura adicionada:', senderProfile.signature)
+    } else {
+      console.log('ℹ️ Assinatura não ativada ou não definida')
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
     // 4️⃣ ENVIAR PARA UAZAPI
     // ═══════════════════════════════════════════════════════════════════
     console.log('\n┌─────────────────────────────────────────────────────────────────┐')
@@ -313,7 +336,7 @@ serve(async (req) => {
     // Montar payload para UAZAPI - incluir replyid se estiver respondendo
     const uazapiPayload: { number: string; text: string; linkPreview: boolean; replyid?: string } = {
       number: cleanPhoneNumber,
-      text: messageContent,
+      text: finalMessageContent, // Usa mensagem com assinatura se aplicável
       linkPreview: true
     }
     
@@ -325,7 +348,7 @@ serve(async (req) => {
     console.log('   - URL:', `${UAZAPI_BASE_URL}/send/text`)
     console.log('   - token: ***' + instanceToken.slice(-8))
     console.log('   - number:', cleanPhoneNumber)
-    console.log('   - text:', messageContent.substring(0, 100))
+    console.log('   - text (com assinatura):', finalMessageContent.substring(0, 150))
     console.log('   - replyid:', replyId || '(nenhum)')
 
     const uazapiResponse = await fetch(`${UAZAPI_BASE_URL}/send/text`, {

@@ -143,6 +143,12 @@ export interface Message {
   quotedMessageId?: string;
   quotedMessage?: QuotedMessage;
   reactions?: MessageReaction[];
+  isDeleted?: boolean;
+  deletedAt?: string;
+  deletedByType?: 'client' | 'agent';
+  deletedBy?: string;
+  deletedByName?: string;
+  originalContent?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -153,6 +159,7 @@ export interface QuotedMessage {
   messageType: MessageType;
   senderType: SenderType;
   mediaUrl?: string;
+  isDeleted?: boolean;
   createdAt: string;
 }
 
@@ -203,4 +210,5 @@ export interface ConversationFilters {
   priority?: ConversationPriority;
   search?: string;
   inboxColumn?: InboxColumn;
+  isFollowing?: boolean; // Filter by followed conversations (admin/owner only)
 }

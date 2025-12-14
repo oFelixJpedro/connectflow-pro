@@ -327,6 +327,83 @@ serve(async (req) => {
     console.log('│ 2️⃣  VALIDATIONS                                                 │')
     console.log('└─────────────────────────────────────────────────────────────────┘')
     
+    // ═══════════════════════════════════════════════════════════════════
+    // HANDLE messages_update EVENT (for deleted messages)
+    // ═══════════════════════════════════════════════════════════════════
+    if (payload.EventType === 'messages_update') {
+      console.log('📝 [MESSAGES_UPDATE] Evento recebido')
+      console.log(`   - type: ${payload.type}`)
+      console.log(`   - state: ${payload.state}`)
+      console.log(`   - event.Type: ${payload.event?.Type}`)
+      
+      // Check for deleted message
+      const isDeleted = 
+        payload.type === 'DeletedMessage' || 
+        payload.state === 'Deleted' || 
+        payload.event?.Type === 'Deleted'
+      
+      if (isDeleted) {
+        console.log('🗑️ [MENSAGEM APAGADA DETECTADA]')
+        
+        const messageIds = payload.event?.MessageIDs || []
+        const isFromMe = payload.event?.IsFromMe === true
+        const deletedByType = isFromMe ? 'agent' : 'client'
+        
+        console.log(`   - MessageIDs: ${JSON.stringify(messageIds)}`)
+        console.log(`   - IsFromMe: ${isFromMe}`)
+        console.log(`   - deleted_by_type: ${deletedByType}`)
+        
+        // Create Supabase client with service role
+        const supabaseUrl = Deno.env.get('SUPABASE_URL') || ''
+        const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
+        const supabase = createClient(supabaseUrl, supabaseServiceKey)
+        
+        for (const waMessageId of messageIds) {
+          console.log(`   🔄 Processando messageId: ${waMessageId}`)
+          
+          const { data: updatedMessage, error } = await supabase
+            .from('messages')
+            .update({
+              is_deleted: true,
+              deleted_at: new Date().toISOString(),
+              deleted_by_type: deletedByType
+            })
+            .eq('whatsapp_message_id', waMessageId)
+            .select()
+            .single()
+          
+          if (error) {
+            console.error(`   ❌ Erro ao marcar mensagem como deletada:`, error)
+          } else if (updatedMessage) {
+            console.log(`   ✅ Mensagem marcada como deletada: ${waMessageId}`)
+            console.log(`      - message_id: ${updatedMessage.id}`)
+            console.log(`      - conversation_id: ${updatedMessage.conversation_id}`)
+          } else {
+            console.log(`   ⚠️ Mensagem não encontrada no banco: ${waMessageId}`)
+          }
+        }
+        
+        return new Response(
+          JSON.stringify({ 
+            success: true, 
+            action: 'message_deleted',
+            processed: messageIds.length 
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+      
+      // Other messages_update types (ReadReceipt, etc) - just log and ignore
+      console.log(`ℹ️ messages_update type "${payload.type}" ignorado (não é deleção)`)
+      return new Response(
+        JSON.stringify({ 
+          success: true, 
+          message: `messages_update type "${payload.type}" ignored` 
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+    
     // Check if it's a message event
     if (payload.EventType !== 'messages') {
       console.log(`ℹ️ Event type "${payload.EventType}" - não é mensagem, ignorando`)
@@ -783,7 +860,7 @@ serve(async (req) => {
     
     const { data: connection, error: connectionError } = await supabase
       .from('whatsapp_connections')
-      .select('id, company_id, instance_token')
+      .select('id, company_id, instance_token, name')
       .eq('session_id', instanceName)
       .maybeSingle()
     
@@ -846,7 +923,7 @@ serve(async (req) => {
     // Buscar departamento padrão da conexão
     const { data: defaultDepartment, error: deptError } = await supabase
       .from('departments')
-      .select('id')
+      .select('id, name')
       .eq('whatsapp_connection_id', whatsappConnectionId)
       .eq('is_default', true)
       .limit(1)
@@ -995,6 +1072,77 @@ serve(async (req) => {
       }
       
       contactId = newContact.id
+      
+      // Auto-add contact to CRM if enabled
+      console.log('🔍 Verificando se deve adicionar ao CRM automaticamente...')
+      
+      const { data: boardData, error: boardError } = await supabase
+        .from('kanban_boards')
+        .select('id, auto_add_new_contacts')
+        .eq('whatsapp_connection_id', whatsappConnectionId)
+        .maybeSingle()
+      
+      if (boardError) {
+        console.log(`⚠️ Erro ao buscar board: ${boardError.message}`)
+      } else if (boardData?.auto_add_new_contacts) {
+        console.log(`📋 Board encontrado: ${boardData.id}, auto_add_new_contacts: ${boardData.auto_add_new_contacts}`)
+        
+        // Get the first column (lowest position) of the board
+        const { data: firstColumn, error: columnError } = await supabase
+          .from('kanban_columns')
+          .select('id')
+          .eq('board_id', boardData.id)
+          .order('position', { ascending: true })
+          .limit(1)
+          .maybeSingle()
+        
+        if (columnError) {
+          console.log(`⚠️ Erro ao buscar primeira coluna: ${columnError.message}`)
+        } else if (firstColumn) {
+          console.log(`📋 Primeira coluna encontrada: ${firstColumn.id}`)
+          
+          // Check if card already exists for this contact
+          const { data: existingCard } = await supabase
+            .from('kanban_cards')
+            .select('id')
+            .eq('contact_id', contactId)
+            .maybeSingle()
+          
+          if (!existingCard) {
+            // Get max position in the column
+            const { data: maxPosData } = await supabase
+              .from('kanban_cards')
+              .select('position')
+              .eq('column_id', firstColumn.id)
+              .order('position', { ascending: false })
+              .limit(1)
+              .maybeSingle()
+            
+            const newPosition = (maxPosData?.position ?? -1) + 1
+            
+            const { error: cardError } = await supabase
+              .from('kanban_cards')
+              .insert({
+                contact_id: contactId,
+                column_id: firstColumn.id,
+                position: newPosition,
+                priority: 'medium'
+              })
+            
+            if (cardError) {
+              console.log(`⚠️ Erro ao criar card no CRM: ${cardError.message}`)
+            } else {
+              console.log(`✅ Card criado automaticamente no CRM para o novo contato`)
+            }
+          } else {
+            console.log(`ℹ️ Card já existe para este contato: ${existingCard.id}`)
+          }
+        } else {
+          console.log(`⚠️ Nenhuma coluna encontrada no board`)
+        }
+      } else {
+        console.log(`ℹ️ Auto-add desativado ou board não encontrado`)
+      }
     }
     
     console.log(`✅ Contato processado!`)
@@ -1096,6 +1244,31 @@ serve(async (req) => {
       
       conversationId = newConversation.id
       console.log(`✅ Nova conversa criada: ${conversationId}`)
+      
+      // Log conversation creation in history
+      const { error: historyError } = await supabase
+        .from('conversation_history')
+        .insert({
+          conversation_id: conversationId,
+          event_type: 'created',
+          event_data: {
+            connection_id: whatsappConnectionId,
+            connection_name: connection.name || 'WhatsApp',
+            department_id: defaultDepartmentId,
+            department_name: defaultDepartment?.name || 'Geral',
+            contact_name: contactName,
+            contact_phone: phoneNumber
+          },
+          performed_by: null,
+          performed_by_name: 'Sistema',
+          is_automatic: true
+        })
+      
+      if (historyError) {
+        console.log(`⚠️ Erro ao registrar histórico (não fatal): ${historyError.message}`)
+      } else {
+        console.log(`✅ Histórico de criação registrado`)
+      }
     }
     
     // ═══════════════════════════════════════════════════════════════════

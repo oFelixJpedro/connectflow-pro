@@ -13,7 +13,8 @@ import {
   ChevronUp,
   Loader2,
   Check,
-  StickyNote
+  StickyNote,
+  History
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -41,6 +42,9 @@ import { useToast } from '@/hooks/use-toast';
 import { ContactFormModal } from '@/components/contacts/ContactFormModal';
 import { ContactFormData } from '@/hooks/useContactsData';
 import { ChatNotesModal } from './ChatNotesModal';
+import { ConversationHistoryModal } from './ConversationHistoryModal';
+import { logConversationEvent } from '@/lib/conversationHistory';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface ContactPanelProps {
   conversation: Conversation | null;
@@ -64,6 +68,7 @@ interface ConversationHistory {
 
 export function ContactPanel({ conversation, onClose, onContactUpdated, onScrollToMessage }: ContactPanelProps) {
   const { toast } = useToast();
+  const { profile } = useAuth();
   const [notesOpen, setNotesOpen] = useState(true);
   const [historyOpen, setHistoryOpen] = useState(true);
   const [notes, setNotes] = useState('');
@@ -86,6 +91,9 @@ export function ContactPanel({ conversation, onClose, onContactUpdated, onScroll
   // Chat notes modal state
   const [chatNotesModalOpen, setChatNotesModalOpen] = useState(false);
   const [chatNotesCount, setChatNotesCount] = useState(0);
+  
+  // Conversation history modal state
+  const [historyModalOpen, setHistoryModalOpen] = useState(false);
 
   // Last interaction state - for real-time updates
   const [lastInteraction, setLastInteraction] = useState<string | null>(null);
@@ -266,6 +274,7 @@ export function ContactPanel({ conversation, onClose, onContactUpdated, onScroll
 
     const newTags = [...contactTags, tagName];
     setContactTags(newTags);
+    const tagData = availableTags.find(t => t.name === tagName);
 
     try {
       const { error } = await supabase
@@ -274,6 +283,20 @@ export function ContactPanel({ conversation, onClose, onContactUpdated, onScroll
         .eq('id', contact.id);
 
       if (error) throw error;
+      
+      // Log history event if we have a conversation
+      if (conversation?.id && profile) {
+        await logConversationEvent({
+          conversationId: conversation.id,
+          eventType: 'tag_added',
+          eventData: {
+            tag_name: tagName,
+            tag_color: tagData?.color || '#3B82F6'
+          },
+          performedBy: profile.id,
+          performedByName: profile.full_name
+        });
+      }
       
       toast({
         title: 'Tag adicionada',
@@ -296,6 +319,7 @@ export function ContactPanel({ conversation, onClose, onContactUpdated, onScroll
 
     const newTags = contactTags.filter(t => t !== tagName);
     setContactTags(newTags);
+    const tagData = availableTags.find(t => t.name === tagName);
 
     try {
       const { error } = await supabase
@@ -304,6 +328,20 @@ export function ContactPanel({ conversation, onClose, onContactUpdated, onScroll
         .eq('id', contact.id);
 
       if (error) throw error;
+      
+      // Log history event if we have a conversation
+      if (conversation?.id && profile) {
+        await logConversationEvent({
+          conversationId: conversation.id,
+          eventType: 'tag_removed',
+          eventData: {
+            tag_name: tagName,
+            tag_color: tagData?.color || '#3B82F6'
+          },
+          performedBy: profile.id,
+          performedByName: profile.full_name
+        });
+      }
       
       toast({
         title: 'Tag removida',
@@ -651,6 +689,17 @@ export function ContactPanel({ conversation, onClose, onContactUpdated, onScroll
               )}
             </CollapsibleTrigger>
             <CollapsibleContent className="pt-3 space-y-2">
+              {/* Button to view detailed timeline */}
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full justify-start gap-2"
+                onClick={() => setHistoryModalOpen(true)}
+              >
+                <History className="w-4 h-4" />
+                Ver timeline detalhada
+              </Button>
+              
               {conversationHistory.length === 0 && !isLoadingHistory ? (
                 <p className="text-sm text-muted-foreground text-center py-4">
                   Nenhuma conversa encontrada
@@ -720,6 +769,16 @@ export function ContactPanel({ conversation, onClose, onContactUpdated, onScroll
           onNoteClick={(noteId) => {
             onScrollToMessage?.(noteId);
           }}
+        />
+      )}
+
+      {/* Conversation History Modal */}
+      {conversation && (
+        <ConversationHistoryModal
+          open={historyModalOpen}
+          onOpenChange={setHistoryModalOpen}
+          conversationId={conversation.id}
+          contactName={contact?.name}
         />
       )}
     </div>

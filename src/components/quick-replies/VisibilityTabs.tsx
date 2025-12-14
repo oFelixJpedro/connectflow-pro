@@ -141,14 +141,14 @@ export function VisibilityTabs({
           <div className="flex items-center gap-2">
             <Building2 className="w-4 h-4" />
             <Select
-              value={selectedDepartmentId || 'all'}
-              onValueChange={(value) => onDepartmentChange(value === 'all' ? null : value)}
+              value={selectedDepartmentId ?? '__all__'}
+              onValueChange={(value) => onDepartmentChange(value === '__all__' ? null : value)}
             >
               <SelectTrigger className="h-7 border-none shadow-none bg-transparent p-0 gap-1 min-w-[150px]">
                 <SelectValue placeholder="Todos" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Todos os departamentos</SelectItem>
+                <SelectItem value="__all__">Todos os departamentos</SelectItem>
                 {departments.map((dept) => (
                   <SelectItem key={dept.id} value={dept.id}>
                     {dept.name}
@@ -169,14 +169,14 @@ export function VisibilityTabs({
           <div className="flex items-center gap-2">
             <Smartphone className="w-4 h-4" />
             <Select
-              value={selectedConnectionId || 'all'}
-              onValueChange={(value) => onConnectionChange(value === 'all' ? null : value)}
+              value={selectedConnectionId ?? '__all__'}
+              onValueChange={(value) => onConnectionChange(value === '__all__' ? null : value)}
             >
               <SelectTrigger className="h-7 border-none shadow-none bg-transparent p-0 gap-1 min-w-[150px]">
                 <SelectValue placeholder="Todas" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Todas as conexões</SelectItem>
+                <SelectItem value="__all__">Todas as conexões</SelectItem>
                 {connections.map((conn) => (
                   <SelectItem key={conn.id} value={conn.id}>
                     {conn.name} ({conn.phone_number})

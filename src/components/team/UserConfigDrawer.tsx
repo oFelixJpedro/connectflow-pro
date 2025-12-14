@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Loader2, Shield, ShieldCheck, UserCheck, Eye, Info, ChevronDown, ChevronUp } from 'lucide-react';
+import { Loader2, Shield, ShieldCheck, UserCheck, Eye, Info, ChevronDown, ChevronUp, PenLine } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Separator } from '@/components/ui/separator';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Input } from '@/components/ui/input';
 import {
   Select,
   SelectContent,
@@ -96,8 +97,34 @@ function serializeAccess(access: ConnectionAccess[]): string {
   })));
 }
 
+// Function to check if current user can manage target user's signature
+function canManageSignature(currentUserRole: string | undefined, targetUserRole: string): boolean {
+  if (!currentUserRole) return false;
+  
+  // Agent and viewer cannot manage anyone's signature
+  if (currentUserRole === 'agent' || currentUserRole === 'viewer' || currentUserRole === 'supervisor') {
+    return false;
+  }
+  
+  // Owner can manage anyone (including themselves)
+  if (currentUserRole === 'owner') {
+    return true;
+  }
+  
+  // Admin can manage agent, viewer, supervisor and themselves (NOT owner)
+  if (currentUserRole === 'admin') {
+    if (targetUserRole === 'owner') {
+      return false;
+    }
+    return true;
+  }
+  
+  return false;
+}
+
 export function UserConfigDrawer({ open, onClose, member, onSaveSuccess, isOwner }: UserConfigDrawerProps) {
-  const { profile } = useAuth();
+  const { profile, userRole } = useAuth();
+  const currentUserRole = userRole?.role;
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [connections, setConnections] = useState<Connection[]>([]);
@@ -107,6 +134,12 @@ export function UserConfigDrawer({ open, onClose, member, onSaveSuccess, isOwner
   const [selectedRole, setSelectedRole] = useState<string>('agent');
   const [connectionAccess, setConnectionAccess] = useState<ConnectionAccess[]>([]);
   const [hasChanges, setHasChanges] = useState(false);
+
+  // Signature state
+  const [signature, setSignature] = useState<string>('');
+  const [signatureEnabled, setSignatureEnabled] = useState<boolean>(false);
+  const [originalSignature, setOriginalSignature] = useState<string>('');
+  const [originalSignatureEnabled, setOriginalSignatureEnabled] = useState<boolean>(false);
 
   // Original state for comparison
   const [originalRole, setOriginalRole] = useState<string>('agent');
@@ -122,8 +155,9 @@ export function UserConfigDrawer({ open, onClose, member, onSaveSuccess, isOwner
     // Check for changes
     const roleChanged = selectedRole !== originalRole;
     const accessChanged = serializeAccess(connectionAccess) !== serializeAccess(originalAccess);
-    setHasChanges(roleChanged || accessChanged);
-  }, [selectedRole, connectionAccess, originalRole, originalAccess]);
+    const signatureChanged = signature !== originalSignature || signatureEnabled !== originalSignatureEnabled;
+    setHasChanges(roleChanged || accessChanged || signatureChanged);
+  }, [selectedRole, connectionAccess, originalRole, originalAccess, signature, originalSignature, signatureEnabled, originalSignatureEnabled]);
 
   const loadData = async () => {
     if (!member || !profile?.company_id) return;
@@ -169,6 +203,20 @@ export function UserConfigDrawer({ open, onClose, member, onSaveSuccess, isOwner
       if (roleError) throw roleError;
       const currentRole = roleData?.role || 'agent';
       setSelectedRole(currentRole);
+
+      // Load signature data from profiles table
+      const { data: profileData } = await supabase
+        .from('profiles')
+        .select('signature, signature_enabled')
+        .eq('id', member.id)
+        .single();
+
+      const currentSignature = profileData?.signature || '';
+      const currentSignatureEnabled = profileData?.signature_enabled || false;
+      setSignature(currentSignature);
+      setSignatureEnabled(currentSignatureEnabled);
+      setOriginalSignature(currentSignature);
+      setOriginalSignatureEnabled(currentSignatureEnabled);
       setOriginalRole(currentRole);
 
       // Load user's connection assignments
@@ -316,6 +364,19 @@ export function UserConfigDrawer({ open, onClose, member, onSaveSuccess, isOwner
           .insert({ user_id: member.id, role: selectedRole as 'owner' | 'admin' | 'supervisor' | 'agent' | 'viewer' });
 
         if (roleError) throw roleError;
+      }
+
+      // Update signature settings if changed
+      if (signature !== originalSignature || signatureEnabled !== originalSignatureEnabled) {
+        const { error: signatureError } = await supabase
+          .from('profiles')
+          .update({
+            signature: signature.trim() || null,
+            signature_enabled: signatureEnabled
+          })
+          .eq('id', member.id);
+
+        if (signatureError) throw signatureError;
       }
 
       // 2. Update connection access
@@ -636,6 +697,93 @@ export function UserConfigDrawer({ open, onClose, member, onSaveSuccess, isOwner
                         </div>
                       );
                     })
+                  )}
+                </div>
+              )}
+            </div>
+
+            <Separator />
+
+            {/* Signature Settings */}
+            <div className="space-y-4">
+              <div className="flex items-center gap-2">
+                <PenLine className="w-4 h-4 text-muted-foreground" />
+                <Label className="text-sm font-medium">Configurações de Assinatura</Label>
+              </div>
+              
+              {/* Signature Text Input */}
+              <div className="space-y-2">
+                <Label className="text-xs text-muted-foreground">Assinatura Personalizada</Label>
+                <Input
+                  value={signature}
+                  onChange={(e) => setSignature(e.target.value)}
+                  placeholder="Ex: Dr. Félix, Atendente Maria"
+                  maxLength={100}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Aparecerá em negrito na primeira linha das mensagens de texto
+                </p>
+              </div>
+
+              {/* Toggle - only visible if current user can manage */}
+              {canManageSignature(currentUserRole, member.role) && (
+                <div className="flex items-center justify-between p-4 bg-muted/50 rounded-lg">
+                  <div className="flex-1">
+                    <Label className="font-medium">Ativar Assinatura Automática</Label>
+                    <p className="text-sm text-muted-foreground">
+                      Quando ativada, mensagens de texto começarão com a assinatura
+                    </p>
+                  </div>
+                  <Switch
+                    checked={signatureEnabled}
+                    onCheckedChange={(checked) => {
+                      if (checked && !signature?.trim()) {
+                        toast.error('Defina uma assinatura antes de ativar');
+                        return;
+                      }
+                      setSignatureEnabled(checked);
+                    }}
+                    disabled={!signature?.trim() && !signatureEnabled}
+                  />
+                </div>
+              )}
+
+              {/* Warning if no signature defined but trying to enable */}
+              {signatureEnabled && !signature?.trim() && (
+                <Alert className="border-yellow-200 bg-yellow-50">
+                  <Info className="h-4 w-4 text-yellow-700" />
+                  <AlertDescription className="text-yellow-700">
+                    Defina uma assinatura antes de ativar
+                  </AlertDescription>
+                </Alert>
+              )}
+
+              {/* Preview */}
+              {signatureEnabled && signature?.trim() && (
+                <div className="p-4 bg-primary/5 rounded-lg border border-primary/20">
+                  <p className="text-xs font-semibold text-primary mb-2">
+                    📱 Preview no WhatsApp:
+                  </p>
+                  <div className="bg-background p-3 rounded-lg text-sm whitespace-pre-line border">
+                    <strong>{signature}</strong>
+                    {'\n\n'}
+                    Olá, como posso ajudar?
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-2">
+                    ℹ️ Assinatura aparece apenas em mensagens de texto
+                  </p>
+                </div>
+              )}
+
+              {/* Status for non-managers */}
+              {!canManageSignature(currentUserRole, member.role) && (
+                <div className="text-xs text-muted-foreground bg-muted/50 p-3 rounded-lg">
+                  {signatureEnabled ? (
+                    <span className="text-green-700">✅ Assinatura ativada pelo administrador</span>
+                  ) : signature?.trim() ? (
+                    <span>ℹ️ Assinatura definida mas não ativada</span>
+                  ) : (
+                    <span>ℹ️ Nenhuma assinatura definida</span>
                   )}
                 </div>
               )}

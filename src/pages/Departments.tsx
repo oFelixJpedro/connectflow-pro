@@ -262,14 +262,10 @@ export default function Departments() {
       if (editingDepartment) {
         // Update existing
         const updateData: Partial<Department> = {
+          name: trimmedName,
           description: formDescription.trim() || null,
           is_default: formIsDefault,
         };
-        
-        // Only update name if no conversations
-        if (!hasConversations) {
-          updateData.name = trimmedName;
-        }
         
         const { error } = await supabase
           .from('departments')
@@ -659,13 +655,7 @@ export default function Departments() {
                 onChange={(e) => setFormName(e.target.value)}
                 placeholder="Ex: Vendas, Suporte, Financeiro..."
                 maxLength={50}
-                disabled={editingDepartment && hasConversations}
               />
-              {editingDepartment && hasConversations && (
-                <p className="text-xs text-muted-foreground">
-                  Não é possível alterar o nome pois há conversas neste departamento.
-                </p>
-              )}
             </div>
             
             <div className="space-y-2">

@@ -12,8 +12,10 @@ import {
   MessageSquare,
   Edit2,
   Trash2,
-  Filter,
-  Loader2
+  Loader2,
+  Smartphone,
+  Users,
+  X
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -45,6 +47,13 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { format } from 'date-fns';
@@ -58,8 +67,11 @@ export default function Contacts() {
     contacts,
     tags,
     connections,
+    departments,
     loading,
     stats,
+    filters,
+    setFilters,
     createContact,
     updateContact,
     deleteContact,
@@ -345,32 +357,125 @@ export default function Contacts() {
       </div>
 
       {/* Filters */}
-      <div className="flex items-center gap-4">
-        <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input
-            placeholder="Buscar por nome, telefone ou e-mail..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-9"
-          />
-        </div>
-        {selectedContacts.length > 0 && (
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-muted-foreground">
-              {selectedContacts.length} selecionado(s)
-            </span>
-            <Button 
-              variant="outline" 
-              size="sm" 
-              className="text-destructive"
-              onClick={handleBulkDelete}
-            >
-              <Trash2 className="w-4 h-4 mr-1" />
-              Excluir
-            </Button>
+      <div className="flex flex-col gap-4">
+        {/* Search and Selection */}
+        <div className="flex items-center gap-4">
+          <div className="relative flex-1 max-w-md">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <Input
+              placeholder="Buscar por nome, telefone ou e-mail..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-9"
+            />
           </div>
-        )}
+          {selectedContacts.length > 0 && (
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-muted-foreground">
+                {selectedContacts.length} selecionado(s)
+              </span>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className="text-destructive"
+                onClick={handleBulkDelete}
+              >
+                <Trash2 className="w-4 h-4 mr-1" />
+                Excluir
+              </Button>
+            </div>
+          )}
+        </div>
+
+        {/* Connection and Department Filters */}
+        <div className="flex items-center gap-4 flex-wrap">
+          {/* Connection Filter */}
+          <div className="flex flex-col gap-1">
+            <label className="text-sm font-medium text-muted-foreground">
+              Filtrar por Conexão:
+            </label>
+            <Select
+              value={filters.connectionId}
+              onValueChange={(value) => setFilters({ ...filters, connectionId: value, departmentId: 'all' })}
+            >
+              <SelectTrigger className="w-[220px]">
+                <SelectValue placeholder="Todas as Conexões" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">
+                  <div className="flex items-center gap-2">
+                    <Smartphone className="w-4 h-4" />
+                    Todas as Conexões
+                  </div>
+                </SelectItem>
+                {connections.map((conn) => (
+                  <SelectItem key={conn.id} value={conn.id}>
+                    {conn.name || conn.phone_number}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Department Filter */}
+          <div className="flex flex-col gap-1">
+            <label className="text-sm font-medium text-muted-foreground">
+              Filtrar por Departamento:
+            </label>
+            <Select
+              value={filters.departmentId}
+              onValueChange={(value) => setFilters({ ...filters, departmentId: value })}
+            >
+              <SelectTrigger className="w-[220px]">
+                <SelectValue placeholder="Todos os Departamentos" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">
+                  <div className="flex items-center gap-2">
+                    <Users className="w-4 h-4" />
+                    Todos os Departamentos
+                  </div>
+                </SelectItem>
+                {(filters.connectionId === 'all' 
+                  ? departments 
+                  : departments.filter(d => d.whatsapp_connection_id === filters.connectionId)
+                ).map((dept) => (
+                  <SelectItem key={dept.id} value={dept.id}>
+                    {dept.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Active Filters Badges */}
+          {(filters.connectionId !== 'all' || filters.departmentId !== 'all') && (
+            <div className="flex items-center gap-2 ml-auto">
+              <span className="text-sm text-muted-foreground">Filtros ativos:</span>
+              {filters.connectionId !== 'all' && (
+                <Badge variant="secondary" className="bg-primary/10 text-primary border-primary/20">
+                  <Smartphone className="w-3 h-3 mr-1" />
+                  {connections.find(c => c.id === filters.connectionId)?.name || 'Conexão'}
+                </Badge>
+              )}
+              {filters.departmentId !== 'all' && (
+                <Badge variant="secondary" className="bg-violet-100 text-violet-700 border-violet-200">
+                  <Users className="w-3 h-3 mr-1" />
+                  {departments.find(d => d.id === filters.departmentId)?.name || 'Departamento'}
+                </Badge>
+              )}
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-destructive hover:text-destructive"
+                onClick={() => setFilters({ connectionId: 'all', departmentId: 'all' })}
+              >
+                <X className="w-4 h-4 mr-1" />
+                Limpar
+              </Button>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Contacts Table */}
