@@ -791,19 +791,6 @@ export function useInboxData() {
 
       console.log('[useInboxData] Nota interna salva:', newMessage.id);
 
-      // Create mention notifications if there are mentions
-      if (mentions && mentions.length > 0 && newMessage?.id && profile?.company_id) {
-        const { createMentionNotifications } = await import('@/hooks/useMentions');
-        await createMentionNotifications(
-          mentions,
-          user.id,
-          'internal_note',
-          newMessage.id,
-          selectedConversation.id,
-          undefined,
-          profile.company_id
-        );
-      }
 
       // Adicionar mensagem ao estado local imediatamente
       const transformedMessage: Message = transformMessage(newMessage);

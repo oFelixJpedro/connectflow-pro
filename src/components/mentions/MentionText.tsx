@@ -8,9 +8,9 @@ interface MentionTextProps {
   variant?: 'default' | 'internal-note' | 'internal-chat';
 }
 
-// Match @Name where Name is 2-4 words (first letter uppercase of each word)
-// This properly stops at punctuation, commas, or lowercase words not starting with uppercase
-const mentionRegex = /@([A-ZÀ-ÖØ-Þ][a-zà-öø-ÿ]+(?:\s+[A-ZÀ-ÖØ-Þ][a-zà-öø-ÿ]+){0,3})/g;
+// Match @Name - allows any word characters after @, supporting names like @teste2, @João Pedro, etc.
+// Matches @ followed by any non-whitespace characters until space or end
+const mentionRegex = /@(\S+(?:\s+\S+)?)/g;
 
 export function MentionText({ text, className, mentionClassName, variant = 'default' }: MentionTextProps) {
   const formattedText = useMemo(() => {

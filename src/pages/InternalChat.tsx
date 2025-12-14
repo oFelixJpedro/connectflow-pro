@@ -32,7 +32,7 @@ import { AddGroupMembersModal } from '@/components/internal-chat/AddGroupMembers
 
 // Import mentions
 import { MentionPicker, MentionText } from '@/components/mentions';
-import { useMentions, parseMentionsFromText, createMentionNotifications } from '@/hooks/useMentions';
+import { useMentions, parseMentionsFromText } from '@/hooks/useMentions';
 
 export default function InternalChat() {
   const navigate = useNavigate();

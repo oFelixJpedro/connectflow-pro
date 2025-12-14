@@ -471,19 +471,6 @@ export function useInternalChat() {
 
       if (error) throw error;
       
-      // Create mention notifications if there are mentions
-      if (mentions && mentions.length > 0 && data?.id) {
-        const { createMentionNotifications } = await import('@/hooks/useMentions');
-        await createMentionNotifications(
-          mentions,
-          profile.id,
-          'internal_chat',
-          data.id,
-          undefined,
-          selectedRoom.id,
-          company?.id
-        );
-      }
       
       return true;
     } catch (error) {
