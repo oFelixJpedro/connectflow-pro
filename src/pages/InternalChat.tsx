@@ -557,20 +557,6 @@ export default function InternalChat() {
               </Button>
             )}
           </div>
-          <div className="p-3 border-b flex items-center justify-between">
-            <h2 className="font-medium text-sm text-muted-foreground">Conversas</h2>
-            {isAdminOrOwner && (
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => setIsCreateGroupOpen(true)}
-                className="h-7 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50"
-              >
-                <Plus className="w-4 h-4 mr-1" />
-                Grupo
-              </Button>
-            )}
-          </div>
           
           <ScrollArea className="flex-1">
             {isLoading ? (
