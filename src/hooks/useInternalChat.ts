@@ -425,10 +425,15 @@ export function useInternalChat() {
 
       if (error) throw error;
 
+      // Include current user in members list for mention name resolution
+      const allMembers = profile?.full_name 
+        ? [...teamMembers, { id: profile.id, fullName: profile.full_name, avatarUrl: profile.avatar_url || null, email: profile.email }]
+        : teamMembers;
+
       const transformedMessages: ChatMessage[] = (data || []).map(msg => {
         const mentionIds = Array.isArray(msg.mentions) ? msg.mentions as string[] : [];
         const mentionNames = mentionIds
-          .map(id => teamMembers.find(m => m.id === id)?.fullName)
+          .map(id => allMembers.find(m => m.id === id)?.fullName)
           .filter(Boolean) as string[];
 
         return {
