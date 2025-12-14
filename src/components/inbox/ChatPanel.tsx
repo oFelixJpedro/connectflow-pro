@@ -14,7 +14,8 @@ import {
   StickyNote,
   Camera,
   FileText,
-  X
+  X,
+  Trash2
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -47,6 +48,7 @@ import { EmojiMessagePicker } from './EmojiMessagePicker';
 import { QuickRepliesPicker } from './QuickRepliesPicker';
 import { QuickReplyConfirmModal } from './QuickReplyConfirmModal';
 import { DeletedMessageIndicator } from './DeletedMessageIndicator';
+import { DeleteMessageModal } from './DeleteMessageModal';
 import { InternalNoteAudioRecorder } from './InternalNoteAudioRecorder';
 import { QuickReply } from '@/hooks/useQuickRepliesData';
 import { cn } from '@/lib/utils';
@@ -106,7 +108,7 @@ export function ChatPanel({
   isSendingMessage = false,
   isRestricted = false,
 }: ChatPanelProps) {
-  const { user, userRole } = useAuth();
+  const { user, userRole, profile } = useAuth();
   const [inputValue, setInputValue] = useState('');
   const [showScrollButton, setShowScrollButton] = useState(false);
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
@@ -135,6 +137,8 @@ export function ChatPanel({
     mediaMimeType: string;
     metadata: Record<string, unknown>;
   } | null>(null);
+  const [messageToDelete, setMessageToDelete] = useState<Message | null>(null);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messageRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -143,6 +147,52 @@ export function ChatPanel({
 
   const currentUserId = user?.id || '';
   const currentUserRole = userRole?.role || 'agent';
+  const currentUserName = profile?.full_name || '';
+
+  // Check if user can delete a message
+  const canDeleteMessage = useCallback((message: Message): boolean => {
+    // Conversation must be assigned to current user
+    if (conversation?.assignedUserId !== currentUserId) {
+      return false;
+    }
+    
+    // Only outbound messages (sent by system/agent)
+    if (message.direction !== 'outbound') {
+      return false;
+    }
+    
+    // Only messages from user (not system/bot)
+    if (message.senderType !== 'user') {
+      return false;
+    }
+    
+    // Only text messages
+    if (message.messageType !== 'text') {
+      return false;
+    }
+    
+    // Not already deleted
+    if (message.isDeleted) {
+      return false;
+    }
+    
+    // Must have whatsapp_message_id
+    if (!message.whatsappMessageId) {
+      return false;
+    }
+    
+    // Not internal notes
+    if (message.isInternalNote) {
+      return false;
+    }
+    
+    return true;
+  }, [conversation?.assignedUserId, currentUserId]);
+
+  const handleDeleteMessage = (message: Message) => {
+    setMessageToDelete(message);
+    setIsDeleteModalOpen(true);
+  };
 
   // Verificar se pode responder
   const blockInfo = useMessageBlocker(conversation, currentUserId);
@@ -967,6 +1017,23 @@ export function ChatPanel({
                                   <TooltipContent>Responder</TooltipContent>
                                 </Tooltip>
                               )}
+
+                              {/* Delete button */}
+                              {canDeleteMessage(message) && (
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-7 w-7 rounded-full bg-destructive/80 hover:bg-destructive text-destructive-foreground"
+                                      onClick={() => handleDeleteMessage(message)}
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </Button>
+                                  </TooltipTrigger>
+                                  <TooltipContent>Apagar para o cliente</TooltipContent>
+                                </Tooltip>
+                              )}
                               
                               {/* Reaction button */}
                               {onSendReaction && message.whatsappMessageId && (
@@ -1019,8 +1086,9 @@ export function ChatPanel({
                             {/* Check if message is deleted first */}
                             {message.isDeleted ? (
                               <DeletedMessageIndicator
-                                originalContent={message.content}
+                                originalContent={message.originalContent || message.content}
                                 deletedByType={message.deletedByType}
+                                deletedByName={message.deletedByName}
                                 deletedAt={message.deletedAt}
                                 messageType={message.messageType}
                                 isOutbound={isOutbound}
@@ -1607,6 +1675,20 @@ export function ChatPanel({
         title={pendingQuickReply?.title}
         isSending={isSendingMessage}
         quotedMessage={replyingTo}
+      />
+
+      {/* Delete Message Modal */}
+      <DeleteMessageModal
+        isOpen={isDeleteModalOpen}
+        onClose={() => {
+          setIsDeleteModalOpen(false);
+          setMessageToDelete(null);
+        }}
+        message={messageToDelete}
+        conversation={conversation}
+        currentUserId={currentUserId}
+        currentUserName={currentUserName}
+        onDeleted={onRefresh}
       />
     </div>
   );

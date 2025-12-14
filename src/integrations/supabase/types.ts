@@ -1167,6 +1167,8 @@ export type Database = {
           conversation_id: string
           created_at: string | null
           deleted_at: string | null
+          deleted_by: string | null
+          deleted_by_name: string | null
           deleted_by_type: string | null
           direction: Database["public"]["Enums"]["message_direction"]
           edit_count: number | null
@@ -1194,6 +1196,8 @@ export type Database = {
           conversation_id: string
           created_at?: string | null
           deleted_at?: string | null
+          deleted_by?: string | null
+          deleted_by_name?: string | null
           deleted_by_type?: string | null
           direction: Database["public"]["Enums"]["message_direction"]
           edit_count?: number | null
@@ -1221,6 +1225,8 @@ export type Database = {
           conversation_id?: string
           created_at?: string | null
           deleted_at?: string | null
+          deleted_by?: string | null
+          deleted_by_name?: string | null
           deleted_by_type?: string | null
           direction?: Database["public"]["Enums"]["message_direction"]
           edit_count?: number | null
@@ -1249,6 +1255,13 @@ export type Database = {
             columns: ["conversation_id"]
             isOneToOne: false
             referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "messages_deleted_by_fkey"
+            columns: ["deleted_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
           {
