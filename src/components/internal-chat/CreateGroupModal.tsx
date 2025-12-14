@@ -189,15 +189,15 @@ export function CreateGroupModal({ isOpen, onClose, onGroupCreated }: CreateGrou
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[500px] max-h-[90vh] flex flex-col">
-        <DialogHeader>
+      <DialogContent className="sm:max-w-[500px] max-h-[90vh] flex flex-col overflow-hidden">
+        <DialogHeader className="flex-shrink-0">
           <DialogTitle className="flex items-center gap-2">
             <Users className="w-5 h-5 text-emerald-600" />
             Criar Grupo
           </DialogTitle>
         </DialogHeader>
 
-        <ScrollArea className="flex-1 max-h-[calc(90vh-180px)] pr-4">
+        <div className="flex-1 overflow-y-auto pr-2 min-h-0">
           <div className="space-y-4">
           {/* Group Name */}
           <div className="space-y-2">
@@ -309,9 +309,9 @@ export function CreateGroupModal({ isOpen, onClose, onGroupCreated }: CreateGrou
             </div>
           )}
           </div>
-        </ScrollArea>
+        </div>
 
-        <DialogFooter className="mt-4">
+        <DialogFooter className="mt-4 flex-shrink-0">
           <Button variant="outline" onClick={onClose} disabled={isCreating}>
             Cancelar
           </Button>
