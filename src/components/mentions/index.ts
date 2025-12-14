@@ -1,2 +1,2 @@
 export { MentionPicker } from './MentionPicker';
-export { MentionText, getMentionDisplayText } from './MentionText';
+export { MentionText } from './MentionText';

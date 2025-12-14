@@ -18,7 +18,6 @@ interface AuthContextType {
   teamProfiles: Profile[];
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
-  resetPassword: (email: string) => Promise<{ error: Error | null }>;
   updateProfile: (updates: Partial<Profile>) => Promise<{ error: Error | null }>;
   updateCompany: (updates: Partial<Company>) => Promise<{ error: Error | null }>;
   clearPasswordChangeFlag: () => void;
@@ -215,13 +214,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUserRole(null);
   }
 
-  async function resetPassword(email: string) {
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/auth/reset-password`,
-    });
-    return { error: error as Error | null };
-  }
-
   async function updateProfile(updates: Partial<Profile>) {
     if (!user) return { error: new Error('User not authenticated') };
 
@@ -271,7 +263,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       teamProfiles,
       signIn,
       signOut,
-      resetPassword,
       updateProfile,
       updateCompany,
       clearPasswordChangeFlag

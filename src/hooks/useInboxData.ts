@@ -375,7 +375,6 @@ export function useInboxData() {
             sender_type,
             media_url,
             is_deleted,
-            is_edited,
             created_at
           )
         `)
@@ -951,7 +950,7 @@ export function useInboxData() {
               console.log('[Realtime] Buscando mensagem citada:', newMessage.quotedMessageId);
               const { data: quotedData } = await supabase
                 .from('messages')
-                .select('id, content, message_type, sender_type, media_url, is_deleted, is_edited, created_at')
+                .select('id, content, message_type, sender_type, media_url, is_deleted, created_at')
                 .eq('id', newMessage.quotedMessageId)
                 .maybeSingle();
               
