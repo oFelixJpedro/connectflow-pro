@@ -445,11 +445,17 @@ export function useInternalChat() {
   }, [profile?.id]);
 
   // Send text message
-  const sendMessage = useCallback(async (content: string, messageType: string = 'text', mediaUrl?: string, mediaMimeType?: string) => {
+  const sendMessage = useCallback(async (
+    content: string, 
+    messageType: string = 'text', 
+    mediaUrl?: string, 
+    mediaMimeType?: string,
+    mentions?: string[]
+  ) => {
     if (!selectedRoom || !profile?.id) return false;
 
     try {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('internal_chat_messages')
         .insert({
           room_id: selectedRoom.id,
@@ -458,15 +464,33 @@ export function useInternalChat() {
           message_type: messageType,
           media_url: mediaUrl,
           media_mime_type: mediaMimeType,
-        });
+          mentions: mentions || [],
+        })
+        .select('id')
+        .single();
 
       if (error) throw error;
+      
+      // Create mention notifications if there are mentions
+      if (mentions && mentions.length > 0 && data?.id) {
+        const { createMentionNotifications } = await import('@/hooks/useMentions');
+        await createMentionNotifications(
+          mentions,
+          profile.id,
+          'internal_chat',
+          data.id,
+          undefined,
+          selectedRoom.id,
+          company?.id
+        );
+      }
+      
       return true;
     } catch (error) {
       console.error('[InternalChat] Erro ao enviar mensagem:', error);
       return false;
     }
-  }, [selectedRoom, profile?.id]);
+  }, [selectedRoom, profile?.id, company?.id]);
 
   // Send media message (upload file first, then save message)
   const sendMediaMessage = useCallback(async (

@@ -59,6 +59,10 @@ import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
 
+// Import mentions
+import { MentionPicker, MentionText } from '@/components/mentions';
+import { useMentions, parseMentionsFromText, createMentionNotifications } from '@/hooks/useMentions';
+
 interface ChatPanelProps {
   conversation: Conversation | null;
   messages: Message[];
@@ -139,11 +143,39 @@ export function ChatPanel({
   } | null>(null);
   const [messageToDelete, setMessageToDelete] = useState<Message | null>(null);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [teamMembers, setTeamMembers] = useState<{ id: string; fullName: string }[]>([]);
+  
+  // Mentions for internal notes
+  const {
+    showMentionPicker,
+    mentionFilterText,
+    handleInputChange: handleMentionInputChange,
+    handleMentionSelect,
+    closeMentionPicker,
+    resetMentions,
+  } = useMentions();
+  
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messageRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
+  
+  // Load team members for mentions
+  useEffect(() => {
+    const loadTeamMembers = async () => {
+      if (!profile?.company_id) return;
+      const { data } = await supabase
+        .from('profiles')
+        .select('id, full_name')
+        .eq('company_id', profile.company_id)
+        .eq('active', true);
+      if (data) {
+        setTeamMembers(data.map(p => ({ id: p.id, fullName: p.full_name })));
+      }
+    };
+    loadTeamMembers();
+  }, [profile?.company_id]);
 
   const currentUserId = user?.id || '';
   const currentUserRole = userRole?.role || 'agent';
@@ -1515,15 +1547,39 @@ export function ChatPanel({
                 </TooltipContent>
               </Tooltip>
 
+              {/* Mention Picker for internal notes */}
+              {isInternalNoteMode && (
+                <MentionPicker
+                  isOpen={showMentionPicker}
+                  onSelect={(member) => {
+                    const cursorPosition = textareaRef.current?.selectionStart || inputValue.length;
+                    const { newValue, newCursorPosition } = handleMentionSelect(member, inputValue, cursorPosition);
+                    setInputValue(newValue);
+                    setTimeout(() => {
+                      if (textareaRef.current) {
+                        textareaRef.current.focus();
+                        textareaRef.current.setSelectionRange(newCursorPosition, newCursorPosition);
+                      }
+                    }, 0);
+                  }}
+                  onClose={closeMentionPicker}
+                  filterText={mentionFilterText}
+                />
+              )}
 
               <Textarea
                 ref={textareaRef}
                 value={inputValue}
-                onChange={handleInputChange}
+                onChange={(e) => {
+                  handleInputChange(e);
+                  if (isInternalNoteMode) {
+                    handleMentionInputChange(e.target.value, e.target.selectionStart || 0);
+                  }
+                }}
                 onKeyDown={handleKeyDown}
                 placeholder={
                   isInternalNoteMode
-                    ? "Digite sua nota interna (não será enviado ao cliente)..."
+                    ? "Digite sua nota interna... Use @ para mencionar"
                     : canReply 
                       ? "Digite / para respostas rápidas..." 
                       : blockInfo.message

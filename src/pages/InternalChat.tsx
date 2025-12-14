@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { X, MessageSquare, Users, Send, Circle, Mic, Paperclip, Image, Video, FileText, Loader2, Plus, MoreVertical, UsersRound } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
@@ -28,6 +29,10 @@ import { AudioFilePreview } from '@/components/inbox/AudioFilePreview';
 import { CreateGroupModal } from '@/components/internal-chat/CreateGroupModal';
 import { GroupInfoModal } from '@/components/internal-chat/GroupInfoModal';
 import { AddGroupMembersModal } from '@/components/internal-chat/AddGroupMembersModal';
+
+// Import mentions
+import { MentionPicker, MentionText } from '@/components/mentions';
+import { useMentions, parseMentionsFromText, createMentionNotifications } from '@/hooks/useMentions';
 
 export default function InternalChat() {
   const navigate = useNavigate();
@@ -64,6 +69,17 @@ export default function InternalChat() {
   const [isGroupInfoOpen, setIsGroupInfoOpen] = useState(false);
   const [isAddMembersOpen, setIsAddMembersOpen] = useState(false);
 
+  // Mentions
+  const {
+    showMentionPicker,
+    mentionFilterText,
+    handleInputChange: handleMentionInputChange,
+    handleMentionSelect,
+    closeMentionPicker,
+    resetMentions,
+  } = useMentions();
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+
   const isAdminOrOwner = userRole?.role === 'owner' || userRole?.role === 'admin';
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
@@ -90,20 +106,60 @@ export default function InternalChat() {
   const handleSendMessage = async () => {
     if (!messageInput.trim() || isSending) return;
 
+    const messageContent = messageInput.trim();
     setIsSending(true);
-    const success = await sendMessage(messageInput.trim());
+    
+    // Parse mentions from text
+    const mentionedUserIds = parseMentionsFromText(messageContent, teamMembers.map(m => ({
+      id: m.id,
+      fullName: m.fullName
+    })));
+    
+    const success = await sendMessage(messageContent, 'text', undefined, undefined, mentionedUserIds);
     setIsSending(false);
     
     if (success) {
       setMessageInput('');
+      resetMentions();
+      
+      // Create mention notifications
+      if (mentionedUserIds.length > 0 && selectedRoom && profile?.id) {
+        // Get the last message ID (we'll need to update this in the hook)
+        // For now, we'll handle this in the sendMessage function
+      }
     }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    // Don't submit if mention picker is open
+    if (showMentionPicker && (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Enter')) {
+      return; // Let MentionPicker handle these keys
+    }
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSendMessage();
     }
+  };
+
+  const handleMessageInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const newValue = e.target.value;
+    const cursorPosition = e.target.selectionStart || 0;
+    setMessageInput(newValue);
+    handleMentionInputChange(newValue, cursorPosition);
+  };
+
+  const handleSelectMention = (member: { id: string; fullName: string; avatarUrl: string | null; role: string }) => {
+    const cursorPosition = inputRef.current?.selectionStart || messageInput.length;
+    const { newValue, newCursorPosition } = handleMentionSelect(member, messageInput, cursorPosition);
+    setMessageInput(newValue);
+    
+    // Set cursor position after state update
+    setTimeout(() => {
+      if (inputRef.current) {
+        inputRef.current.focus();
+        inputRef.current.setSelectionRange(newCursorPosition, newCursorPosition);
+      }
+    }, 0);
   };
 
   const handleSelectTeamMember = async (memberId: string) => {
@@ -400,7 +456,7 @@ export default function InternalChat() {
 
       case 'text':
       default:
-        return <p className="text-sm break-words whitespace-pre-wrap">{msg.content}</p>;
+        return <MentionText text={msg.content || ''} className="text-sm" />;
     }
   };
 
@@ -803,14 +859,26 @@ export default function InternalChat() {
                       className="hidden"
                     />
 
-                    <Input
-                      value={messageInput}
-                      onChange={(e) => setMessageInput(e.target.value)}
-                      onKeyDown={handleKeyDown}
-                      placeholder="Digite sua mensagem..."
-                      className="flex-1 internal-chat-input"
-                      disabled={isSending}
-                    />
+                    <div className="flex-1 relative">
+                      {/* Mention Picker */}
+                      <MentionPicker
+                        isOpen={showMentionPicker}
+                        onSelect={handleSelectMention}
+                        onClose={closeMentionPicker}
+                        filterText={mentionFilterText}
+                      />
+                      
+                      <Textarea
+                        ref={inputRef}
+                        value={messageInput}
+                        onChange={handleMessageInputChange}
+                        onKeyDown={handleKeyDown}
+                        placeholder="Digite sua mensagem... Use @ para mencionar"
+                        className="min-h-[44px] max-h-24 resize-none internal-chat-input"
+                        rows={1}
+                        disabled={isSending}
+                      />
+                    </div>
 
                     {/* Mic button (when no text) */}
                     {!messageInput.trim() && (
