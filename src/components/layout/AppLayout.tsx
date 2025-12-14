@@ -2,6 +2,7 @@ import { Outlet } from 'react-router-dom';
 import { AppSidebar } from './AppSidebar';
 import { AppHeader } from './AppHeader';
 import PermissionRequestListener from '@/components/developer/PermissionRequestListener';
+import { useSessionMonitor } from '@/hooks/useSessionMonitor';
 
 interface AppLayoutProps {
   showHeader?: boolean;
@@ -9,6 +10,9 @@ interface AppLayoutProps {
 }
 
 export function AppLayout({ showHeader = true, headerTitle }: AppLayoutProps) {
+  // Monitor session expiration and auto-redirect to login
+  useSessionMonitor();
+
   return (
     <div className="flex h-screen w-full bg-background overflow-hidden">
       <AppSidebar />
