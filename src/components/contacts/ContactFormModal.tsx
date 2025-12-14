@@ -246,8 +246,9 @@ export function ContactFormModal({
   // Check if connection migration is active (user intends to migrate connection)
   const isConnectionMigrationActive = connectionMigrationEnabled;
   
-  // Check if department or CRM changes are active (user is modifying these sections)
-  const isDepartmentOrCrmActive = departmentMigrationEnabled || kanbanChanged;
+  // Check if department or CRM changes are active (blocking connection migration)
+  // crmEnabled = true means user wants to KEEP in current CRM, so block connection migration
+  const isDepartmentOrCrmActive = departmentMigrationEnabled || crmEnabled;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
