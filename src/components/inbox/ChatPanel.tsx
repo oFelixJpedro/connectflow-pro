@@ -61,7 +61,7 @@ import { toast } from '@/hooks/use-toast';
 
 // Import mentions
 import { MentionPicker, MentionText } from '@/components/mentions';
-import { useMentions, parseMentionsFromText, createMentionNotifications } from '@/hooks/useMentions';
+import { useMentions, parseMentionsFromText } from '@/hooks/useMentions';
 
 interface ChatPanelProps {
   conversation: Conversation | null;

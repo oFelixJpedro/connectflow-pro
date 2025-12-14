@@ -1,6 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
-import { supabase } from '@/integrations/supabase/client';
-import { useAuth } from '@/contexts/AuthContext';
+import { useState, useCallback } from 'react';
 
 interface TeamMember {
   id: string;
@@ -29,7 +27,6 @@ interface UseMentionsResult {
 }
 
 export function useMentions(): UseMentionsResult {
-  const { profile } = useAuth();
   const [showMentionPicker, setShowMentionPicker] = useState(false);
   const [mentionFilterText, setMentionFilterText] = useState('');
   const [mentionStartIndex, setMentionStartIndex] = useState(-1);
@@ -133,8 +130,8 @@ export function useMentions(): UseMentionsResult {
 
 // Helper to parse mentions from text and return array of user IDs
 export function parseMentionsFromText(text: string, teamMembers: { id: string; fullName: string }[]): string[] {
-  // Match @Name where Name is capitalized words (matching the display pattern)
-  const mentionRegex = /@([A-ZÀ-ÖØ-Þ][a-zà-öø-ÿ]+(?:\s+[A-ZÀ-ÖØ-Þ][a-zà-öø-ÿ]+){0,3})/g;
+  // Match @Name - any text after @ until space
+  const mentionRegex = /@(\S+(?:\s+\S+)?)/g;
   const mentionedIds: string[] = [];
   let match;
 
@@ -149,126 +146,4 @@ export function parseMentionsFromText(text: string, teamMembers: { id: string; f
   }
 
   return mentionedIds;
-}
-
-// Create mention notifications
-export async function createMentionNotifications(
-  mentionedUserIds: string[],
-  mentionerUserId: string,
-  sourceType: 'internal_note' | 'internal_chat',
-  messageId: string,
-  conversationId?: string,
-  roomId?: string,
-  companyId?: string
-): Promise<void> {
-  if (mentionedUserIds.length === 0) return;
-
-  try {
-    // For internal notes, check if each user has access to the conversation
-    const notifications = await Promise.all(
-      mentionedUserIds.map(async (userId) => {
-        let hasAccess = true;
-
-        if (sourceType === 'internal_note' && conversationId && companyId) {
-          // Check if user can access this conversation
-          hasAccess = await checkUserConversationAccess(userId, conversationId, companyId);
-        }
-
-        return {
-          mentioned_user_id: userId,
-          mentioner_user_id: mentionerUserId,
-          source_type: sourceType,
-          message_id: messageId,
-          conversation_id: conversationId || null,
-          room_id: roomId || null,
-          has_access: hasAccess,
-          is_read: false,
-        };
-      })
-    );
-
-    const { error } = await supabase
-      .from('mention_notifications')
-      .insert(notifications);
-
-    if (error) {
-      console.error('Error creating mention notifications:', error);
-    }
-  } catch (error) {
-    console.error('Error in createMentionNotifications:', error);
-  }
-}
-
-// Check if a user has access to a conversation
-async function checkUserConversationAccess(
-  userId: string,
-  conversationId: string,
-  companyId: string
-): Promise<boolean> {
-  try {
-    // Get conversation details
-    const { data: conversation, error: convError } = await supabase
-      .from('conversations')
-      .select('whatsapp_connection_id, department_id, assigned_user_id')
-      .eq('id', conversationId)
-      .single();
-
-    if (convError || !conversation) return false;
-
-    // Get user's role
-    const { data: roleData } = await supabase
-      .from('user_roles')
-      .select('role')
-      .eq('user_id', userId)
-      .single();
-
-    const userRole = roleData?.role;
-
-    // Owner/admin always have access
-    if (userRole === 'owner' || userRole === 'admin') {
-      return true;
-    }
-
-    // Check connection access
-    const { data: connectionAccess } = await supabase
-      .from('connection_users')
-      .select('access_level, department_access_mode')
-      .eq('user_id', userId)
-      .eq('connection_id', conversation.whatsapp_connection_id)
-      .single();
-
-    if (!connectionAccess) {
-      return false; // No access to this connection
-    }
-
-    // Check if 'assigned_only' and not assigned to this user
-    if (connectionAccess.access_level === 'assigned_only') {
-      if (conversation.assigned_user_id !== userId) {
-        return false;
-      }
-    }
-
-    // Check department access
-    if (connectionAccess.department_access_mode === 'none') {
-      return false;
-    }
-
-    if (connectionAccess.department_access_mode === 'specific' && conversation.department_id) {
-      const { data: deptAccess } = await supabase
-        .from('department_users')
-        .select('id')
-        .eq('user_id', userId)
-        .eq('department_id', conversation.department_id)
-        .single();
-
-      if (!deptAccess) {
-        return false;
-      }
-    }
-
-    return true;
-  } catch (error) {
-    console.error('Error checking conversation access:', error);
-    return false;
-  }
 }
