@@ -399,7 +399,13 @@ export function ContactFormModal({
   );
   
 
-  const canSave = !loading;
+  // Require department selection when migrating connection and target has departments
+  const needsDepartmentSelection = isConnectionMigrationActive && 
+    targetConnectionId && 
+    targetConnectionDepartments.length > 0 && 
+    !targetConnectionDepartmentId;
+
+  const canSave = !loading && !needsDepartmentSelection;
 
   return (
     <>
