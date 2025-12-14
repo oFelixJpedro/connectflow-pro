@@ -197,7 +197,8 @@ export function CreateGroupModal({ isOpen, onClose, onGroupCreated }: CreateGrou
           </DialogTitle>
         </DialogHeader>
 
-        <div className="flex-1 space-y-4 overflow-hidden">
+        <ScrollArea className="flex-1 max-h-[calc(90vh-180px)] pr-4">
+          <div className="space-y-4">
           {/* Group Name */}
           <div className="space-y-2">
             <Label htmlFor="groupName">Nome do Grupo *</Label>
@@ -307,7 +308,8 @@ export function CreateGroupModal({ isOpen, onClose, onGroupCreated }: CreateGrou
               </p>
             </div>
           )}
-        </div>
+          </div>
+        </ScrollArea>
 
         <DialogFooter className="mt-4">
           <Button variant="outline" onClick={onClose} disabled={isCreating}>
