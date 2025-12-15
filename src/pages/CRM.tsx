@@ -430,25 +430,22 @@ export default function CRM() {
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden bg-background">
       {/* Header */}
-      <div className="flex items-center justify-between gap-4 p-4 border-b">
-        <div className="flex items-center gap-4 flex-wrap">
-          <h1 className="text-xl font-semibold">CRM</h1>
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 md:gap-4 p-3 md:p-4 border-b">
+        <div className="flex flex-wrap items-center gap-2 md:gap-4">
+          <h1 className="text-lg md:text-xl font-semibold">CRM</h1>
           
           {/* Connection Selector */}
           <Select value={selectedConnectionId || ''} onValueChange={handleConnectionChange}>
-            <SelectTrigger className="w-[220px]">
-              <div className="flex items-center gap-2">
-                <Smartphone className="w-4 h-4 text-green-500" />
-                <SelectValue placeholder="Selecionar conexão" />
-              </div>
+            <SelectTrigger className="w-[180px] md:w-[220px]">
+              <SelectValue placeholder="Selecionar conexão" />
             </SelectTrigger>
             <SelectContent className="bg-popover">
               {connections.map(conn => (
                 <SelectItem key={conn.id} value={conn.id}>
                   <div className="flex items-center gap-2">
                     <Smartphone className="w-4 h-4 text-green-500" />
-                    <span>{conn.name}</span>
-                    <span className="text-xs text-muted-foreground">
+                    <span className="truncate">{conn.name}</span>
+                    <span className="text-xs text-muted-foreground hidden md:inline">
                       ({conn.phone_number})
                     </span>
                   </div>
@@ -463,7 +460,7 @@ export default function CRM() {
               value={selectedDepartmentId || 'all'} 
               onValueChange={(v) => setSelectedDepartmentId(v === 'all' ? null : v)}
             >
-              <SelectTrigger className="w-[200px]">
+              <SelectTrigger className="w-[160px] md:w-[200px]">
                 <div className="flex items-center gap-2">
                   <Building2 className="w-4 h-4 text-muted-foreground" />
                   <SelectValue placeholder="Departamento" />
@@ -484,7 +481,7 @@ export default function CRM() {
           )}
 
           {/* Contact count */}
-          <span className="text-sm text-muted-foreground">
+          <span className="text-xs md:text-sm text-muted-foreground">
             {getContactCountMessage()}
           </span>
         </div>
@@ -492,11 +489,13 @@ export default function CRM() {
         {/* Action Buttons */}
         <div className="flex items-center gap-2">
           <Button 
+            size="sm"
             onClick={() => setAddCardOpen(true)}
             disabled={!selectedConnectionId}
+            className="text-xs md:text-sm"
           >
-            <Plus className="w-4 h-4 mr-2" />
-            Adicionar Card
+            <Plus className="w-4 h-4 mr-1 md:mr-2" />
+            <span className="hidden sm:inline">Adicionar</span> Card
           </Button>
           <Button 
             variant="outline"

@@ -167,10 +167,7 @@ export function DashboardFilters({ filter, onFilterChange, isAdmin }: DashboardF
       {/* Primary Filter Type */}
       <Select value={filter.type} onValueChange={(v) => handleTypeChange(v as FilterType)}>
         <SelectTrigger className="w-[180px]">
-          <div className="flex items-center gap-2">
-            {getFilterIcon(filter.type)}
-            <SelectValue placeholder="Selecionar filtro" />
-          </div>
+          <SelectValue placeholder="Selecionar filtro" />
         </SelectTrigger>
         <SelectContent>
           <SelectItem value="general">

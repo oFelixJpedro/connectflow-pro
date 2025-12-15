@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { MessageCircle, Eye, EyeOff, Loader2, Mail, AlertCircle } from 'lucide-react';
+import { MessageCircle, Eye, EyeOff, Loader2, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
@@ -35,14 +35,11 @@ const registerSchema = z.object({
 export default function Auth() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { user, signIn, resetPassword, loading: authLoading } = useAuth();
+  const { user, signIn, loading: authLoading } = useAuth();
   
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [forgotPasswordOpen, setForgotPasswordOpen] = useState(false);
-  const [forgotPasswordEmail, setForgotPasswordEmail] = useState('');
-  const [forgotPasswordLoading, setForgotPasswordLoading] = useState(false);
   
   // Login form state
   const [loginEmail, setLoginEmail] = useState('');
@@ -165,37 +162,6 @@ export default function Auth() {
     }
   };
 
-  const handleForgotPassword = async (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    if (!forgotPasswordEmail) {
-      toast.error('Digite seu email');
-      return;
-    }
-
-    setForgotPasswordLoading(true);
-    
-    try {
-      const { error } = await resetPassword(forgotPasswordEmail);
-      
-      if (error) {
-        toast.error('Erro ao enviar email de recuperação');
-        return;
-      }
-
-      toast.success('Email enviado!', {
-        description: 'Verifique sua caixa de entrada para redefinir sua senha.',
-      });
-      setForgotPasswordOpen(false);
-      setForgotPasswordEmail('');
-      
-    } catch {
-      toast.error('Erro ao enviar email de recuperação');
-    } finally {
-      setForgotPasswordLoading(false);
-    }
-  };
-
   if (authLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-background">
@@ -207,17 +173,17 @@ export default function Auth() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-info/5 flex flex-col">
       {/* Header */}
-      <header className="py-6 px-8">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-primary rounded-xl flex items-center justify-center">
-            <MessageCircle className="w-6 h-6 text-primary-foreground" />
+      <header className="py-4 md:py-6 px-4 md:px-8">
+        <div className="flex items-center gap-2 md:gap-3">
+          <div className="w-8 h-8 md:w-10 md:h-10 bg-primary rounded-xl flex items-center justify-center">
+            <MessageCircle className="w-5 h-5 md:w-6 md:h-6 text-primary-foreground" />
           </div>
-          <span className="text-xl font-bold text-foreground">Multiatendimento</span>
+          <span className="text-lg md:text-xl font-bold text-foreground">Multiatendimento</span>
         </div>
       </header>
 
       {/* Main Content */}
-      <main className="flex-1 flex items-center justify-center px-4 py-12">
+      <main className="flex-1 flex items-center justify-center px-4 py-6 md:py-12">
         <div className="w-full max-w-md">
           <Card className="border-0 shadow-xl bg-card/80 backdrop-blur-sm">
             <CardHeader className="text-center pb-2">
@@ -285,53 +251,6 @@ export default function Auth() {
                           )}
                         </Button>
                       </div>
-                    </div>
-                    <div className="flex items-center justify-end">
-                      <Dialog open={forgotPasswordOpen} onOpenChange={setForgotPasswordOpen}>
-                        <DialogTrigger asChild>
-                          <Button variant="link" className="px-0 text-sm">
-                            Esqueceu a senha?
-                          </Button>
-                        </DialogTrigger>
-                        <DialogContent>
-                          <DialogHeader>
-                            <DialogTitle>Recuperar senha</DialogTitle>
-                            <DialogDescription>
-                              Digite seu email e enviaremos um link para redefinir sua senha.
-                            </DialogDescription>
-                          </DialogHeader>
-                          <form onSubmit={handleForgotPassword} className="space-y-4">
-                            <div className="space-y-2">
-                              <Label htmlFor="forgot-email">E-mail</Label>
-                              <Input
-                                id="forgot-email"
-                                type="email"
-                                placeholder="seu@email.com"
-                                value={forgotPasswordEmail}
-                                onChange={(e) => setForgotPasswordEmail(e.target.value)}
-                                required
-                              />
-                            </div>
-                            <Button 
-                              type="submit" 
-                              className="w-full"
-                              disabled={forgotPasswordLoading}
-                            >
-                              {forgotPasswordLoading ? (
-                                <>
-                                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                                  Enviando...
-                                </>
-                              ) : (
-                                <>
-                                  <Mail className="w-4 h-4 mr-2" />
-                                  Enviar email de recuperação
-                                </>
-                              )}
-                            </Button>
-                          </form>
-                        </DialogContent>
-                      </Dialog>
                     </div>
                     <Button 
                       type="submit" 

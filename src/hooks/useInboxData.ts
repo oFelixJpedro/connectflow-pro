@@ -66,7 +66,13 @@ function transformConversation(db: any): Conversation {
   };
 }
 
-function transformMessage(db: any, reactions?: MessageReaction[]): Message {
+function transformMessage(db: any, reactions?: MessageReaction[], teamMembers?: { id: string; fullName: string }[]): Message {
+  // Convert mention user IDs to names for display
+  const mentionIds = Array.isArray(db.mentions) ? db.mentions : [];
+  const mentionNames = teamMembers 
+    ? mentionIds.map((id: string) => teamMembers.find(m => m.id === id)?.fullName).filter(Boolean) as string[]
+    : [];
+
   return {
     id: db.id,
     conversationId: db.conversation_id,
@@ -99,6 +105,8 @@ function transformMessage(db: any, reactions?: MessageReaction[]): Message {
     deletedBy: db.deleted_by || undefined,
     deletedByName: db.deleted_by_name || undefined,
     originalContent: db.original_content || undefined,
+    mentions: mentionIds,
+    mentionNames: mentionNames,
     createdAt: db.created_at,
     updatedAt: db.updated_at,
   };
@@ -367,7 +375,6 @@ export function useInboxData() {
             sender_type,
             media_url,
             is_deleted,
-            is_edited,
             created_at
           )
         `)
@@ -742,7 +749,8 @@ export function useInboxData() {
     messageType: 'text' | 'image' | 'video' | 'audio' | 'document' = 'text',
     mediaUrl?: string,
     mediaMimeType?: string,
-    metadata?: Record<string, unknown>
+    metadata?: Record<string, unknown>,
+    mentions?: string[]
   ): Promise<boolean> => {
     if (!selectedConversation || !user?.id) {
       console.error('[useInboxData] Sem conversa selecionada ou usuário');
@@ -773,6 +781,7 @@ export function useInboxData() {
           is_internal_note: true,
           media_url: mediaUrl || null,
           media_mime_type: mediaMimeType || null,
+          mentions: mentions || [],
         }])
         .select()
         .single();
@@ -788,6 +797,7 @@ export function useInboxData() {
       }
 
       console.log('[useInboxData] Nota interna salva:', newMessage.id);
+
 
       // Adicionar mensagem ao estado local imediatamente
       const transformedMessage: Message = transformMessage(newMessage);
@@ -810,7 +820,7 @@ export function useInboxData() {
     } finally {
       setIsSendingMessage(false);
     }
-  }, [selectedConversation, user?.id]);
+  }, [selectedConversation, user?.id, profile?.company_id]);
 
   // ============================================================
   // 5. SELECIONAR CONVERSA
@@ -940,7 +950,7 @@ export function useInboxData() {
               console.log('[Realtime] Buscando mensagem citada:', newMessage.quotedMessageId);
               const { data: quotedData } = await supabase
                 .from('messages')
-                .select('id, content, message_type, sender_type, media_url, is_deleted, is_edited, created_at')
+                .select('id, content, message_type, sender_type, media_url, is_deleted, created_at')
                 .eq('id', newMessage.quotedMessageId)
                 .maybeSingle();
               

@@ -131,7 +131,7 @@ export function ConversationList({
   };
 
   return (
-    <div className="w-80 border-r border-border bg-card flex flex-col h-full">
+    <div className="w-full md:w-80 lg:w-80 border-r border-border bg-card flex flex-col h-full">
       {/* Header with connection selector */}
       <div className="p-4 border-b border-border space-y-3">
         {/* Connection Selector */}

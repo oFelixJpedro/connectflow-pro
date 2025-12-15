@@ -59,11 +59,15 @@ import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
 
+// Import mentions
+import { MentionPicker, MentionText } from '@/components/mentions';
+import { useMentions, parseMentionsFromText } from '@/hooks/useMentions';
+
 interface ChatPanelProps {
   conversation: Conversation | null;
   messages: Message[];
   onSendMessage: (content: string, quotedMessageId?: string) => void | Promise<void>;
-  onSendInternalNote?: (content: string, messageType?: 'text' | 'image' | 'video' | 'audio' | 'document', mediaUrl?: string, mediaMimeType?: string, metadata?: Record<string, unknown>) => Promise<boolean>;
+  onSendInternalNote?: (content: string, messageType?: 'text' | 'image' | 'video' | 'audio' | 'document', mediaUrl?: string, mediaMimeType?: string, metadata?: Record<string, unknown>, mentions?: string[]) => Promise<boolean>;
   onResendMessage?: (messageId: string) => void;
   onAssign: () => void;
   onClose: () => void;
@@ -139,11 +143,39 @@ export function ChatPanel({
   } | null>(null);
   const [messageToDelete, setMessageToDelete] = useState<Message | null>(null);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [teamMembers, setTeamMembers] = useState<{ id: string; fullName: string }[]>([]);
+  
+  // Mentions for internal notes
+  const {
+    showMentionPicker,
+    mentionFilterText,
+    handleInputChange: handleMentionInputChange,
+    handleMentionSelect,
+    closeMentionPicker,
+    resetMentions,
+  } = useMentions();
+  
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messageRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
+  
+  // Load team members for mentions
+  useEffect(() => {
+    const loadTeamMembers = async () => {
+      if (!profile?.company_id) return;
+      const { data } = await supabase
+        .from('profiles')
+        .select('id, full_name')
+        .eq('company_id', profile.company_id)
+        .eq('active', true);
+      if (data) {
+        setTeamMembers(data.map(p => ({ id: p.id, fullName: p.full_name })));
+      }
+    };
+    loadTeamMembers();
+  }, [profile?.company_id]);
 
   const currentUserId = user?.id || '';
   const currentUserRole = userRole?.role || 'agent';
@@ -605,18 +637,23 @@ export function ChatPanel({
     if ((!hasText && !hasAttachment) || isSendingMessage) return;
     
     if (isInternalNoteMode && onSendInternalNote) {
+      // Parse mentions from text for internal notes
+      const mentionedUserIds = parseMentionsFromText(inputValue.trim(), teamMembers);
+      
       // Send as internal note (with optional attachment)
       const success = await onSendInternalNote(
         inputValue.trim(),
         noteAttachment?.messageType || 'text',
         noteAttachment?.mediaUrl,
         noteAttachment?.mediaMimeType,
-        noteAttachment?.metadata
+        noteAttachment?.metadata,
+        mentionedUserIds
       );
       if (success) {
         setInputValue('');
         setReplyingTo(null);
         setNoteAttachment(null);
+        resetMentions();
         // Keep internal note mode active for convenience
         // Restore focus after state update
         setTimeout(() => textareaRef.current?.focus(), 0);
@@ -683,6 +720,19 @@ export function ChatPanel({
   }, [onRegisterScrollToMessage]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    // Don't handle Enter/Escape if mention picker is open
+    if (showMentionPicker && isInternalNoteMode) {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        closeMentionPicker();
+        return;
+      }
+      // Let MentionPicker handle Arrow keys and Enter
+      if (e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'Enter') {
+        return;
+      }
+    }
+    
     // Don't handle Enter/Escape if quick replies picker is open
     if (showQuickReplies) {
       if (e.key === 'Escape') {
@@ -701,9 +751,10 @@ export function ChatPanel({
     }
   };
 
-  // Handle input change to detect "/" trigger
+  // Handle input change to detect "/" trigger and "@" mentions
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const value = e.target.value;
+    const cursorPosition = e.target.selectionStart || 0;
     setInputValue(value);
     
     // Show quick replies when typing "/" at the start or alone
@@ -711,6 +762,11 @@ export function ChatPanel({
       setShowQuickReplies(true);
     } else {
       setShowQuickReplies(false);
+    }
+    
+    // Handle mention detection for internal notes
+    if (isInternalNoteMode) {
+      handleMentionInputChange(value, cursorPosition);
     }
   };
 
@@ -1260,10 +1316,25 @@ export function ChatPanel({
                                 )}
                               </div>
                             ) : (
-                              /* Text message content */
-                              <p className="text-sm whitespace-pre-wrap break-words">
-                                {message.content}
-                              </p>
+                              /* Text message content - use MentionText for internal notes */
+                              message.isInternalNote ? (
+                                <MentionText 
+                                  text={message.content || ''} 
+                                  className="text-sm" 
+                                  variant="internal-note"
+                                  knownMentionNames={
+                                    message.mentions && message.mentions.length > 0
+                                      ? message.mentions
+                                          .map(id => teamMembers.find(m => m.id === id)?.fullName)
+                                          .filter(Boolean) as string[]
+                                      : undefined
+                                  }
+                                />
+                              ) : (
+                                <p className="text-sm whitespace-pre-wrap break-words">
+                                  {message.content}
+                                </p>
+                              )
                             )}
                             
                             {/* Message footer - only for non-audio/image/video or audio/image/video without URL */}
@@ -1515,6 +1586,25 @@ export function ChatPanel({
                 </TooltipContent>
               </Tooltip>
 
+              {/* Mention Picker for internal notes */}
+              {isInternalNoteMode && (
+                <MentionPicker
+                  isOpen={showMentionPicker}
+                  onSelect={(member) => {
+                    const cursorPosition = textareaRef.current?.selectionStart || inputValue.length;
+                    const { newValue, newCursorPosition } = handleMentionSelect(member, inputValue, cursorPosition);
+                    setInputValue(newValue);
+                    setTimeout(() => {
+                      if (textareaRef.current) {
+                        textareaRef.current.focus();
+                        textareaRef.current.setSelectionRange(newCursorPosition, newCursorPosition);
+                      }
+                    }, 0);
+                  }}
+                  onClose={closeMentionPicker}
+                  filterText={mentionFilterText}
+                />
+              )}
 
               <Textarea
                 ref={textareaRef}
@@ -1523,7 +1613,7 @@ export function ChatPanel({
                 onKeyDown={handleKeyDown}
                 placeholder={
                   isInternalNoteMode
-                    ? "Digite sua nota interna (não será enviado ao cliente)..."
+                    ? "Digite sua nota interna... Use @ para mencionar"
                     : canReply 
                       ? "Digite / para respostas rápidas..." 
                       : blockInfo.message

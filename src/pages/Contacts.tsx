@@ -262,7 +262,7 @@ export default function Contacts() {
   }
 
   return (
-    <div className="h-full overflow-auto p-6 space-y-6">
+    <div className="h-full overflow-auto p-3 md:p-6 space-y-4 md:space-y-6">
       {/* Hidden file input for import */}
       <input
         ref={fileInputRef}
@@ -273,35 +273,36 @@ export default function Contacts() {
       />
 
       {/* Page Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Contatos</h1>
-          <p className="text-muted-foreground">
+          <h1 className="text-xl md:text-2xl font-bold text-foreground">Contatos</h1>
+          <p className="text-sm text-muted-foreground">
             Gerencie seus contatos e histórico de conversas
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={handleImportClick} disabled={importing}>
+        <div className="flex items-center gap-2 flex-wrap">
+          <Button variant="outline" size="sm" onClick={handleImportClick} disabled={importing} className="text-xs md:text-sm">
             {importing ? (
-              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              <Loader2 className="w-4 h-4 mr-1 md:mr-2 animate-spin" />
             ) : (
-              <Upload className="w-4 h-4 mr-2" />
+              <Upload className="w-4 h-4 mr-1 md:mr-2" />
             )}
-            Importar
+            <span className="hidden sm:inline">Importar</span>
           </Button>
-          <Button variant="outline" onClick={handleExport}>
-            <Download className="w-4 h-4 mr-2" />
-            Exportar {selectedContacts.length > 0 && `(${selectedContacts.length})`}
+          <Button variant="outline" size="sm" onClick={handleExport} className="text-xs md:text-sm">
+            <Download className="w-4 h-4 mr-1 md:mr-2" />
+            <span className="hidden sm:inline">Exportar</span> {selectedContacts.length > 0 && `(${selectedContacts.length})`}
           </Button>
-          <Button onClick={handleCreateContact}>
-            <Plus className="w-4 h-4 mr-2" />
-            Novo Contato
+          <Button size="sm" onClick={handleCreateContact} className="text-xs md:text-sm">
+            <Plus className="w-4 h-4 mr-1 md:mr-2" />
+            <span className="hidden sm:inline">Novo Contato</span>
+            <span className="sm:hidden">Novo</span>
           </Button>
         </div>
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
         <Card>
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">

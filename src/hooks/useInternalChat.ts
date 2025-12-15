@@ -2,10 +2,13 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 
-interface ChatRoom {
+export interface ChatRoom {
   id: string;
-  type: 'general' | 'direct';
+  type: 'general' | 'direct' | 'group';
   name: string | null;
+  description?: string | null;
+  createdBy?: string | null;
+  createdAt?: string;
   participants?: {
     id: string;
     fullName: string;
@@ -33,6 +36,8 @@ export interface ChatMessage {
   createdAt: string;
   isOwnMessage: boolean;
   metadata?: Record<string, unknown>;
+  mentions?: string[]; // Array of user IDs who were mentioned
+  mentionNames?: string[]; // Array of user names for display highlighting
 }
 
 interface TeamMember {
@@ -97,6 +102,55 @@ export function useInternalChat() {
     setIsLoading(true);
 
     try {
+      // Ensure the user is added to the general room
+      // Check if general room exists
+      const { data: existingGeneralRoom } = await supabase
+        .from('internal_chat_rooms')
+        .select('id')
+        .eq('company_id', company.id)
+        .eq('type', 'general')
+        .maybeSingle();
+
+      let generalRoomId = existingGeneralRoom?.id;
+
+      if (!generalRoomId) {
+        // Create general room
+        const { data: newRoom, error } = await supabase
+          .from('internal_chat_rooms')
+          .insert({
+            company_id: company.id,
+            type: 'general',
+            name: 'Chat Geral',
+          })
+          .select('id')
+          .single();
+
+        if (!error) {
+          generalRoomId = newRoom?.id;
+        }
+      }
+
+      if (generalRoomId) {
+        // Check if current user is a participant of general room
+        const { data: isParticipant } = await supabase
+          .from('internal_chat_participants')
+          .select('id')
+          .eq('room_id', generalRoomId)
+          .eq('user_id', profile.id)
+          .maybeSingle();
+
+        if (!isParticipant) {
+          // Add current user as participant
+          await supabase
+            .from('internal_chat_participants')
+            .insert({
+              room_id: generalRoomId,
+              user_id: profile.id,
+            });
+          console.log('[InternalChat] Usuário adicionado ao Chat Geral');
+        }
+      }
+
       // Get last seen timestamps from database
       const { data: readStates } = await supabase
         .from('internal_chat_read_states')
@@ -108,21 +162,29 @@ export function useInternalChat() {
         lastSeenByRoom[rs.room_id] = rs.last_seen_at;
       });
 
-      // Get all rooms for the company
+      // Get all rooms for the company (including groups the user is participant of)
       const { data: roomsData, error: roomsError } = await supabase
         .from('internal_chat_rooms')
-        .select('id, type, name, created_at')
+        .select('id, type, name, description, created_by, created_at')
         .eq('company_id', company.id)
         .order('created_at', { ascending: true });
 
       if (roomsError) throw roomsError;
 
-      // Get participants for direct rooms
+      // Get participants for all rooms
       const roomIds = (roomsData || []).map(r => r.id);
-      const { data: participantsData } = await supabase
+      console.log('[InternalChat] Buscando participantes para rooms:', roomIds.length);
+      
+      const { data: participantsData, error: participantsError } = await supabase
         .from('internal_chat_participants')
-        .select('room_id, user_id, profiles:user_id(id, full_name, avatar_url, status)')
+        .select('room_id, user_id, profiles:user_id(id, full_name, avatar_url)')
         .in('room_id', roomIds);
+
+      if (participantsError) {
+        console.error('[InternalChat] Erro ao carregar participantes:', participantsError);
+      }
+
+      console.log('[InternalChat] Participantes encontrados:', participantsData?.length);
 
       // Get last message and unread count for each room
       const roomsWithDetails: ChatRoom[] = await Promise.all(
@@ -133,7 +195,7 @@ export function useInternalChat() {
             .eq('room_id', room.id)
             .order('created_at', { ascending: false })
             .limit(1)
-            .single();
+            .maybeSingle();
 
           // Calculate unread count
           const lastSeen = lastSeenByRoom[room.id];
@@ -157,26 +219,33 @@ export function useInternalChat() {
             unreadCount = count || 0;
           }
 
-          const participants = (participantsData || [])
+          // Get participants for this room
+          const roomParticipants = (participantsData || [])
             .filter(p => p.room_id === room.id)
             .map(p => ({
-              id: (p.profiles as any)?.id,
+              id: (p.profiles as any)?.id || p.user_id,
               fullName: (p.profiles as any)?.full_name || 'Usuário',
-              avatarUrl: (p.profiles as any)?.avatar_url,
+              avatarUrl: (p.profiles as any)?.avatar_url || null,
             }));
+
+          console.log(`[InternalChat] Room ${room.id} (${room.type}): ${roomParticipants.length} participantes, profile.id=${profile.id}`);
 
           // For direct chats, get the other participant's name
           let displayName = room.name;
           if (room.type === 'direct') {
-            const otherParticipant = participants.find(p => p.id !== profile.id);
-            displayName = otherParticipant?.fullName || 'Chat Direto';
+            const otherParticipant = roomParticipants.find(p => p.id !== profile.id);
+            console.log('[InternalChat] Outro participante:', otherParticipant);
+            displayName = otherParticipant?.fullName || null;
           }
 
           return {
             id: room.id,
-            type: room.type as 'general' | 'direct',
+            type: room.type as 'general' | 'direct' | 'group',
             name: displayName,
-            participants,
+            description: room.description,
+            createdBy: room.created_by,
+            createdAt: room.created_at,
+            participants: roomParticipants,
             lastMessage: lastMsg ? {
               content: lastMsg.content || '[Mídia]',
               createdAt: lastMsg.created_at,
@@ -188,6 +257,7 @@ export function useInternalChat() {
         })
       );
 
+      console.log('[InternalChat] Rooms carregados:', roomsWithDetails.map(r => ({ id: r.id, type: r.type, name: r.name, participants: r.participants?.length })));
       setRooms(roomsWithDetails);
     } catch (error) {
       console.error('[InternalChat] Erro ao carregar salas:', error);
@@ -195,39 +265,6 @@ export function useInternalChat() {
       setIsLoading(false);
     }
   }, [company?.id, profile?.id]);
-
-  // Create or get general room
-  const ensureGeneralRoom = useCallback(async () => {
-    if (!company?.id) return null;
-
-    // Check if general room exists
-    const { data: existingRoom } = await supabase
-      .from('internal_chat_rooms')
-      .select('id')
-      .eq('company_id', company.id)
-      .eq('type', 'general')
-      .single();
-
-    if (existingRoom) return existingRoom.id;
-
-    // Create general room
-    const { data: newRoom, error } = await supabase
-      .from('internal_chat_rooms')
-      .insert({
-        company_id: company.id,
-        type: 'general',
-        name: 'Chat Geral',
-      })
-      .select('id')
-      .single();
-
-    if (error) {
-      console.error('[InternalChat] Erro ao criar sala geral:', error);
-      return null;
-    }
-
-    return newRoom?.id;
-  }, [company?.id]);
 
   // Create or get direct room with another user
   const getOrCreateDirectRoom = useCallback(async (otherUserId: string) => {
@@ -379,6 +416,7 @@ export function useInternalChat() {
           message_type,
           media_url,
           media_mime_type,
+          mentions,
           created_at,
           profiles:sender_id(full_name, avatar_url)
         `)
@@ -387,19 +425,33 @@ export function useInternalChat() {
 
       if (error) throw error;
 
-      const transformedMessages: ChatMessage[] = (data || []).map(msg => ({
-        id: msg.id,
-        roomId: msg.room_id,
-        senderId: msg.sender_id,
-        senderName: (msg.profiles as any)?.full_name || 'Usuário',
-        senderAvatar: (msg.profiles as any)?.avatar_url,
-        content: msg.content,
-        messageType: msg.message_type,
-        mediaUrl: msg.media_url,
-        mediaMimeType: msg.media_mime_type,
-        createdAt: msg.created_at,
-        isOwnMessage: msg.sender_id === profile.id,
-      }));
+      // Include current user in members list for mention name resolution
+      const allMembers = profile?.full_name 
+        ? [...teamMembers, { id: profile.id, fullName: profile.full_name, avatarUrl: profile.avatar_url || null, email: profile.email }]
+        : teamMembers;
+
+      const transformedMessages: ChatMessage[] = (data || []).map(msg => {
+        const mentionIds = Array.isArray(msg.mentions) ? msg.mentions as string[] : [];
+        const mentionNames = mentionIds
+          .map(id => allMembers.find(m => m.id === id)?.fullName)
+          .filter(Boolean) as string[];
+
+        return {
+          id: msg.id,
+          roomId: msg.room_id,
+          senderId: msg.sender_id,
+          senderName: (msg.profiles as any)?.full_name || 'Usuário',
+          senderAvatar: (msg.profiles as any)?.avatar_url,
+          content: msg.content,
+          messageType: msg.message_type,
+          mediaUrl: msg.media_url,
+          mediaMimeType: msg.media_mime_type,
+          createdAt: msg.created_at,
+          isOwnMessage: msg.sender_id === profile.id,
+          mentions: mentionIds,
+          mentionNames: mentionNames,
+        };
+      });
 
       setMessages(transformedMessages);
     } catch (error) {
@@ -407,14 +459,20 @@ export function useInternalChat() {
     } finally {
       setIsLoadingMessages(false);
     }
-  }, [profile?.id]);
+  }, [profile?.id, teamMembers]);
 
   // Send text message
-  const sendMessage = useCallback(async (content: string, messageType: string = 'text', mediaUrl?: string, mediaMimeType?: string) => {
+  const sendMessage = useCallback(async (
+    content: string, 
+    messageType: string = 'text', 
+    mediaUrl?: string, 
+    mediaMimeType?: string,
+    mentions?: string[]
+  ) => {
     if (!selectedRoom || !profile?.id) return false;
 
     try {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('internal_chat_messages')
         .insert({
           room_id: selectedRoom.id,
@@ -423,15 +481,20 @@ export function useInternalChat() {
           message_type: messageType,
           media_url: mediaUrl,
           media_mime_type: mediaMimeType,
-        });
+          mentions: mentions || [],
+        })
+        .select('id')
+        .single();
 
       if (error) throw error;
+      
+      
       return true;
     } catch (error) {
       console.error('[InternalChat] Erro ao enviar mensagem:', error);
       return false;
     }
-  }, [selectedRoom, profile?.id]);
+  }, [selectedRoom, profile?.id, company?.id]);
 
   // Send media message (upload file first, then save message)
   const sendMediaMessage = useCallback(async (
@@ -512,11 +575,9 @@ export function useInternalChat() {
   useEffect(() => {
     if (company?.id && profile?.id) {
       console.log('[InternalChat] Carregando salas - profile disponível:', profile.id);
-      ensureGeneralRoom().then(() => {
-        loadRooms();
-      });
+      loadRooms();
     }
-  }, [company?.id, profile?.id, ensureGeneralRoom, loadRooms]);
+  }, [company?.id, profile?.id, loadRooms]);
 
   // Mark room as read when room changes
   const markRoomAsRead = useCallback(async (roomId: string) => {
@@ -586,6 +647,7 @@ export function useInternalChat() {
               message_type,
               media_url,
               media_mime_type,
+              mentions,
               created_at,
               profiles:sender_id(full_name, avatar_url)
             `)
@@ -593,6 +655,16 @@ export function useInternalChat() {
             .single();
 
           if (newMsg) {
+            // Include current user in members list for mention name resolution
+            const allMembers = profile?.full_name 
+              ? [...teamMembers, { id: profile.id, fullName: profile.full_name, avatarUrl: profile.avatar_url || null, email: profile.email }]
+              : teamMembers;
+
+            const mentionIds = Array.isArray(newMsg.mentions) ? newMsg.mentions as string[] : [];
+            const mentionNames = mentionIds
+              .map(id => allMembers.find(m => m.id === id)?.fullName)
+              .filter(Boolean) as string[];
+
             const transformedMsg: ChatMessage = {
               id: newMsg.id,
               roomId: newMsg.room_id,
@@ -605,6 +677,8 @@ export function useInternalChat() {
               mediaMimeType: newMsg.media_mime_type,
               createdAt: newMsg.created_at,
               isOwnMessage: newMsg.sender_id === profile?.id,
+              mentions: mentionIds,
+              mentionNames: mentionNames,
             };
 
             setMessages(prev => [...prev, transformedMsg]);
@@ -616,7 +690,7 @@ export function useInternalChat() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [selectedRoom?.id, profile?.id]);
+  }, [selectedRoom?.id, profile, teamMembers]);
 
   return {
     rooms,

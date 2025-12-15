@@ -445,21 +445,22 @@ export default function DeveloperDashboard() {
     <div className="min-h-screen bg-background">
       {/* Header */}
       <header className="border-b bg-card">
-        <div className="container mx-auto px-4 py-3 flex items-center justify-between">
+        <div className="container mx-auto px-3 md:px-4 py-2 md:py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <div className="flex items-center gap-2">
-            <Terminal className="h-5 w-5 text-primary" />
-            <span className="font-semibold text-sm">Developer Panel</span>
+            <Terminal className="h-4 w-4 md:h-5 md:w-5 text-primary" />
+            <span className="font-semibold text-xs md:text-sm">Developer Panel</span>
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2 md:gap-4 flex-wrap">
             <Button 
               variant="outline" 
               size="sm" 
               onClick={handleCleanupBannedUsers}
               disabled={actionLoading}
-              title="Deletar usuários banidos (teste@teste.com, etc)"
+              title="Deletar usuários banidos"
+              className="text-xs"
             >
-              <Trash2 className={`h-4 w-4 mr-1 ${actionLoading ? 'animate-pulse' : ''}`} />
-              Limpar Banidos
+              <Trash2 className={`h-3 w-3 md:h-4 md:w-4 mr-1 ${actionLoading ? 'animate-pulse' : ''}`} />
+              <span className="hidden sm:inline">Limpar Banidos</span>
             </Button>
             <Button 
               variant="outline" 
@@ -467,13 +468,14 @@ export default function DeveloperDashboard() {
               onClick={handleCleanupDeletedCompanies}
               disabled={actionLoading}
               title="Deletar permanentemente empresas inativas"
+              className="text-xs"
             >
-              <RefreshCw className={`h-4 w-4 mr-1 ${actionLoading ? 'animate-spin' : ''}`} />
-              Limpar Empresas
+              <RefreshCw className={`h-3 w-3 md:h-4 md:w-4 mr-1 ${actionLoading ? 'animate-spin' : ''}`} />
+              <span className="hidden sm:inline">Limpar Empresas</span>
             </Button>
-            <span className="text-xs text-muted-foreground">{developer?.email}</span>
-            <Button variant="ghost" size="sm" onClick={handleLogout}>
-              <LogOut className="h-4 w-4 mr-1" />
+            <span className="text-xs text-muted-foreground hidden md:inline">{developer?.email}</span>
+            <Button variant="ghost" size="sm" onClick={handleLogout} className="text-xs">
+              <LogOut className="h-3 w-3 md:h-4 md:w-4 mr-1" />
               Sair
             </Button>
           </div>
@@ -481,19 +483,19 @@ export default function DeveloperDashboard() {
       </header>
 
       {/* Main Content */}
-      <main className="container mx-auto px-4 py-6">
-        <div className="flex items-center justify-between mb-6">
+      <main className="container mx-auto px-3 md:px-4 py-4 md:py-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 md:mb-6">
           <div>
-            <h1 className="text-2xl font-bold flex items-center gap-2">
-              <Building2 className="h-6 w-6" />
+            <h1 className="text-xl md:text-2xl font-bold flex items-center gap-2">
+              <Building2 className="h-5 w-5 md:h-6 md:w-6" />
               Empresas
             </h1>
-            <p className="text-sm text-muted-foreground mt-1">
+            <p className="text-xs md:text-sm text-muted-foreground mt-1">
               Gerencie todas as empresas e usuários do sistema
             </p>
           </div>
-          <Button onClick={() => setShowCreateCompany(true)}>
-            <Plus className="h-4 w-4 mr-2" />
+          <Button size="sm" onClick={() => setShowCreateCompany(true)} className="text-xs md:text-sm">
+            <Plus className="h-4 w-4 mr-1 md:mr-2" />
             Nova Empresa
           </Button>
         </div>

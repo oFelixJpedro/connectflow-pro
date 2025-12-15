@@ -413,18 +413,19 @@ export default function Departments() {
   }
 
   return (
-    <div className="h-full overflow-auto p-6 space-y-6">
+    <div className="h-full overflow-auto p-4 md:p-6 space-y-4 md:space-y-6">
       {/* Page Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Departamentos</h1>
-          <p className="text-muted-foreground">
+          <h1 className="text-xl md:text-2xl font-bold text-foreground">Departamentos</h1>
+          <p className="text-sm md:text-base text-muted-foreground">
             Organize suas conversas em departamentos por conexão WhatsApp
           </p>
         </div>
         <Button 
           onClick={openCreateDialog}
           disabled={!selectedConnectionId}
+          className="w-full sm:w-auto"
         >
           <Plus className="w-4 h-4 mr-2" />
           Novo Departamento

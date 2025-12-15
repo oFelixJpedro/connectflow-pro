@@ -619,6 +619,7 @@ export type Database = {
           id: string
           media_mime_type: string | null
           media_url: string | null
+          mentions: Json | null
           message_type: string
           room_id: string
           sender_id: string
@@ -630,6 +631,7 @@ export type Database = {
           id?: string
           media_mime_type?: string | null
           media_url?: string | null
+          mentions?: Json | null
           message_type?: string
           room_id: string
           sender_id: string
@@ -641,6 +643,7 @@ export type Database = {
           id?: string
           media_mime_type?: string | null
           media_url?: string | null
+          mentions?: Json | null
           message_type?: string
           room_id?: string
           sender_id?: string
@@ -745,6 +748,8 @@ export type Database = {
         Row: {
           company_id: string
           created_at: string | null
+          created_by: string | null
+          description: string | null
           id: string
           name: string | null
           type: string
@@ -753,6 +758,8 @@ export type Database = {
         Insert: {
           company_id: string
           created_at?: string | null
+          created_by?: string | null
+          description?: string | null
           id?: string
           name?: string | null
           type: string
@@ -761,6 +768,8 @@ export type Database = {
         Update: {
           company_id?: string
           created_at?: string | null
+          created_by?: string | null
+          description?: string | null
           id?: string
           name?: string | null
           type?: string
@@ -772,6 +781,13 @@ export type Database = {
             columns: ["company_id"]
             isOneToOne: false
             referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "internal_chat_rooms_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
         ]
@@ -1110,6 +1126,74 @@ export type Database = {
           },
         ]
       }
+      mention_notifications: {
+        Row: {
+          conversation_id: string | null
+          created_at: string
+          has_access: boolean
+          id: string
+          is_read: boolean
+          mentioned_user_id: string
+          mentioner_user_id: string
+          message_id: string
+          room_id: string | null
+          source_type: string
+        }
+        Insert: {
+          conversation_id?: string | null
+          created_at?: string
+          has_access?: boolean
+          id?: string
+          is_read?: boolean
+          mentioned_user_id: string
+          mentioner_user_id: string
+          message_id: string
+          room_id?: string | null
+          source_type: string
+        }
+        Update: {
+          conversation_id?: string | null
+          created_at?: string
+          has_access?: boolean
+          id?: string
+          is_read?: boolean
+          mentioned_user_id?: string
+          mentioner_user_id?: string
+          message_id?: string
+          room_id?: string | null
+          source_type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "mention_notifications_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "mention_notifications_mentioned_user_id_fkey"
+            columns: ["mentioned_user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "mention_notifications_mentioner_user_id_fkey"
+            columns: ["mentioner_user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "mention_notifications_room_id_fkey"
+            columns: ["room_id"]
+            isOneToOne: false
+            referencedRelation: "internal_chat_rooms"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       message_reactions: {
         Row: {
           company_id: string
@@ -1180,6 +1264,7 @@ export type Database = {
           is_internal_note: boolean | null
           media_mime_type: string | null
           media_url: string | null
+          mentions: Json | null
           message_type: Database["public"]["Enums"]["message_type"]
           metadata: Json | null
           original_content: string | null
@@ -1209,6 +1294,7 @@ export type Database = {
           is_internal_note?: boolean | null
           media_mime_type?: string | null
           media_url?: string | null
+          mentions?: Json | null
           message_type: Database["public"]["Enums"]["message_type"]
           metadata?: Json | null
           original_content?: string | null
@@ -1238,6 +1324,7 @@ export type Database = {
           is_internal_note?: boolean | null
           media_mime_type?: string | null
           media_url?: string | null
+          mentions?: Json | null
           message_type?: Database["public"]["Enums"]["message_type"]
           metadata?: Json | null
           original_content?: string | null
