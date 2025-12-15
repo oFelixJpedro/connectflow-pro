@@ -903,94 +903,83 @@ export function useInboxData() {
   }, [selectedConnectionId]);
 
   // ============================================================
-  // REALTIME: MENSAGENS
+  // REALTIME OTIMIZADO: MENSAGENS (filtrado por conversa selecionada)
   // ============================================================
   useEffect(() => {
-    if (!profile?.company_id) return;
+    const currentConversation = selectedConversationRef.current;
+    if (!profile?.company_id || !currentConversation) return;
 
-    console.log('[Realtime] Iniciando subscription de mensagens');
+    console.log('[Realtime] Subscription de mensagens para conversa:', currentConversation.id);
 
+    // OTIMIZAÇÃO: Filtrar por conversation_id específico ao invés de todas as mensagens
     const channel: RealtimeChannel = supabase
-      .channel('inbox-messages')
+      .channel(`inbox-messages-${currentConversation.id}`)
       .on(
         'postgres_changes',
         {
           event: 'INSERT',
           schema: 'public',
           table: 'messages',
+          filter: `conversation_id=eq.${currentConversation.id}`,
         },
         async (payload) => {
-          console.log('[Realtime] Nova mensagem recebida:', payload);
+          console.log('[Realtime] Nova mensagem:', payload.new);
           
           let newMessage = transformMessage(payload.new);
-          const currentConversation = selectedConversationRef.current;
           
-          // Se a mensagem é da conversa atualmente selecionada, adicionar ao array
-          if (currentConversation && newMessage.conversationId === currentConversation.id) {
-            // Se é uma mensagem recebida (do contato) e a conversa está aberta, marcar como lida imediatamente
-            if (newMessage.direction === 'inbound' && newMessage.senderType === 'contact') {
-              console.log('[Realtime] Mensagem recebida em conversa aberta - marcando como lida');
-              // Atualizar unread_count para 0 no banco (a conversa já está sendo visualizada)
-              supabase
-                .from('conversations')
-                .update({ unread_count: 0 })
-                .eq('id', currentConversation.id)
-                .then(({ error }) => {
-                  if (error) {
-                    console.error('[Realtime] Erro ao marcar como lida:', error);
-                  } else {
-                    // Disparar evento para atualizar notificações globais
-                    window.dispatchEvent(new CustomEvent('whatsapp-conversation-read'));
-                  }
-                });
-            }
-            
-            // Se tem quoted_message_id, buscar os dados da mensagem citada
-            if (newMessage.quotedMessageId) {
-              console.log('[Realtime] Buscando mensagem citada:', newMessage.quotedMessageId);
-              const { data: quotedData } = await supabase
-                .from('messages')
-                .select('id, content, message_type, sender_type, media_url, is_deleted, created_at')
-                .eq('id', newMessage.quotedMessageId)
-                .maybeSingle();
-              
-              if (quotedData) {
-                newMessage = {
-                  ...newMessage,
-                  quotedMessage: {
-                    id: quotedData.id,
-                    content: quotedData.content || undefined,
-                    messageType: quotedData.message_type as Message['messageType'],
-                    senderType: quotedData.sender_type as Message['senderType'],
-                    mediaUrl: quotedData.media_url || undefined,
-                    isDeleted: quotedData.is_deleted || false,
-                    createdAt: quotedData.created_at,
-                  },
-                };
-                console.log('[Realtime] Mensagem citada encontrada');
-              }
-            }
-            
-            setMessages((prev) => {
-              const existingIndex = prev.findIndex((m) => m.id === newMessage.id);
-              
-              if (existingIndex !== -1) {
-                // Mensagem já existe - atualizar com quotedMessage se não tinha
-                const existing = prev[existingIndex];
-                if (!existing.quotedMessage && newMessage.quotedMessage) {
-                  console.log('[Realtime] Atualizando mensagem existente com quotedMessage');
-                  const updated = [...prev];
-                  updated[existingIndex] = { ...existing, quotedMessage: newMessage.quotedMessage };
-                  return updated;
+          // Se é uma mensagem recebida, marcar como lida imediatamente
+          if (newMessage.direction === 'inbound' && newMessage.senderType === 'contact') {
+            supabase
+              .from('conversations')
+              .update({ unread_count: 0 })
+              .eq('id', currentConversation.id)
+              .then(({ error }) => {
+                if (!error) {
+                  window.dispatchEvent(new CustomEvent('whatsapp-conversation-read'));
                 }
-                console.log('[Realtime] Mensagem já existe, ignorando');
-                return prev;
-              }
-              
-              console.log('[Realtime] Adicionando mensagem ao chat');
-              return [...prev, newMessage];
-            });
+              });
           }
+          
+          // Buscar quoted message se necessário
+          if (newMessage.quotedMessageId) {
+            const { data: quotedData } = await supabase
+              .from('messages')
+              .select('id, content, message_type, sender_type, media_url, is_deleted, created_at')
+              .eq('id', newMessage.quotedMessageId)
+              .maybeSingle();
+            
+            if (quotedData) {
+              newMessage = {
+                ...newMessage,
+                quotedMessage: {
+                  id: quotedData.id,
+                  content: quotedData.content || undefined,
+                  messageType: quotedData.message_type as Message['messageType'],
+                  senderType: quotedData.sender_type as Message['senderType'],
+                  mediaUrl: quotedData.media_url || undefined,
+                  isDeleted: quotedData.is_deleted || false,
+                  createdAt: quotedData.created_at,
+                },
+              };
+            }
+          }
+          
+          setMessages((prev) => {
+            const existingIndex = prev.findIndex((m) => m.id === newMessage.id);
+            
+            if (existingIndex !== -1) {
+              // Atualizar com quotedMessage se não tinha
+              const existing = prev[existingIndex];
+              if (!existing.quotedMessage && newMessage.quotedMessage) {
+                const updated = [...prev];
+                updated[existingIndex] = { ...existing, quotedMessage: newMessage.quotedMessage };
+                return updated;
+              }
+              return prev;
+            }
+            
+            return [...prev, newMessage];
+          });
         }
       )
       .on(
@@ -999,79 +988,60 @@ export function useInboxData() {
           event: 'UPDATE',
           schema: 'public',
           table: 'messages',
+          filter: `conversation_id=eq.${currentConversation.id}`,
         },
         (payload) => {
-          console.log('[Realtime] Mensagem atualizada:', payload);
-          
           const updatedMessage = transformMessage(payload.new);
-          const currentConversation = selectedConversationRef.current;
           
-          // Se a mensagem é da conversa atualmente selecionada, atualizar no array
-          if (currentConversation && updatedMessage.conversationId === currentConversation.id) {
-            setMessages((prev) => 
-              prev.map((m) => {
-                if (m.id !== updatedMessage.id) return m;
-                // Preservar quotedMessage existente ao atualizar status
-                return {
-                  ...updatedMessage,
-                  quotedMessage: updatedMessage.quotedMessage || m.quotedMessage,
-                };
-              })
-            );
-          }
+          setMessages((prev) => 
+            prev.map((m) => {
+              if (m.id !== updatedMessage.id) return m;
+              return {
+                ...updatedMessage,
+                quotedMessage: updatedMessage.quotedMessage || m.quotedMessage,
+              };
+            })
+          );
         }
       )
-      .subscribe((status) => {
-        console.log('[Realtime] Status subscription mensagens:', status);
-      });
+      .subscribe();
 
     return () => {
-      console.log('[Realtime] Cancelando subscription de mensagens');
       supabase.removeChannel(channel);
     };
-  }, [profile?.company_id]);
+  }, [profile?.company_id, selectedConversation?.id]);
 
   // ============================================================
-  // REALTIME: REAÇÕES
+  // REALTIME OTIMIZADO: REAÇÕES (filtrado por company_id)
   // ============================================================
   useEffect(() => {
     if (!profile?.company_id) return;
 
-    console.log('[Realtime] Iniciando subscription de reações');
-
     const channel: RealtimeChannel = supabase
-      .channel('inbox-reactions')
+      .channel(`inbox-reactions-${profile.company_id}`)
       .on(
         'postgres_changes',
         {
           event: '*',
           schema: 'public',
           table: 'message_reactions',
+          filter: `company_id=eq.${profile.company_id}`,
         },
         async (payload) => {
-          console.log('[Realtime] Evento de reação:', payload.eventType, payload);
-          
-          const currentConversation = selectedConversationRef.current;
-          if (!currentConversation) return;
-          
-          // Get the message_id from the payload
           const messageId = (payload.new as any)?.message_id || (payload.old as any)?.message_id;
           if (!messageId) return;
           
-          // Check if this message belongs to the current conversation
+          // Verificar se a mensagem está na conversa atual
           const messageInConversation = messages.find(m => m.id === messageId);
           if (!messageInConversation) return;
           
-          console.log('[Realtime] Reação para mensagem na conversa atual');
-          
-          // Reload reactions for this message
+          // Recarregar reações para esta mensagem
           const { data: reactionsData } = await supabase
             .from('message_reactions')
             .select('*')
             .eq('message_id', messageId);
           
           if (reactionsData && reactionsData.length > 0) {
-            // Get reactor names
             const userReactorIds = [...new Set(reactionsData.filter(r => r.reactor_type === 'user').map(r => r.reactor_id))];
             const contactReactorIds = [...new Set(reactionsData.filter(r => r.reactor_type === 'contact').map(r => r.reactor_id))];
             
@@ -1113,7 +1083,6 @@ export function useInboxData() {
                 : m
             ));
           } else {
-            // No reactions - clear them
             setMessages(prev => prev.map(m => 
               m.id === messageId 
                 ? { ...m, reactions: [] }
@@ -1122,12 +1091,9 @@ export function useInboxData() {
           }
         }
       )
-      .subscribe((status) => {
-        console.log('[Realtime] Status subscription reações:', status);
-      });
+      .subscribe();
 
     return () => {
-      console.log('[Realtime] Cancelando subscription de reações');
       supabase.removeChannel(channel);
     };
   }, [profile?.company_id, messages]);
