@@ -46,6 +46,7 @@ import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
+import { Navigate } from 'react-router-dom';
 import type { Tables } from '@/integrations/supabase/types';
 
 type WhatsAppConnection = Tables<'whatsapp_connections'>;
@@ -53,7 +54,13 @@ type WhatsAppConnection = Tables<'whatsapp_connections'>;
 type DialogStep = 'name' | 'qr' | 'connecting';
 
 export default function Connections() {
-  const { company, session } = useAuth();
+  const { company, session, userRole } = useAuth();
+
+  // Check permissions - redirect non-admins
+  const isAdminOrOwner = userRole?.role === 'owner' || userRole?.role === 'admin';
+  if (!isAdminOrOwner) {
+    return <Navigate to="/dashboard" replace />;
+  }
   const [connections, setConnections] = useState<WhatsAppConnection[]>([]);
   const [loading, setLoading] = useState(true);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
