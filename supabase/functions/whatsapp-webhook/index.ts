@@ -9,6 +9,11 @@ const corsHeaders = {
 // Get base URL from secrets (REQUIRED - no fallback)
 const UAZAPI_BASE_URL = Deno.env.get('UAZAPI_BASE_URL')?.trim() || ''
 
+// Declare EdgeRuntime for TypeScript
+declare const EdgeRuntime: {
+  waitUntil: (promise: Promise<any>) => void;
+};
+
 // Helper to extract phone number from WhatsApp JID
 function extractPhoneNumber(jid: string): string {
   if (!jid) return ''
@@ -75,9 +80,7 @@ function getDisplayMimeType(fileName: string | undefined, originalMimeType: stri
 }
 
 // Helper to get Storage-safe mimetype
-// Supabase Storage rejects some text/* mimetypes, so we use application/octet-stream for those
 function getStorageSafeMimeType(displayMimeType: string): string {
-  // Mimetypes that Supabase Storage rejects
   const unsupportedMimeTypes = [
     'text/markdown',
     'text/html',
@@ -85,10 +88,9 @@ function getStorageSafeMimeType(displayMimeType: string): string {
     'text/javascript',
     'text/xml',
     'text/csv',
-    'text/plain', // Sometimes rejected
+    'text/plain',
   ]
   
-  // If mimetype is not supported by Storage, use octet-stream
   if (unsupportedMimeTypes.includes(displayMimeType) || displayMimeType.startsWith('text/')) {
     return 'application/octet-stream'
   }
@@ -98,7 +100,6 @@ function getStorageSafeMimeType(displayMimeType: string): string {
 
 // Helper to get file extension from mime type
 function getExtensionFromMimeType(mimeType: string, fileName?: string): string {
-  // Prioritize file extension if available
   if (fileName) {
     const ext = fileName.split('.').pop()?.toLowerCase()
     if (ext && ext.length <= 10) {
@@ -107,7 +108,6 @@ function getExtensionFromMimeType(mimeType: string, fileName?: string): string {
   }
   
   const mimeMap: Record<string, string> = {
-    // Audio
     'audio/ogg': 'ogg',
     'audio/mpeg': 'mp3',
     'audio/mp3': 'mp3',
@@ -116,20 +116,17 @@ function getExtensionFromMimeType(mimeType: string, fileName?: string): string {
     'audio/aac': 'aac',
     'audio/wav': 'wav',
     'audio/webm': 'webm',
-    // Images
     'image/jpeg': 'jpg',
     'image/jpg': 'jpg',
     'image/png': 'png',
     'image/gif': 'gif',
     'image/webp': 'webp',
     'image/svg+xml': 'svg',
-    // Videos
     'video/mp4': 'mp4',
     'video/3gpp': '3gp',
     'video/quicktime': 'mov',
     'video/webm': 'webm',
     'video/x-msvideo': 'avi',
-    // Documents
     'application/pdf': 'pdf',
     'application/msword': 'doc',
     'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
@@ -145,13 +142,10 @@ function getExtensionFromMimeType(mimeType: string, fileName?: string): string {
     'application/x-7z-compressed': '7z',
   }
   
-  // Handle mime types with codecs (e.g., "audio/ogg; codecs=opus")
   const baseMime = mimeType.split(';')[0].trim().toLowerCase()
   
-  // Return from map or derive from mime type
   if (mimeMap[baseMime]) return mimeMap[baseMime]
   
-  // Try to extract from mime type (e.g., "image/jpeg" -> "jpeg")
   const typePart = baseMime.split('/')[1]
   if (typePart) {
     if (typePart === 'jpeg') return 'jpg'
@@ -171,26 +165,20 @@ async function downloadMediaFromUazapi(
   
   console.log(`🔽 Downloading media via POST ${downloadUrl}`)
   console.log(`   - messageId: ${messageId}`)
-  console.log(`🔑 Token para download: ${instanceToken ? `${instanceToken.substring(0, 10)}... (${instanceToken.length} chars)` : 'VAZIO'}`)
   
   if (!instanceToken) {
-    console.log(`❌ Erro: Token vazio! Não é possível fazer download.`)
+    console.log(`❌ Erro: Token vazio!`)
     return null
   }
   
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
-      console.log(`🔄 Tentativa ${attempt}/2...`)
-      
-      const headers = {
-        'Content-Type': 'application/json',
-        'token': instanceToken,
-      }
-      console.log(`📤 Headers: Content-Type=application/json, token=${instanceToken.substring(0, 10)}...`)
-      
       const response = await fetch(downloadUrl, {
         method: 'POST',
-        headers,
+        headers: {
+          'Content-Type': 'application/json',
+          'token': instanceToken,
+        },
         body: JSON.stringify({
           id: messageId,
           return_base64: true,
@@ -198,10 +186,9 @@ async function downloadMediaFromUazapi(
       })
       
       const responseText = await response.text()
-      console.log(`📥 Response status: ${response.status}`)
       
       if (!response.ok) {
-        console.log(`❌ Download failed: ${response.status} - ${responseText.substring(0, 200)}`)
+        console.log(`❌ Download failed: ${response.status}`)
         if (attempt === 2) return null
         await new Promise(r => setTimeout(r, 2000))
         continue
@@ -217,33 +204,28 @@ async function downloadMediaFromUazapi(
         continue
       }
       
-      console.log(`📋 Response keys: ${Object.keys(data).join(', ')}`)
-      
-      // Extract base64 from various possible response structures - UAZAPI uses base64Data
       let base64 = data.base64Data || data.base64 || data.data?.base64 || data.media?.base64
       const mimeType = data.mimetype || data.data?.mimetype || data.media?.mimetype || 'audio/ogg'
       const fileSize = data.fileSize || data.data?.fileSize || data.media?.fileSize || 0
       
       if (!base64) {
-        console.log(`❌ base64Data not found in response. Keys: ${JSON.stringify(Object.keys(data))}`)
+        console.log(`❌ base64Data not found in response`)
         if (attempt === 2) return null
         await new Promise(r => setTimeout(r, 2000))
         continue
       }
       
-      // Remove data URL prefix if present (e.g., "data:audio/ogg;base64,")
       if (base64.includes(',')) {
         base64 = base64.split(',')[1]
       }
       
-      // Convert base64 to Uint8Array
       const binaryString = atob(base64)
       const buffer = new Uint8Array(binaryString.length)
       for (let i = 0; i < binaryString.length; i++) {
         buffer[i] = binaryString.charCodeAt(i)
       }
       
-      console.log(`✅ Downloaded ${buffer.byteLength} bytes, type: ${mimeType}`)
+      console.log(`✅ Downloaded ${buffer.byteLength} bytes`)
       return { buffer, mimeType: mimeType.split(';')[0].trim(), fileSize: fileSize || buffer.byteLength }
       
     } catch (error) {
@@ -256,112 +238,203 @@ async function downloadMediaFromUazapi(
   return null
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// PROCESSAMENTO ASSÍNCRONO DE MÍDIA (Background Task)
+// ═══════════════════════════════════════════════════════════════════════════════
+async function processMediaInBackground(params: {
+  messageId: string;
+  messageDbId: string;
+  mediaType: 'audio' | 'image' | 'video' | 'document' | 'sticker';
+  companyId: string;
+  whatsappConnectionId: string;
+  instanceToken: string;
+  mediaMetadata: any;
+  contentData: any;
+}) {
+  const { messageId, messageDbId, mediaType, companyId, whatsappConnectionId, instanceToken, mediaMetadata, contentData } = params;
+  
+  console.log(`🔄 [BACKGROUND] Iniciando processamento de ${mediaType} para mensagem ${messageDbId}`);
+  
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+  const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+  const supabase = createClient(supabaseUrl, supabaseServiceKey);
+  
+  try {
+    const downloadResult = await downloadMediaFromUazapi(messageId, UAZAPI_BASE_URL, instanceToken);
+    
+    if (!downloadResult) {
+      console.log(`❌ [BACKGROUND] Falha no download de ${mediaType}`);
+      await supabase
+        .from('messages')
+        .update({
+          status: 'failed',
+          error_message: 'Download failed from UAZAPI',
+          metadata: { ...mediaMetadata, error: 'Download failed', processedAt: new Date().toISOString() }
+        })
+        .eq('id', messageDbId);
+      return;
+    }
+    
+    const { buffer, mimeType: downloadedMimeType, fileSize: downloadedSize } = downloadResult;
+    
+    // Determine extension and storage path
+    let extension: string;
+    let actualMimeType: string;
+    
+    if (mediaType === 'sticker') {
+      extension = 'webp';
+      actualMimeType = 'image/webp';
+    } else if (mediaType === 'document') {
+      const fileName = contentData?.fileName || '';
+      const originalMimeType = contentData?.mimetype || 'application/octet-stream';
+      extension = getExtensionFromMimeType(originalMimeType, fileName);
+      actualMimeType = getStorageSafeMimeType(getDisplayMimeType(fileName, originalMimeType));
+    } else {
+      actualMimeType = downloadedMimeType;
+      extension = getExtensionFromMimeType(actualMimeType);
+    }
+    
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const randomId = Math.random().toString(36).substring(2, 8);
+    const fileName = `${mediaType}_${Date.now()}_${randomId}.${extension}`;
+    const storagePath = `${companyId}/${whatsappConnectionId}/${year}-${month}/${fileName}`;
+    
+    console.log(`📤 [BACKGROUND] Uploading ${mediaType} to: ${storagePath}`);
+    
+    const { data: uploadData, error: uploadError } = await supabase.storage
+      .from('whatsapp-media')
+      .upload(storagePath, buffer, {
+        contentType: actualMimeType,
+        cacheControl: '31536000',
+        upsert: false
+      });
+    
+    if (uploadError) {
+      console.log(`❌ [BACKGROUND] Upload error: ${uploadError.message}`);
+      await supabase
+        .from('messages')
+        .update({
+          status: 'failed',
+          error_message: `Upload failed: ${uploadError.message}`,
+          metadata: { ...mediaMetadata, error: 'Upload failed', processedAt: new Date().toISOString() }
+        })
+        .eq('id', messageDbId);
+      return;
+    }
+    
+    const { data: { publicUrl } } = supabase.storage
+      .from('whatsapp-media')
+      .getPublicUrl(uploadData.path);
+    
+    console.log(`✅ [BACKGROUND] Upload complete: ${publicUrl}`);
+    
+    // Update message with media URL
+    const displayMimeType = mediaType === 'document' 
+      ? getDisplayMimeType(contentData?.fileName, contentData?.mimetype || 'application/octet-stream')
+      : actualMimeType;
+    
+    await supabase
+      .from('messages')
+      .update({
+        media_url: publicUrl,
+        media_mime_type: displayMimeType,
+        status: 'delivered',
+        error_message: null,
+        metadata: {
+          ...mediaMetadata,
+          fileName,
+          storagePath,
+          fileSize: downloadedSize,
+          downloadedAt: new Date().toISOString(),
+          processedAsync: true
+        }
+      })
+      .eq('id', messageDbId);
+    
+    console.log(`🎉 [BACKGROUND] ${mediaType} processado com sucesso!`);
+    
+  } catch (error) {
+    console.error(`❌ [BACKGROUND] Erro ao processar ${mediaType}:`, error);
+    
+    const supabase = createClient(
+      Deno.env.get('SUPABASE_URL')!,
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+    );
+    
+    await supabase
+      .from('messages')
+      .update({
+        status: 'failed',
+        error_message: `Processing error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        metadata: { ...mediaMetadata, error: 'Processing failed', processedAt: new Date().toISOString() }
+      })
+      .eq('id', messageDbId);
+  }
+}
+
 serve(async (req) => {
   const timestamp = new Date().toISOString()
   
-  console.log('\n')
-  console.log('╔══════════════════════════════════════════════════════════════════╗')
-  console.log('║              📨 WEBHOOK RECEIVED - WHATSAPP-WEBHOOK              ║')
-  console.log('╚══════════════════════════════════════════════════════════════════╝')
-  console.log(`⏰ Timestamp: ${timestamp}`)
+  console.log(`📨 WEBHOOK RECEIVED - ${timestamp}`)
   
   // Handle CORS preflight
   if (req.method === 'OPTIONS') {
-    console.log('ℹ️ CORS preflight request - returning 200')
     return new Response(null, { headers: corsHeaders })
   }
   
   // Only accept POST
   if (req.method !== 'POST') {
-    console.log(`❌ Method not allowed: ${req.method}`)
     return new Response(
-      JSON.stringify({ 
-        success: false, 
-        error: 'Method not allowed',
-        message: `Expected POST, received ${req.method}`
-      }),
-      { 
-        status: 405, 
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-      }
+      JSON.stringify({ success: false, error: 'Method not allowed' }),
+      { status: 405, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )
   }
   
   try {
     // ═══════════════════════════════════════════════════════════════════
-    // 1️⃣ PARSE REQUEST
+    // 1️⃣ PARSE REQUEST (FAST PATH)
     // ═══════════════════════════════════════════════════════════════════
-    console.log('\n┌─────────────────────────────────────────────────────────────────┐')
-    console.log('│ 1️⃣  PARSING REQUEST                                             │')
-    console.log('└─────────────────────────────────────────────────────────────────┘')
-    
     const rawBody = await req.text()
-    console.log(`📦 Body length: ${rawBody.length} characters`)
     
     let payload: any = null
     try {
       payload = JSON.parse(rawBody)
-      console.log('✅ JSON parsed successfully')
-      
-      // DEBUG COMPLETO - Log do payload inteiro
-      console.log('🔍 [DEBUG COMPLETO] ==========================================')
-      console.log('🔍 [PAYLOAD COMPLETO]:', JSON.stringify(payload, null, 2))
-      console.log('🔍 ==========================================')
-      
     } catch (e) {
-      console.log(`❌ Failed to parse JSON: ${e}`)
       return new Response(
         JSON.stringify({ success: false, error: 'Invalid JSON payload' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
     
-    // Log payload structure for debugging
-    console.log(`🔔 EventType: ${payload.EventType}`)
-    console.log(`📱 instanceName: ${payload.instanceName}`)
+    const eventType = payload.EventType
+    const instanceName = payload.instanceName
     
-    // ═══════════════════════════════════════════════════════════════════
-    // 2️⃣ VALIDATIONS
-    // ═══════════════════════════════════════════════════════════════════
-    console.log('\n┌─────────────────────────────────────────────────────────────────┐')
-    console.log('│ 2️⃣  VALIDATIONS                                                 │')
-    console.log('└─────────────────────────────────────────────────────────────────┘')
+    console.log(`🔔 Event: ${eventType} | Instance: ${instanceName}`)
     
     // ═══════════════════════════════════════════════════════════════════
     // HANDLE messages_update EVENT (for deleted messages)
     // ═══════════════════════════════════════════════════════════════════
-    if (payload.EventType === 'messages_update') {
-      console.log('📝 [MESSAGES_UPDATE] Evento recebido')
-      console.log(`   - type: ${payload.type}`)
-      console.log(`   - state: ${payload.state}`)
-      console.log(`   - event.Type: ${payload.event?.Type}`)
-      
-      // Check for deleted message
+    if (eventType === 'messages_update') {
       const isDeleted = 
         payload.type === 'DeletedMessage' || 
         payload.state === 'Deleted' || 
         payload.event?.Type === 'Deleted'
       
       if (isDeleted) {
-        console.log('🗑️ [MENSAGEM APAGADA DETECTADA]')
+        console.log('🗑️ [MENSAGEM APAGADA]')
         
         const messageIds = payload.event?.MessageIDs || []
         const isFromMe = payload.event?.IsFromMe === true
         const deletedByType = isFromMe ? 'agent' : 'client'
         
-        console.log(`   - MessageIDs: ${JSON.stringify(messageIds)}`)
-        console.log(`   - IsFromMe: ${isFromMe}`)
-        console.log(`   - deleted_by_type: ${deletedByType}`)
-        
-        // Create Supabase client with service role
         const supabaseUrl = Deno.env.get('SUPABASE_URL') || ''
         const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
         const supabase = createClient(supabaseUrl, supabaseServiceKey)
         
         for (const waMessageId of messageIds) {
-          console.log(`   🔄 Processando messageId: ${waMessageId}`)
-          
-          const { data: updatedMessage, error } = await supabase
+          await supabase
             .from('messages')
             .update({
               is_deleted: true,
@@ -369,83 +442,53 @@ serve(async (req) => {
               deleted_by_type: deletedByType
             })
             .eq('whatsapp_message_id', waMessageId)
-            .select()
-            .single()
-          
-          if (error) {
-            console.error(`   ❌ Erro ao marcar mensagem como deletada:`, error)
-          } else if (updatedMessage) {
-            console.log(`   ✅ Mensagem marcada como deletada: ${waMessageId}`)
-            console.log(`      - message_id: ${updatedMessage.id}`)
-            console.log(`      - conversation_id: ${updatedMessage.conversation_id}`)
-          } else {
-            console.log(`   ⚠️ Mensagem não encontrada no banco: ${waMessageId}`)
-          }
         }
         
         return new Response(
-          JSON.stringify({ 
-            success: true, 
-            action: 'message_deleted',
-            processed: messageIds.length 
-          }),
+          JSON.stringify({ success: true, action: 'message_deleted', processed: messageIds.length }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         )
       }
       
-      // Other messages_update types (ReadReceipt, etc) - just log and ignore
-      console.log(`ℹ️ messages_update type "${payload.type}" ignorado (não é deleção)`)
       return new Response(
-        JSON.stringify({ 
-          success: true, 
-          message: `messages_update type "${payload.type}" ignored` 
-        }),
+        JSON.stringify({ success: true, message: `messages_update type "${payload.type}" ignored` }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
     
     // Check if it's a message event
-    if (payload.EventType !== 'messages') {
-      console.log(`ℹ️ Event type "${payload.EventType}" - não é mensagem, ignorando`)
+    if (eventType !== 'messages') {
       return new Response(
-        JSON.stringify({ 
-          success: true, 
-          message: `Event type "${payload.EventType}" ignored (not a message event)` 
-        }),
+        JSON.stringify({ success: true, message: `Event type "${eventType}" ignored` }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
-    console.log('✅ EventType = messages')
     
     // Check if it's a group message
     if (payload.message?.isGroup === true) {
-      console.log('ℹ️ Mensagem de grupo ignorada')
       return new Response(
         JSON.stringify({ success: true, message: 'Group message ignored' }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
-    console.log('✅ Não é mensagem de grupo')
     
-    // Check message type - detect the actual type from payload
+    // ═══════════════════════════════════════════════════════════════════
+    // 2️⃣ DETECT MESSAGE TYPE
+    // ═══════════════════════════════════════════════════════════════════
     const rawMessageType = payload.message?.type
-    const messageType = payload.message?.messageType // AudioMessage, ImageMessage, etc.
-    const mediaType = payload.message?.mediaType // ptt, audio, image, video, etc.
+    const messageType = payload.message?.messageType
+    const mediaType = payload.message?.mediaType
     const contentMimetype = payload.message?.content?.mimetype || ''
     
-    console.log(`📋 Tipo de mensagem:`)
-    console.log(`   - type (raw): ${rawMessageType}`)
-    console.log(`   - messageType: ${messageType}`)
-    console.log(`   - mediaType: ${mediaType}`)
-    console.log(`   - content.mimetype: ${contentMimetype}`)
-    
-    // Detect if it's a media message and identify the subtype
+    // Detect media type
     let isAudioMessage = false
+    let isImageMessage = false
+    let isVideoMessage = false
+    let isDocumentMessage = false
+    let isStickerMessage = false
     let isMediaMessage = false
-    let detectedSubtype = ''
-    let audioContentData: any = null
+    let contentData: any = null
     
-    // Check for AudioMessage (UAZAPI sends messageType = "AudioMessage" for audio)
     const isAudioByMessageType = messageType === 'AudioMessage'
     const isAudioByMediaType = mediaType === 'ptt' || mediaType === 'audio'
     const isAudioByMimetype = typeof contentMimetype === 'string' && contentMimetype.startsWith('audio/')
@@ -453,175 +496,71 @@ serve(async (req) => {
     if (isAudioByMessageType || isAudioByMediaType || isAudioByMimetype) {
       isAudioMessage = true
       isMediaMessage = true
-      detectedSubtype = 'audio'
-      audioContentData = payload.message?.content || {}
-      console.log(`🎵 [ÁUDIO DETECTADO]`)
-      console.log(`   - via messageType: ${isAudioByMessageType}`)
-      console.log(`   - via mediaType: ${isAudioByMediaType}`)
-      console.log(`   - via mimetype: ${isAudioByMimetype}`)
-      console.log(`   - content:`, JSON.stringify(audioContentData, null, 2))
+      contentData = payload.message?.content || {}
     }
-    // Check for ImageMessage
-    let isImageMessage = false
-    let imageContentData: any = null
     
     const isImageByMessageType = messageType === 'ImageMessage'
     const isImageByMediaType = mediaType === 'image'
     const isImageByMimetype = typeof contentMimetype === 'string' && contentMimetype.startsWith('image/')
     
-    if (isImageByMessageType || isImageByMediaType || isImageByMimetype) {
+    if (!isAudioMessage && (isImageByMessageType || isImageByMediaType || isImageByMimetype)) {
       isImageMessage = true
       isMediaMessage = true
-      detectedSubtype = 'image'
-      imageContentData = payload.message?.content || {}
-      console.log(`🖼️ [IMAGEM DETECTADA]`)
-      console.log(`   - via messageType: ${isImageByMessageType}`)
-      console.log(`   - via mediaType: ${isImageByMediaType}`)
-      console.log(`   - via mimetype: ${isImageByMimetype}`)
-      console.log(`   - content:`, JSON.stringify(imageContentData, null, 2))
+      contentData = payload.message?.content || {}
     }
-    // Check for VideoMessage
-    let isVideoMessage = false
-    let videoContentData: any = null
     
     const isVideoByMessageType = messageType === 'VideoMessage'
     const isVideoByMediaType = mediaType === 'video'
     const isVideoByMimetype = typeof contentMimetype === 'string' && contentMimetype.startsWith('video/')
     
-    if (isVideoByMessageType || isVideoByMediaType || isVideoByMimetype) {
+    if (!isAudioMessage && !isImageMessage && (isVideoByMessageType || isVideoByMediaType || isVideoByMimetype)) {
       isVideoMessage = true
       isMediaMessage = true
-      detectedSubtype = 'video'
-      videoContentData = payload.message?.content || {}
-      console.log(`🎬 [VÍDEO DETECTADO]`)
-      console.log(`   - via messageType: ${isVideoByMessageType}`)
-      console.log(`   - via mediaType: ${isVideoByMediaType}`)
-      console.log(`   - via mimetype: ${isVideoByMimetype}`)
-      console.log(`   - content:`, JSON.stringify(videoContentData, null, 2))
+      contentData = payload.message?.content || {}
     }
-    // Check for DocumentMessage
-    let isDocumentMessage = false
-    let documentContentData: any = null
     
     const isDocumentByMessageType = messageType === 'DocumentMessage' || messageType === 'DocumentWithCaptionMessage'
     const isDocumentByType = rawMessageType === 'document'
     const isDocumentByMediaType = mediaType === 'document'
-    
-    // Special check for markdown files that may come as text/plain or octet-stream
     const documentFileName = payload.message?.content?.fileName || ''
-    const documentMimetype = payload.message?.content?.mimetype || ''
     const isMarkdownByExtension = /\.(md|markdown)$/i.test(documentFileName)
-    const isMarkdownByMimetype = documentMimetype.includes('markdown')
-    const isTextPlainWithMarkdownExt = (documentMimetype === 'text/plain' || documentMimetype === 'application/octet-stream') && isMarkdownByExtension
     
-    if (isDocumentByMessageType || isDocumentByType || isDocumentByMediaType || isTextPlainWithMarkdownExt || isMarkdownByMimetype) {
+    if (!isAudioMessage && !isImageMessage && !isVideoMessage && (isDocumentByMessageType || isDocumentByType || isDocumentByMediaType || isMarkdownByExtension)) {
       isDocumentMessage = true
       isMediaMessage = true
-      detectedSubtype = 'document'
-      documentContentData = payload.message?.content || {}
-      console.log(`📄 [DOCUMENTO DETECTADO]`)
-      console.log(`   - via messageType: ${isDocumentByMessageType}`)
-      console.log(`   - via type: ${isDocumentByType}`)
-      console.log(`   - via mediaType: ${isDocumentByMediaType}`)
-      console.log(`   - via markdown extension: ${isMarkdownByExtension}`)
-      console.log(`   - via markdown mimetype: ${isMarkdownByMimetype}`)
-      console.log(`   - fileName: ${documentFileName}`)
-      console.log(`   - mimetype: ${documentMimetype}`)
-      console.log(`   - content:`, JSON.stringify(documentContentData, null, 2))
+      contentData = payload.message?.content || {}
     }
-    // Check for StickerMessage
-    let isStickerMessage = false
-    let stickerContentData: any = null
     
     const isStickerByMessageType = messageType === 'StickerMessage'
     const isStickerByType = rawMessageType === 'sticker'
     
-    if (isStickerByMessageType || isStickerByType) {
+    if (!isAudioMessage && !isImageMessage && !isVideoMessage && !isDocumentMessage && (isStickerByMessageType || isStickerByType)) {
       isStickerMessage = true
       isMediaMessage = true
-      detectedSubtype = 'sticker'
-      stickerContentData = payload.message?.content || {}
-      console.log(`🎨 [STICKER DETECTADO]`)
-      console.log(`   - via messageType: ${isStickerByMessageType}`)
-      console.log(`   - via type: ${isStickerByType}`)
-      console.log(`   - content:`, JSON.stringify(stickerContentData, null, 2))
+      contentData = payload.message?.content || {}
     }
-    // Old detection for backward compatibility: rawMessageType = 'media' with media object
-    else if (rawMessageType === 'media') {
-      // Check if it's ExtendedTextMessage with URL (link with preview) - treat as text
-      if (messageType === 'ExtendedTextMessage' || mediaType === 'url') {
-        detectedSubtype = 'text'
-        isMediaMessage = false // This is text, not media
-        console.log(`✅ Tipo texto com link preview detectado (ExtendedTextMessage/url)`)
-      } else {
-        isMediaMessage = true
-        const media = payload.message?.media || {}
-        const mediaMime = media.mimetype || media.mimeType || ''
-        
-        if (media.audio || (typeof mediaMime === 'string' && mediaMime.startsWith('audio/'))) {
-          isAudioMessage = true
-          detectedSubtype = 'audio (legacy media)'
-          audioContentData = media.audio || media
-          console.log(`🎵 [ÁUDIO via media object]`)
-        } else if (media.image || (typeof mediaMime === 'string' && mediaMime.startsWith('image/'))) {
-          detectedSubtype = 'image'
-        } else if (media.video || (typeof mediaMime === 'string' && mediaMime.startsWith('video/'))) {
-          detectedSubtype = 'video'
-        } else if (media.document || (typeof mediaMime === 'string' && mediaMime.startsWith('application/'))) {
-          detectedSubtype = 'document'
-        } else {
-          detectedSubtype = 'unknown'
-          console.log(`❓ [MÍDIA DESCONHECIDA]`, JSON.stringify(media, null, 2))
-        }
-      }
-    }
-    // Direct audio/ptt types (backward compatibility)
-    else if (rawMessageType === 'audio' || rawMessageType === 'ptt') {
-      isAudioMessage = true
-      isMediaMessage = true
-      detectedSubtype = rawMessageType
-      audioContentData = payload.message?.audio || payload.message?.ptt || payload.message?.content || {}
-      console.log(`🎵 [ÁUDIO tipo direto: ${rawMessageType}]`)
-    }
-    // Text type - includes regular text and ExtendedTextMessage (links with preview)
-    else if (rawMessageType === 'text' || rawMessageType === 'chat') {
-      detectedSubtype = 'text'
-      console.log(`✅ Tipo texto detectado`)
-    }
-    // Check for ReactionMessage - handle separately
-    else if (rawMessageType === 'reaction' || messageType === 'ReactionMessage') {
+    
+    // Handle reactions separately
+    if (rawMessageType === 'reaction' || messageType === 'ReactionMessage') {
       console.log(`😀 [REAÇÃO DETECTADA]`)
-      console.log(`   - type: ${rawMessageType}`)
-      console.log(`   - messageType: ${messageType}`)
       
-      // Extract reaction data
       const reactionEmoji = payload.message?.text || payload.message?.content?.text || ''
       const originalMessageId = payload.message?.content?.key?.ID || payload.message?.reaction || ''
       const fromMe = payload.message?.fromMe || payload.message?.content?.key?.fromMe || false
       const reactionMessageId = payload.message?.messageid
       const reactionSender = payload.message?.sender
       
-      console.log(`   - emoji: "${reactionEmoji}"`)
-      console.log(`   - originalMessageId: ${originalMessageId}`)
-      console.log(`   - fromMe: ${fromMe}`)
-      console.log(`   - reactionMessageId: ${reactionMessageId}`)
-      console.log(`   - sender: ${reactionSender}`)
-      
-      // Initialize Supabase for reaction processing
       const supabaseUrl = Deno.env.get('SUPABASE_URL')!
       const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
       const supabase = createClient(supabaseUrl, supabaseServiceKey)
       
-      // Find connection by instanceName
-      const instanceName = payload.instanceName
-      const { data: connection, error: connError } = await supabase
+      const { data: connection } = await supabase
         .from('whatsapp_connections')
         .select('id, company_id')
         .eq('session_id', instanceName)
         .maybeSingle()
       
-      if (connError || !connection) {
-        console.log(`❌ Conexão não encontrada para instanceName: ${instanceName}`)
+      if (!connection) {
         return new Response(
           JSON.stringify({ success: true, message: 'Connection not found for reaction' }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -629,10 +568,7 @@ serve(async (req) => {
       }
       
       const companyId = connection.company_id
-      console.log(`✅ Conexão encontrada - company_id: ${companyId}`)
       
-      // Find the original message by whatsapp_message_id
-      // Try multiple formats: short ID, full ID with phone prefix, and with :
       const phoneOwner = payload.message?.owner || payload.chat?.owner || payload.owner || ''
       const possibleIds = [
         originalMessageId,
@@ -640,43 +576,32 @@ serve(async (req) => {
         originalMessageId.includes(':') ? originalMessageId.split(':')[1] : null
       ].filter(Boolean)
       
-      console.log(`🔍 Buscando mensagem com IDs: ${JSON.stringify(possibleIds)}`)
-      
       let originalMessage = null
       for (const searchId of possibleIds) {
-        const { data: msg, error: msgErr } = await supabase
+        const { data: msg } = await supabase
           .from('messages')
           .select('id, conversation_id')
           .eq('whatsapp_message_id', searchId)
           .maybeSingle()
         
-        if (msg && !msgErr) {
+        if (msg) {
           originalMessage = msg
-          console.log(`✅ Mensagem encontrada com ID: ${searchId}`)
           break
         }
       }
       
       if (!originalMessage) {
-        console.log(`❌ Mensagem original não encontrada: ${originalMessageId}`)
-        console.log(`   IDs tentados: ${JSON.stringify(possibleIds)}`)
         return new Response(
           JSON.stringify({ success: true, message: 'Original message not found for reaction' }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         )
       }
       
-      console.log(`✅ Mensagem original encontrada: ${originalMessage.id}`)
-      
-      // Determine reactor type and ID
       let reactorType: 'contact' | 'user' = 'contact'
       let reactorId: string | null = null
       
       if (fromMe) {
-        // Reaction is from a user (agent/admin) - try to find the user associated with this connection
-        // For now, we'll mark as user type but we may not have the exact user ID
         reactorType = 'user'
-        // Try to find a user in the company
         const { data: companyUser } = await supabase
           .from('profiles')
           .select('id')
@@ -688,7 +613,6 @@ serve(async (req) => {
           reactorId = companyUser.id
         }
       } else {
-        // Reaction is from a contact - find the contact
         const phoneNumber = reactionSender?.split('@')[0] || payload.chat?.wa_chatid?.split('@')[0] || ''
         
         const { data: contact } = await supabase
@@ -704,34 +628,21 @@ serve(async (req) => {
       }
       
       if (!reactorId) {
-        console.log(`⚠️ Não foi possível identificar o reator`)
         return new Response(
           JSON.stringify({ success: true, message: 'Could not identify reactor' }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         )
       }
       
-      console.log(`👤 Reator: ${reactorType} - ${reactorId}`)
-      
-      // Handle reaction: empty emoji means removal
       if (!reactionEmoji || reactionEmoji.trim() === '') {
-        console.log(`🗑️ Removendo reação...`)
-        const { error: deleteError } = await supabase
+        await supabase
           .from('message_reactions')
           .delete()
           .eq('message_id', originalMessage.id)
           .eq('reactor_type', reactorType)
           .eq('reactor_id', reactorId)
-        
-        if (deleteError) {
-          console.log(`❌ Erro ao remover reação: ${deleteError.message}`)
-        } else {
-          console.log(`✅ Reação removida com sucesso!`)
-        }
       } else {
-        console.log(`💾 Salvando/atualizando reação...`)
-        // Upsert reaction (update if same person already reacted, insert if new)
-        const { error: upsertError } = await supabase
+        await supabase
           .from('message_reactions')
           .upsert({
             message_id: originalMessage.id,
@@ -743,12 +654,6 @@ serve(async (req) => {
           }, {
             onConflict: 'message_id,reactor_type,reactor_id',
           })
-        
-        if (upsertError) {
-          console.log(`❌ Erro ao salvar reação: ${upsertError.message}`)
-        } else {
-          console.log(`✅ Reação salva com sucesso!`)
-        }
       }
       
       return new Response(
@@ -756,74 +661,38 @@ serve(async (req) => {
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
-    // Other unsupported types
-    else {
-      console.log(`ℹ️ Mensagem tipo "${rawMessageType}" / messageType="${messageType}" ignorada`)
+    
+    // Check for text messages (including links with preview)
+    if (!isMediaMessage && (rawMessageType === 'text' || rawMessageType === 'chat' || rawMessageType === 'media' && (messageType === 'ExtendedTextMessage' || mediaType === 'url'))) {
+      // Text message - continue processing
+    } else if (!isMediaMessage) {
+      // Unsupported type
       return new Response(
-        JSON.stringify({ 
-          success: true, 
-          message: `Message type "${rawMessageType || messageType}" ignored` 
-        }),
+        JSON.stringify({ success: true, message: `Message type "${rawMessageType || messageType}" ignored` }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
     
-    // If it's a media type but not audio, image, video, sticker, or document, save as unsupported
-    if (isMediaMessage && !isAudioMessage && !isImageMessage && !isVideoMessage && !isStickerMessage && !isDocumentMessage && detectedSubtype !== 'unknown') {
-      console.log(`ℹ️ Mídia tipo "${detectedSubtype}" ainda não implementada`)
-      // Continue to save as unsupported media message
-    }
-    
-    // Validate required fields
-    const instanceName = payload.instanceName
+    // ═══════════════════════════════════════════════════════════════════
+    // 3️⃣ VALIDATE REQUIRED FIELDS
+    // ═══════════════════════════════════════════════════════════════════
     const messageId = payload.message?.messageid
     const sender = payload.message?.sender
     const messageText = payload.message?.text
     
-    if (!instanceName) {
-      console.log('❌ Campo obrigatório faltando: instanceName')
+    if (!instanceName || !messageId || !sender) {
       return new Response(
-        JSON.stringify({ success: false, error: 'Missing required field: instanceName' }),
+        JSON.stringify({ success: false, error: 'Missing required fields' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
     
-    if (!messageId) {
-      console.log('❌ Campo obrigatório faltando: message.messageid')
-      return new Response(
-        JSON.stringify({ success: false, error: 'Missing required field: message.messageid' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
-    }
-    
-    if (!sender) {
-      console.log('❌ Campo obrigatório faltando: message.sender')
-      return new Response(
-        JSON.stringify({ success: false, error: 'Missing required field: message.sender' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
-    }
-    
-    // For text messages only, validate text content
-    const isTextMessage = !isAudioMessage && !isMediaMessage
+    const isTextMessage = !isMediaMessage
     if (isTextMessage && !messageText && messageText !== '') {
-      console.log('❌ Campo obrigatório faltando: message.text')
       return new Response(
-        JSON.stringify({ success: false, error: 'Missing required field: message.text' }),
+        JSON.stringify({ success: false, error: 'Missing message.text' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
-    }
-    
-    console.log('✅ Todos os campos obrigatórios presentes')
-    console.log(`   - instanceName: ${instanceName}`)
-    console.log(`   - messageid: ${messageId}`)
-    console.log(`   - sender: ${sender}`)
-    console.log(`   - detectedSubtype: ${detectedSubtype}`)
-    if (isTextMessage) {
-      console.log(`   - text: ${messageText?.substring(0, 50)}${messageText?.length > 50 ? '...' : ''}`)
-    }
-    if (isAudioMessage && audioContentData) {
-      console.log(`   - audioContentData disponível: sim`)
     }
     
     // Extract quoted message ID if present
@@ -832,31 +701,12 @@ serve(async (req) => {
       payload.message?.content?.contextInfo?.stanzaID ||
       null
     
-    if (quotedWhatsAppId) {
-      console.log(`📝 Mensagem citando outra: ${quotedWhatsAppId}`)
-    }
-    
     // ═══════════════════════════════════════════════════════════════════
-    // 3️⃣ INITIALIZE SUPABASE CLIENT
+    // 4️⃣ INITIALIZE SUPABASE & FIND CONNECTION
     // ═══════════════════════════════════════════════════════════════════
-    console.log('\n┌─────────────────────────────────────────────────────────────────┐')
-    console.log('│ 3️⃣  SUPABASE CLIENT                                             │')
-    console.log('└─────────────────────────────────────────────────────────────────┘')
-    
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-    
     const supabase = createClient(supabaseUrl, supabaseServiceKey)
-    console.log('✅ Supabase client initialized with service role')
-    
-    // ═══════════════════════════════════════════════════════════════════
-    // 4️⃣ ETAPA 1: IDENTIFICAR CONEXÃO/EMPRESA
-    // ═══════════════════════════════════════════════════════════════════
-    console.log('\n┌─────────────────────────────────────────────────────────────────┐')
-    console.log('│ 4️⃣  ETAPA 1: IDENTIFICAR CONEXÃO                                │')
-    console.log('└─────────────────────────────────────────────────────────────────┘')
-    
-    console.log(`🔍 Buscando conexão com session_id: ${instanceName}`)
     
     const { data: connection, error: connectionError } = await supabase
       .from('whatsapp_connections')
@@ -864,64 +714,31 @@ serve(async (req) => {
       .eq('session_id', instanceName)
       .maybeSingle()
     
-    let defaultDepartmentId: string | null = null
-    
-    if (connectionError) {
-      console.log(`❌ Erro ao buscar conexão: ${connectionError.message}`)
-      console.log('📋 Payload completo:', JSON.stringify(payload, null, 2))
+    if (connectionError || !connection) {
+      console.log(`❌ Conexão não encontrada: ${instanceName}`)
       return new Response(
-        JSON.stringify({ 
-          success: false, 
-          error: 'Database error while finding connection',
-          details: connectionError.message 
-        }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
-    }
-    
-    if (!connection) {
-      console.log(`❌ Conexão não encontrada para instanceName: ${instanceName}`)
-      return new Response(
-        JSON.stringify({ 
-          success: false, 
-          error: `Connection not found for instance: ${instanceName}` 
-        }),
+        JSON.stringify({ success: false, error: 'Connection not found' }),
         { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
     
     const whatsappConnectionId = connection.id
     const companyId = connection.company_id
-    
-    // Get instance token - use database value or fallback to payload token
     const dbInstanceToken = connection.instance_token
-    const payloadToken = payload.token
+    const payloadToken = payload.token || payload.instanceToken || ''
     const instanceToken = dbInstanceToken || payloadToken
     
-    console.log(`✅ Conexão encontrada!`)
-    console.log(`   - whatsapp_connection_id: ${whatsappConnectionId}`)
-    console.log(`   - company_id: ${companyId}`)
-    console.log(`🔑 Token do banco (instance_token): ${dbInstanceToken ? `${dbInstanceToken.substring(0, 10)}... (${dbInstanceToken.length} chars)` : 'VAZIO/NULL'}`)
-    console.log(`🔑 Token do payload: ${payloadToken ? `${payloadToken.substring(0, 10)}... (${payloadToken.length} chars)` : 'VAZIO/NULL'}`)
-    console.log(`🔑 Token a ser usado: ${instanceToken ? `${instanceToken.substring(0, 10)}... (${instanceToken.length} chars)` : 'NENHUM'}`)
-    
-    // If DB token is empty but payload has token, update the connection record
+    // Update instance_token if missing in DB
     if (!dbInstanceToken && payloadToken) {
-      console.log(`📝 Atualizando instance_token na conexão...`)
-      const { error: updateError } = await supabase
+      await supabase
         .from('whatsapp_connections')
         .update({ instance_token: payloadToken })
         .eq('id', whatsappConnectionId)
-      
-      if (updateError) {
-        console.log(`⚠️ Falha ao atualizar instance_token: ${updateError.message}`)
-      } else {
-        console.log(`✅ instance_token atualizado com sucesso!`)
-      }
     }
     
-    // Buscar departamento padrão da conexão
-    const { data: defaultDepartment, error: deptError } = await supabase
+    // Get default department
+    let defaultDepartmentId: string | null = null
+    const { data: defaultDepartment } = await supabase
       .from('departments')
       .select('id, name')
       .eq('whatsapp_connection_id', whatsappConnectionId)
@@ -929,122 +746,58 @@ serve(async (req) => {
       .limit(1)
       .maybeSingle()
     
-    if (deptError) {
-      console.log(`⚠️ Erro ao buscar departamento padrão: ${deptError.message}`)
-    } else if (defaultDepartment) {
+    if (defaultDepartment) {
       defaultDepartmentId = defaultDepartment.id
-      console.log(`✅ Departamento padrão encontrado: ${defaultDepartmentId}`)
-    } else {
-      console.log(`⚠️ Nenhum departamento padrão encontrado para esta conexão`)
     }
     
     // ═══════════════════════════════════════════════════════════════════
-    // 5️⃣ ETAPA 2: CRIAR/ATUALIZAR CONTATO
+    // 5️⃣ PROCESS CONTACT
     // ═══════════════════════════════════════════════════════════════════
-    console.log('\n┌─────────────────────────────────────────────────────────────────┐')
-    console.log('│ 5️⃣  ETAPA 2: PROCESSAR CONTATO                                  │')
-    console.log('└─────────────────────────────────────────────────────────────────┘')
-    
-    // Phone number extraction
     let phoneNumber: string
-    let source: string
-
+    
     if (payload.chat?.wa_chatid) {
       phoneNumber = payload.chat.wa_chatid.split('@')[0]
-      source = 'chat.wa_chatid'
     } else if (payload.message?.chatid) {
       phoneNumber = payload.message.chatid.split('@')[0]
-      source = 'message.chatid'
     } else if (payload.chat?.phone) {
       phoneNumber = payload.chat.phone.replace(/[^\d]/g, '')
-      source = 'chat.phone (formatado)'
     } else {
       phoneNumber = extractPhoneNumber(sender)
-      source = 'message.sender (FALLBACK)'
     }
-
-    console.log(`📞 Phone number extraído: ${phoneNumber}`)
-    console.log(`   - Fonte: ${source}`)
     
     const contactName = payload.chat?.wa_name || payload.message?.senderName || phoneNumber
-    console.log(`👤 Nome do contato: ${contactName}`)
+    const profilePictureUrl = payload.chat?.imagePreview || payload.chat?.image || payload.chat?.profilePicUrl || null
     
-    // Extract profile picture URL from UAZAPI - imagePreview has the actual URL, not image
-    const profilePictureUrl = payload.chat?.imagePreview || payload.chat?.image || payload.chat?.profilePicUrl || payload.message?.profilePicUrl || null
-    console.log(`🖼️ Foto de perfil: ${profilePictureUrl ? 'Disponível' : 'Não disponível'}`)
-    
-    // Check if contact already exists
-    console.log('🔍 Verificando se contato já existe...')
-    
-    const { data: existingContact, error: existingContactError } = await supabase
+    const { data: existingContact } = await supabase
       .from('contacts')
       .select('id, name, name_manually_edited')
       .eq('company_id', companyId)
       .eq('phone_number', phoneNumber)
       .maybeSingle()
     
-    if (existingContactError) {
-      console.log(`❌ Erro ao buscar contato existente: ${existingContactError.message}`)
-      return new Response(
-        JSON.stringify({ 
-          success: false, 
-          error: 'Error searching contact',
-          details: existingContactError.message 
-        }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
-    }
-    
     let contactId: string
     
     if (existingContact) {
-      // Contact exists - update but respect name_manually_edited flag
-      console.log(`📝 Contato existente encontrado: ${existingContact.id}`)
-      console.log(`   - Nome atual: ${existingContact.name}`)
-      console.log(`   - Nome do WhatsApp: ${contactName}`)
-      console.log(`   - Editado manualmente: ${existingContact.name_manually_edited}`)
-      
       const updateData: any = {
         last_interaction_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       }
       
-      // Only update name if NOT manually edited
       if (!existingContact.name_manually_edited) {
         updateData.name = contactName
-        console.log(`   ✅ Nome será atualizado para: ${contactName}`)
-      } else {
-        console.log(`   🔒 Nome preservado (editado manualmente)`)
       }
       
-      // Always update profile picture if available (WhatsApp profile pics can change anytime)
       if (profilePictureUrl) {
         updateData.avatar_url = profilePictureUrl
-        console.log(`   🖼️ Foto de perfil será atualizada`)
       }
       
-      const { error: updateContactError } = await supabase
+      await supabase
         .from('contacts')
         .update(updateData)
         .eq('id', existingContact.id)
       
-      if (updateContactError) {
-        console.log(`❌ Erro ao atualizar contato: ${updateContactError.message}`)
-        return new Response(
-          JSON.stringify({ 
-            success: false, 
-            error: 'Error updating contact',
-            details: updateContactError.message 
-          }),
-          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        )
-      }
-      
       contactId = existingContact.id
     } else {
-      // New contact - create with WhatsApp name
-      console.log('📝 Contato novo, criando...')
-      
       const { data: newContact, error: createContactError } = await supabase
         .from('contacts')
         .insert({
@@ -1060,35 +813,23 @@ serve(async (req) => {
         .single()
       
       if (createContactError) {
-        console.log(`❌ Erro ao criar contato: ${createContactError.message}`)
         return new Response(
-          JSON.stringify({ 
-            success: false, 
-            error: 'Error creating contact',
-            details: createContactError.message 
-          }),
+          JSON.stringify({ success: false, error: 'Error creating contact' }),
           { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         )
       }
       
       contactId = newContact.id
       
-      // Auto-add contact to CRM if enabled
-      console.log('🔍 Verificando se deve adicionar ao CRM automaticamente...')
-      
-      const { data: boardData, error: boardError } = await supabase
+      // Auto-add to CRM if enabled
+      const { data: boardData } = await supabase
         .from('kanban_boards')
         .select('id, auto_add_new_contacts')
         .eq('whatsapp_connection_id', whatsappConnectionId)
         .maybeSingle()
       
-      if (boardError) {
-        console.log(`⚠️ Erro ao buscar board: ${boardError.message}`)
-      } else if (boardData?.auto_add_new_contacts) {
-        console.log(`📋 Board encontrado: ${boardData.id}, auto_add_new_contacts: ${boardData.auto_add_new_contacts}`)
-        
-        // Get the first column (lowest position) of the board
-        const { data: firstColumn, error: columnError } = await supabase
+      if (boardData?.auto_add_new_contacts) {
+        const { data: firstColumn } = await supabase
           .from('kanban_columns')
           .select('id')
           .eq('board_id', boardData.id)
@@ -1096,12 +837,7 @@ serve(async (req) => {
           .limit(1)
           .maybeSingle()
         
-        if (columnError) {
-          console.log(`⚠️ Erro ao buscar primeira coluna: ${columnError.message}`)
-        } else if (firstColumn) {
-          console.log(`📋 Primeira coluna encontrada: ${firstColumn.id}`)
-          
-          // Check if card already exists for this contact
+        if (firstColumn) {
           const { data: existingCard } = await supabase
             .from('kanban_cards')
             .select('id')
@@ -1109,7 +845,6 @@ serve(async (req) => {
             .maybeSingle()
           
           if (!existingCard) {
-            // Get max position in the column
             const { data: maxPosData } = await supabase
               .from('kanban_cards')
               .select('position')
@@ -1120,7 +855,7 @@ serve(async (req) => {
             
             const newPosition = (maxPosData?.position ?? -1) + 1
             
-            const { error: cardError } = await supabase
+            await supabase
               .from('kanban_cards')
               .insert({
                 contact_id: contactId,
@@ -1128,39 +863,18 @@ serve(async (req) => {
                 position: newPosition,
                 priority: 'medium'
               })
-            
-            if (cardError) {
-              console.log(`⚠️ Erro ao criar card no CRM: ${cardError.message}`)
-            } else {
-              console.log(`✅ Card criado automaticamente no CRM para o novo contato`)
-            }
-          } else {
-            console.log(`ℹ️ Card já existe para este contato: ${existingCard.id}`)
           }
-        } else {
-          console.log(`⚠️ Nenhuma coluna encontrada no board`)
         }
-      } else {
-        console.log(`ℹ️ Auto-add desativado ou board não encontrado`)
       }
     }
     
-    console.log(`✅ Contato processado!`)
-    console.log(`   - contact_id: ${contactId}`)
-    
     // ═══════════════════════════════════════════════════════════════════
-    // 6️⃣ ETAPA 3: CRIAR/ATUALIZAR CONVERSA
+    // 6️⃣ PROCESS CONVERSATION
     // ═══════════════════════════════════════════════════════════════════
-    console.log('\n┌─────────────────────────────────────────────────────────────────┐')
-    console.log('│ 6️⃣  ETAPA 3: PROCESSAR CONVERSA                                 │')
-    console.log('└─────────────────────────────────────────────────────────────────┘')
-    
     const isFromMe = payload.message?.fromMe === true
     const messageTimestamp = convertTimestamp(payload.message?.messageTimestamp)
     
-    console.log(`🔍 Buscando conversa ativa para contact_id: ${contactId}`)
-    
-    const { data: existingConversation, error: convSearchError } = await supabase
+    const { data: existingConversation } = await supabase
       .from('conversations')
       .select('id, unread_count')
       .eq('contact_id', contactId)
@@ -1170,26 +884,12 @@ serve(async (req) => {
       .limit(1)
       .maybeSingle()
     
-    if (convSearchError) {
-      console.log(`❌ Erro ao buscar conversa: ${convSearchError.message}`)
-      return new Response(
-        JSON.stringify({ 
-          success: false, 
-          error: 'Error searching conversation',
-          details: convSearchError.message 
-        }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
-    }
-    
     let conversationId: string
     
     if (existingConversation) {
-      console.log(`📝 Conversa existente encontrada: ${existingConversation.id}`)
-      
       const newUnreadCount = isFromMe ? existingConversation.unread_count : (existingConversation.unread_count || 0) + 1
       
-      const { error: updateConvError } = await supabase
+      await supabase
         .from('conversations')
         .update({
           last_message_at: messageTimestamp,
@@ -1198,23 +898,8 @@ serve(async (req) => {
         })
         .eq('id', existingConversation.id)
       
-      if (updateConvError) {
-        console.log(`❌ Erro ao atualizar conversa: ${updateConvError.message}`)
-        return new Response(
-          JSON.stringify({ 
-            success: false, 
-            error: 'Error updating conversation',
-            details: updateConvError.message 
-          }),
-          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        )
-      }
-      
       conversationId = existingConversation.id
-      console.log(`✅ Conversa atualizada!`)
     } else {
-      console.log('📝 Nenhuma conversa ativa encontrada, criando nova...')
-      
       const { data: newConversation, error: createConvError } = await supabase
         .from('conversations')
         .insert({
@@ -1231,22 +916,16 @@ serve(async (req) => {
         .single()
       
       if (createConvError) {
-        console.log(`❌ Erro ao criar conversa: ${createConvError.message}`)
         return new Response(
-          JSON.stringify({ 
-            success: false, 
-            error: 'Error creating conversation',
-            details: createConvError.message 
-          }),
+          JSON.stringify({ success: false, error: 'Error creating conversation' }),
           { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         )
       }
       
       conversationId = newConversation.id
-      console.log(`✅ Nova conversa criada: ${conversationId}`)
       
-      // Log conversation creation in history
-      const { error: historyError } = await supabase
+      // Log conversation creation
+      await supabase
         .from('conversation_history')
         .insert({
           conversation_id: conversationId,
@@ -1263,858 +942,30 @@ serve(async (req) => {
           performed_by_name: 'Sistema',
           is_automatic: true
         })
-      
-      if (historyError) {
-        console.log(`⚠️ Erro ao registrar histórico (não fatal): ${historyError.message}`)
-      } else {
-        console.log(`✅ Histórico de criação registrado`)
-      }
     }
     
     // ═══════════════════════════════════════════════════════════════════
-    // 7️⃣ ETAPA 4: VERIFICAR DUPLICATA
+    // 7️⃣ CHECK DUPLICATE
     // ═══════════════════════════════════════════════════════════════════
-    console.log('\n┌─────────────────────────────────────────────────────────────────┐')
-    console.log('│ 7️⃣  ETAPA 4: VERIFICAR DUPLICATA                                │')
-    console.log('└─────────────────────────────────────────────────────────────────┘')
-    
-    console.log(`🔍 Verificando se mensagem já existe: ${messageId}`)
-    
-    const { data: existingMessage, error: msgSearchError } = await supabase
+    const { data: existingMessage } = await supabase
       .from('messages')
       .select('id')
       .eq('whatsapp_message_id', messageId)
       .maybeSingle()
     
-    if (msgSearchError) {
-      console.log(`❌ Erro ao buscar mensagem: ${msgSearchError.message}`)
-      return new Response(
-        JSON.stringify({ 
-          success: false, 
-          error: 'Error checking for duplicate message',
-          details: msgSearchError.message 
-        }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
-    }
-    
     if (existingMessage) {
-      console.log(`⚠️ Mensagem duplicada ignorada - messageid: ${messageId}`)
+      console.log(`⚠️ Duplicate message: ${messageId}`)
       return new Response(
-        JSON.stringify({ 
-          success: true, 
-          message: 'Duplicate message ignored',
-          data: { message_id: existingMessage.id, duplicate: true }
-        }),
+        JSON.stringify({ success: true, message: 'Duplicate message ignored' }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
     
-    console.log('✅ Mensagem não é duplicata')
-    
     // ═══════════════════════════════════════════════════════════════════
-    // 8️⃣ ETAPA 5: PROCESSAR MÍDIA
+    // 8️⃣ LOOKUP QUOTED MESSAGE
     // ═══════════════════════════════════════════════════════════════════
-    let mediaUrl: string | null = null
-    let mediaMimeType: string | null = null
-    let mediaMetadata: Record<string, any> = {}
-    let unsupportedMediaText: string | null = null
-    let documentCaption: string | null = null
-    
-    // Handle document messages
-    if (isDocumentMessage) {
-      console.log('\n┌─────────────────────────────────────────────────────────────────┐')
-      console.log('│ 8️⃣  ETAPA 5: PROCESSAR DOCUMENTO                                │')
-      console.log('└─────────────────────────────────────────────────────────────────┘')
-      
-      const docSource = documentContentData || payload.message?.content || {}
-      
-      console.log(`🔍 [DOCUMENT SOURCE]:`, JSON.stringify(docSource, null, 2))
-      
-      // Extract document properties from UAZAPI payload
-      const mimeType = docSource.mimetype || docSource.mimeType || 'application/octet-stream'
-      const fileName = docSource.fileName || docSource.filename || `document_${Date.now()}`
-      const fileSize = docSource.fileLength || docSource.fileSize || 0
-      const pageCount = docSource.pageCount || 0
-      const hasJPEGThumbnail = !!docSource.JPEGThumbnail
-      const caption = docSource.caption || null
-      
-      // Validate file size (max 100MB for documents)
-      const MAX_DOC_SIZE = 100 * 1024 * 1024 // 100MB
-      if (fileSize > MAX_DOC_SIZE) {
-        console.log(`❌ Documento muito grande: ${fileSize} bytes (max: ${MAX_DOC_SIZE})`)
-        mediaMetadata = {
-          error: 'File too large',
-          mimeType,
-          fileName,
-          fileSize,
-          pageCount,
-          hasJPEGThumbnail
-        }
-      } else {
-        console.log(`📄 Documento recebido:`)
-        console.log(`   - Nome: ${fileName}`)
-        console.log(`   - MimeType: ${mimeType}`)
-        console.log(`   - Tamanho: ${fileSize} bytes (${(fileSize / 1024 / 1024).toFixed(2)} MB)`)
-        console.log(`   - Páginas: ${pageCount || 'N/A'}`)
-        console.log(`   - Caption: ${caption || 'Nenhum'}`)
-        console.log(`   - Tem thumbnail: ${hasJPEGThumbnail}`)
-        console.log(`   - messageId para download: ${messageId}`)
-        
-        const uazapiBaseUrl = UAZAPI_BASE_URL
-        
-        if (!instanceToken) {
-          console.log(`⚠️ Token não disponível para download`)
-          mediaMetadata = {
-            error: 'No instance token available',
-            mimeType,
-            fileName,
-            fileSize,
-            pageCount,
-            hasJPEGThumbnail
-          }
-        } else {
-          console.log(`📥 Baixando documento via UAZAPI /message/download...`)
-          console.log(`   - URL: ${uazapiBaseUrl}/message/download`)
-          console.log(`   - messageId: ${messageId}`)
-          
-          const downloadResult = await downloadMediaFromUazapi(messageId, uazapiBaseUrl, instanceToken)
-          
-          if (downloadResult) {
-            const { buffer, mimeType: downloadedMimeType, fileSize: downloadedSize } = downloadResult
-            const originalMimeType = downloadedMimeType || mimeType.split(';')[0].trim()
-            
-            // Get extension from fileName or mimeType
-            let extension = 'bin'
-            if (fileName && fileName.includes('.')) {
-              extension = fileName.split('.').pop()?.toLowerCase() || 'bin'
-            } else {
-              extension = getExtensionFromMimeType(originalMimeType)
-            }
-            
-            // Get display mimetype (correct based on extension) and storage-safe mimetype
-            const displayMimeType = getDisplayMimeType(fileName, originalMimeType)
-            const storageMimeType = getStorageSafeMimeType(displayMimeType)
-            const mimetypeWasCorrected = displayMimeType !== originalMimeType
-            const usingOctetStream = storageMimeType !== displayMimeType
-            
-            console.log(`📋 Mimetype original: ${originalMimeType}`)
-            console.log(`🔍 Extensão detectada: .${extension}`)
-            console.log(`📋 Mimetype para exibição: ${displayMimeType}`)
-            if (usingOctetStream) {
-              console.log(`🔄 Usando mimetype seguro para Storage: ${storageMimeType}`)
-            }
-            
-            // Generate unique filename
-            const now = new Date()
-            const year = now.getFullYear()
-            const month = String(now.getMonth() + 1).padStart(2, '0')
-            const randomId = Math.random().toString(36).substring(2, 8)
-            const uniqueFileName = `document_${Date.now()}_${randomId}.${extension}`
-            const storagePath = `${companyId}/${whatsappConnectionId}/${year}-${month}/${uniqueFileName}`
-            
-            console.log(`📤 Fazendo upload para Storage: ${storagePath}`)
-            console.log(`   - contentType: ${storageMimeType}`)
-            
-            // Upload to Supabase Storage with storage-safe mimetype
-            const { data: uploadData, error: uploadError } = await supabase.storage
-              .from('whatsapp-media')
-              .upload(storagePath, buffer, {
-                contentType: storageMimeType,
-                cacheControl: '31536000', // 1 year cache
-                upsert: false
-              })
-            
-            if (uploadError) {
-              console.log(`❌ Erro no upload: ${uploadError.message}`)
-              mediaMetadata = {
-                error: 'Upload failed',
-                errorMessage: uploadError.message,
-                mimeType: displayMimeType,
-                storageMimeType,
-                originalMimetype: originalMimeType,
-                mimetypeWasCorrected,
-                fileName,
-                fileSize: downloadedSize,
-                pageCount,
-                hasJPEGThumbnail
-              }
-            } else {
-              console.log(`✅ Upload concluído: ${uploadData.path}`)
-              
-              // Get public URL
-              const { data: { publicUrl } } = supabase.storage
-                .from('whatsapp-media')
-                .getPublicUrl(uploadData.path)
-              
-              mediaUrl = publicUrl
-              mediaMimeType = displayMimeType  // Save display mimetype for frontend
-              
-              // Set caption as message content
-              if (caption) {
-                documentCaption = caption
-              }
-              
-              console.log(`🔗 URL pública: ${mediaUrl}`)
-              
-              mediaMetadata = {
-                fileName,
-                originalFileName: fileName,
-                fileSize: downloadedSize,
-                fileExtension: extension,
-                pageCount,
-                originalMimetype: originalMimeType,
-                displayMimetype: displayMimeType,
-                storageMimetype: storageMimeType,
-                mimetypeWasCorrected,
-                storagePath: uploadData.path,
-                originalMessageId: messageId,
-                downloadedAt: new Date().toISOString(),
-                hasJPEGThumbnail,
-                hasCaption: !!caption,
-                captionLength: caption?.length || 0
-              }
-            }
-          } else {
-            console.log(`⚠️ Falha no download do documento via UAZAPI`)
-            mediaMetadata = {
-              error: 'Download failed',
-              mimeType,
-              fileName,
-              fileSize,
-              pageCount,
-              hasJPEGThumbnail
-            }
-          }
-        }
-      }
-    }
-    // Handle unsupported media types
-    else if (isMediaMessage && !isAudioMessage && !isImageMessage && !isVideoMessage && !isStickerMessage && !isDocumentMessage) {
-      console.log('\n┌─────────────────────────────────────────────────────────────────┐')
-      console.log('│ 8️⃣  ETAPA 5: MÍDIA NÃO SUPORTADA                                │')
-      console.log('└─────────────────────────────────────────────────────────────────┘')
-      console.log(`⚠️ Tipo de mídia "${detectedSubtype}" ainda não implementado`)
-      unsupportedMediaText = `[Mídia não suportada: ${detectedSubtype}]`
-      mediaMetadata = {
-        unsupportedType: detectedSubtype,
-        originalPayload: payload.message?.media
-      }
-    }
-    // Handle sticker messages
-    else if (isStickerMessage) {
-      console.log('\n┌─────────────────────────────────────────────────────────────────┐')
-      console.log('│ 8️⃣  ETAPA 5: PROCESSAR STICKER                                  │')
-      console.log('└─────────────────────────────────────────────────────────────────┘')
-      
-      const stickerSource = stickerContentData || payload.message?.content || {}
-      
-      console.log(`🔍 [STICKER SOURCE]:`, JSON.stringify(stickerSource, null, 2))
-      
-      // Extract sticker properties from UAZAPI payload
-      const mimeType = stickerSource.mimetype || 'image/webp'
-      const width = stickerSource.width || 512
-      const height = stickerSource.height || 512
-      const fileSize = stickerSource.fileLength || stickerSource.fileSize || 0
-      const isAnimated = stickerSource.isAnimated || false
-      const hasJPEGThumbnail = !!stickerSource.JPEGThumbnail
-      
-      // Validate file size (max 10MB for stickers)
-      const MAX_STICKER_SIZE = 10 * 1024 * 1024 // 10MB
-      if (fileSize > MAX_STICKER_SIZE) {
-        console.log(`❌ Sticker muito grande: ${fileSize} bytes (max: ${MAX_STICKER_SIZE})`)
-        mediaMetadata = {
-          error: 'File too large',
-          mimeType,
-          width,
-          height,
-          fileSize,
-          isAnimated,
-          hasJPEGThumbnail
-        }
-      } else {
-        console.log(`🎨 Sticker recebido:`)
-        console.log(`   - MimeType: ${mimeType}`)
-        console.log(`   - Dimensões: ${width}×${height}`)
-        console.log(`   - Tamanho: ${fileSize} bytes (${(fileSize / 1024).toFixed(2)} KB)`)
-        console.log(`   - Animado: ${isAnimated}`)
-        console.log(`   - Tem thumbnail: ${hasJPEGThumbnail}`)
-        console.log(`   - messageId para download: ${messageId}`)
-        
-        const uazapiBaseUrl = UAZAPI_BASE_URL
-        
-        if (!instanceToken) {
-          console.log(`⚠️ Token não disponível para download`)
-          mediaMetadata = {
-            error: 'No instance token available',
-            mimeType,
-            width,
-            height,
-            fileSize,
-            isAnimated,
-            hasJPEGThumbnail
-          }
-        } else {
-          console.log(`📥 Baixando sticker via UAZAPI /message/download...`)
-          console.log(`   - URL: ${uazapiBaseUrl}/message/download`)
-          console.log(`   - messageId: ${messageId}`)
-          
-          const downloadResult = await downloadMediaFromUazapi(messageId, uazapiBaseUrl, instanceToken)
-          
-          if (downloadResult) {
-            const { buffer, mimeType: downloadedMimeType, fileSize: downloadedSize } = downloadResult
-            
-            // Generate unique filename - stickers are always .webp
-            const now = new Date()
-            const year = now.getFullYear()
-            const month = String(now.getMonth() + 1).padStart(2, '0')
-            const randomId = Math.random().toString(36).substring(2, 8)
-            const fileName = `sticker_${Date.now()}_${randomId}.webp`
-            const storagePath = `${companyId}/${whatsappConnectionId}/${year}-${month}/${fileName}`
-            
-            console.log(`📤 Fazendo upload para Storage: ${storagePath}`)
-            
-            // Upload to Supabase Storage
-            const { data: uploadData, error: uploadError } = await supabase.storage
-              .from('whatsapp-media')
-              .upload(storagePath, buffer, {
-                contentType: 'image/webp',
-                cacheControl: '31536000', // 1 year cache
-                upsert: false
-              })
-            
-            if (uploadError) {
-              console.log(`❌ Erro no upload: ${uploadError.message}`)
-              mediaMetadata = {
-                error: 'Upload failed',
-                errorMessage: uploadError.message,
-                mimeType: 'image/webp',
-                width,
-                height,
-                fileSize: downloadedSize,
-                isAnimated,
-                hasJPEGThumbnail
-              }
-            } else {
-              console.log(`✅ Upload concluído: ${uploadData.path}`)
-              
-              // Get public URL
-              const { data: { publicUrl } } = supabase.storage
-                .from('whatsapp-media')
-                .getPublicUrl(storagePath)
-              
-              mediaUrl = publicUrl
-              mediaMimeType = 'image/webp'
-              
-              mediaMetadata = {
-                width,
-                height,
-                fileSize: downloadedSize,
-                fileName,
-                storagePath,
-                originalMessageId: messageId,
-                downloadedAt: new Date().toISOString(),
-                originalMimetype: mimeType,
-                isAnimated,
-                hasJPEGThumbnail,
-                stickerType: isAnimated ? 'animated' : 'regular'
-              }
-              
-              console.log(`🔗 URL pública: ${mediaUrl}`)
-            }
-          } else {
-            console.log(`⚠️ Falha no download do sticker via UAZAPI`)
-            mediaMetadata = {
-              error: 'Download failed',
-              mimeType,
-              width,
-              height,
-              fileSize,
-              isAnimated,
-              hasJPEGThumbnail
-            }
-          }
-        }
-      }
-    }
-    // Handle video messages
-    else if (isVideoMessage) {
-      console.log('\n┌─────────────────────────────────────────────────────────────────┐')
-      console.log('│ 8️⃣  ETAPA 5: PROCESSAR VÍDEO                                    │')
-      console.log('└─────────────────────────────────────────────────────────────────┘')
-      
-      const videoSource = videoContentData || payload.message?.content || {}
-      
-      console.log(`🔍 [VIDEO SOURCE]:`, JSON.stringify(videoSource, null, 2))
-      
-      // Extract video properties from UAZAPI payload
-      const mimeType = videoSource.mimetype || 
-                      videoSource.mimeType || 
-                      'video/mp4'
-      const width = videoSource.width || 0
-      const height = videoSource.height || 0
-      const fileSize = videoSource.fileLength || videoSource.fileSize || 0
-      const duration = videoSource.seconds || videoSource.duration || 0
-      const hasJPEGThumbnail = !!videoSource.JPEGThumbnail
-      
-      // Validate file size (max 100MB for videos)
-      const MAX_VIDEO_SIZE = 100 * 1024 * 1024 // 100MB
-      if (fileSize > MAX_VIDEO_SIZE) {
-        console.log(`❌ Vídeo muito grande: ${fileSize} bytes (max: ${MAX_VIDEO_SIZE})`)
-        mediaMetadata = {
-          error: 'File too large',
-          mimeType,
-          width,
-          height,
-          duration,
-          fileSize,
-          hasJPEGThumbnail
-        }
-      } else {
-        console.log(`🎬 Vídeo recebido:`)
-        console.log(`   - MimeType: ${mimeType}`)
-        console.log(`   - Dimensões: ${width}×${height}`)
-        console.log(`   - Duração: ${duration}s`)
-        console.log(`   - Tamanho: ${fileSize} bytes (${(fileSize / 1024 / 1024).toFixed(2)} MB)`)
-        console.log(`   - Tem thumbnail: ${hasJPEGThumbnail}`)
-        console.log(`   - messageId para download: ${messageId}`)
-        
-        const uazapiBaseUrl = UAZAPI_BASE_URL
-        
-        if (!instanceToken) {
-          console.log(`⚠️ Token não disponível para download`)
-          mediaMetadata = {
-            error: 'No instance token available',
-            mimeType,
-            width,
-            height,
-            duration,
-            fileSize,
-            hasJPEGThumbnail
-          }
-        } else {
-          console.log(`📥 Baixando vídeo via UAZAPI /message/download...`)
-          console.log(`   - URL: ${uazapiBaseUrl}/message/download`)
-          console.log(`   - messageId: ${messageId}`)
-          
-          const downloadResult = await downloadMediaFromUazapi(messageId, uazapiBaseUrl, instanceToken)
-          
-          if (downloadResult) {
-            const { buffer, mimeType: downloadedMimeType, fileSize: downloadedSize } = downloadResult
-            const actualMimeType = downloadedMimeType.startsWith('video/') ? downloadedMimeType : mimeType.split(';')[0].trim()
-            const extension = getExtensionFromMimeType(actualMimeType)
-            
-            // Generate unique filename
-            const now = new Date()
-            const year = now.getFullYear()
-            const month = String(now.getMonth() + 1).padStart(2, '0')
-            const randomId = Math.random().toString(36).substring(2, 8)
-            const fileName = `video_${Date.now()}_${randomId}.${extension}`
-            const storagePath = `${companyId}/${whatsappConnectionId}/${year}-${month}/${fileName}`
-            
-            console.log(`📤 Fazendo upload para Storage: ${storagePath}`)
-            
-            // Upload to Supabase Storage
-            const { data: uploadData, error: uploadError } = await supabase.storage
-              .from('whatsapp-media')
-              .upload(storagePath, buffer, {
-                contentType: actualMimeType,
-                cacheControl: '31536000', // 1 year cache
-                upsert: false
-              })
-            
-            if (uploadError) {
-              console.log(`❌ Erro no upload: ${uploadError.message}`)
-              mediaMetadata = {
-                error: 'Upload failed',
-                errorMessage: uploadError.message,
-                mimeType: actualMimeType,
-                width,
-                height,
-                duration,
-                fileSize: downloadedSize,
-                hasJPEGThumbnail
-              }
-            } else {
-              console.log(`✅ Upload concluído: ${uploadData.path}`)
-              
-              // Get public URL
-              const { data: { publicUrl } } = supabase.storage
-                .from('whatsapp-media')
-                .getPublicUrl(storagePath)
-              
-              mediaUrl = publicUrl
-              mediaMimeType = actualMimeType
-              
-              // Extract caption if present
-              const caption = videoSource.caption || payload.message?.content?.caption || null
-              
-              mediaMetadata = {
-                width,
-                height,
-                duration,
-                fileSize: downloadedSize,
-                fileName,
-                storagePath,
-                originalMessageId: messageId,
-                downloadedAt: new Date().toISOString(),
-                originalMimetype: mimeType,
-                hasJPEGThumbnail,
-                hasCaption: !!caption,
-                captionLength: caption?.length || 0
-              }
-              
-              console.log(`🔗 URL pública: ${mediaUrl}`)
-            }
-          } else {
-            console.log(`⚠️ Falha no download do vídeo via UAZAPI`)
-            mediaMetadata = {
-              error: 'Download failed from UAZAPI',
-              mimeType,
-              width,
-              height,
-              duration,
-              fileSize,
-              hasJPEGThumbnail
-            }
-          }
-        }
-      }
-    }
-    // Handle image messages
-    else if (isImageMessage) {
-      console.log('\n┌─────────────────────────────────────────────────────────────────┐')
-      console.log('│ 8️⃣  ETAPA 5: PROCESSAR IMAGEM                                   │')
-      console.log('└─────────────────────────────────────────────────────────────────┘')
-      
-      const imageSource = imageContentData || payload.message?.content || {}
-      
-      console.log(`🔍 [IMAGE SOURCE]:`, JSON.stringify(imageSource, null, 2))
-      
-      // Extract image properties from UAZAPI payload
-      const mimeType = imageSource.mimetype || 
-                      imageSource.mimeType || 
-                      'image/jpeg'
-      const width = imageSource.width || 0
-      const height = imageSource.height || 0
-      const fileSize = imageSource.fileLength || imageSource.fileSize || 0
-      const hasJPEGThumbnail = !!imageSource.JPEGThumbnail
-      
-      // Validate file size (max 50MB)
-      const MAX_FILE_SIZE = 50 * 1024 * 1024 // 50MB
-      if (fileSize > MAX_FILE_SIZE) {
-        console.log(`❌ Imagem muito grande: ${fileSize} bytes (max: ${MAX_FILE_SIZE})`)
-        mediaMetadata = {
-          error: 'File too large',
-          mimeType,
-          width,
-          height,
-          fileSize,
-          hasJPEGThumbnail
-        }
-      } else {
-        console.log(`🖼️ Imagem recebida:`)
-        console.log(`   - MimeType: ${mimeType}`)
-        console.log(`   - Dimensões: ${width}×${height}`)
-        console.log(`   - Tamanho: ${fileSize} bytes (${(fileSize / 1024).toFixed(1)} KB)`)
-        console.log(`   - Tem thumbnail: ${hasJPEGThumbnail}`)
-        console.log(`   - messageId para download: ${messageId}`)
-        
-        const uazapiBaseUrl = UAZAPI_BASE_URL
-        
-        if (!instanceToken) {
-          console.log(`⚠️ Token não disponível para download`)
-          mediaMetadata = {
-            error: 'No instance token available',
-            mimeType,
-            width,
-            height,
-            fileSize,
-            hasJPEGThumbnail
-          }
-        } else {
-          console.log(`📥 Baixando imagem via UAZAPI /message/download...`)
-          console.log(`   - URL: ${uazapiBaseUrl}/message/download`)
-          console.log(`   - messageId: ${messageId}`)
-          
-          const downloadResult = await downloadMediaFromUazapi(messageId, uazapiBaseUrl, instanceToken)
-          
-          if (downloadResult) {
-            const { buffer, mimeType: downloadedMimeType, fileSize: downloadedSize } = downloadResult
-            const actualMimeType = downloadedMimeType.startsWith('image/') ? downloadedMimeType : mimeType.split(';')[0].trim()
-            const extension = getExtensionFromMimeType(actualMimeType)
-            
-            // Generate unique filename
-            const now = new Date()
-            const year = now.getFullYear()
-            const month = String(now.getMonth() + 1).padStart(2, '0')
-            const randomId = Math.random().toString(36).substring(2, 8)
-            const fileName = `image_${Date.now()}_${randomId}.${extension}`
-            const storagePath = `${companyId}/${whatsappConnectionId}/${year}-${month}/${fileName}`
-            
-            console.log(`📤 Fazendo upload para Storage: ${storagePath}`)
-            
-            // Upload to Supabase Storage
-            const { data: uploadData, error: uploadError } = await supabase.storage
-              .from('whatsapp-media')
-              .upload(storagePath, buffer, {
-                contentType: actualMimeType,
-                cacheControl: '31536000', // 1 year cache for images
-                upsert: false
-              })
-            
-            if (uploadError) {
-              console.log(`❌ Erro no upload: ${uploadError.message}`)
-              mediaMetadata = {
-                error: 'Upload failed',
-                errorMessage: uploadError.message,
-                mimeType: actualMimeType,
-                width,
-                height,
-                fileSize: downloadedSize,
-                hasJPEGThumbnail
-              }
-            } else {
-              console.log(`✅ Upload concluído: ${uploadData.path}`)
-              
-              // Get public URL
-              const { data: { publicUrl } } = supabase.storage
-                .from('whatsapp-media')
-                .getPublicUrl(storagePath)
-              
-              mediaUrl = publicUrl
-              mediaMimeType = actualMimeType
-              
-              // Extract caption if present
-              const caption = imageSource.caption || payload.message?.content?.caption || null
-              
-              mediaMetadata = {
-                width,
-                height,
-                fileSize: downloadedSize,
-                fileName,
-                storagePath,
-                originalMessageId: messageId,
-                downloadedAt: new Date().toISOString(),
-                originalMimetype: mimeType,
-                hasJPEGThumbnail,
-                hasCaption: !!caption,
-                captionLength: caption?.length || 0
-              }
-              
-              console.log(`🔗 URL pública: ${mediaUrl}`)
-            }
-          } else {
-            console.log(`⚠️ Falha no download da imagem via UAZAPI`)
-            mediaMetadata = {
-              error: 'Download failed from UAZAPI',
-              mimeType,
-              width,
-              height,
-              fileSize,
-              hasJPEGThumbnail
-            }
-          }
-        }
-      }
-    }
-    // Handle audio messages
-    else if (isAudioMessage) {
-      console.log('\n┌─────────────────────────────────────────────────────────────────┐')
-      console.log('│ 8️⃣  ETAPA 5: PROCESSAR ÁUDIO                                    │')
-      console.log('└─────────────────────────────────────────────────────────────────┘')
-      
-      // Use audioContentData extracted during detection (from message.content)
-      // Fallbacks for backward compatibility
-      const audioSource = audioContentData || 
-                         payload.message?.content || 
-                         payload.message?.audio || 
-                         payload.message?.ptt || 
-                         payload.message?.media || 
-                         {}
-      
-      console.log(`🔍 [AUDIO SOURCE]:`, JSON.stringify(audioSource, null, 2))
-      
-      // Extract mimetype - UAZAPI sends in content.mimetype (e.g., "audio/ogg; codecs=opus")
-      const mimeType = audioSource.mimetype || 
-                      audioSource.mimeType || 
-                      payload.message?.content?.mimetype ||
-                      'audio/ogg'
-      
-      // Extract duration - UAZAPI sends in content.seconds
-      const duration = audioSource.seconds || 
-                      audioSource.duration || 
-                      payload.message?.content?.seconds || 
-                      0
-      
-      // Extract file size - UAZAPI sends in content.fileLength
-      const fileSize = audioSource.fileLength || 
-                      audioSource.fileSize || 
-                      payload.message?.content?.fileLength || 
-                      0
-      
-      // Check if it's PTT (Push-to-Talk voice message)
-      const isPTT = audioSource.PTT === true || 
-                   audioSource.ptt === true || 
-                   mediaType === 'ptt'
-      
-      console.log(`🎵 Áudio recebido:`)
-      console.log(`   - MimeType: ${mimeType}`)
-      console.log(`   - Duração: ${duration}s`)
-      console.log(`   - Tamanho: ${fileSize} bytes`)
-      console.log(`   - É PTT (voz): ${isPTT}`)
-      console.log(`   - messageId para download: ${messageId}`)
-      
-      // Download via UAZAPI POST /message/download endpoint
-      const uazapiBaseUrl = UAZAPI_BASE_URL
-      
-      if (!instanceToken) {
-        console.log(`⚠️ Token não disponível para download`)
-        mediaMetadata = {
-          error: 'No instance token available',
-          mimeType,
-          duration,
-          fileSize,
-          isPTT
-        }
-      } else {
-        console.log(`📥 Baixando áudio via UAZAPI /message/download...`)
-        console.log(`   - URL: ${uazapiBaseUrl}/message/download`)
-        console.log(`   - messageId: ${messageId}`)
-        
-        const downloadResult = await downloadMediaFromUazapi(messageId, uazapiBaseUrl, instanceToken)
-        
-        if (downloadResult) {
-          const { buffer, mimeType: downloadedMimeType, fileSize: downloadedSize } = downloadResult
-          const actualMimeType = downloadedMimeType.startsWith('audio/') ? downloadedMimeType : mimeType.split(';')[0].trim()
-          const extension = getExtensionFromMimeType(actualMimeType)
-          
-          // Generate unique filename
-          const now = new Date()
-          const year = now.getFullYear()
-          const month = String(now.getMonth() + 1).padStart(2, '0')
-          const randomId = Math.random().toString(36).substring(2, 8)
-          const fileName = `audio_${Date.now()}_${randomId}.${extension}`
-          const storagePath = `${companyId}/${whatsappConnectionId}/${year}-${month}/${fileName}`
-          
-          console.log(`📤 Fazendo upload para Storage: ${storagePath}`)
-          
-          // Upload to Supabase Storage
-          const { data: uploadData, error: uploadError } = await supabase.storage
-            .from('whatsapp-media')
-            .upload(storagePath, buffer, {
-              contentType: actualMimeType,
-              cacheControl: '3600',
-              upsert: false
-            })
-          
-          if (uploadError) {
-            console.log(`❌ Erro no upload: ${uploadError.message}`)
-            mediaMetadata = {
-              error: 'Upload failed',
-              errorMessage: uploadError.message,
-              mimeType: actualMimeType,
-              duration,
-              fileSize: downloadedSize,
-              isPTT
-            }
-          } else {
-            console.log(`✅ Upload concluído: ${uploadData.path}`)
-            
-            // Get public URL
-            const { data: { publicUrl } } = supabase.storage
-              .from('whatsapp-media')
-              .getPublicUrl(storagePath)
-            
-            mediaUrl = publicUrl
-            mediaMimeType = actualMimeType
-            mediaMetadata = {
-              duration,
-              fileSize: downloadedSize,
-              fileName,
-              storagePath,
-              isPTT,
-              originalMessageId: messageId,
-              downloadedAt: new Date().toISOString()
-            }
-            
-            console.log(`🔗 URL pública: ${mediaUrl}`)
-          }
-        } else {
-          console.log(`⚠️ Falha no download do áudio via UAZAPI`)
-          mediaMetadata = {
-            error: 'Download failed from UAZAPI',
-            mimeType,
-            duration,
-            fileSize,
-            isPTT
-          }
-        }
-      }
-    }
-    
-    // ═══════════════════════════════════════════════════════════════════
-    // 9️⃣ ETAPA 6: SALVAR MENSAGEM
-    // ═══════════════════════════════════════════════════════════════════
-    console.log('\n┌─────────────────────────────────────────────────────────────────┐')
-    console.log('│ 9️⃣  ETAPA 6: SALVAR MENSAGEM                                    │')
-    console.log('└─────────────────────────────────────────────────────────────────┘')
-    
-    const direction = isFromMe ? 'outbound' : 'inbound'
-    const senderType = isFromMe ? 'user' : 'contact'
-    
-    // Determine message type for database
-    let dbMessageType: string
-    if (isAudioMessage) {
-      dbMessageType = 'audio'
-    } else if (isImageMessage) {
-      dbMessageType = 'image'
-    } else if (isVideoMessage) {
-      dbMessageType = 'video'
-    } else if (isStickerMessage) {
-      dbMessageType = 'sticker'
-    } else if (isDocumentMessage) {
-      dbMessageType = 'document'
-    } else if (unsupportedMediaText) {
-      dbMessageType = 'text' // Save unsupported media as text with placeholder
-    } else {
-      dbMessageType = 'text'
-    }
-    
-    const status = mediaMetadata.error ? 'failed' : 'delivered'
-    
-    // Determine content - null for audio/sticker, caption for images/videos, text for everything else
-    // For images, extract caption from message.content.caption
-    const imageCaption = isImageMessage ? (
-      payload.message?.content?.caption || 
-      imageContentData?.caption || 
-      null
-    ) : null
-    // For videos, extract caption from message.content.caption
-    const videoCaption = isVideoMessage ? (
-      payload.message?.content?.caption || 
-      videoContentData?.caption || 
-      null
-    ) : null
-    // Stickers never have captions
-    const messageContent = unsupportedMediaText || (isAudioMessage || isStickerMessage ? null : (isImageMessage ? imageCaption : (isVideoMessage ? videoCaption : (isDocumentMessage ? documentCaption : messageText))))
-    
-    console.log(`💾 Salvando mensagem...`)
-    console.log(`   - direction: ${direction}`)
-    console.log(`   - sender_type: ${senderType}`)
-    console.log(`   - message_type: ${dbMessageType}`)
-    console.log(`   - status: ${status}`)
-    console.log(`   - content: ${messageContent?.substring(0, 50) || '[null]'}`)
-    if (mediaUrl) {
-      console.log(`   - media_url: ${mediaUrl}`)
-    }
-    
-    // Lookup quoted message ID if present
     let quotedMessageDbId: string | null = null
     if (quotedWhatsAppId) {
-      console.log(`🔍 Buscando mensagem citada com whatsapp_message_id: ${quotedWhatsAppId}`)
-      
-      // First, try exact match
       let { data: quotedMsg } = await supabase
         .from('messages')
         .select('id')
@@ -2122,9 +973,7 @@ serve(async (req) => {
         .eq('conversation_id', conversationId)
         .maybeSingle()
       
-      // If not found, try searching with LIKE pattern (whatsapp_message_id may have phone prefix)
       if (!quotedMsg) {
-        console.log(`   Tentando busca com LIKE %${quotedWhatsAppId}`)
         const { data: quotedMsgLike } = await supabase
           .from('messages')
           .select('id')
@@ -2136,27 +985,82 @@ serve(async (req) => {
         quotedMsg = quotedMsgLike
       }
       
-      // If still not found, try without the prefix (extract just the message ID part)
-      if (!quotedMsg && quotedWhatsAppId.includes(':')) {
-        const msgIdOnly = quotedWhatsAppId.split(':').pop()
-        console.log(`   Tentando busca apenas com msgId: ${msgIdOnly}`)
-        const { data: quotedMsgById } = await supabase
-          .from('messages')
-          .select('id')
-          .like('whatsapp_message_id', `%${msgIdOnly}`)
-          .eq('conversation_id', conversationId)
-          .limit(1)
-          .maybeSingle()
-        
-        quotedMsg = quotedMsgById
-      }
-      
       if (quotedMsg) {
         quotedMessageDbId = quotedMsg.id
-        console.log(`✅ Mensagem citada encontrada: ${quotedMessageDbId}`)
-      } else {
-        console.log(`⚠️ Mensagem citada não encontrada no banco`)
       }
+    }
+    
+    // ═══════════════════════════════════════════════════════════════════
+    // 9️⃣ SAVE MESSAGE (FAST - WITHOUT MEDIA DOWNLOAD)
+    // ═══════════════════════════════════════════════════════════════════
+    const direction = isFromMe ? 'outbound' : 'inbound'
+    const senderType = isFromMe ? 'user' : 'contact'
+    
+    let dbMessageType: string
+    let messageContent: string | null = null
+    let initialStatus = 'delivered'
+    let mediaMetadata: any = {}
+    
+    if (isAudioMessage) {
+      dbMessageType = 'audio'
+      initialStatus = 'pending' // Will be updated after background processing
+      mediaMetadata = {
+        duration: contentData?.seconds || 0,
+        fileSize: contentData?.fileLength || 0,
+        isPTT: contentData?.PTT === true || mediaType === 'ptt',
+        mimeType: contentData?.mimetype || 'audio/ogg',
+        pendingDownload: true
+      }
+    } else if (isImageMessage) {
+      dbMessageType = 'image'
+      initialStatus = 'pending'
+      messageContent = contentData?.caption || null
+      mediaMetadata = {
+        width: contentData?.width || 0,
+        height: contentData?.height || 0,
+        fileSize: contentData?.fileLength || 0,
+        mimeType: contentData?.mimetype || 'image/jpeg',
+        hasCaption: !!contentData?.caption,
+        pendingDownload: true
+      }
+    } else if (isVideoMessage) {
+      dbMessageType = 'video'
+      initialStatus = 'pending'
+      messageContent = contentData?.caption || null
+      mediaMetadata = {
+        width: contentData?.width || 0,
+        height: contentData?.height || 0,
+        duration: contentData?.seconds || 0,
+        fileSize: contentData?.fileLength || 0,
+        mimeType: contentData?.mimetype || 'video/mp4',
+        hasCaption: !!contentData?.caption,
+        pendingDownload: true
+      }
+    } else if (isDocumentMessage) {
+      dbMessageType = 'document'
+      initialStatus = 'pending'
+      messageContent = contentData?.caption || null
+      mediaMetadata = {
+        fileName: contentData?.fileName || 'document',
+        fileSize: contentData?.fileLength || 0,
+        mimeType: contentData?.mimetype || 'application/octet-stream',
+        pageCount: contentData?.pageCount || null,
+        hasCaption: !!contentData?.caption,
+        pendingDownload: true
+      }
+    } else if (isStickerMessage) {
+      dbMessageType = 'sticker'
+      initialStatus = 'pending'
+      mediaMetadata = {
+        width: contentData?.width || 512,
+        height: contentData?.height || 512,
+        fileSize: contentData?.fileLength || 0,
+        isAnimated: contentData?.isAnimated || false,
+        pendingDownload: true
+      }
+    } else {
+      dbMessageType = 'text'
+      messageContent = messageText
     }
     
     const { data: savedMessage, error: saveMessageError } = await supabase
@@ -2168,11 +1072,11 @@ serve(async (req) => {
         sender_id: null,
         content: messageContent,
         message_type: dbMessageType,
-        media_url: mediaUrl,
-        media_mime_type: mediaMimeType,
+        media_url: null,
+        media_mime_type: null,
         whatsapp_message_id: messageId,
-        status: status,
-        error_message: mediaMetadata.error || null,
+        status: initialStatus,
+        error_message: null,
         metadata: mediaMetadata,
         quoted_message_id: quotedMessageDbId,
         created_at: messageTimestamp
@@ -2181,65 +1085,74 @@ serve(async (req) => {
       .single()
     
     if (saveMessageError) {
-      console.log(`❌ Erro ao salvar mensagem: ${saveMessageError.message}`)
+      console.log(`❌ Error saving message: ${saveMessageError.message}`)
       return new Response(
-        JSON.stringify({ 
-          success: false, 
-          error: 'Error saving message',
-          details: saveMessageError.message 
-        }),
+        JSON.stringify({ success: false, error: 'Error saving message' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
     
-    console.log(`✅ Mensagem salva com sucesso!`)
-    console.log(`   - message_id: ${savedMessage.id}`)
+    console.log(`✅ Message saved: ${savedMessage.id} (${dbMessageType})`)
     
     // ═══════════════════════════════════════════════════════════════════
-    // 🎉 SUCESSO FINAL
+    // 🚀 PROCESS MEDIA IN BACKGROUND (EdgeRuntime.waitUntil)
     // ═══════════════════════════════════════════════════════════════════
-    console.log('\n╔══════════════════════════════════════════════════════════════════╗')
-    console.log('║              🎉 WEBHOOK PROCESSADO COM SUCESSO!                  ║')
-    console.log('╚══════════════════════════════════════════════════════════════════╝')
-    console.log(`   📱 Instance: ${instanceName}`)
-    console.log(`   👤 Contact: ${contactName} (${phoneNumber})`)
-    console.log(`   💬 Conversation: ${conversationId}`)
-    console.log(`   📨 Message: ${savedMessage.id}`)
-    console.log(`   📝 Type: ${dbMessageType}`)
-    console.log(`   ⏰ Processed at: ${new Date().toISOString()}`)
+    if (isMediaMessage && instanceToken) {
+      const mediaTypeMap: Record<string, 'audio' | 'image' | 'video' | 'document' | 'sticker'> = {
+        'audio': 'audio',
+        'image': 'image',
+        'video': 'video',
+        'document': 'document',
+        'sticker': 'sticker'
+      }
+      
+      const detectedMediaType = isAudioMessage ? 'audio' 
+        : isImageMessage ? 'image' 
+        : isVideoMessage ? 'video' 
+        : isDocumentMessage ? 'document' 
+        : 'sticker'
+      
+      console.log(`🚀 Scheduling background processing for ${detectedMediaType}`)
+      
+      // Use EdgeRuntime.waitUntil for background processing
+      EdgeRuntime.waitUntil(
+        processMediaInBackground({
+          messageId,
+          messageDbId: savedMessage.id,
+          mediaType: detectedMediaType,
+          companyId,
+          whatsappConnectionId,
+          instanceToken,
+          mediaMetadata,
+          contentData
+        })
+      )
+    }
     
+    // ═══════════════════════════════════════════════════════════════════
+    // 🎉 RETURN IMMEDIATELY
+    // ═══════════════════════════════════════════════════════════════════
     return new Response(
       JSON.stringify({
         success: true,
-        message: 'Message processed successfully',
-        data: {
-          contact_id: contactId,
-          conversation_id: conversationId,
-          message_id: savedMessage.id,
-          message_type: dbMessageType,
-          media_url: mediaUrl
-        }
+        message_id: savedMessage.id,
+        conversation_id: conversationId,
+        contact_id: contactId,
+        type: dbMessageType,
+        async_processing: isMediaMessage
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )
     
   } catch (error) {
-    console.log('\n╔══════════════════════════════════════════════════════════════════╗')
-    console.log('║              ❌ ERRO INESPERADO NO WEBHOOK                       ║')
-    console.log('╚══════════════════════════════════════════════════════════════════╝')
-    console.error('Error:', error)
-    console.error('Stack:', error instanceof Error ? error.stack : 'No stack trace')
-    
+    console.error('❌ Webhook error:', error)
     return new Response(
-      JSON.stringify({
-        success: false,
+      JSON.stringify({ 
+        success: false, 
         error: 'Internal server error',
-        message: error instanceof Error ? error.message : String(error)
+        details: error instanceof Error ? error.message : 'Unknown error'
       }),
-      { 
-        status: 500, 
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-      }
+      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )
   }
 })
