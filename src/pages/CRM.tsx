@@ -437,10 +437,7 @@ export default function CRM() {
           {/* Connection Selector */}
           <Select value={selectedConnectionId || ''} onValueChange={handleConnectionChange}>
             <SelectTrigger className="w-[180px] md:w-[220px]">
-              <div className="flex items-center gap-2">
-                <Smartphone className="w-4 h-4 text-green-500" />
-                <SelectValue placeholder="Selecionar conexão" />
-              </div>
+              <SelectValue placeholder="Selecionar conexão" />
             </SelectTrigger>
             <SelectContent className="bg-popover">
               {connections.map(conn => (
