@@ -1723,10 +1723,12 @@ export type Database = {
         Args: { p_column_id: string }
         Returns: boolean
       }
-      create_internal_chat_room: {
-        Args: { p_name?: string; p_type: string }
-        Returns: string
-      }
+      create_internal_chat_room:
+        | { Args: { p_name?: string; p_type: string }; Returns: string }
+        | {
+            Args: { p_description?: string; p_name?: string; p_type: string }
+            Returns: string
+          }
       get_board_company_id: { Args: { board_id: string }; Returns: string }
       get_card_company_id: { Args: { card_id: string }; Returns: string }
       get_column_company_id: { Args: { p_column_id: string }; Returns: string }

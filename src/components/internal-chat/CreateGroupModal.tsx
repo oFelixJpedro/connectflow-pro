@@ -127,20 +127,17 @@ export function CreateGroupModal({ isOpen, onClose, onGroupCreated }: CreateGrou
 
     setIsCreating(true);
     try {
-      // Create the group room
-      const { data: room, error: roomError } = await supabase
-        .from('internal_chat_rooms')
-        .insert({
-          company_id: company.id,
-          type: 'group',
-          name: groupName.trim(),
-          description: description.trim() || null,
-          created_by: profile.id,
-        })
-        .select('id')
-        .single();
+      // Create the group room using RPC (bypasses RLS)
+      const { data: roomId, error: roomError } = await supabase
+        .rpc('create_internal_chat_room', {
+          p_type: 'group',
+          p_name: groupName.trim(),
+          p_description: description.trim() || null
+        });
 
       if (roomError) throw roomError;
+      
+      const room = { id: roomId };
 
       // Add participants
       const participants = selectedMembers.map(userId => ({
