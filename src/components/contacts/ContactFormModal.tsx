@@ -31,11 +31,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { X, Loader2, LayoutGrid, Trash2, Smartphone, AlertTriangle, Users, Paperclip, MessageSquare, Image, Video, FileText, Mic } from 'lucide-react';
+import { X, Loader2, LayoutGrid, Trash2, Smartphone, AlertTriangle, Users, Paperclip, MessageSquare, Image, Video, FileText, Mic, Square, Play, Pause, RotateCcw } from 'lucide-react';
 import { Contact, ContactFormData } from '@/hooks/useContactsData';
 import { useContactCRM } from '@/hooks/useContactCRM';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
+import { useAudioRecorder } from '@/hooks/useAudioRecorder';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { cn } from '@/lib/utils';
 
 interface ContactFormModalProps {
   open: boolean;
@@ -72,6 +75,12 @@ const MEDIA_TYPES = [
   { type: 'document', label: 'Documento', icon: FileText, accept: '*/*' },
 ];
 
+function formatRecordingTime(seconds: number): string {
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+}
+
 export function ContactFormModal({
   open,
   onOpenChange,
@@ -99,6 +108,10 @@ export function ContactFormModal({
   } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [mediaType, setMediaType] = useState<'image' | 'video' | 'audio' | 'document'>('image');
+  const [isRecordingAudio, setIsRecordingAudio] = useState(false);
+  const audioRecorder = useAudioRecorder();
+  const audioPreviewRef = useRef<HTMLAudioElement | null>(null);
+  const [audioPreviewPlaying, setAudioPreviewPlaying] = useState(false);
 
   // Migration state - Connection
   const [allConnections, setAllConnections] = useState<WhatsAppConnection[]>([]);
@@ -215,6 +228,8 @@ export function ContactFormModal({
       // Reset new contact fields
       setInitialMessage('');
       setInitialMessageMedia(null);
+      setIsRecordingAudio(false);
+      audioRecorder.cancelRecording();
       // Pre-select connection if provided
       if (!contact && preselectedConnectionId) {
         setSelectedConnectionId(preselectedConnectionId);
@@ -426,11 +441,57 @@ export function ContactFormModal({
   };
 
   const handleFileSelect = (type: 'image' | 'video' | 'audio' | 'document') => {
+    // For audio, start recording instead of file select
+    if (type === 'audio') {
+      setIsRecordingAudio(true);
+      audioRecorder.startRecording();
+      return;
+    }
+    
     setMediaType(type);
     const mediaConfig = MEDIA_TYPES.find(m => m.type === type);
     if (fileInputRef.current && mediaConfig) {
       fileInputRef.current.accept = mediaConfig.accept;
       fileInputRef.current.click();
+    }
+  };
+
+  const handleStopRecording = () => {
+    audioRecorder.stopRecording();
+  };
+
+  const handleCancelRecording = () => {
+    audioRecorder.cancelRecording();
+    setIsRecordingAudio(false);
+    setAudioPreviewPlaying(false);
+  };
+
+  const handleSaveRecording = () => {
+    if (audioRecorder.audioBlob) {
+      const file = new File([audioRecorder.audioBlob], `audio_${Date.now()}.webm`, {
+        type: 'audio/webm'
+      });
+      setInitialMessageMedia({ type: 'audio', file });
+      setIsRecordingAudio(false);
+      audioRecorder.clearRecording();
+      setAudioPreviewPlaying(false);
+    }
+  };
+
+  const handleRerecord = () => {
+    audioRecorder.clearRecording();
+    audioRecorder.startRecording();
+    setAudioPreviewPlaying(false);
+  };
+
+  const toggleAudioPreview = () => {
+    if (!audioPreviewRef.current) return;
+    if (audioPreviewPlaying) {
+      audioPreviewRef.current.pause();
+      setAudioPreviewPlaying(false);
+    } else {
+      audioPreviewRef.current.play();
+      setAudioPreviewPlaying(true);
     }
   };
 
@@ -481,7 +542,11 @@ export function ContactFormModal({
   // For new contacts, connection must be selected
   const needsConnectionForNewContact = !contact && !selectedConnectionId;
 
-  const canSave = !loading && !needsDepartmentSelection && !needsConnectionForNewContact;
+  // Validate required fields: name, phone (with digits), and connection for new contacts
+  const hasValidPhone = formData.phone_number.replace(/\D/g, '').length >= 8;
+  const hasValidName = formData.name.trim().length > 0;
+  
+  const canSave = !loading && !needsDepartmentSelection && !needsConnectionForNewContact && hasValidPhone && hasValidName;
 
   return (
     <>
@@ -617,32 +682,193 @@ export function ContactFormModal({
                     />
 
                     {/* Media attachment */}
-                    <div className="flex items-center gap-2">
-                      <div className="flex gap-1">
-                        {MEDIA_TYPES.map((media) => (
-                          <Button
-                            key={media.type}
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleFileSelect(media.type as typeof mediaType)}
-                            className="h-8 px-2"
-                            title={media.label}
-                          >
-                            <media.icon className="w-4 h-4" />
-                          </Button>
-                        ))}
+                    {!isRecordingAudio && !initialMessageMedia && (
+                      <div className="flex items-center gap-2">
+                        <div className="flex gap-1">
+                          {MEDIA_TYPES.map((media) => (
+                            <Tooltip key={media.type}>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => handleFileSelect(media.type as typeof mediaType)}
+                                  className="h-8 px-2"
+                                >
+                                  <media.icon className="w-4 h-4" />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>{media.label}</TooltipContent>
+                            </Tooltip>
+                          ))}
+                        </div>
+                        <input
+                          ref={fileInputRef}
+                          type="file"
+                          className="hidden"
+                          onChange={handleFileChange}
+                        />
                       </div>
-                      <input
-                        ref={fileInputRef}
-                        type="file"
-                        className="hidden"
-                        onChange={handleFileChange}
-                      />
-                    </div>
+                    )}
+
+                    {/* Audio Recording UI */}
+                    {isRecordingAudio && (
+                      <div className="flex items-center gap-3 p-3 bg-primary/5 rounded-lg border border-primary/20">
+                        {/* Hidden audio for preview */}
+                        {audioRecorder.audioUrl && (
+                          <audio 
+                            ref={audioPreviewRef} 
+                            src={audioRecorder.audioUrl} 
+                            onEnded={() => setAudioPreviewPlaying(false)}
+                          />
+                        )}
+                        
+                        {/* Recording in progress */}
+                        {audioRecorder.isRecording && !audioRecorder.audioBlob && (
+                          <>
+                            <div className="relative flex-shrink-0">
+                              <div className={cn(
+                                "w-10 h-10 rounded-full bg-destructive flex items-center justify-center",
+                                !audioRecorder.isPaused && "animate-pulse"
+                              )}>
+                                <Mic className="w-5 h-5 text-white" />
+                              </div>
+                              {!audioRecorder.isPaused && (
+                                <div className="absolute inset-0 rounded-full bg-destructive/50 animate-ping" />
+                              )}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <span className="font-mono text-lg font-semibold">
+                                {formatRecordingTime(audioRecorder.recordingTime)}
+                              </span>
+                              <p className="text-xs text-muted-foreground">
+                                {audioRecorder.isPaused ? 'Pausado' : 'Gravando...'}
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={audioRecorder.isPaused ? audioRecorder.resumeRecording : audioRecorder.pauseRecording}
+                                    className="h-9 w-9"
+                                  >
+                                    {audioRecorder.isPaused ? <Play className="w-4 h-4" /> : <Pause className="w-4 h-4" />}
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>{audioRecorder.isPaused ? 'Continuar' : 'Pausar'}</TooltipContent>
+                              </Tooltip>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    type="button"
+                                    variant="default"
+                                    size="icon"
+                                    onClick={handleStopRecording}
+                                    className="h-9 w-9 bg-destructive hover:bg-destructive/90"
+                                  >
+                                    <Square className="w-4 h-4" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>Finalizar</TooltipContent>
+                              </Tooltip>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={handleCancelRecording}
+                                    className="h-9 w-9"
+                                  >
+                                    <X className="w-4 h-4" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>Cancelar</TooltipContent>
+                              </Tooltip>
+                            </div>
+                          </>
+                        )}
+                        
+                        {/* Preview after recording */}
+                        {audioRecorder.audioBlob && (
+                          <>
+                            <div className="flex-shrink-0 w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center">
+                              <Mic className="w-5 h-5 text-primary" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <span className="font-mono text-sm font-medium">
+                                {formatRecordingTime(audioRecorder.recordingTime)}
+                              </span>
+                              <p className="text-xs text-muted-foreground">Áudio pronto</p>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={toggleAudioPreview}
+                                    className="h-9 w-9"
+                                  >
+                                    {audioPreviewPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>{audioPreviewPlaying ? 'Pausar' : 'Ouvir'}</TooltipContent>
+                              </Tooltip>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={handleRerecord}
+                                    className="h-9 w-9"
+                                  >
+                                    <RotateCcw className="w-4 h-4" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>Regravar</TooltipContent>
+                              </Tooltip>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    type="button"
+                                    variant="default"
+                                    size="icon"
+                                    onClick={handleSaveRecording}
+                                    className="h-9 w-9"
+                                  >
+                                    <Paperclip className="w-4 h-4" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>Anexar áudio</TooltipContent>
+                              </Tooltip>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={handleCancelRecording}
+                                    className="h-9 w-9"
+                                  >
+                                    <X className="w-4 h-4" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>Cancelar</TooltipContent>
+                              </Tooltip>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    )}
 
                     {/* Selected media preview */}
-                    {initialMessageMedia && (
+                    {initialMessageMedia && !isRecordingAudio && (
                       <div className="flex items-center gap-2 p-2 bg-muted rounded-md overflow-hidden min-w-0">
                         <Paperclip className="w-4 h-4 text-muted-foreground flex-shrink-0" />
                         <span className="text-sm truncate min-w-0 flex-1">
