@@ -1,17 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
-
-interface Notification {
-  id: string;
-  type: 'whatsapp_message' | 'internal_message' | 'assignment' | 'mention';
-  title: string;
-  message: string;
-  createdAt: string;
-  read: boolean;
-  conversationId?: string;
-  roomId?: string;
-}
+import { useNotificationSound } from './useNotificationSound';
+import { NotificationData } from '@/components/notifications/NotificationItem';
 
 interface UnreadCounts {
   whatsapp: number;
@@ -19,22 +10,31 @@ interface UnreadCounts {
   total: number;
 }
 
+interface TabCounts {
+  minhas: number;
+  fila: number;
+  todas: number;
+}
+
 interface UserAccessPermissions {
   isAdminOrOwner: boolean;
-  allowedConnectionIds: string[] | null; // null = all connections
-  allowedDepartmentIds: string[] | null; // null = all departments
+  allowedConnectionIds: string[] | null;
+  allowedDepartmentIds: string[] | null;
 }
 
 export function useNotifications() {
   const { profile, company, userRole } = useAuth();
-  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const { playSound, showDesktopNotification } = useNotificationSound();
+  
+  const [internalNotifications, setInternalNotifications] = useState<NotificationData[]>([]);
+  const [whatsappNotifications, setWhatsappNotifications] = useState<NotificationData[]>([]);
   const [unreadCounts, setUnreadCounts] = useState<UnreadCounts>({ whatsapp: 0, internalChat: 0, total: 0 });
+  const [tabCounts, setTabCounts] = useState<TabCounts>({ minhas: 0, fila: 0, todas: 0 });
   const [isLoading, setIsLoading] = useState(true);
   
-  // Track processed message IDs to avoid duplicates
   const processedMessageIds = useRef<Set<string>>(new Set());
 
-  // Get user's access permissions for connections and departments
+  // Get user's access permissions
   const getUserAccessPermissions = useCallback(async (): Promise<UserAccessPermissions> => {
     if (!profile?.id || !company?.id) {
       return { isAdminOrOwner: false, allowedConnectionIds: [], allowedDepartmentIds: [] };
@@ -42,46 +42,37 @@ export function useNotifications() {
 
     const isAdminOrOwner = userRole?.role === 'owner' || userRole?.role === 'admin';
 
-    // Owner/Admin see everything
     if (isAdminOrOwner) {
       return { isAdminOrOwner: true, allowedConnectionIds: null, allowedDepartmentIds: null };
     }
 
-    // For non-admin users, check connection_users assignments
     const { data: connectionAssignments } = await supabase
       .from('connection_users')
       .select('connection_id, department_access_mode')
       .eq('user_id', profile.id);
 
     if (!connectionAssignments || connectionAssignments.length === 0) {
-      // Check if any connections have assignments - if not, allow all (legacy behavior)
       const { data: anyAssignments } = await supabase
         .from('connection_users')
         .select('id')
         .limit(1);
 
       if (!anyAssignments || anyAssignments.length === 0) {
-        // No assignments exist at all - legacy behavior, allow all
         return { isAdminOrOwner: false, allowedConnectionIds: null, allowedDepartmentIds: null };
       }
 
-      // Assignments exist but user has none - no access
       return { isAdminOrOwner: false, allowedConnectionIds: [], allowedDepartmentIds: [] };
     }
 
-    // User has specific connection assignments
     const allowedConnectionIds = connectionAssignments.map(ca => ca.connection_id);
     
-    // Check department access for each connection
     let allowedDepartmentIds: string[] | null = null;
     const hasSpecificDeptAccess = connectionAssignments.some(ca => ca.department_access_mode === 'specific');
     const hasNoDeptAccess = connectionAssignments.every(ca => ca.department_access_mode === 'none');
 
     if (hasNoDeptAccess) {
-      // User has no department access on any connection
       allowedDepartmentIds = [];
     } else if (hasSpecificDeptAccess) {
-      // User has specific department access on some connections - fetch department_users
       const { data: departmentAssignments } = await supabase
         .from('department_users')
         .select('department_id')
@@ -90,22 +81,19 @@ export function useNotifications() {
       if (departmentAssignments && departmentAssignments.length > 0) {
         allowedDepartmentIds = departmentAssignments.map(da => da.department_id);
       } else {
-        // User has 'specific' mode but no departments assigned
         allowedDepartmentIds = [];
       }
     }
-    // If all connections have 'all' department access, allowedDepartmentIds stays null (all departments)
 
     return { isAdminOrOwner: false, allowedConnectionIds, allowedDepartmentIds };
   }, [profile?.id, company?.id, userRole?.role]);
 
-  // Load WhatsApp unread count from conversations (filtered by permissions)
+  // Load WhatsApp unread count
   const loadWhatsAppUnread = useCallback(async () => {
     if (!company?.id || !profile?.id) return 0;
 
     const permissions = await getUserAccessPermissions();
 
-    // If no connection access, return 0
     if (permissions.allowedConnectionIds !== null && permissions.allowedConnectionIds.length === 0) {
       return 0;
     }
@@ -114,9 +102,9 @@ export function useNotifications() {
       .from('conversations')
       .select('unread_count, whatsapp_connection_id, department_id')
       .eq('company_id', company.id)
+      .neq('status', 'closed')
       .gt('unread_count', 0);
 
-    // Filter by allowed connections (if not admin/owner)
     if (permissions.allowedConnectionIds !== null) {
       query = query.in('whatsapp_connection_id', permissions.allowedConnectionIds);
     }
@@ -128,7 +116,6 @@ export function useNotifications() {
       return 0;
     }
 
-    // Further filter by department if needed
     let filteredData = data || [];
     if (permissions.allowedDepartmentIds !== null) {
       filteredData = filteredData.filter(conv => 
@@ -139,11 +126,65 @@ export function useNotifications() {
     return filteredData.reduce((sum, conv) => sum + (conv.unread_count || 0), 0);
   }, [company?.id, profile?.id, getUserAccessPermissions]);
 
+  // Load tab counts (Minhas, Fila, Todas)
+  const loadTabCounts = useCallback(async () => {
+    if (!company?.id || !profile?.id) return { minhas: 0, fila: 0, todas: 0 };
+
+    const permissions = await getUserAccessPermissions();
+
+    if (permissions.allowedConnectionIds !== null && permissions.allowedConnectionIds.length === 0) {
+      return { minhas: 0, fila: 0, todas: 0 };
+    }
+
+    // Base query for open conversations with unread
+    let baseQuery = supabase
+      .from('conversations')
+      .select('id, unread_count, assigned_user_id, whatsapp_connection_id, department_id')
+      .eq('company_id', company.id)
+      .neq('status', 'closed')
+      .gt('unread_count', 0);
+
+    if (permissions.allowedConnectionIds !== null) {
+      baseQuery = baseQuery.in('whatsapp_connection_id', permissions.allowedConnectionIds);
+    }
+
+    const { data, error } = await baseQuery;
+
+    if (error) {
+      console.error('[Notifications] Error loading tab counts:', error);
+      return { minhas: 0, fila: 0, todas: 0 };
+    }
+
+    let filteredData = data || [];
+    if (permissions.allowedDepartmentIds !== null) {
+      filteredData = filteredData.filter(conv => 
+        conv.department_id === null || permissions.allowedDepartmentIds!.includes(conv.department_id)
+      );
+    }
+
+    const counts = {
+      minhas: 0,
+      fila: 0,
+      todas: 0,
+    };
+
+    filteredData.forEach(conv => {
+      counts.todas += conv.unread_count || 0;
+      
+      if (conv.assigned_user_id === profile.id) {
+        counts.minhas += conv.unread_count || 0;
+      } else if (!conv.assigned_user_id) {
+        counts.fila += conv.unread_count || 0;
+      }
+    });
+
+    return counts;
+  }, [company?.id, profile?.id, getUserAccessPermissions]);
+
   // Load internal chat unread count
   const loadInternalChatUnread = useCallback(async () => {
     if (!company?.id || !profile?.id) return 0;
 
-    // Get last seen timestamps from database
     const { data: readStates } = await supabase
       .from('internal_chat_read_states')
       .select('room_id, last_seen_at')
@@ -154,7 +195,6 @@ export function useNotifications() {
       lastSeenByRoom[rs.room_id] = rs.last_seen_at;
     });
 
-    // Get all rooms the user has access to
     const { data: rooms, error: roomsError } = await supabase
       .from('internal_chat_rooms')
       .select('id')
@@ -184,19 +224,51 @@ export function useNotifications() {
     return totalUnread;
   }, [company?.id, profile?.id]);
 
-  // Load recent notifications (filtered by permissions)
-  const loadRecentNotifications = useCallback(async () => {
-    if (!company?.id || !profile?.id) return;
+  // Load WhatsApp notifications with mention data
+  const loadWhatsAppNotifications = useCallback(async () => {
+    if (!company?.id || !profile?.id) return [];
 
     const permissions = await getUserAccessPermissions();
 
-    // If no connection access, no notifications
-    if (permissions.allowedConnectionIds !== null && permissions.allowedConnectionIds.length === 0) {
-      setNotifications([]);
-      return;
-    }
+    // Load mentions from mention_notifications table
+    const { data: mentions } = await supabase
+      .from('mention_notifications')
+      .select(`
+        id,
+        message_id,
+        conversation_id,
+        mentioner_user_id,
+        is_read,
+        has_access,
+        created_at,
+        mentioner:profiles!mentioner_user_id(full_name)
+      `)
+      .eq('mentioned_user_id', profile.id)
+      .eq('source_type', 'internal_note')
+      .order('created_at', { ascending: false })
+      .limit(20);
 
-    // Build query for recent conversations with new messages
+    const notifications: NotificationData[] = [];
+
+    // Add mention notifications
+    (mentions || []).forEach((mention: any) => {
+      notifications.push({
+        id: `mention-whatsapp-${mention.id}`,
+        type: 'mention',
+        source: 'whatsapp',
+        title: `${mention.mentioner?.full_name || 'Alguém'} te mencionou`,
+        preview: 'Você foi mencionado em uma nota interna',
+        createdAt: mention.created_at,
+        isRead: mention.is_read,
+        conversationId: mention.conversation_id,
+        messageId: mention.message_id,
+        hasAccess: mention.has_access,
+        accessDeniedReason: !mention.has_access ? 'no_connection' : undefined,
+        mentionerName: mention.mentioner?.full_name,
+      });
+    });
+
+    // Load recent unread conversations
     let query = supabase
       .from('conversations')
       .select(`
@@ -205,21 +277,21 @@ export function useNotifications() {
         last_message_at,
         whatsapp_connection_id,
         department_id,
+        assigned_user_id,
         contact:contacts(name, phone_number)
       `)
       .eq('company_id', company.id)
+      .neq('status', 'closed')
       .gt('unread_count', 0)
       .order('last_message_at', { ascending: false })
-      .limit(20); // Fetch more to account for filtering
+      .limit(20);
 
-    // Filter by allowed connections (if not admin/owner)
     if (permissions.allowedConnectionIds !== null) {
       query = query.in('whatsapp_connection_id', permissions.allowedConnectionIds);
     }
 
     const { data: conversations } = await query;
 
-    // Further filter by department if needed
     let filteredConversations = conversations || [];
     if (permissions.allowedDepartmentIds !== null) {
       filteredConversations = filteredConversations.filter(conv => 
@@ -227,36 +299,172 @@ export function useNotifications() {
       );
     }
 
-    // Limit to 10 after filtering
-    filteredConversations = filteredConversations.slice(0, 10);
+    // Filter based on access level
+    if (!permissions.isAdminOrOwner && permissions.allowedConnectionIds !== null) {
+      // Check access level for each connection
+      const { data: connectionUsers } = await supabase
+        .from('connection_users')
+        .select('connection_id, access_level')
+        .eq('user_id', profile.id)
+        .in('connection_id', permissions.allowedConnectionIds);
 
-    const recentNotifications: Notification[] = [];
+      const accessByConnection = Object.fromEntries(
+        (connectionUsers || []).map(cu => [cu.connection_id, cu.access_level])
+      );
 
-    // Add WhatsApp notifications
-    filteredConversations.forEach(conv => {
+      filteredConversations = filteredConversations.filter(conv => {
+        const accessLevel = accessByConnection[conv.whatsapp_connection_id];
+        if (accessLevel === 'assigned_only') {
+          return conv.assigned_user_id === profile.id;
+        }
+        // For full access, only show assigned to me or unassigned (not assigned to others)
+        return conv.assigned_user_id === profile.id || conv.assigned_user_id === null;
+      });
+    } else {
+      // Admin/owner: only show assigned to me or unassigned (not assigned to others)
+      filteredConversations = filteredConversations.filter(conv => 
+        conv.assigned_user_id === profile.id || conv.assigned_user_id === null
+      );
+    }
+
+    // Add conversation notifications
+    filteredConversations.slice(0, 10).forEach(conv => {
       if (conv.unread_count > 0) {
-        recentNotifications.push({
+        const contactName = (conv.contact as any)?.name || (conv.contact as any)?.phone_number || 'Contato';
+        notifications.push({
           id: `whatsapp-${conv.id}`,
-          type: 'whatsapp_message',
-          title: `Nova mensagem de ${(conv.contact as any)?.name || (conv.contact as any)?.phone_number || 'Contato'}`,
-          message: conv.unread_count > 1 
+          type: 'message',
+          source: 'whatsapp',
+          title: `Nova mensagem de ${contactName}`,
+          preview: conv.unread_count > 1 
             ? `${conv.unread_count} mensagens não lidas`
             : '1 mensagem não lida',
           createdAt: conv.last_message_at || new Date().toISOString(),
-          read: false,
+          isRead: false,
           conversationId: conv.id,
+          hasAccess: true,
+          contactName,
         });
       }
     });
 
-    setNotifications(recentNotifications);
+    // Sort by date
+    notifications.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+    return notifications.slice(0, 20);
   }, [company?.id, profile?.id, getUserAccessPermissions]);
+
+  // Load internal chat notifications
+  const loadInternalNotifications = useCallback(async () => {
+    if (!company?.id || !profile?.id) return [];
+
+    // Load mentions from internal chat
+    const { data: mentions } = await supabase
+      .from('mention_notifications')
+      .select(`
+        id,
+        message_id,
+        room_id,
+        mentioner_user_id,
+        is_read,
+        created_at,
+        mentioner:profiles!mentioner_user_id(full_name)
+      `)
+      .eq('mentioned_user_id', profile.id)
+      .eq('source_type', 'internal_chat')
+      .order('created_at', { ascending: false })
+      .limit(20);
+
+    const notifications: NotificationData[] = [];
+
+    // Add mention notifications
+    (mentions || []).forEach((mention: any) => {
+      notifications.push({
+        id: `mention-internal-${mention.id}`,
+        type: 'mention',
+        source: 'internal',
+        title: `${mention.mentioner?.full_name || 'Alguém'} te mencionou`,
+        preview: 'Você foi mencionado no chat interno',
+        createdAt: mention.created_at,
+        isRead: mention.is_read,
+        roomId: mention.room_id,
+        messageId: mention.message_id,
+        hasAccess: true,
+        mentionerName: mention.mentioner?.full_name,
+      });
+    });
+
+    // Load unread internal messages
+    const { data: readStates } = await supabase
+      .from('internal_chat_read_states')
+      .select('room_id, last_seen_at')
+      .eq('user_id', profile.id);
+
+    const lastSeenByRoom: Record<string, string> = {};
+    (readStates || []).forEach(rs => {
+      lastSeenByRoom[rs.room_id] = rs.last_seen_at;
+    });
+
+    const { data: rooms } = await supabase
+      .from('internal_chat_rooms')
+      .select('id, name, type')
+      .eq('company_id', company.id);
+
+    for (const room of (rooms || [])) {
+      const lastSeen = lastSeenByRoom[room.id];
+      
+      let query = supabase
+        .from('internal_chat_messages')
+        .select(`
+          id,
+          content,
+          created_at,
+          sender:profiles!sender_id(full_name)
+        `)
+        .eq('room_id', room.id)
+        .neq('sender_id', profile.id)
+        .order('created_at', { ascending: false })
+        .limit(1);
+
+      if (lastSeen) {
+        query = query.gt('created_at', lastSeen);
+      }
+
+      const { data: messages } = await query;
+
+      if (messages && messages.length > 0) {
+        const msg = messages[0] as any;
+        const roomName = room.type === 'general' ? 'Chat Geral' : 
+                        room.type === 'group' ? room.name : 
+                        msg.sender?.full_name || 'Chat';
+        
+        notifications.push({
+          id: `internal-${room.id}`,
+          type: 'message',
+          source: 'internal',
+          title: `Nova mensagem em ${roomName}`,
+          preview: msg.content || 'Mensagem de mídia',
+          createdAt: msg.created_at,
+          isRead: false,
+          roomId: room.id,
+          messageId: msg.id,
+          hasAccess: true,
+        });
+      }
+    }
+
+    // Sort by date
+    notifications.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+    return notifications.slice(0, 20);
+  }, [company?.id, profile?.id]);
 
   // Refresh all counts
   const refreshCounts = useCallback(async () => {
-    const [whatsapp, internalChat] = await Promise.all([
+    const [whatsapp, internalChat, tabs] = await Promise.all([
       loadWhatsAppUnread(),
       loadInternalChatUnread(),
+      loadTabCounts(),
     ]);
 
     setUnreadCounts({
@@ -264,9 +472,21 @@ export function useNotifications() {
       internalChat,
       total: whatsapp + internalChat,
     });
-  }, [loadWhatsAppUnread, loadInternalChatUnread]);
+    setTabCounts(tabs);
+  }, [loadWhatsAppUnread, loadInternalChatUnread, loadTabCounts]);
 
-  // Mark internal chat room as read
+  // Load all notifications
+  const loadNotifications = useCallback(async () => {
+    const [internal, whatsapp] = await Promise.all([
+      loadInternalNotifications(),
+      loadWhatsAppNotifications(),
+    ]);
+
+    setInternalNotifications(internal);
+    setWhatsappNotifications(whatsapp);
+  }, [loadInternalNotifications, loadWhatsAppNotifications]);
+
+  // Mark room as read
   const markRoomAsRead = useCallback(async (roomId: string) => {
     if (!profile?.id) return;
     
@@ -282,31 +502,60 @@ export function useNotifications() {
           onConflict: 'user_id,room_id'
         });
       
-      // Refresh counts after marking as read
-      setTimeout(() => refreshCounts(), 100);
+      setTimeout(() => {
+        refreshCounts();
+        loadNotifications();
+      }, 100);
     } catch (e) {
       console.error('Error marking room as read:', e);
     }
-  }, [profile?.id, refreshCounts]);
+  }, [profile?.id, refreshCounts, loadNotifications]);
 
   // Mark notification as read
   const markAsRead = useCallback((notificationId: string) => {
-    setNotifications(prev => 
-      prev.map(n => n.id === notificationId ? { ...n, read: true } : n)
+    // Update local state
+    setInternalNotifications(prev => 
+      prev.map(n => n.id === notificationId ? { ...n, isRead: true } : n)
     );
+    setWhatsappNotifications(prev => 
+      prev.map(n => n.id === notificationId ? { ...n, isRead: true } : n)
+    );
+
+    // If it's a mention, mark in database
+    if (notificationId.startsWith('mention-')) {
+      const mentionId = notificationId.replace('mention-whatsapp-', '').replace('mention-internal-', '');
+      supabase
+        .from('mention_notifications')
+        .update({ is_read: true })
+        .eq('id', mentionId)
+        .then(() => {});
+    }
   }, []);
 
-  // Mark all as read
-  const markAllAsRead = useCallback(() => {
-    setNotifications(prev => prev.map(n => ({ ...n, read: true })));
-  }, []);
+  // Mark all as read for a source
+  const markAllAsRead = useCallback((source: 'internal' | 'whatsapp') => {
+    if (source === 'internal') {
+      setInternalNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
+    } else {
+      setWhatsappNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
+    }
 
-  // Clear all notifications
+    // Mark all mentions as read for this source
+    const sourceType = source === 'internal' ? 'internal_chat' : 'whatsapp';
+    supabase
+      .from('mention_notifications')
+      .update({ is_read: true })
+      .eq('mentioned_user_id', profile?.id)
+      .eq('source_type', sourceType)
+      .then(() => {});
+  }, [profile?.id]);
+
+  // Clear all
   const clearAll = useCallback(() => {
-    setNotifications([]);
+    setInternalNotifications([]);
+    setWhatsappNotifications([]);
   }, []);
 
-  // Initial load
   // Initial load
   useEffect(() => {
     if (!company?.id || !profile?.id) return;
@@ -315,38 +564,34 @@ export function useNotifications() {
       setIsLoading(true);
       await Promise.all([
         refreshCounts(),
-        loadRecentNotifications(),
+        loadNotifications(),
       ]);
       setIsLoading(false);
     };
 
     loadAll();
-  }, [company?.id, profile?.id, refreshCounts, loadRecentNotifications]);
+  }, [company?.id, profile?.id, refreshCounts, loadNotifications]);
 
-  // Listen for internal chat read events
+  // Listen for events
   useEffect(() => {
     const handleInternalChatRead = () => {
       refreshCounts();
+      loadNotifications();
+    };
+
+    const handleWhatsAppRead = () => {
+      refreshCounts();
+      loadNotifications();
     };
 
     window.addEventListener('internal-chat-read', handleInternalChatRead);
+    window.addEventListener('whatsapp-conversation-read', handleWhatsAppRead);
+    
     return () => {
       window.removeEventListener('internal-chat-read', handleInternalChatRead);
-    };
-  }, [refreshCounts]);
-
-  // Listen for WhatsApp conversation read events
-  useEffect(() => {
-    const handleWhatsAppRead = () => {
-      refreshCounts();
-      loadRecentNotifications();
-    };
-
-    window.addEventListener('whatsapp-conversation-read', handleWhatsAppRead);
-    return () => {
       window.removeEventListener('whatsapp-conversation-read', handleWhatsAppRead);
     };
-  }, [refreshCounts, loadRecentNotifications]);
+  }, [refreshCounts, loadNotifications]);
 
   // Real-time subscription for WhatsApp messages
   useEffect(() => {
@@ -364,16 +609,13 @@ export function useNotifications() {
         async (payload) => {
           const message = payload.new as any;
           
-          // Skip if already processed
           if (processedMessageIds.current.has(message.id)) return;
           processedMessageIds.current.add(message.id);
           
-          // Only notify for inbound messages from contacts
           if (message.direction !== 'inbound' || message.sender_type !== 'contact') {
             return;
           }
 
-          // Verify message belongs to user's company by checking conversation
           const { data: conversation } = await supabase
             .from('conversations')
             .select('id, company_id')
@@ -384,9 +626,15 @@ export function useNotifications() {
             return;
           }
           
-          // Refresh counts
+          // Play sound
+          playSound('whatsapp');
+          showDesktopNotification('Nova mensagem', {
+            body: message.content || 'Nova mensagem recebida',
+            tag: `whatsapp-${conversation.id}`,
+          });
+          
           refreshCounts();
-          loadRecentNotifications();
+          loadNotifications();
         }
       )
       .subscribe();
@@ -394,9 +642,9 @@ export function useNotifications() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [company?.id, profile?.id, refreshCounts, loadRecentNotifications]);
+  }, [company?.id, profile?.id, refreshCounts, loadNotifications, playSound, showDesktopNotification]);
 
-  // Real-time subscription for conversation updates (unread count changes)
+  // Real-time for conversations
   useEffect(() => {
     if (!company?.id) return;
 
@@ -411,7 +659,7 @@ export function useNotifications() {
         },
         () => {
           refreshCounts();
-          loadRecentNotifications();
+          loadNotifications();
         }
       )
       .subscribe();
@@ -419,9 +667,9 @@ export function useNotifications() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [company?.id, refreshCounts, loadRecentNotifications]);
+  }, [company?.id, refreshCounts, loadNotifications]);
 
-  // Real-time subscription for internal chat messages
+  // Real-time for internal chat
   useEffect(() => {
     if (!company?.id || !profile?.id) return;
 
@@ -437,14 +685,19 @@ export function useNotifications() {
         async (payload) => {
           const message = payload.new as any;
           
-          // Skip if already processed or own message
           if (processedMessageIds.current.has(message.id)) return;
           if (message.sender_id === profile.id) return;
           
           processedMessageIds.current.add(message.id);
           
-          // Refresh counts
+          playSound('internal');
+          showDesktopNotification('Nova mensagem interna', {
+            body: message.content || 'Nova mensagem',
+            tag: `internal-${message.room_id}`,
+          });
+          
           refreshCounts();
+          loadNotifications();
         }
       )
       .subscribe();
@@ -452,16 +705,50 @@ export function useNotifications() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [company?.id, profile?.id, refreshCounts]);
+  }, [company?.id, profile?.id, refreshCounts, loadNotifications, playSound, showDesktopNotification]);
+
+  // Real-time for mention notifications
+  useEffect(() => {
+    if (!profile?.id) return;
+
+    const channel = supabase
+      .channel('notifications-mentions')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'mention_notifications',
+          filter: `mentioned_user_id=eq.${profile.id}`,
+        },
+        async () => {
+          playSound('mention');
+          showDesktopNotification('Você foi mencionado', {
+            body: 'Alguém te mencionou em uma mensagem',
+            tag: 'mention',
+          });
+          
+          loadNotifications();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [profile?.id, loadNotifications, playSound, showDesktopNotification]);
 
   return {
-    notifications,
+    internalNotifications,
+    whatsappNotifications,
     unreadCounts,
+    tabCounts,
     isLoading,
     markAsRead,
     markAllAsRead,
     clearAll,
     markRoomAsRead,
     refreshCounts,
+    loadNotifications,
   };
 }

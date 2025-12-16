@@ -644,7 +644,7 @@ export function ContactPanel({ conversation, onClose, onContactUpdated, onScroll
           <Collapsible open={notesOpen} onOpenChange={setNotesOpen}>
             <CollapsibleTrigger className="flex items-center justify-between w-full">
               <div className="flex items-center gap-2">
-                <h5 className="text-sm font-medium text-foreground">Notas Internas</h5>
+                <h5 className="text-sm font-medium text-foreground">Anotações/Observações</h5>
                 {isSavingNotes && (
                   <Loader2 className="w-3 h-3 animate-spin text-muted-foreground" />
                 )}
@@ -663,7 +663,7 @@ export function ContactPanel({ conversation, onClose, onContactUpdated, onScroll
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 placeholder="Adicione notas sobre este contato..."
-                className="min-h-[80px] resize-none"
+                className="min-h-[80px] resize-none bg-[#FFFBEB] text-slate-900 placeholder:text-slate-500 border-amber-200"
               />
               <p className="text-xs text-muted-foreground mt-2">
                 Notas são visíveis apenas para a equipe • Salvamento automático

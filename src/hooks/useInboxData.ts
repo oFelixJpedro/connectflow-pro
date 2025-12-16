@@ -63,6 +63,7 @@ function transformConversation(db: any): Conversation {
     closedAt: db.closed_at || undefined,
     createdAt: db.created_at,
     updatedAt: db.updated_at,
+    metadata: db.metadata || undefined,
   };
 }
 
@@ -135,6 +136,7 @@ export function useInboxData() {
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [accessLevel, setAccessLevel] = useState<'full' | 'assigned_only'>('full');
+  const [tabUnreadCounts, setTabUnreadCounts] = useState<{ minhas: number; fila: number; todas: number }>({ minhas: 0, fila: 0, todas: 0 });
   
   const [isLoadingConversations, setIsLoadingConversations] = useState(true);
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
@@ -270,9 +272,15 @@ export function useInboxData() {
       }
 
       // Apply filters
-      // Status filter
-      if (conversationFilters.status && conversationFilters.status !== 'all') {
-        query = query.eq('status', conversationFilters.status);
+      // Status filter - handle array of statuses
+      const statusFilters = conversationFilters.status || [];
+      
+      if (statusFilters.length > 0) {
+        // User selected specific statuses - cast to the expected type
+        query = query.in('status', statusFilters as ('open' | 'pending' | 'in_progress' | 'waiting' | 'resolved' | 'closed')[]);
+      } else {
+        // No status filter - hide closed by default
+        query = query.neq('status', 'closed');
       }
 
       // Column-based assignment filter
@@ -308,6 +316,11 @@ export function useInboxData() {
         query = query.eq('department_id', conversationFilters.departmentId);
       }
 
+      // Tags filter - filter conversations that have any of the selected tags
+      if (conversationFilters.tags && conversationFilters.tags.length > 0) {
+        query = query.overlaps('tags', conversationFilters.tags);
+      }
+
       // Ordenar por última mensagem
       query = query.order('last_message_at', { ascending: false, nullsFirst: false });
 
@@ -326,6 +339,21 @@ export function useInboxData() {
       console.log('[useInboxData] Conversas carregadas:', data?.length || 0);
       
       let transformedConversations = (data || []).map(transformConversation);
+
+      // Apply kanban column filter (post-query since it requires contact_id lookup)
+      if (conversationFilters.kanbanColumnId) {
+        const { data: kanbanCards } = await supabase
+          .from('kanban_cards')
+          .select('contact_id')
+          .eq('column_id', conversationFilters.kanbanColumnId);
+
+        if (kanbanCards && kanbanCards.length > 0) {
+          const contactIds = new Set(kanbanCards.map(c => c.contact_id));
+          transformedConversations = transformedConversations.filter(c => contactIds.has(c.contactId));
+        } else {
+          transformedConversations = [];
+        }
+      }
 
       // Apply "isFollowing" filter if active (filter by conversation_followers)
       if (conversationFilters.isFollowing && user?.id) {
@@ -356,7 +384,46 @@ export function useInboxData() {
   }, [profile?.company_id, selectedConnectionId, conversationFilters, user?.id, userRole?.role, setCurrentAccessLevel, inboxColumn]);
 
   // ============================================================
-  // 2. CARREGAR MENSAGENS DE UMA CONVERSA
+  // 1.5. CARREGAR CONTAGEM DE NÃO LIDAS POR ABA (INDEPENDENTE DA ABA ATUAL)
+  // ============================================================
+  const loadUnreadCounts = useCallback(async () => {
+    if (!profile?.company_id || !selectedConnectionId) {
+      setTabUnreadCounts({ minhas: 0, fila: 0, todas: 0 });
+      return;
+    }
+
+    try {
+      // Query ALL conversations for this connection (no tab filter, no closed)
+      const { data, error } = await supabase
+        .from('conversations')
+        .select('id, assigned_user_id, unread_count, metadata')
+        .eq('whatsapp_connection_id', selectedConnectionId)
+        .neq('status', 'closed');
+
+      if (error) {
+        console.error('[useInboxData] Erro ao carregar contagens:', error);
+        return;
+      }
+
+      const allConversations = data || [];
+      
+      // Calculate unread counts for each tab
+      const getIsUnread = (conv: any) => {
+        const hasRealUnread = (conv.unread_count || 0) > 0;
+        const isMarkedAsUnread = conv.metadata?.markedAsUnread === true;
+        return hasRealUnread || isMarkedAsUnread;
+      };
+
+      const minhas = allConversations.filter(c => c.assigned_user_id === user?.id && getIsUnread(c)).length;
+      const fila = allConversations.filter(c => !c.assigned_user_id && getIsUnread(c)).length;
+      const todas = allConversations.filter(c => getIsUnread(c)).length;
+
+      setTabUnreadCounts({ minhas, fila, todas });
+    } catch (err) {
+      console.error('[useInboxData] Erro ao calcular contagens:', err);
+    }
+  }, [profile?.company_id, selectedConnectionId, user?.id]);
+
   // ============================================================
   const loadMessages = useCallback(async (conversationId: string) => {
     console.log('[useInboxData] Carregando mensagens para conversa:', conversationId);
@@ -798,6 +865,30 @@ export function useInboxData() {
 
       console.log('[useInboxData] Nota interna salva:', newMessage.id);
 
+      // Create mention notifications for each mentioned user
+      if (mentions && mentions.length > 0 && newMessage.id) {
+        console.log('[useInboxData] Criando notificações de menção para:', mentions);
+        
+        const mentionNotifications = mentions.map(mentionedUserId => ({
+          mentioned_user_id: mentionedUserId,
+          mentioner_user_id: user.id,
+          message_id: newMessage.id,
+          conversation_id: selectedConversation.id,
+          source_type: 'internal_note',
+          has_access: true,
+          is_read: false,
+        }));
+
+        const { error: mentionError } = await supabase
+          .from('mention_notifications')
+          .insert(mentionNotifications);
+
+        if (mentionError) {
+          console.error('[useInboxData] Erro ao criar notificações de menção:', mentionError);
+        } else {
+          console.log('[useInboxData] Notificações de menção criadas com sucesso');
+        }
+      }
 
       // Adicionar mensagem ao estado local imediatamente
       const transformedMessage: Message = transformMessage(newMessage);
@@ -825,13 +916,40 @@ export function useInboxData() {
   // ============================================================
   // 5. SELECIONAR CONVERSA
   // ============================================================
-  const selectConversation = useCallback((conversation: Conversation | null) => {
+  const selectConversation = useCallback(async (conversation: Conversation | null) => {
     console.log('[useInboxData] Selecionando conversa:', conversation?.id || 'nenhuma');
     setSelectedConversation(conversation);
 
     if (conversation) {
       loadMessages(conversation.id);
       markAsRead(conversation.id, conversation.unreadCount);
+      
+      // Clear markedAsUnread if present
+      const metadata = conversation.metadata;
+      if (metadata?.markedAsUnread) {
+        console.log('[useInboxData] Limpando marcação de não lida');
+        try {
+          await supabase.functions.invoke('conversation-management', {
+            body: {
+              action: 'clear_unread_mark',
+              conversationId: conversation.id,
+            },
+          });
+          
+          // Update local state to remove the mark
+          setConversations(prev => 
+            prev.map(c => {
+              if (c.id === conversation.id) {
+                const { markedAsUnread, markedAsUnreadAt, ...restMetadata } = c.metadata || {};
+                return { ...c, metadata: restMetadata };
+              }
+              return c;
+            })
+          );
+        } catch (err) {
+          console.error('[useInboxData] Erro ao limpar marcação:', err);
+        }
+      }
     } else {
       setMessages([]);
     }
@@ -895,6 +1013,13 @@ export function useInboxData() {
       loadConversations();
     }
   }, [profile?.company_id, selectedConnectionId, loadConversations]);
+
+  // Carregar contagens de não lidas separadamente (não depende da aba atual)
+  useEffect(() => {
+    if (profile?.company_id && selectedConnectionId) {
+      loadUnreadCounts();
+    }
+  }, [profile?.company_id, selectedConnectionId, loadUnreadCounts]);
 
   // Limpar conversa selecionada quando conexão muda
   useEffect(() => {
@@ -1164,6 +1289,9 @@ export function useInboxData() {
             });
           });
           
+          // Atualizar contagens de não lidas
+          loadUnreadCounts();
+          
           // Se for a conversa selecionada, manter unreadCount em 0 (usuário já está visualizando)
           if (isSelectedConversation) {
             const hasAssignedUserId = 'assigned_user_id' in updatedData;
@@ -1217,6 +1345,7 @@ export function useInboxData() {
           
           // Recarregar todas as conversas para pegar os dados relacionados (contact, etc)
           loadConversations();
+          loadUnreadCounts();
         }
       )
       .subscribe((status) => {
@@ -1227,7 +1356,7 @@ export function useInboxData() {
       console.log('[Realtime] Cancelando subscription de conversas');
       supabase.removeChannel(channel);
     };
-  }, [profile?.company_id, selectedConnectionId, loadConversations]);
+  }, [profile?.company_id, selectedConnectionId, loadConversations, loadUnreadCounts]);
 
   // ============================================================
   // REALTIME: CONTATOS (PARA ATUALIZAR TAGS EM TEMPO REAL)
@@ -1443,6 +1572,7 @@ export function useInboxData() {
     conversations,
     selectedConversation,
     messages,
+    tabUnreadCounts,
     
     // Loading states
     isLoadingConversations,
@@ -1451,6 +1581,7 @@ export function useInboxData() {
     
     // Ações
     loadConversations,
+    loadUnreadCounts,
     selectConversation,
     sendMessage,
     sendInternalNote,

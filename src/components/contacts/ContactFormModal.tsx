@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -31,11 +31,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { X, Loader2, LayoutGrid, Trash2, Smartphone, AlertTriangle, Users } from 'lucide-react';
+import { X, Loader2, LayoutGrid, Trash2, Smartphone, AlertTriangle, Users, Paperclip, MessageSquare, Image, Video, FileText, Mic, Square, Play, Pause, RotateCcw } from 'lucide-react';
 import { Contact, ContactFormData } from '@/hooks/useContactsData';
 import { useContactCRM } from '@/hooks/useContactCRM';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
+import { useAudioRecorder } from '@/hooks/useAudioRecorder';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { cn } from '@/lib/utils';
 
 interface ContactFormModalProps {
   open: boolean;
@@ -43,6 +46,7 @@ interface ContactFormModalProps {
   contact?: Contact | null;
   tags: { id: string; name: string; color: string }[];
   onSave: (data: ContactFormData) => Promise<boolean | string>; // string = new contact ID
+  preselectedConnectionId?: string | null;
 }
 
 interface WhatsAppConnection {
@@ -64,12 +68,26 @@ const PRIORITY_OPTIONS = [
   { value: 'urgent', label: 'Urgente', color: 'bg-red-100 text-red-700' },
 ];
 
+const MEDIA_TYPES = [
+  { type: 'image', label: 'Imagem', icon: Image, accept: 'image/*' },
+  { type: 'video', label: 'Vídeo', icon: Video, accept: 'video/*' },
+  { type: 'audio', label: 'Áudio', icon: Mic, accept: 'audio/*' },
+  { type: 'document', label: 'Documento', icon: FileText, accept: '*/*' },
+];
+
+function formatRecordingTime(seconds: number): string {
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+}
+
 export function ContactFormModal({
   open,
   onOpenChange,
   contact,
   tags,
-  onSave
+  onSave,
+  preselectedConnectionId
 }: ContactFormModalProps) {
   const { profile } = useAuth();
   const [loading, setLoading] = useState(false);
@@ -80,6 +98,22 @@ export function ContactFormModal({
     tags: [],
     notes: ''
   });
+
+  // New contact fields
+  const [selectedConnectionId, setSelectedConnectionId] = useState<string>('');
+  const [initialMessage, setInitialMessage] = useState('');
+  const [initialMessageMedia, setInitialMessageMedia] = useState<{
+    type: 'image' | 'video' | 'audio' | 'document';
+    file: File;
+  } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const audioFileInputRef = useRef<HTMLInputElement>(null);
+  const [mediaType, setMediaType] = useState<'image' | 'video' | 'audio' | 'document'>('image');
+  const [isRecordingAudio, setIsRecordingAudio] = useState(false);
+  const [showAudioChoiceModal, setShowAudioChoiceModal] = useState(false);
+  const audioRecorder = useAudioRecorder();
+  const audioPreviewRef = useRef<HTMLAudioElement | null>(null);
+  const [audioPreviewPlaying, setAudioPreviewPlaying] = useState(false);
 
   // Migration state - Connection
   const [allConnections, setAllConnections] = useState<WhatsAppConnection[]>([]);
@@ -193,8 +227,19 @@ export function ContactFormModal({
       setDepartmentMigrationEnabled(false);
       setTargetDepartmentId('');
       setKanbanChanged(false);
+      // Reset new contact fields
+      setInitialMessage('');
+      setInitialMessageMedia(null);
+      setIsRecordingAudio(false);
+      audioRecorder.cancelRecording();
+      // Pre-select connection if provided
+      if (!contact && preselectedConnectionId) {
+        setSelectedConnectionId(preselectedConnectionId);
+      } else if (!contact) {
+        setSelectedConnectionId('');
+      }
     }
-  }, [open]);
+  }, [open, contact, preselectedConnectionId]);
 
   // Initialize form data when contact changes
   useEffect(() => {
@@ -257,6 +302,11 @@ export function ContactFormModal({
       return;
     }
 
+    // For new contacts, connection is mandatory
+    if (!contact && !selectedConnectionId) {
+      return;
+    }
+
     // If connection migration is enabled, show confirmation
     if (isConnectionMigrationActive) {
       setPendingFormData(formData);
@@ -269,7 +319,20 @@ export function ContactFormModal({
 
   const executeSubmit = async (data: ContactFormData) => {
     setLoading(true);
-    const result = await onSave(data);
+    
+    // For new contacts, include connection and initial message data
+    const submitData: ContactFormData = { ...data };
+    if (!contact) {
+      submitData.connectionId = selectedConnectionId;
+      if (initialMessage.trim()) {
+        submitData.initialMessage = initialMessage.trim();
+      }
+      if (initialMessageMedia) {
+        submitData.initialMessageMedia = initialMessageMedia;
+      }
+    }
+    
+    const result = await onSave(submitData);
     const success = result === true || typeof result === 'string';
     const contactId = contact?.id || (typeof result === 'string' ? result : null);
     
@@ -334,7 +397,7 @@ export function ContactFormModal({
     }
     
     // Handle CRM changes (only if not migrating connection)
-    if (success && contactId && !connectionChanging) {
+    if (success && contactId && !connectionChanging && contact) {
       if (crmEnabled && currentConnectionId && selectedColumn) {
         await setCardPosition(contactId, currentConnectionId, selectedColumn, selectedPriority);
       } else if (!crmEnabled && currentPosition) {
@@ -379,6 +442,101 @@ export function ContactFormModal({
     return `+${digits.slice(0, 2)} (${digits.slice(2, 4)}) ${digits.slice(4, 9)}-${digits.slice(9, 13)}`;
   };
 
+  const handleFileSelect = (type: 'image' | 'video' | 'audio' | 'document') => {
+    // For audio, show choice modal
+    if (type === 'audio') {
+      setShowAudioChoiceModal(true);
+      return;
+    }
+    
+    setMediaType(type);
+    const mediaConfig = MEDIA_TYPES.find(m => m.type === type);
+    if (fileInputRef.current && mediaConfig) {
+      fileInputRef.current.accept = mediaConfig.accept;
+      fileInputRef.current.click();
+    }
+  };
+
+  const handleAudioChoiceRecord = () => {
+    setShowAudioChoiceModal(false);
+    setIsRecordingAudio(true);
+    audioRecorder.startRecording();
+  };
+
+  const handleAudioChoiceFile = () => {
+    setShowAudioChoiceModal(false);
+    if (audioFileInputRef.current) {
+      audioFileInputRef.current.click();
+    }
+  };
+
+  const handleAudioFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setInitialMessageMedia({ type: 'audio', file });
+    }
+    if (audioFileInputRef.current) {
+      audioFileInputRef.current.value = '';
+    }
+  };
+
+  const handleStopRecording = () => {
+    audioRecorder.stopRecording();
+  };
+
+  const handleCancelRecording = () => {
+    audioRecorder.cancelRecording();
+    setIsRecordingAudio(false);
+    setAudioPreviewPlaying(false);
+  };
+
+  const handleSaveRecording = () => {
+    if (audioRecorder.audioBlob) {
+      const file = new File([audioRecorder.audioBlob], `audio_${Date.now()}.webm`, {
+        type: 'audio/webm'
+      });
+      setInitialMessageMedia({ type: 'audio', file });
+      setIsRecordingAudio(false);
+      audioRecorder.clearRecording();
+      setAudioPreviewPlaying(false);
+    }
+  };
+
+  const handleRerecord = () => {
+    audioRecorder.clearRecording();
+    audioRecorder.startRecording();
+    setAudioPreviewPlaying(false);
+  };
+
+  const toggleAudioPreview = () => {
+    if (!audioPreviewRef.current) return;
+    if (audioPreviewPlaying) {
+      audioPreviewRef.current.pause();
+      setAudioPreviewPlaying(false);
+    } else {
+      audioPreviewRef.current.play();
+      setAudioPreviewPlaying(true);
+    }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setInitialMessageMedia({
+        type: mediaType,
+        file
+      });
+    }
+    // Reset input
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  const removeMedia = () => {
+    setInitialMessageMedia(null);
+  };
+
   // Get columns for current connection's board
   const currentBoard = currentConnectionId ? boards.get(currentConnectionId) : null;
   const availableColumns = currentBoard?.columns || [];
@@ -405,7 +563,14 @@ export function ContactFormModal({
     targetConnectionDepartments.length > 0 && 
     !targetConnectionDepartmentId;
 
-  const canSave = !loading && !needsDepartmentSelection;
+  // For new contacts, connection must be selected
+  const needsConnectionForNewContact = !contact && !selectedConnectionId;
+
+  // Validate required fields: name, phone (with digits), and connection for new contacts
+  const hasValidPhone = formData.phone_number.replace(/\D/g, '').length >= 8;
+  const hasValidName = formData.name.trim().length > 0;
+  
+  const canSave = !loading && !needsDepartmentSelection && !needsConnectionForNewContact && hasValidPhone && hasValidName;
 
   return (
     <>
@@ -444,6 +609,33 @@ export function ContactFormModal({
                 required
               />
             </div>
+
+            {/* Connection Selection - Only for new contacts */}
+            {!contact && (
+              <div className="space-y-2">
+                <Label htmlFor="connection">Conexão WhatsApp *</Label>
+                <Select
+                  value={selectedConnectionId}
+                  onValueChange={setSelectedConnectionId}
+                >
+                  <SelectTrigger id="connection">
+                    <SelectValue placeholder="Selecione uma conexão" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {allConnections.map((conn) => (
+                      <SelectItem key={conn.id} value={conn.id}>
+                        {conn.name} ({conn.phone_number})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {allConnections.length === 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    Nenhuma conexão disponível. Conecte um WhatsApp primeiro.
+                  </p>
+                )}
+              </div>
+            )}
 
             <div className="space-y-2">
               <Label htmlFor="email">E-mail</Label>
@@ -489,6 +681,248 @@ export function ContactFormModal({
                 rows={3}
               />
             </div>
+
+            {/* Initial Message Section - Only for new contacts */}
+            {!contact && selectedConnectionId && (
+              <>
+                <Separator className="my-4" />
+                
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2">
+                    <MessageSquare className="w-4 h-4 text-muted-foreground" />
+                    <Label className="text-base font-medium">Mensagem Inicial (Opcional)</Label>
+                  </div>
+                  
+                  <p className="text-xs text-muted-foreground">
+                    Envie uma mensagem ao criar o contato
+                  </p>
+
+                  <div className="space-y-3">
+                    <Textarea
+                      value={initialMessage}
+                      onChange={(e) => setInitialMessage(e.target.value)}
+                      placeholder="Digite uma mensagem para enviar ao contato..."
+                      rows={3}
+                    />
+
+                    {/* Media attachment */}
+                    {!isRecordingAudio && !initialMessageMedia && (
+                      <div className="flex items-center gap-2">
+                        <div className="flex gap-1">
+                          {MEDIA_TYPES.map((media) => (
+                            <Tooltip key={media.type}>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => handleFileSelect(media.type as typeof mediaType)}
+                                  className="h-8 px-2"
+                                >
+                                  <media.icon className="w-4 h-4" />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>{media.label}</TooltipContent>
+                            </Tooltip>
+                          ))}
+                        </div>
+                        <input
+                          ref={fileInputRef}
+                          type="file"
+                          className="hidden"
+                          onChange={handleFileChange}
+                        />
+                        <input
+                          ref={audioFileInputRef}
+                          type="file"
+                          accept="audio/*"
+                          className="hidden"
+                          onChange={handleAudioFileChange}
+                        />
+                      </div>
+                    )}
+
+                    {/* Audio Recording UI */}
+                    {isRecordingAudio && (
+                      <div className="flex items-center gap-3 p-3 bg-primary/5 rounded-lg border border-primary/20">
+                        {/* Hidden audio for preview */}
+                        {audioRecorder.audioUrl && (
+                          <audio 
+                            ref={audioPreviewRef} 
+                            src={audioRecorder.audioUrl} 
+                            onEnded={() => setAudioPreviewPlaying(false)}
+                          />
+                        )}
+                        
+                        {/* Recording in progress */}
+                        {audioRecorder.isRecording && !audioRecorder.audioBlob && (
+                          <>
+                            <div className="relative flex-shrink-0">
+                              <div className={cn(
+                                "w-10 h-10 rounded-full bg-destructive flex items-center justify-center",
+                                !audioRecorder.isPaused && "animate-pulse"
+                              )}>
+                                <Mic className="w-5 h-5 text-white" />
+                              </div>
+                              {!audioRecorder.isPaused && (
+                                <div className="absolute inset-0 rounded-full bg-destructive/50 animate-ping" />
+                              )}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <span className="font-mono text-lg font-semibold">
+                                {formatRecordingTime(audioRecorder.recordingTime)}
+                              </span>
+                              <p className="text-xs text-muted-foreground">
+                                {audioRecorder.isPaused ? 'Pausado' : 'Gravando...'}
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={audioRecorder.isPaused ? audioRecorder.resumeRecording : audioRecorder.pauseRecording}
+                                    className="h-9 w-9"
+                                  >
+                                    {audioRecorder.isPaused ? <Play className="w-4 h-4" /> : <Pause className="w-4 h-4" />}
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>{audioRecorder.isPaused ? 'Continuar' : 'Pausar'}</TooltipContent>
+                              </Tooltip>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    type="button"
+                                    variant="default"
+                                    size="icon"
+                                    onClick={handleStopRecording}
+                                    className="h-9 w-9 bg-destructive hover:bg-destructive/90"
+                                  >
+                                    <Square className="w-4 h-4" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>Finalizar</TooltipContent>
+                              </Tooltip>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={handleCancelRecording}
+                                    className="h-9 w-9"
+                                  >
+                                    <X className="w-4 h-4" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>Cancelar</TooltipContent>
+                              </Tooltip>
+                            </div>
+                          </>
+                        )}
+                        
+                        {/* Preview after recording */}
+                        {audioRecorder.audioBlob && (
+                          <>
+                            <div className="flex-shrink-0 w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center">
+                              <Mic className="w-5 h-5 text-primary" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <span className="font-mono text-sm font-medium">
+                                {formatRecordingTime(audioRecorder.recordingTime)}
+                              </span>
+                              <p className="text-xs text-muted-foreground">Áudio pronto</p>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={toggleAudioPreview}
+                                    className="h-9 w-9"
+                                  >
+                                    {audioPreviewPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>{audioPreviewPlaying ? 'Pausar' : 'Ouvir'}</TooltipContent>
+                              </Tooltip>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={handleRerecord}
+                                    className="h-9 w-9"
+                                  >
+                                    <RotateCcw className="w-4 h-4" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>Regravar</TooltipContent>
+                              </Tooltip>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    type="button"
+                                    variant="default"
+                                    size="icon"
+                                    onClick={handleSaveRecording}
+                                    className="h-9 w-9"
+                                  >
+                                    <Paperclip className="w-4 h-4" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>Anexar áudio</TooltipContent>
+                              </Tooltip>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={handleCancelRecording}
+                                    className="h-9 w-9"
+                                  >
+                                    <X className="w-4 h-4" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>Cancelar</TooltipContent>
+                              </Tooltip>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Selected media preview */}
+                    {initialMessageMedia && !isRecordingAudio && (
+                      <div className="flex items-center gap-2 p-2 bg-muted rounded-md overflow-hidden min-w-0">
+                        <Paperclip className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                        <span className="text-sm truncate min-w-0 flex-1">
+                          {initialMessageMedia.type === 'image' && 'Imagem'}
+                          {initialMessageMedia.type === 'video' && 'Vídeo'}
+                          {initialMessageMedia.type === 'audio' && 'Áudio'}
+                          {initialMessageMedia.type === 'document' && 'Documento'}
+                        </span>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={removeMedia}
+                          className="h-6 w-6 p-0 flex-shrink-0"
+                        >
+                          <X className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </>
+            )}
 
             {/* Connection Migration Section - Only for existing contacts */}
             {contact && currentConnectionId && allConnections.length > 1 && (
@@ -581,8 +1015,8 @@ export function ContactFormModal({
                       )}
 
                       {targetConnectionId && (
-                        <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
-                          <p className="text-sm text-amber-800 flex items-center gap-2">
+                        <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 dark:bg-amber-900/20 dark:border-amber-800">
+                          <p className="text-sm text-amber-800 dark:text-amber-300 flex items-center gap-2">
                             <AlertTriangle className="w-4 h-4" />
                             As conversas e o card do CRM serão migrados para a nova conexão
                           </p>
@@ -654,8 +1088,8 @@ export function ContactFormModal({
                           </div>
 
                           {targetDepartmentId && (
-                            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                              <p className="text-sm text-blue-800 flex items-center gap-2">
+                            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 dark:bg-blue-900/20 dark:border-blue-800">
+                              <p className="text-sm text-blue-800 dark:text-blue-300 flex items-center gap-2">
                                 <Users className="w-4 h-4" />
                                 As conversas serão migradas para o novo departamento
                               </p>
@@ -781,6 +1215,52 @@ export function ContactFormModal({
         </DialogContent>
       </Dialog>
 
+      {/* Audio Choice Modal */}
+      <AlertDialog open={showAudioChoiceModal} onOpenChange={setShowAudioChoiceModal}>
+        <AlertDialogContent className="sm:max-w-[350px]">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <Mic className="w-5 h-5 text-primary" />
+              Adicionar Áudio
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Como você deseja adicionar o áudio?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="flex flex-col gap-2 py-4">
+            <Button
+              variant="outline"
+              className="w-full justify-start gap-3 h-12"
+              onClick={handleAudioChoiceRecord}
+            >
+              <div className="w-8 h-8 rounded-full bg-destructive/10 flex items-center justify-center">
+                <Mic className="w-4 h-4 text-destructive" />
+              </div>
+              <div className="text-left">
+                <div className="font-medium">Gravar áudio</div>
+                <div className="text-xs text-muted-foreground">Gravar na hora</div>
+              </div>
+            </Button>
+            <Button
+              variant="outline"
+              className="w-full justify-start gap-3 h-12"
+              onClick={handleAudioChoiceFile}
+            >
+              <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
+                <FileText className="w-4 h-4 text-primary" />
+              </div>
+              <div className="text-left">
+                <div className="font-medium">Enviar arquivo</div>
+                <div className="text-xs text-muted-foreground">Selecionar do dispositivo</div>
+              </div>
+            </Button>
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       {/* Migration Confirmation Dialog */}
       <AlertDialog open={showMigrationConfirm} onOpenChange={setShowMigrationConfirm}>
         <AlertDialogContent>
@@ -804,8 +1284,8 @@ export function ContactFormModal({
                   </div>
                 </div>
 
-                <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
-                  <p className="text-sm text-amber-800">
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 dark:bg-amber-900/20 dark:border-amber-800">
+                  <p className="text-sm text-amber-800 dark:text-amber-300">
                     <strong>Atenção:</strong> Todas as conversas deste contato serão transferidas para a nova conexão e o card do CRM será movido para a primeira coluna do novo Kanban.
                   </p>
                 </div>

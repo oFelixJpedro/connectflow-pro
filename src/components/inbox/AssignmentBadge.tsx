@@ -1,4 +1,3 @@
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import type { User } from '@/types';
@@ -10,23 +9,14 @@ interface AssignmentBadgeProps {
 }
 
 export function AssignmentBadge({ assignedUser, currentUserId, className }: AssignmentBadgeProps) {
-  const getInitials = (name?: string) => {
-    if (!name) return '?';
-    return name
-      .split(' ')
-      .map((n) => n[0])
-      .join('')
-      .toUpperCase()
-      .slice(0, 2);
-  };
 
-  // Não atribuída
+  // Não atribuída - Vermelho pastel
   if (!assignedUser) {
     return (
       <Badge 
         variant="outline" 
         className={cn(
-          "text-xs px-1.5 py-0 h-5 bg-muted/50 text-muted-foreground border-muted",
+          "text-xs px-1.5 py-0 h-5 bg-destructive/20 text-destructive border-destructive/30",
           className
         )}
       >
@@ -50,18 +40,16 @@ export function AssignmentBadge({ assignedUser, currentUserId, className }: Assi
     );
   }
 
-  // Atribuída a outro
+  // Atribuída a outro - Amarelo pastel
   return (
-    <div className={cn("flex items-center gap-1", className)}>
-      <Avatar className="w-4 h-4">
-        <AvatarImage src={assignedUser.avatarUrl} className="object-cover object-top" />
-        <AvatarFallback className="text-[8px] bg-muted">
-          {getInitials(assignedUser.fullName)}
-        </AvatarFallback>
-      </Avatar>
-      <span className="text-xs text-muted-foreground truncate max-w-[80px]">
-        {assignedUser.fullName?.split(' ')[0] || 'Atendente'}
-      </span>
-    </div>
+    <Badge 
+      variant="outline" 
+      className={cn(
+        "text-xs px-1.5 py-0 h-5 bg-warning/20 text-warning border-warning/30",
+        className
+      )}
+    >
+      {assignedUser.fullName?.split(' ')[0] || 'Atribuída'}
+    </Badge>
   );
 }

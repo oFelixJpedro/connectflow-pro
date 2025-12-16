@@ -6,7 +6,7 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-type ActionType = 'assign' | 'transfer' | 'release' | 'close' | 'reopen' | 'move_department'
+type ActionType = 'assign' | 'transfer' | 'release' | 'close' | 'reopen' | 'move_department' | 'mark_unread' | 'clear_unread_mark'
 
 interface RequestBody {
   action: ActionType
@@ -115,7 +115,7 @@ serve(async (req) => {
     console.log('   - departmentId:', departmentId || '(não informado)')
     
     // Validar action
-    const validActions: ActionType[] = ['assign', 'transfer', 'release', 'close', 'reopen', 'move_department']
+    const validActions: ActionType[] = ['assign', 'transfer', 'release', 'close', 'reopen', 'move_department', 'mark_unread', 'clear_unread_mark']
     if (!validActions.includes(action)) {
       console.log('❌ Ação inválida:', action)
       return new Response(
@@ -269,12 +269,25 @@ serve(async (req) => {
           )
         }
         
+        // Buscar metadata existente para preservar dados
+        const existingMetadata = (conversation.metadata as Record<string, unknown>) || {}
+        
         updateData = {
           assigned_user_id: targetUserId,
-          assigned_at: new Date().toISOString()
+          assigned_at: new Date().toISOString(),
+          // Marcar como não lida para chamar atenção do destinatário
+          metadata: {
+            ...existingMetadata,
+            markedAsUnread: true,
+            markedAsUnreadAt: new Date().toISOString(),
+            transferredFrom: conversation.assigned_user_id,
+            transferredBy: userId
+          },
+          // Mover para o topo da fila atualizando last_message_at
+          last_message_at: new Date().toISOString()
         }
         
-        console.log('📝 Transferindo conversa para:', targetUserId)
+        console.log('📝 Transferindo conversa para:', targetUserId, '(com marcação de não lida)')
         break
       }
       
@@ -315,10 +328,12 @@ serve(async (req) => {
         
         updateData = {
           status: 'closed',
-          closed_at: new Date().toISOString()
+          closed_at: new Date().toISOString(),
+          assigned_user_id: null,
+          assigned_at: null
         }
         
-        console.log('📝 Fechando conversa')
+        console.log('📝 Fechando conversa e desatribuindo atendente')
         break
       }
       
@@ -393,6 +408,43 @@ serve(async (req) => {
         }
         
         console.log('📝 Movendo para departamento:', departmentId)
+        break
+      }
+      
+      // ───────────────────────────────────────────────────────────────────
+      // ACTION: MARK_UNREAD
+      // ───────────────────────────────────────────────────────────────────
+      case 'mark_unread': {
+        // Merge existing metadata with markedAsUnread flag
+        const existingMetadata = (conversation.metadata as Record<string, unknown>) || {}
+        
+        updateData = {
+          metadata: {
+            ...existingMetadata,
+            markedAsUnread: true,
+            markedAsUnreadAt: new Date().toISOString()
+          },
+          // Update last_message_at to move conversation to top of list
+          last_message_at: new Date().toISOString()
+        }
+        
+        console.log('📝 Marcando conversa como não lida')
+        break
+      }
+      
+      // ───────────────────────────────────────────────────────────────────
+      // ACTION: CLEAR_UNREAD_MARK
+      // ───────────────────────────────────────────────────────────────────
+      case 'clear_unread_mark': {
+        // Remove markedAsUnread from metadata
+        const existingMetadata = (conversation.metadata as Record<string, unknown>) || {}
+        const { markedAsUnread, markedAsUnreadAt, ...restMetadata } = existingMetadata
+        
+        updateData = {
+          metadata: restMetadata
+        }
+        
+        console.log('📝 Removendo marcação de não lida')
         break
       }
     }
@@ -532,6 +584,14 @@ serve(async (req) => {
         }
         break
       }
+      
+      case 'mark_unread': {
+        historyEventType = 'marked_as_unread'
+        historyEventData = {}
+        break
+      }
+      
+      // clear_unread_mark doesn't need history logging (silent action)
     }
     
     if (historyEventType) {

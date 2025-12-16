@@ -20,7 +20,8 @@ import {
   CheckCheck,
   Clock,
   AlertCircle,
-  StickyNote
+  StickyNote,
+  Lock
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { format } from 'date-fns';
@@ -32,6 +33,7 @@ import { VideoMessage } from '@/components/inbox/VideoMessage';
 import { DocumentMessage } from '@/components/inbox/DocumentMessage';
 import StickerMessage from '@/components/inbox/StickerMessage';
 import { QuotedMessagePreview } from '@/components/inbox/QuotedMessagePreview';
+import { MentionText } from '@/components/mentions/MentionText';
 import type { Message, Conversation, MessageReaction } from '@/types';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { useAppStore } from '@/stores/appStore';
@@ -43,6 +45,8 @@ interface ConversationPreviewModalProps {
   contactName?: string;
   contactPhone?: string;
   contactAvatarUrl?: string;
+  currentUserId?: string;
+  userRole?: string;
 }
 
 function transformMessage(db: any, reactions?: MessageReaction[]): Message {
@@ -91,6 +95,8 @@ export function ConversationPreviewModal({
   contactName,
   contactPhone,
   contactAvatarUrl,
+  currentUserId,
+  userRole,
 }: ConversationPreviewModalProps) {
   const navigate = useNavigate();
   const { setSelectedConnectionId } = useAppStore();
@@ -507,9 +513,11 @@ export function ConversationPreviewModal({
                                 )}
                               </div>
                             ) : (
-                              <p className="text-sm whitespace-pre-wrap break-words">
-                                {message.content}
-                              </p>
+                              <MentionText
+                                text={message.content || ''}
+                                className="text-sm [overflow-wrap:anywhere]"
+                                variant={message.isInternalNote ? 'internal-note' : 'default'}
+                              />
                             )}
 
                             {/* Timestamp and status */}
@@ -532,14 +540,33 @@ export function ConversationPreviewModal({
 
         {/* Footer with action button */}
         <div className="px-4 py-3 border-t bg-muted/30 flex-shrink-0">
-          <Button 
-            onClick={handleAccessChat} 
-            className="w-full"
-            disabled={!conversation}
-          >
-            <MessageSquare className="w-4 h-4 mr-2" />
-            Acessar Chat
-          </Button>
+          {(() => {
+            // Owner/admin always have access
+            const isAdminOrOwner = userRole === 'owner' || userRole === 'admin';
+            // Check if conversation is assigned to current user
+            const isAssignedToMe = conversation?.assignedUserId === currentUserId;
+            const canAccessChat = isAdminOrOwner || isAssignedToMe;
+
+            if (canAccessChat) {
+              return (
+                <Button 
+                  onClick={handleAccessChat} 
+                  className="w-full"
+                  disabled={!conversation}
+                >
+                  <MessageSquare className="w-4 h-4 mr-2" />
+                  Acessar Chat
+                </Button>
+              );
+            }
+
+            return (
+              <div className="text-center text-sm text-muted-foreground py-2 flex items-center justify-center gap-2">
+                <Lock className="w-4 h-4" />
+                Esta conversa não está atribuída a você
+              </div>
+            );
+          })()}
         </div>
       </DialogContent>
     </Dialog>

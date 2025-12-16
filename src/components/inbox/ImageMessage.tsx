@@ -70,8 +70,8 @@ export function ImageMessage({
           "flex flex-col items-center justify-center gap-2 p-6 rounded-xl",
           "w-full max-w-[300px] md:max-w-[300px] min-h-[120px]",
           isOutbound 
-            ? "bg-gradient-to-br from-blue-100 to-blue-50" 
-            : "bg-slate-100"
+            ? "bg-primary/10 dark:bg-primary/20" 
+            : "bg-muted"
         )}
       >
         <ImageOff className="w-8 h-8 text-muted-foreground" />
@@ -90,8 +90,8 @@ export function ImageMessage({
           "w-full max-w-[300px] md:max-w-[300px]",
           "transition-transform duration-200 hover:scale-[1.02]",
           isOutbound 
-            ? "bg-gradient-to-br from-blue-100 to-blue-50" 
-            : "bg-slate-100"
+            ? "bg-primary/10 dark:bg-primary/20" 
+            : "bg-muted"
         )}
         onClick={() => !isLoading && !hasError && setIsLightboxOpen(true)}
         onKeyDown={handleKeyDown}
@@ -102,10 +102,10 @@ export function ImageMessage({
         {/* Loading skeleton */}
         {isLoading && (
           <div 
-            className="absolute inset-0 flex items-center justify-center bg-slate-200/80"
+            className="absolute inset-0 flex items-center justify-center bg-muted/80"
             style={{ aspectRatio: width && height ? `${width}/${height}` : '16/9' }}
           >
-            <div className="animate-shimmer w-full h-full bg-gradient-to-r from-slate-200 via-slate-100 to-slate-200 bg-[length:200%_100%]" />
+            <div className="animate-shimmer w-full h-full bg-gradient-to-r from-muted via-muted-foreground/10 to-muted bg-[length:200%_100%]" />
             <div className="absolute inset-0 flex items-center justify-center">
               <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
             </div>
@@ -149,8 +149,8 @@ export function ImageMessage({
             "flex items-center justify-center opacity-0 group-hover:opacity-100",
             "transition-all duration-200"
           )}>
-            <div className="bg-white/90 backdrop-blur-sm rounded-full p-2 shadow-lg">
-              <ZoomIn className="w-5 h-5 text-slate-700" />
+            <div className="bg-background/90 backdrop-blur-sm rounded-full p-2 shadow-lg">
+              <ZoomIn className="w-5 h-5 text-foreground" />
             </div>
           </div>
         )}
@@ -189,21 +189,6 @@ export function ImageMessage({
         )}
       </div>
 
-      {/* Image info */}
-      {!isLoading && !hasError && (width || height || fileSize) && (
-        <div className="flex items-center gap-2 mt-1 opacity-70">
-          {width && height && (
-            <span className="text-[10px] text-muted-foreground">
-              {width}×{height}
-            </span>
-          )}
-          {fileSize && (
-            <span className="text-[10px] text-muted-foreground">
-              {formatFileSize(fileSize)}
-            </span>
-          )}
-        </div>
-      )}
 
       {/* Lightbox */}
       <Dialog open={isLightboxOpen} onOpenChange={setIsLightboxOpen}>

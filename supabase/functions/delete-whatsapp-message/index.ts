@@ -73,6 +73,8 @@ serve(async (req) => {
         message_type,
         is_deleted,
         content,
+        media_url,
+        metadata,
         conversations!inner (
           id,
           assigned_user_id,
@@ -120,9 +122,10 @@ serve(async (req) => {
       throw new Error('Apenas mensagens de atendentes podem ser apagadas')
     }
 
-    // Validate message is text type
-    if (message.message_type !== 'text') {
-      throw new Error('Apenas mensagens de texto podem ser apagadas')
+    // Validate message is a deletable type
+    const deletableTypes = ['text', 'image', 'video', 'audio', 'document', 'sticker'];
+    if (!deletableTypes.includes(message.message_type)) {
+      throw new Error('Este tipo de mensagem não pode ser apagado')
     }
 
     // Validate message is not already deleted
@@ -195,7 +198,9 @@ serve(async (req) => {
         event_type: 'message_deleted',
         event_data: {
           message_id: message.id,
+          message_type: message.message_type,
           message_content: message.content,
+          media_url: message.media_url,
           deleted_by: user.id,
           deleted_by_name: profile.full_name
         },

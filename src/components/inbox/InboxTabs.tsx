@@ -55,33 +55,35 @@ export function InboxTabs({
 
   return (
     <div className="flex w-full bg-muted/30">
-      {visibleTabs.map((tab) => (
-        <button
-          key={tab.id}
-          onClick={() => onTabChange(tab.id)}
-          className={cn(
-            'flex-1 flex items-center justify-center gap-2 py-3 px-4',
-            'text-sm font-medium text-center',
-            'transition-all duration-200',
-            'border-b-2 focus:outline-none',
-            effectiveActiveTab === tab.id
-              ? 'border-primary text-primary bg-background shadow-sm font-semibold'
-              : 'border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/50'
-          )}
-        >
-          {tab.label}
-          {counts && counts[tab.id] > 0 && (
-            <span className={cn(
-              'text-xs px-2 py-0.5 rounded-full min-w-5 text-center font-medium',
+      {visibleTabs.map((tab) => {
+        const count = counts?.[tab.id] || 0;
+        
+        return (
+          <button
+            key={tab.id}
+            onClick={() => onTabChange(tab.id)}
+            className={cn(
+              'flex-1 flex items-center justify-center gap-2 py-3 px-4',
+              'text-sm font-medium text-center',
+              'transition-all duration-200',
+              'border-b-2 focus:outline-none',
               effectiveActiveTab === tab.id
-                ? 'bg-primary/15 text-primary'
-                : 'bg-muted text-muted-foreground'
-            )}>
-              {counts[tab.id]}
-            </span>
-          )}
-        </button>
-      ))}
+                ? 'border-primary text-primary bg-background shadow-sm font-semibold'
+                : 'border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/50'
+            )}
+          >
+            {tab.label}
+            {count > 0 && (
+              <span className={cn(
+                'min-w-5 h-5 px-1.5 rounded-full text-xs font-bold flex items-center justify-center',
+                'bg-red-500 text-white' // Always red for unread count
+              )}>
+                {count > 99 ? '99+' : count}
+              </span>
+            )}
+          </button>
+        );
+      })}
     </div>
   );
 }

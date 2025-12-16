@@ -338,7 +338,8 @@ export function useInternalChat() {
       const { data: newRoomId, error: roomError } = await supabase
         .rpc('create_internal_chat_room', {
           p_type: 'direct',
-          p_name: null
+          p_name: null,
+          p_description: null
         });
 
       if (roomError || !newRoomId) {
@@ -488,6 +489,30 @@ export function useInternalChat() {
 
       if (error) throw error;
       
+      // Create mention notifications for each mentioned user
+      if (data?.id && mentions && mentions.length > 0) {
+        console.log('[InternalChat] Criando notificações de menção para:', mentions);
+        
+        const mentionNotifications = mentions.map(mentionedUserId => ({
+          mentioned_user_id: mentionedUserId,
+          mentioner_user_id: profile.id,
+          message_id: data.id,
+          room_id: selectedRoom.id,
+          source_type: 'internal_chat',
+          has_access: true,
+          is_read: false,
+        }));
+
+        const { error: mentionError } = await supabase
+          .from('mention_notifications')
+          .insert(mentionNotifications);
+
+        if (mentionError) {
+          console.error('[InternalChat] Erro ao criar notificações de menção:', mentionError);
+        } else {
+          console.log('[InternalChat] Notificações de menção criadas com sucesso');
+        }
+      }
       
       return true;
     } catch (error) {

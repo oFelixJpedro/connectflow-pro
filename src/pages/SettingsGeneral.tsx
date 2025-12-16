@@ -6,6 +6,8 @@ import {
   Save,
   Upload,
   Loader2,
+  Volume2,
+  Filter,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -16,6 +18,7 @@ import { Separator } from '@/components/ui/separator';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Slider } from '@/components/ui/slider';
 import {
   Select,
   SelectContent,
@@ -26,6 +29,8 @@ import {
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
+import { useNotificationSettings } from '@/hooks/useNotificationSettings';
+import { cn } from '@/lib/utils';
 
 interface BusinessHours {
   enabled: boolean;
@@ -205,36 +210,15 @@ export default function SettingsGeneral() {
     }));
   };
 
-  // If not owner or admin, show "Coming Soon" page
-  if (!isOwnerOrAdmin) {
-    return (
-      <div className="h-full overflow-auto">
-        <div className="max-w-4xl mx-auto p-4 md:p-6 flex items-center justify-center min-h-[60vh]">
-          <div className="text-center space-y-6 px-4">
-            <div className="w-20 h-20 md:w-24 md:h-24 mx-auto rounded-full bg-primary/10 flex items-center justify-center">
-              <Building2 className="w-10 h-10 md:w-12 md:h-12 text-primary" />
-            </div>
-            <div className="space-y-2">
-              <h1 className="text-2xl md:text-3xl font-bold text-foreground">Em breve</h1>
-              <p className="text-sm md:text-base text-muted-foreground max-w-md mx-auto">
-                Novas configurações estarão disponíveis em breve para você. 
-                Fique atento às atualizações!
-              </p>
-            </div>
-            <div className="flex flex-col sm:flex-row gap-3 justify-center pt-4">
-              <Button 
-                variant="outline" 
-                onClick={() => window.history.back()}
-                className="w-full sm:w-auto"
-              >
-                Voltar
-              </Button>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  // Notification settings
+  const {
+    settings: notificationSettings,
+    isSaving: savingNotifications,
+    notificationPermission,
+    updateSetting,
+    saveSettings: saveNotificationSettings,
+    requestNotificationPermission,
+  } = useNotificationSettings();
 
   return (
     <div className="h-full overflow-auto">
@@ -247,15 +231,23 @@ export default function SettingsGeneral() {
           </p>
         </div>
 
-        <Tabs defaultValue="company" className="space-y-4 md:space-y-6">
-          <TabsList className="grid w-full grid-cols-2 h-auto">
-            <TabsTrigger value="company" className="gap-2 py-2">
-              <Building2 className="w-4 h-4" />
-              <span className="text-xs sm:text-sm">Empresa</span>
-            </TabsTrigger>
-            <TabsTrigger value="billing" className="gap-2 py-2">
-              <CreditCard className="w-4 h-4" />
-              <span className="text-xs sm:text-sm">Acesso</span>
+        <Tabs defaultValue="notifications" className="space-y-4 md:space-y-6">
+          <TabsList className={cn("grid w-full h-auto", isOwnerOrAdmin ? "grid-cols-3" : "grid-cols-1")}>
+            {isOwnerOrAdmin && (
+              <>
+                <TabsTrigger value="company" className="gap-2 py-2">
+                  <Building2 className="w-4 h-4" />
+                  <span className="text-xs sm:text-sm">Empresa</span>
+                </TabsTrigger>
+                <TabsTrigger value="billing" className="gap-2 py-2">
+                  <CreditCard className="w-4 h-4" />
+                  <span className="text-xs sm:text-sm">Acesso</span>
+                </TabsTrigger>
+              </>
+            )}
+            <TabsTrigger value="notifications" className="gap-2 py-2">
+              <Bell className="w-4 h-4" />
+              <span className="text-xs sm:text-sm">Notificações</span>
             </TabsTrigger>
           </TabsList>
 
@@ -500,6 +492,170 @@ export default function SettingsGeneral() {
                       <p className="text-sm text-muted-foreground">conexão WhatsApp</p>
                     </div>
                   </div>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Notification Settings */}
+          <TabsContent value="notifications" className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>Configurações de Notificações</CardTitle>
+                <CardDescription>
+                  Personalize como você recebe notificações
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6 px-4 md:px-6">
+                {/* Sons */}
+                <div className="space-y-4">
+                  <h4 className="font-medium flex items-center gap-2">
+                    <Volume2 className="w-4 h-4" />
+                    Sons
+                  </h4>
+                  
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="sound-enabled">Habilitar sons de notificação</Label>
+                    <Switch 
+                      id="sound-enabled"
+                      checked={notificationSettings.soundEnabled} 
+                      onCheckedChange={(checked) => updateSetting('soundEnabled', checked)} 
+                    />
+                  </div>
+                  
+                  {notificationSettings.soundEnabled && (
+                    <div className="space-y-4 pl-4 border-l-2 border-muted">
+                      <div className="space-y-2">
+                        <Label>Volume ({notificationSettings.soundVolume}%)</Label>
+                        <Slider 
+                          value={[notificationSettings.soundVolume]} 
+                          onValueChange={(v) => updateSetting('soundVolume', v[0])} 
+                          max={100}
+                          min={0}
+                          step={5}
+                          className="w-full max-w-xs"
+                        />
+                      </div>
+                      
+                      <div className="flex items-center justify-between">
+                        <Label htmlFor="whatsapp-sound">Som para mensagens WhatsApp</Label>
+                        <Switch 
+                          id="whatsapp-sound"
+                          checked={notificationSettings.whatsappSound} 
+                          onCheckedChange={(checked) => updateSetting('whatsappSound', checked)} 
+                        />
+                      </div>
+                      
+                      <div className="flex items-center justify-between">
+                        <Label htmlFor="internal-sound">Som para Chat Interno</Label>
+                        <Switch 
+                          id="internal-sound"
+                          checked={notificationSettings.internalChatSound} 
+                          onCheckedChange={(checked) => updateSetting('internalChatSound', checked)} 
+                        />
+                      </div>
+                      
+                      <div className="flex items-center justify-between">
+                        <Label htmlFor="mention-sound">Som para Menções (@)</Label>
+                        <Switch 
+                          id="mention-sound"
+                          checked={notificationSettings.mentionSound} 
+                          onCheckedChange={(checked) => updateSetting('mentionSound', checked)} 
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+                
+                <Separator />
+                
+                {/* Notificações do navegador */}
+                <div className="space-y-4">
+                  <h4 className="font-medium flex items-center gap-2">
+                    <Bell className="w-4 h-4" />
+                    Notificações do Navegador
+                  </h4>
+                  
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <Label>Notificações desktop</Label>
+                      <p className="text-xs text-muted-foreground">
+                        Receba alertas mesmo quando a aba não estiver ativa
+                      </p>
+                    </div>
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      onClick={requestNotificationPermission}
+                      disabled={notificationPermission === 'granted'}
+                    >
+                      {notificationPermission === 'granted' ? '✓ Ativado' : 'Ativar'}
+                    </Button>
+                  </div>
+                  
+                  {notificationPermission === 'granted' && (
+                    <div className="flex items-center justify-between pl-4 border-l-2 border-muted">
+                      <Label htmlFor="show-preview">Mostrar preview da mensagem</Label>
+                      <Switch 
+                        id="show-preview"
+                        checked={notificationSettings.showPreview} 
+                        onCheckedChange={(checked) => updateSetting('showPreview', checked)} 
+                      />
+                    </div>
+                  )}
+                </div>
+                
+                <Separator />
+                
+                {/* Filtros */}
+                <div className="space-y-4">
+                  <h4 className="font-medium flex items-center gap-2">
+                    <Filter className="w-4 h-4" />
+                    Filtros de Notificação
+                  </h4>
+                  
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <Label htmlFor="only-mentions">Notificar apenas quando mencionado</Label>
+                      <p className="text-xs text-muted-foreground">
+                        Receba apenas notificações de menções com @
+                      </p>
+                    </div>
+                    <Switch 
+                      id="only-mentions"
+                      checked={notificationSettings.notifyOnlyMentions} 
+                      onCheckedChange={(checked) => updateSetting('notifyOnlyMentions', checked)} 
+                    />
+                  </div>
+                  
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <Label htmlFor="only-assigned">Notificar apenas conversas atribuídas</Label>
+                      <p className="text-xs text-muted-foreground">
+                        Receba apenas notificações de conversas na sua fila
+                      </p>
+                    </div>
+                    <Switch 
+                      id="only-assigned"
+                      checked={notificationSettings.notifyOnlyAssigned} 
+                      onCheckedChange={(checked) => updateSetting('notifyOnlyAssigned', checked)} 
+                    />
+                  </div>
+                </div>
+                
+                <div className="flex justify-end pt-4">
+                  <Button 
+                    onClick={() => saveNotificationSettings(notificationSettings)} 
+                    disabled={savingNotifications}
+                    className="w-full sm:w-auto"
+                  >
+                    {savingNotifications ? (
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    ) : (
+                      <Save className="w-4 h-4 mr-2" />
+                    )}
+                    {savingNotifications ? 'Salvando...' : 'Salvar Configurações'}
+                  </Button>
                 </div>
               </CardContent>
             </Card>

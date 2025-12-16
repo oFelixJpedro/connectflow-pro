@@ -1,18 +1,22 @@
 import { useState, useMemo } from 'react';
-import { Search, Star } from 'lucide-react';
+import { Search, Star, RotateCcw, UserPlus } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Button } from '@/components/ui/button';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { ConnectionSelector } from '@/components/inbox/ConnectionSelector';
 import { ConversationFiltersComponent } from '@/components/inbox/ConversationFilters';
 import { InboxTabs, type InboxColumn } from '@/components/inbox/InboxTabs';
 import { AssignmentBadge } from '@/components/inbox/AssignmentBadge';
 import { ContactAvatar } from '@/components/ui/contact-avatar';
+import { ContactFormModal } from '@/components/contacts/ContactFormModal';
 import { cn } from '@/lib/utils';
 import type { Conversation, ConversationFilters } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
 import { useFollowedConversations } from '@/hooks/useFollowedConversations';
+import { useContactsData } from '@/hooks/useContactsData';
 import type { Tag } from '@/hooks/useTagsData';
 
 interface ConversationListProps {
@@ -29,6 +33,7 @@ interface ConversationListProps {
   inboxColumn: InboxColumn;
   onColumnChange: (column: InboxColumn) => void;
   tags?: Tag[];
+  tabUnreadCounts?: { minhas: number; fila: number; todas: number };
 }
 
 const priorityColors = {
@@ -61,10 +66,13 @@ export function ConversationList({
   inboxColumn,
   onColumnChange,
   tags = [],
+  tabUnreadCounts,
 }: ConversationListProps) {
   const { user } = useAuth();
   const { isFollowed, isAdminOrOwner } = useFollowedConversations();
+  const { tags: contactTags, createContact } = useContactsData();
   const [searchQuery, setSearchQuery] = useState('');
+  const [showContactModal, setShowContactModal] = useState(false);
 
   // Filter by local search only (other filters are applied in backend)
   const filteredConversations = conversations.filter((conv) => {
@@ -77,15 +85,9 @@ export function ConversationList({
     return true;
   });
 
-  // Calculate counts for each tab
-  const tabCounts = useMemo(() => {
-    // Note: These are just placeholder counts based on current conversations
-    // Real counts would need to come from the backend
-    const minhas = conversations.filter(c => c.assignedUserId === user?.id).length;
-    const fila = conversations.filter(c => !c.assignedUserId).length;
-    const todas = conversations.length;
-    return { minhas, fila, todas };
-  }, [conversations, user?.id]);
+  // Use tabUnreadCounts from props (loaded independently from hook)
+  // This ensures counts persist across tab changes
+  const effectiveCounts = tabUnreadCounts || { minhas: 0, fila: 0, todas: 0 };
 
   const formatTimestamp = (dateString?: string): string => {
     if (!dateString) return '';
@@ -134,12 +136,33 @@ export function ConversationList({
     <div className="w-full md:w-80 lg:w-80 border-r border-border bg-card flex flex-col h-full">
       {/* Header with connection selector */}
       <div className="p-4 border-b border-border space-y-3">
-        {/* Connection Selector */}
-        <ConnectionSelector
-          selectedConnectionId={selectedConnectionId}
-          onConnectionChange={onConnectionChange}
-          onNoConnections={onNoConnections}
-        />
+        {/* Connection Selector + Add Contact Button */}
+        <div className="flex items-center gap-2">
+          <div className="flex-1">
+            <ConnectionSelector
+              selectedConnectionId={selectedConnectionId}
+              onConnectionChange={onConnectionChange}
+              onNoConnections={onNoConnections}
+            />
+          </div>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-9 w-9 flex-shrink-0"
+                  onClick={() => setShowContactModal(true)}
+                >
+                  <UserPlus className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Cadastrar novo contato</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        </div>
         
         {/* Search + Filter Row */}
         <div className="flex items-center gap-2">
@@ -169,6 +192,7 @@ export function ConversationList({
         activeTab={inboxColumn}
         onTabChange={onColumnChange}
         isRestricted={isRestricted}
+        counts={effectiveCounts}
       />
 
       {/* Conversation List */}
@@ -182,7 +206,7 @@ export function ConversationList({
           ) : filteredConversations.length === 0 ? (
             <div className="p-8 text-center text-muted-foreground">
               <p className="text-sm">
-                {searchQuery || (filters.status && filters.status !== 'all') || filters.departmentId || filters.filterByAgentId
+                {searchQuery || (filters.status && filters.status.length > 0) || filters.departmentId || filters.filterByAgentId || filters.tags?.length || filters.kanbanColumnId
                   ? 'Nenhuma conversa com estes filtros'
                   : inboxColumn === 'minhas' 
                     ? 'Nenhuma conversa atribuída a você'
@@ -193,17 +217,35 @@ export function ConversationList({
             </div>
           ) : (
             filteredConversations.map((conversation) => {
-              const isAssignedToMe = conversation.assignedUserId === user?.id;
-              
+              // Check for metadata.markedAsUnread
+              const isMarkedAsUnread = conversation.metadata?.markedAsUnread === true;
+              const hasRealUnread = (conversation.unreadCount || 0) > 0;
+              const isUnread = hasRealUnread || isMarkedAsUnread;
+              const isSelected = selectedId === conversation.id;
+
+              // Left border logic:
+              // - selected => green
+              // - not selected + unread => blue
+              // - not selected + read => light gray (pastel)
+              const borderLeftColor = isSelected
+                ? 'hsl(var(--success))'
+                : isUnread
+                  ? 'hsl(var(--primary))'
+                  : 'hsl(var(--border))';
+
               return (
                 <div
                   key={conversation.id}
                   onClick={() => onSelect(conversation)}
+                  style={{ borderLeftColor, borderLeftStyle: 'solid' }}
                   className={cn(
-                    'conversation-item p-4 border-l-4 relative',
-                    statusColors[conversation.status] || 'border-l-transparent',
-                    selectedId === conversation.id && 'active',
-                    isAssignedToMe && 'bg-success/5'
+                    'conversation-item p-4 relative transition-colors duration-200 border-l-4',
+                    // Background colors based on state
+                    isSelected
+                      ? 'bg-[hsl(var(--conv-selected-bg))]'
+                      : isUnread
+                        ? 'bg-[hsl(var(--conv-unread-bg))]'
+                        : 'bg-transparent'
                   )}
                 >
                   <div className="flex gap-3">
@@ -215,10 +257,20 @@ export function ConversationList({
                         size="lg"
                       />
                       
-                      {/* Unread badge on avatar */}
-                      {conversation.unreadCount > 0 && (
-                        <span className="absolute -top-1 -right-1 bg-primary text-primary-foreground text-xs font-semibold rounded-full min-w-[20px] h-5 px-1.5 flex items-center justify-center shadow-md z-10">
-                          {conversation.unreadCount > 99 ? '99+' : conversation.unreadCount}
+                      {/* Unread badge on avatar - red pastel if marked as unread, blue if real unread */}
+                      {(hasRealUnread || isMarkedAsUnread) && (
+                        <span 
+                          className={cn(
+                            "absolute -top-1 -right-1 text-xs font-semibold rounded-full min-w-[20px] h-5 px-1.5 flex items-center justify-center shadow-md z-10",
+                            isMarkedAsUnread && !hasRealUnread
+                              ? "bg-red-200 text-red-700 dark:bg-red-900/50 dark:text-red-300"
+                              : "bg-primary text-primary-foreground"
+                          )}
+                        >
+                          {hasRealUnread 
+                            ? (conversation.unreadCount > 99 ? '99+' : conversation.unreadCount)
+                            : '!'
+                          }
                         </span>
                       )}
                     </div>
@@ -246,6 +298,17 @@ export function ConversationList({
 
                       {/* Assignment, department badges and contact tags */}
                       <div className="flex items-center gap-1 mt-2 overflow-hidden">
+                        {/* Reopened badge - shows when conversation was auto-reopened */}
+                        {conversation.metadata?.autoReopened && (
+                          <Badge 
+                            variant="outline" 
+                            className="text-xs px-1.5 py-0 h-5 flex-shrink-0 bg-amber-100 text-amber-700 border-amber-300 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-700"
+                          >
+                            <RotateCcw className="w-3 h-3 mr-0.5" />
+                            Reaberta
+                          </Badge>
+                        )}
+                        
                         {/* Assignment badge */}
                         <AssignmentBadge
                           assignedUser={conversation.assignedUser}
@@ -319,6 +382,19 @@ export function ConversationList({
           )}
         </div>
       </ScrollArea>
+
+      {/* Contact Form Modal */}
+      <ContactFormModal
+        open={showContactModal}
+        onOpenChange={setShowContactModal}
+        contact={null}
+        tags={contactTags}
+        onSave={async (data) => {
+          const result = await createContact(data);
+          return result ? result.id : false;
+        }}
+        preselectedConnectionId={selectedConnectionId}
+      />
     </div>
   );
 }

@@ -160,8 +160,8 @@ export function VideoMessage({
               "px-4 py-3 rounded-b-xl text-sm leading-relaxed",
               "whitespace-pre-wrap break-words",
               isOutbound 
-                ? "bg-gradient-to-br from-blue-100 to-blue-200 text-blue-900"
-                : "bg-slate-100 text-slate-900"
+                ? "bg-primary/10 dark:bg-primary/20 text-foreground"
+                : "bg-muted text-foreground"
             )}
           >
             {caption}

@@ -101,6 +101,14 @@ export interface Conversation {
   lastMessage?: Message;
   assignedAt?: string;
   closedAt?: string;
+  metadata?: {
+    markedAsUnread?: boolean;
+    markedAsUnreadAt?: string;
+    autoReopened?: boolean;
+    reopenedAt?: string;
+    reopenedByClient?: boolean;
+    [key: string]: unknown;
+  };
   createdAt: string;
   updatedAt: string;
 }
@@ -204,11 +212,12 @@ export type InboxColumn = 'minhas' | 'fila' | 'todas';
 
 // Filters
 export interface ConversationFilters {
-  status?: ConversationStatus | 'all';
+  status?: string[]; // Array of statuses for multi-select (e.g., ['open', 'in_progress'])
   assignedUserId?: string | 'mine' | 'unassigned' | 'all' | 'others';
   filterByAgentId?: string; // Filter by specific agent (admin/owner only)
   departmentId?: string;
   tags?: string[];
+  kanbanColumnId?: string; // Filter by Kanban funnel stage
   priority?: ConversationPriority;
   search?: string;
   inboxColumn?: InboxColumn;

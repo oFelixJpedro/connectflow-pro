@@ -71,7 +71,7 @@ export function QuickReplyConfirmModal({
               Prévia da mensagem:
             </p>
             <ScrollArea className="max-h-60 rounded-lg border border-border bg-muted/30 p-3">
-              <p className="text-sm whitespace-pre-wrap break-words">
+              <p className="text-sm whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
                 {message}
               </p>
             </ScrollArea>

@@ -4,6 +4,7 @@ import {
   Check,
   CheckCheck,
   Clock,
+  CalendarClock,
   AlertCircle,
   Phone,
   Loader2,
@@ -198,8 +199,9 @@ export function ChatPanel({
       return false;
     }
     
-    // Only text messages
-    if (message.messageType !== 'text') {
+    // Allow deletable message types (text, image, video, audio, document, sticker)
+    const deletableTypes = ['text', 'image', 'video', 'audio', 'document', 'sticker'];
+    if (!deletableTypes.includes(message.messageType)) {
       return false;
     }
     
@@ -900,6 +902,49 @@ export function ChatPanel({
     return groups;
   }, {} as Record<string, Message[]>);
 
+  // Group messages by 5-minute time intervals within same sender/direction
+  const groupMessagesByTimeInterval = (messages: Message[]) => {
+    const groups: { timestamp: string; messages: Message[] }[] = [];
+    let currentGroup: { timestamp: string; messages: Message[] } | null = null;
+
+    messages.forEach((message, index) => {
+      const messageTime = new Date(message.createdAt).getTime();
+      const isOutbound = message.direction === 'outbound';
+      
+      if (!currentGroup) {
+        // Start first group
+        currentGroup = {
+          timestamp: message.createdAt,
+          messages: [message]
+        };
+      } else {
+        const lastMessage = currentGroup.messages[currentGroup.messages.length - 1];
+        const lastMessageTime = new Date(lastMessage.createdAt).getTime();
+        const lastIsOutbound = lastMessage.direction === 'outbound';
+        const timeDiff = (messageTime - lastMessageTime) / 1000 / 60; // minutes
+        
+        // Same direction and within 5 minutes? Add to current group
+        if (isOutbound === lastIsOutbound && timeDiff <= 5 && !message.isInternalNote && !lastMessage.isInternalNote) {
+          currentGroup.messages.push(message);
+        } else {
+          // Different direction, more than 5 min apart, or internal note - start new group
+          groups.push(currentGroup);
+          currentGroup = {
+            timestamp: message.createdAt,
+            messages: [message]
+          };
+        }
+      }
+    });
+
+    // Don't forget the last group
+    if (currentGroup) {
+      groups.push(currentGroup);
+    }
+
+    return groups;
+  };
+
   if (!conversation) {
     return (
       <div className="flex-1 flex items-center justify-center bg-muted/30">
@@ -970,16 +1015,16 @@ export function ChatPanel({
                 "text-xs",
                 conversation.assignedUserId === currentUserId 
                   ? "bg-success/10 text-success border-success/30"
-                  : "bg-muted text-muted-foreground"
+                  : "bg-warning/20 text-warning border-warning/30"
               )}
             >
               {conversation.assignedUserId === currentUserId 
                 ? 'Atribuída a você'
-                : `Atribuída a ${conversation.assignedUser.fullName?.split(' ')[0]}`
+                : `${conversation.assignedUser.fullName?.split(' ')[0]}`
               }
             </Badge>
           ) : (
-            <Badge variant="outline" className="text-xs bg-warning/10 text-warning border-warning/30">
+            <Badge variant="outline" className="text-xs bg-destructive/20 text-destructive border-destructive/30">
               Sem responsável
             </Badge>
           )}
@@ -1039,11 +1084,25 @@ export function ChatPanel({
                     </Badge>
                   </div>
 
-                  {/* Messages */}
-                  <div className="space-y-3">
-                    {dateMessages.map((message) => {
-                      const isOutbound = message.direction === 'outbound';
-                      const isFailed = message.status === 'failed';
+                  {/* Messages grouped by time intervals */}
+                  <div className="space-y-1">
+                    {groupMessagesByTimeInterval(dateMessages).map((timeGroup, groupIndex) => (
+                      <div key={`group-${groupIndex}`} className="space-y-0.5">
+                        {/* Time group header - align based on message direction */}
+                        <div className={cn(
+                          "flex items-center my-2",
+                          timeGroup.messages[0]?.direction === 'outbound' ? 'justify-end' : 'justify-start'
+                        )}>
+                          <span className="text-[10px] text-muted-foreground">
+                            {formatMessageTime(timeGroup.timestamp)}
+                          </span>
+                        </div>
+                        
+                        {/* Messages in this time group */}
+                        {timeGroup.messages.map((message, messageIndex) => {
+                          const isLastInGroup = messageIndex === timeGroup.messages.length - 1;
+                    const isOutbound = message.direction === 'outbound';
+                    const isFailed = message.status === 'failed';
                       
                       return (
                         <div
@@ -1147,6 +1206,7 @@ export function ChatPanel({
                                 deletedByName={message.deletedByName}
                                 deletedAt={message.deletedAt}
                                 messageType={message.messageType}
+                                mediaUrl={message.mediaUrl}
                                 isOutbound={isOutbound}
                                 canViewOriginal={true}
                               />
@@ -1337,34 +1397,23 @@ export function ChatPanel({
                               )
                             )}
                             
-                            {/* Message footer - only for non-audio/image/video or audio/image/video without URL */}
-                            {((message.messageType !== 'audio' && message.messageType !== 'image' && message.messageType !== 'video' && message.messageType !== 'document') || (!message.mediaUrl)) && (
-                              <div className={cn(
-                                'flex items-center gap-1 mt-1',
-                                isOutbound ? 'justify-end' : 'justify-start'
-                              )}>
-                                <span className={cn(
-                                  'text-xs',
-                                  isOutbound ? 'text-primary-foreground/70' : 'text-muted-foreground'
-                                )}>
-                                  {formatMessageTime(message.createdAt)}
-                                </span>
-                                {isOutbound && (
-                                  <Tooltip>
-                                    <TooltipTrigger asChild>
-                                      <span className={cn(
-                                        'text-primary-foreground/70 cursor-default',
-                                        message.status === 'read' && 'text-primary-foreground',
-                                        message.status === 'failed' && 'text-destructive'
-                                      )}>
-                                        {statusIcons[message.status]}
-                                      </span>
-                                    </TooltipTrigger>
-                                    <TooltipContent side="left">
-                                      {statusTooltips[message.status] || message.status}
-                                    </TooltipContent>
-                                  </Tooltip>
-                                )}
+                            {/* Message footer - show status only on last message of group */}
+                            {isLastInGroup && isOutbound && ((message.messageType !== 'audio' && message.messageType !== 'image' && message.messageType !== 'video' && message.messageType !== 'document') || (!message.mediaUrl)) && (
+                              <div className="flex items-center justify-end gap-1 mt-0.5">
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <span className={cn(
+                                      'text-[hsl(var(--chat-bubble-outgoing-foreground))]/70 cursor-default',
+                                      message.status === 'read' && 'text-primary',
+                                      message.status === 'failed' && 'text-destructive'
+                                    )}>
+                                      {statusIcons[message.status]}
+                                    </span>
+                                  </TooltipTrigger>
+                                  <TooltipContent side="left">
+                                    {statusTooltips[message.status] || message.status}
+                                  </TooltipContent>
+                                </Tooltip>
                               </div>
                             )}
 
@@ -1431,6 +1480,8 @@ export function ChatPanel({
                         </div>
                       );
                     })}
+                      </div>
+                    ))}
                   </div>
                 </div>
               ))}
@@ -1509,7 +1560,10 @@ export function ChatPanel({
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-xs font-medium truncate text-amber-900 dark:text-amber-100">
-                {(noteAttachment.metadata as { fileName?: string })?.fileName || 'Arquivo anexado'}
+                {noteAttachment.messageType === 'image' && 'Imagem'}
+                {noteAttachment.messageType === 'video' && 'Vídeo'}
+                {noteAttachment.messageType === 'audio' && 'Áudio'}
+                {noteAttachment.messageType === 'document' && 'Documento'}
               </p>
             </div>
             <Button
@@ -1536,22 +1590,57 @@ export function ChatPanel({
         )}
 
         {!isRecordingAudio && !audioFile && !isRecordingNoteAudio && (
-          <div className="flex items-end gap-2">
-            <AttachmentMenu
-              onImageSelect={handleImageSelect}
-              onVideoSelect={handleVideoSelect}
-              onAudioSelect={handleAudioFileSelect}
-              onDocumentSelect={handleDocumentSelect}
-              disabled={!canReply && !isInternalNoteMode}
-              variant={isInternalNoteMode ? 'amber' : 'default'}
-              onNoteAttachmentReady={isInternalNoteMode ? (messageType, mediaUrl, mediaMimeType, metadata) => {
-                setNoteAttachment({ messageType, mediaUrl, mediaMimeType, metadata });
-              } : undefined}
-              conversationId={conversation?.id}
-            />
-            
-            <div className="flex-1 relative">
-              {/* Quick Replies Picker */}
+          <div className="flex items-center gap-1.5">
+            {/* 1. Agendar mensagem (mockup) */}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => {
+                    const { toast } = require('@/hooks/use-toast');
+                    toast({
+                      title: "Em breve",
+                      description: "Agendamento de mensagens será disponibilizado em breve.",
+                    });
+                  }}
+                  className="h-9 w-9 flex-shrink-0"
+                >
+                  <CalendarClock className="w-5 h-5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Agendar mensagem (em breve)</TooltipContent>
+            </Tooltip>
+
+            {/* 2. Ativar nota interna */}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  variant={isInternalNoteMode ? "default" : "ghost"}
+                  size="icon"
+                  onClick={() => {
+                    setIsInternalNoteMode(!isInternalNoteMode);
+                    if (isInternalNoteMode) {
+                      setNoteAttachment(null);
+                    }
+                  }}
+                  className={cn(
+                    "h-9 w-9 flex-shrink-0",
+                    isInternalNoteMode && "bg-amber-500 hover:bg-amber-600 text-white"
+                  )}
+                >
+                  <StickyNote className="w-4 h-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                {isInternalNoteMode ? 'Desativar nota interna' : 'Ativar nota interna'}
+              </TooltipContent>
+            </Tooltip>
+
+            {/* 3. Input de texto + emoji */}
+            <div className="flex-1 relative min-w-0">
               <QuickRepliesPicker
                 inputValue={inputValue}
                 onSelect={handleQuickReplySelect}
@@ -1559,34 +1648,6 @@ export function ChatPanel({
                 isOpen={showQuickReplies && canReply}
               />
               
-              {/* Internal Note Toggle Button */}
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    type="button"
-                    variant={isInternalNoteMode ? "default" : "ghost"}
-                    size="icon"
-                    onClick={() => {
-                      setIsInternalNoteMode(!isInternalNoteMode);
-                      // Clear attachment when leaving note mode
-                      if (isInternalNoteMode) {
-                        setNoteAttachment(null);
-                      }
-                    }}
-                    className={cn(
-                      "h-8 w-8 flex-shrink-0",
-                      isInternalNoteMode && "bg-amber-500 hover:bg-amber-600 text-white"
-                    )}
-                  >
-                    <StickyNote className="w-4 h-4" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>
-                  {isInternalNoteMode ? 'Desativar nota interna' : 'Ativar nota interna'}
-                </TooltipContent>
-              </Tooltip>
-
-              {/* Mention Picker for internal notes */}
               {isInternalNoteMode && (
                 <MentionPicker
                   isOpen={showMentionPicker}
@@ -1619,9 +1680,9 @@ export function ChatPanel({
                       : blockInfo.message
                 }
                 className={cn(
-                  "min-h-[44px] max-h-32 resize-none pr-12 transition-colors duration-200",
+                  "min-h-[44px] max-h-32 resize-none pr-10 transition-colors duration-200",
                   !canReply && !isInternalNoteMode && "bg-muted/50 cursor-not-allowed",
-                  isInternalNoteMode && "bg-amber-50 border-amber-300 focus-visible:ring-amber-400 placeholder:text-amber-600/70"
+                  isInternalNoteMode && "bg-amber-50 border-amber-300 focus-visible:ring-amber-400 placeholder:text-amber-600/70 text-slate-900"
                 )}
                 rows={1}
                 disabled={isSendingMessage || (!canReply && !isInternalNoteMode)}
@@ -1640,7 +1701,7 @@ export function ChatPanel({
               />
             </div>
 
-            {/* Mic button - show when no text and not with attachment */}
+            {/* 4. Gravar áudio / Enviar */}
             {!inputValue.trim() && !noteAttachment && !isRecordingNoteAudio ? (
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -1654,8 +1715,9 @@ export function ChatPanel({
                     }}
                     disabled={!canReply && !isInternalNoteMode}
                     variant="ghost"
+                    size="icon"
                     className={cn(
-                      "flex-shrink-0",
+                      "h-9 w-9 flex-shrink-0",
                       isInternalNoteMode && "text-amber-600 hover:text-amber-700 hover:bg-amber-100"
                     )}
                   >
@@ -1670,8 +1732,9 @@ export function ChatPanel({
               <Button 
                 onClick={handleSend}
                 disabled={(!inputValue.trim() && !noteAttachment) || isSendingMessage || (!canReply && !isInternalNoteMode)}
+                size="icon"
                 className={cn(
-                  "flex-shrink-0",
+                  "h-9 w-9 flex-shrink-0",
                   isInternalNoteMode && "bg-amber-500 hover:bg-amber-600"
                 )}
               >
@@ -1682,6 +1745,20 @@ export function ChatPanel({
                 )}
               </Button>
             )}
+
+            {/* 5. Anexar arquivo */}
+            <AttachmentMenu
+              onImageSelect={handleImageSelect}
+              onVideoSelect={handleVideoSelect}
+              onAudioSelect={handleAudioFileSelect}
+              onDocumentSelect={handleDocumentSelect}
+              disabled={!canReply && !isInternalNoteMode}
+              variant={isInternalNoteMode ? 'amber' : 'default'}
+              onNoteAttachmentReady={isInternalNoteMode ? (messageType, mediaUrl, mediaMimeType, metadata) => {
+                setNoteAttachment({ messageType, mediaUrl, mediaMimeType, metadata });
+              } : undefined}
+              conversationId={conversation?.id}
+            />
           </div>
         )}
       </div>

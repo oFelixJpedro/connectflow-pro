@@ -68,7 +68,8 @@
     --sidebar-ring: 217 91% 60%;
     
     /* Chat specific */
-    --chat-bubble-outgoing: 217 91% 60%;
+    --chat-bubble-outgoing: 213 80% 88%;
+    --chat-bubble-outgoing-foreground: 217 47% 25%;
     --chat-bubble-incoming: 210 40% 96%;
     --chat-input-bg: 0 0% 100%;
     
@@ -83,7 +84,11 @@
     --conv-pending: 38 92% 50%;
     --conv-in-progress: 217 91% 60%;
     --conv-closed: 215 16% 47%;
-    
+
+    /* Conversation list backgrounds (pastel) */
+    --conv-unread-bg: 198 93% 93%; /* ~#E0F2FE */
+    --conv-selected-bg: 142 69% 89%; /* ~#D9F9E5 */
+
     /* Priority */
     --priority-urgent: 0 84% 60%;
     --priority-high: 38 92% 50%;
@@ -138,9 +143,14 @@
     --sidebar-border: 217 33% 17%;
     --sidebar-ring: 217 91% 60%;
     
-    --chat-bubble-outgoing: 217 91% 50%;
+    --chat-bubble-outgoing: 213 60% 35%;
+    --chat-bubble-outgoing-foreground: 213 80% 92%;
     --chat-bubble-incoming: 217 33% 17%;
     --chat-input-bg: 222 47% 9%;
+
+    /* Conversation list backgrounds (pastel) */
+    --conv-unread-bg: 217 60% 18%;
+    --conv-selected-bg: 160 45% 18%;
   }
 }
 
@@ -174,18 +184,18 @@
 }
 
 @layer components {
-  /* Message bubbles */
+  /* Message bubbles - WhatsApp Web style thin borders */
   .message-bubble-outgoing {
-    @apply bg-primary text-primary-foreground rounded-2xl rounded-br-md px-4 py-2;
+    @apply bg-[hsl(var(--chat-bubble-outgoing))] text-[hsl(var(--chat-bubble-outgoing-foreground))] rounded-lg rounded-br-sm px-3 py-1.5;
   }
   
   .message-bubble-incoming {
-    @apply bg-muted text-foreground rounded-2xl rounded-bl-md px-4 py-2;
+    @apply bg-muted text-foreground rounded-lg rounded-bl-sm px-3 py-1.5;
   }
   
   /* Internal note message bubble - Post-it style */
   .message-bubble-internal-note {
-    @apply bg-amber-100 dark:bg-amber-900/40 text-amber-900 dark:text-amber-100 rounded-2xl rounded-br-md px-4 py-2 border border-amber-200 dark:border-amber-800;
+    @apply bg-amber-100 dark:bg-amber-900/40 text-amber-900 dark:text-amber-100 rounded-lg rounded-br-sm px-3 py-1.5 border border-amber-200 dark:border-amber-800;
   }
   
   /* Internal note input active state */
@@ -210,11 +220,7 @@
   }
   
   .conversation-item:hover {
-    @apply bg-muted/50;
-  }
-  
-  .conversation-item.active {
-    @apply bg-primary/10 border-l-2 border-primary;
+    @apply brightness-95 dark:brightness-110;
   }
   
   /* Sidebar link */
@@ -228,6 +234,15 @@
   
   .sidebar-link.active {
     @apply bg-sidebar-primary text-sidebar-primary-foreground;
+  }
+  
+  /* Sidebar link - Internal Chat active (green background) */
+  .sidebar-link-internal-chat-active {
+    @apply bg-success text-success-foreground;
+  }
+  
+  .sidebar-link-internal-chat-active:hover {
+    @apply bg-success/90 text-success-foreground;
   }
   
   /* Gradient text */
@@ -276,11 +291,11 @@
   }
 
   .internal-chat-message-own {
-    @apply bg-emerald-600 text-white rounded-2xl rounded-br-md px-3 py-2;
+    @apply bg-emerald-600 text-white rounded-lg rounded-br-sm px-3 py-1.5;
   }
 
   .internal-chat-message-other {
-    @apply bg-muted rounded-2xl rounded-bl-md px-3 py-2;
+    @apply bg-muted rounded-lg rounded-bl-sm px-3 py-1.5;
   }
 
   .internal-chat-input {

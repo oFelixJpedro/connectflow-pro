@@ -1,18 +1,23 @@
 import { create } from 'zustand';
 import type { User, Company, Conversation, Message, ConversationFilters, InboxColumn } from '@/types';
 
-// Carregar filtros salvos do localStorage
+// Carregar filtros salvos do localStorage com retrocompatibilidade
 function loadSavedFilters(): ConversationFilters {
   try {
     const saved = localStorage.getItem('conversationFilters');
     if (saved) {
-      return JSON.parse(saved);
+      const parsed = JSON.parse(saved);
+      // Retrocompatibilidade: converter status string para array
+      if (parsed.status && typeof parsed.status === 'string') {
+        parsed.status = parsed.status === 'all' ? [] : [parsed.status];
+      }
+      return parsed;
     }
   } catch (e) {
     console.error('Erro ao carregar filtros salvos:', e);
   }
   return {
-    status: 'all',
+    status: [],
     inboxColumn: 'minhas',
   };
 }
@@ -122,7 +127,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
     // Limpar filtro de departamento e agente ao trocar conexão
     const currentFilters = get().conversationFilters;
-    const newFilters = { ...currentFilters, departmentId: undefined, filterByAgentId: undefined };
+    const newFilters = { ...currentFilters, departmentId: undefined, filterByAgentId: undefined, kanbanColumnId: undefined, tags: undefined };
     localStorage.setItem('conversationFilters', JSON.stringify(newFilters));
     set({ selectedConnectionId: id, currentAccessLevel: null, conversationFilters: newFilters, selectedConversation: null });
   },
@@ -150,7 +155,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   resetFilters: () => {
     const defaultFilters: ConversationFilters = {
-      status: 'all',
+      status: [],
       inboxColumn: 'minhas',
     };
     localStorage.removeItem('conversationFilters');

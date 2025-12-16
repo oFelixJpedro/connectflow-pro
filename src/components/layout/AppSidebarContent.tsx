@@ -10,7 +10,8 @@ import {
   LogOut,
   Building2,
   User,
-  LayoutGrid
+  LayoutGrid,
+  Bell
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
@@ -35,6 +36,8 @@ import { toast } from 'sonner';
 import { SettingsSubmenu } from './SettingsSubmenu';
 import { useNotifications } from '@/hooks/useNotifications';
 import { ProfileModal } from '@/components/profile/ProfileModal';
+import { ThemeToggleMenuItem } from '@/components/ui/theme-toggle';
+import { NotificationsModal } from '@/components/notifications/NotificationsModal';
 
 const baseMenuItems = [
   { 
@@ -46,7 +49,7 @@ const baseMenuItems = [
   },
   { 
     icon: MessageSquare, 
-    label: 'Inbox', 
+    label: 'Conversas', 
     path: '/inbox',
     badgeKey: 'whatsapp' as string | null,
     adminOnly: false,
@@ -83,9 +86,19 @@ export function AppSidebarContent({
   const location = useLocation();
   const navigate = useNavigate();
   const { profile, company, userRole, signOut } = useAuth();
-  const { unreadCounts } = useNotifications();
+  const { 
+    unreadCounts, 
+    internalNotifications, 
+    whatsappNotifications,
+    markAsRead,
+    markAllAsRead 
+  } = useNotifications();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [profileModalOpen, setProfileModalOpen] = useState(false);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+
+  const totalNotifications = internalNotifications.filter(n => !n.isRead).length + 
+                            whatsappNotifications.filter(n => !n.isRead).length;
 
   // Auto-open settings submenu when on settings route
   useEffect(() => {
@@ -211,7 +224,7 @@ export function AppSidebarContent({
             const isActive = location.pathname === item.path || 
               (item.path === '/inbox' && location.pathname.startsWith('/inbox'));
             
-            // Get badge count from unreadCounts
+            // Get badge count - use red for Conversas
             const badgeCount = item.badgeKey 
               ? unreadCounts[item.badgeKey as keyof typeof unreadCounts] || 0
               : 0;
@@ -222,7 +235,7 @@ export function AppSidebarContent({
                 to={item.path}
                 onClick={handleNavClick}
                 className={cn(
-                  'sidebar-link',
+                  'sidebar-link relative',
                   isActive && 'active'
                 )}
               >
@@ -232,13 +245,18 @@ export function AppSidebarContent({
                     <span className="flex-1">{item.label}</span>
                     {badgeCount > 0 && (
                       <Badge 
-                        variant="secondary" 
-                        className="bg-primary text-primary-foreground text-xs px-2 py-0.5"
+                        variant="destructive" 
+                        className="text-xs px-2 py-0.5"
                       >
                         {badgeCount > 99 ? '99+' : badgeCount}
                       </Badge>
                     )}
                   </>
+                )}
+                {collapsed && badgeCount > 0 && (
+                  <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center font-bold">
+                    {badgeCount > 9 ? '9+' : badgeCount}
+                  </span>
                 )}
               </NavLink>
             );
@@ -252,7 +270,7 @@ export function AppSidebarContent({
                   <TooltipContent side="right" className="flex items-center gap-2">
                     {item.label}
                     {badgeCount > 0 && (
-                      <Badge variant="secondary" className="text-xs">
+                      <Badge variant="destructive" className="text-xs">
                         {badgeCount > 99 ? '99+' : badgeCount}
                       </Badge>
                     )}
@@ -295,6 +313,106 @@ export function AppSidebarContent({
             </button>
           )}
         </nav>
+
+        {/* Notifications Bell - Above Internal Chat */}
+        <div className={cn("px-3 pb-1", collapsed && "pb-1")}>
+          {collapsed ? (
+            <Tooltip delayDuration={0}>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={() => setNotificationsOpen(true)}
+                  className="sidebar-link w-full flex items-center justify-center gap-0 relative"
+                >
+                  <Bell className="w-5 h-5 flex-shrink-0 text-sidebar-foreground" />
+                  {totalNotifications > 0 && (
+                    <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center font-bold">
+                      {totalNotifications > 9 ? '9+' : totalNotifications}
+                    </span>
+                  )}
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="right" className="flex items-center gap-2">
+                Notificações
+                {totalNotifications > 0 && (
+                  <Badge variant="destructive" className="text-xs">
+                    {totalNotifications > 99 ? '99+' : totalNotifications}
+                  </Badge>
+                )}
+              </TooltipContent>
+            </Tooltip>
+          ) : (
+            <button
+              onClick={() => setNotificationsOpen(true)}
+              className="sidebar-link w-full relative"
+            >
+              <Bell className="w-5 h-5 flex-shrink-0" />
+              <span className="flex-1">Notificações</span>
+              {totalNotifications > 0 && (
+                <Badge 
+                  variant="destructive" 
+                  className="text-xs px-2 py-0.5"
+                >
+                  {totalNotifications > 99 ? '99+' : totalNotifications}
+                </Badge>
+              )}
+            </button>
+          )}
+        </div>
+
+        {/* Internal Chat */}
+        <div className={cn("px-3 pb-2", collapsed && "pb-1")}>
+          {collapsed ? (
+            <Tooltip delayDuration={0}>
+              <TooltipTrigger asChild>
+                <NavLink
+                  to="/internal-chat"
+                  onClick={handleNavClick}
+                  className={({ isActive }) =>
+                    cn(
+                      "sidebar-link w-full flex items-center justify-center gap-0 relative z-20 text-sidebar-foreground",
+                      isActive && "sidebar-link-internal-chat-active"
+                    )
+                  }
+                >
+                  <MessageSquare className="w-5 h-5 flex-shrink-0 text-sidebar-foreground" />
+                  {unreadCounts.internalChat > 0 && (
+                    <span className="absolute -top-1 -right-1 w-5 h-5 bg-emerald-500 text-white text-xs rounded-full flex items-center justify-center font-bold">
+                      {unreadCounts.internalChat > 9 ? '9+' : unreadCounts.internalChat}
+                    </span>
+                  )}
+                </NavLink>
+              </TooltipTrigger>
+              <TooltipContent side="right" className="flex items-center gap-2">
+                Chat Interno
+                {unreadCounts.internalChat > 0 && (
+                  <Badge variant="secondary" className="text-xs bg-emerald-500 text-white">
+                    {unreadCounts.internalChat > 99 ? '99+' : unreadCounts.internalChat}
+                  </Badge>
+                )}
+              </TooltipContent>
+            </Tooltip>
+          ) : (
+            <NavLink
+              to="/internal-chat"
+              onClick={handleNavClick}
+              className={({ isActive }) => cn(
+                'sidebar-link',
+                isActive && 'sidebar-link-internal-chat-active'
+              )}
+            >
+              <MessageSquare className="w-5 h-5 flex-shrink-0" />
+              <span className="flex-1">Chat Interno</span>
+              {unreadCounts.internalChat > 0 && (
+                <Badge 
+                  variant="secondary" 
+                  className="bg-emerald-500 text-white text-xs px-2 py-0.5"
+                >
+                  {unreadCounts.internalChat > 99 ? '99+' : unreadCounts.internalChat}
+                </Badge>
+              )}
+            </NavLink>
+          )}
+        </div>
 
         {/* Expand button when collapsed */}
         {collapsed && showCollapseButton && onToggleCollapse && (
@@ -356,6 +474,7 @@ export function AppSidebarContent({
                   <Settings className="w-4 h-4 mr-2" />
                   Configurações
                 </DropdownMenuItem>
+                <ThemeToggleMenuItem />
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={handleSignOut} className="text-red-600 focus:text-red-600">
                   <LogOut className="w-4 h-4 mr-2" />
@@ -378,6 +497,16 @@ export function AppSidebarContent({
       <ProfileModal 
         isOpen={profileModalOpen} 
         onClose={() => setProfileModalOpen(false)} 
+      />
+
+      {/* Notifications Modal */}
+      <NotificationsModal
+        isOpen={notificationsOpen}
+        onClose={() => setNotificationsOpen(false)}
+        internalNotifications={internalNotifications}
+        whatsappNotifications={whatsappNotifications}
+        onMarkAsRead={markAsRead}
+        onMarkAllAsRead={markAllAsRead}
       />
     </div>
   );
