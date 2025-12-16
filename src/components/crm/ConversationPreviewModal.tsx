@@ -33,6 +33,7 @@ import { VideoMessage } from '@/components/inbox/VideoMessage';
 import { DocumentMessage } from '@/components/inbox/DocumentMessage';
 import StickerMessage from '@/components/inbox/StickerMessage';
 import { QuotedMessagePreview } from '@/components/inbox/QuotedMessagePreview';
+import { MentionText } from '@/components/mentions/MentionText';
 import type { Message, Conversation, MessageReaction } from '@/types';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { useAppStore } from '@/stores/appStore';
@@ -512,9 +513,11 @@ export function ConversationPreviewModal({
                                 )}
                               </div>
                             ) : (
-                              <p className="text-sm whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
-                                {message.content}
-                              </p>
+                              <MentionText
+                                text={message.content || ''}
+                                className="text-sm [overflow-wrap:anywhere]"
+                                variant={message.isInternalNote ? 'internal-note' : 'default'}
+                              />
                             )}
 
                             {/* Timestamp and status */}
