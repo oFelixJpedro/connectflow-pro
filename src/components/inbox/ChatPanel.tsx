@@ -16,7 +16,8 @@ import {
   Camera,
   FileText,
   X,
-  Trash2
+  Trash2,
+  Pencil
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -145,6 +146,7 @@ export function ChatPanel({
   const [messageToDelete, setMessageToDelete] = useState<Message | null>(null);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [teamMembers, setTeamMembers] = useState<{ id: string; fullName: string }[]>([]);
+  const [isCorrectingText, setIsCorrectingText] = useState(false);
   
   // Mentions for internal notes
   const {
@@ -232,7 +234,45 @@ export function ChatPanel({
   const blockInfo = useMessageBlocker(conversation, currentUserId);
   const canReply = !blockInfo.blocked;
 
-  // Send audio handler
+  // Correct text with AI handler
+  const handleCorrectText = async () => {
+    if (!inputValue.trim() || isCorrectingText || isInternalNoteMode) return;
+    
+    setIsCorrectingText(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('correct-text', {
+        body: { text: inputValue }
+      });
+      
+      if (error) throw error;
+      
+      if (data?.correctedText) {
+        setInputValue(data.correctedText);
+        if (data.hasChanges) {
+          toast({ 
+            title: 'Texto corrigido', 
+            description: 'As correções foram aplicadas.' 
+          });
+        } else {
+          toast({ 
+            title: 'Sem correções', 
+            description: 'O texto já está correto!' 
+          });
+        }
+      }
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Tente novamente';
+      console.error('❌ Erro ao corrigir texto:', error);
+      toast({ 
+        title: 'Erro ao corrigir', 
+        description: errorMessage,
+        variant: 'destructive' 
+      });
+    } finally {
+      setIsCorrectingText(false);
+    }
+  };
+
   const handleSendAudio = async (audioBlob: Blob, duration: number) => {
     if (!conversation) return;
 
@@ -1639,7 +1679,30 @@ export function ChatPanel({
               </TooltipContent>
             </Tooltip>
 
-            {/* 3. Input de texto + emoji */}
+            {/* 3. Corrigir texto com IA */}
+            {inputValue.trim() && !isInternalNoteMode && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    onClick={handleCorrectText}
+                    disabled={isCorrectingText || !canReply}
+                    className="h-9 w-9 flex-shrink-0"
+                  >
+                    {isCorrectingText ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Pencil className="w-4 h-4" />
+                    )}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Corrigir texto com IA</TooltipContent>
+              </Tooltip>
+            )}
+
+            {/* 4. Input de texto + emoji */}
             <div className="flex-1 relative min-w-0">
               <QuickRepliesPicker
                 inputValue={inputValue}
@@ -1685,7 +1748,7 @@ export function ChatPanel({
                   isInternalNoteMode && "bg-amber-50 border-amber-300 focus-visible:ring-amber-400 placeholder:text-amber-600/70 text-slate-900"
                 )}
                 rows={1}
-                disabled={isSendingMessage || (!canReply && !isInternalNoteMode)}
+                disabled={isSendingMessage || isCorrectingText || (!canReply && !isInternalNoteMode)}
               />
               <EmojiMessagePicker
                 onSelect={(emoji) => {
