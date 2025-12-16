@@ -1,17 +1,11 @@
 import { useState } from 'react';
 import { Outlet } from 'react-router-dom';
 import { AppSidebar } from './AppSidebar';
-import { AppHeader } from './AppHeader';
 import PermissionRequestListener from '@/components/developer/PermissionRequestListener';
 import { useSessionMonitor } from '@/hooks/useSessionMonitor';
-import { MobileSidebar } from './MobileSidebar';
+import { MobileSidebar, MobileSidebarTrigger } from './MobileSidebar';
 
-interface AppLayoutProps {
-  showHeader?: boolean;
-  headerTitle?: string;
-}
-
-export function AppLayout({ showHeader = true, headerTitle }: AppLayoutProps) {
+export function AppLayout() {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   
   // Monitor session expiration and auto-redirect to login
@@ -29,12 +23,11 @@ export function AppLayout({ showHeader = true, headerTitle }: AppLayoutProps) {
       />
       
       <div className="flex-1 flex flex-col min-w-0">
-        {showHeader && (
-          <AppHeader 
-            title={headerTitle} 
-            onMenuClick={() => setMobileSidebarOpen(true)}
-          />
-        )}
+        {/* Mobile Menu Trigger */}
+        <div className="md:hidden absolute top-3 left-3 z-50">
+          <MobileSidebarTrigger onClick={() => setMobileSidebarOpen(true)} />
+        </div>
+        
         <main className="flex-1 overflow-hidden">
           <Outlet />
         </main>

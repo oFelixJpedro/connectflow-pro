@@ -236,6 +236,15 @@
     @apply bg-sidebar-primary text-sidebar-primary-foreground;
   }
   
+  /* Sidebar link - Internal Chat active (green background) */
+  .sidebar-link-internal-chat-active {
+    @apply bg-success text-success-foreground;
+  }
+  
+  .sidebar-link-internal-chat-active:hover {
+    @apply bg-success/90 text-success-foreground;
+  }
+  
   /* Gradient text */
   .gradient-text {
     @apply bg-gradient-to-r from-primary to-info bg-clip-text text-transparent;
