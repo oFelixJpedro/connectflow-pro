@@ -865,6 +865,30 @@ export function useInboxData() {
 
       console.log('[useInboxData] Nota interna salva:', newMessage.id);
 
+      // Create mention notifications for each mentioned user
+      if (mentions && mentions.length > 0 && newMessage.id) {
+        console.log('[useInboxData] Criando notificações de menção para:', mentions);
+        
+        const mentionNotifications = mentions.map(mentionedUserId => ({
+          mentioned_user_id: mentionedUserId,
+          mentioner_user_id: user.id,
+          message_id: newMessage.id,
+          conversation_id: selectedConversation.id,
+          source_type: 'whatsapp',
+          has_access: true, // Will be validated on the notification display side
+          is_read: false,
+        }));
+
+        const { error: mentionError } = await supabase
+          .from('mention_notifications')
+          .insert(mentionNotifications);
+
+        if (mentionError) {
+          console.error('[useInboxData] Erro ao criar notificações de menção:', mentionError);
+        } else {
+          console.log('[useInboxData] Notificações de menção criadas com sucesso');
+        }
+      }
 
       // Adicionar mensagem ao estado local imediatamente
       const transformedMessage: Message = transformMessage(newMessage);
