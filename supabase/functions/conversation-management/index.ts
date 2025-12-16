@@ -6,7 +6,7 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-type ActionType = 'assign' | 'transfer' | 'release' | 'close' | 'reopen' | 'move_department'
+type ActionType = 'assign' | 'transfer' | 'release' | 'close' | 'reopen' | 'move_department' | 'mark_unread' | 'clear_unread_mark'
 
 interface RequestBody {
   action: ActionType
@@ -115,7 +115,7 @@ serve(async (req) => {
     console.log('   - departmentId:', departmentId || '(não informado)')
     
     // Validar action
-    const validActions: ActionType[] = ['assign', 'transfer', 'release', 'close', 'reopen', 'move_department']
+    const validActions: ActionType[] = ['assign', 'transfer', 'release', 'close', 'reopen', 'move_department', 'mark_unread', 'clear_unread_mark']
     if (!validActions.includes(action)) {
       console.log('❌ Ação inválida:', action)
       return new Response(
@@ -395,6 +395,43 @@ serve(async (req) => {
         console.log('📝 Movendo para departamento:', departmentId)
         break
       }
+      
+      // ───────────────────────────────────────────────────────────────────
+      // ACTION: MARK_UNREAD
+      // ───────────────────────────────────────────────────────────────────
+      case 'mark_unread': {
+        // Merge existing metadata with markedAsUnread flag
+        const existingMetadata = (conversation.metadata as Record<string, unknown>) || {}
+        
+        updateData = {
+          metadata: {
+            ...existingMetadata,
+            markedAsUnread: true,
+            markedAsUnreadAt: new Date().toISOString()
+          },
+          // Update last_message_at to move conversation to top of list
+          last_message_at: new Date().toISOString()
+        }
+        
+        console.log('📝 Marcando conversa como não lida')
+        break
+      }
+      
+      // ───────────────────────────────────────────────────────────────────
+      // ACTION: CLEAR_UNREAD_MARK
+      // ───────────────────────────────────────────────────────────────────
+      case 'clear_unread_mark': {
+        // Remove markedAsUnread from metadata
+        const existingMetadata = (conversation.metadata as Record<string, unknown>) || {}
+        const { markedAsUnread, markedAsUnreadAt, ...restMetadata } = existingMetadata
+        
+        updateData = {
+          metadata: restMetadata
+        }
+        
+        console.log('📝 Removendo marcação de não lida')
+        break
+      }
     }
     
     // ═══════════════════════════════════════════════════════════════════
@@ -532,6 +569,14 @@ serve(async (req) => {
         }
         break
       }
+      
+      case 'mark_unread': {
+        historyEventType = 'marked_as_unread'
+        historyEventData = {}
+        break
+      }
+      
+      // clear_unread_mark doesn't need history logging (silent action)
     }
     
     if (historyEventType) {

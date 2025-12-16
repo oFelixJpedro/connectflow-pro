@@ -63,6 +63,7 @@ function transformConversation(db: any): Conversation {
     closedAt: db.closed_at || undefined,
     createdAt: db.created_at,
     updatedAt: db.updated_at,
+    metadata: db.metadata || undefined,
   };
 }
 
@@ -825,13 +826,40 @@ export function useInboxData() {
   // ============================================================
   // 5. SELECIONAR CONVERSA
   // ============================================================
-  const selectConversation = useCallback((conversation: Conversation | null) => {
+  const selectConversation = useCallback(async (conversation: Conversation | null) => {
     console.log('[useInboxData] Selecionando conversa:', conversation?.id || 'nenhuma');
     setSelectedConversation(conversation);
 
     if (conversation) {
       loadMessages(conversation.id);
       markAsRead(conversation.id, conversation.unreadCount);
+      
+      // Clear markedAsUnread if present
+      const metadata = conversation.metadata;
+      if (metadata?.markedAsUnread) {
+        console.log('[useInboxData] Limpando marcação de não lida');
+        try {
+          await supabase.functions.invoke('conversation-management', {
+            body: {
+              action: 'clear_unread_mark',
+              conversationId: conversation.id,
+            },
+          });
+          
+          // Update local state to remove the mark
+          setConversations(prev => 
+            prev.map(c => {
+              if (c.id === conversation.id) {
+                const { markedAsUnread, markedAsUnreadAt, ...restMetadata } = c.metadata || {};
+                return { ...c, metadata: restMetadata };
+              }
+              return c;
+            })
+          );
+        } catch (err) {
+          console.error('[useInboxData] Erro ao limpar marcação:', err);
+        }
+      }
     } else {
       setMessages([]);
     }

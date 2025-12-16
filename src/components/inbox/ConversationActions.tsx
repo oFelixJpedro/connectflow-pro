@@ -12,6 +12,7 @@ import {
   ImageIcon,
   RotateCcw,
   Star,
+  MailWarning,
 } from 'lucide-react';
 import { MediaGalleryModal } from './MediaGalleryModal';
 import { Button } from '@/components/ui/button';
@@ -220,6 +221,7 @@ export function ConversationActions({
         close: 'Atendimento concluído',
         reopen: 'Conversa reaberta',
         move_department: 'Conversa movida para departamento',
+        mark_unread: 'Conversa marcada como não lida',
       };
       
       toast({
@@ -554,6 +556,18 @@ export function ConversationActions({
             <UserMinus className="w-4 h-4 mr-2" />
             <span>Voltar para a fila</span>
           </DropdownMenuItem>
+
+          {/* Marcar como não lido */}
+          {!isClosed && (
+            <DropdownMenuItem
+              onClick={() => executeAction('mark_unread')}
+              disabled={loadingAction === 'mark_unread'}
+              className="text-destructive focus:text-destructive"
+            >
+              <MailWarning className="w-4 h-4 mr-2" />
+              <span>Marcar como não lido</span>
+            </DropdownMenuItem>
+          )}
 
           <DropdownMenuSeparator />
 
