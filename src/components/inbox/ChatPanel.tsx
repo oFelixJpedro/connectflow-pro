@@ -1560,7 +1560,10 @@ export function ChatPanel({
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-xs font-medium truncate text-amber-900 dark:text-amber-100">
-                {(noteAttachment.metadata as { fileName?: string })?.fileName || 'Arquivo anexado'}
+                {noteAttachment.messageType === 'image' && 'Imagem'}
+                {noteAttachment.messageType === 'video' && 'Vídeo'}
+                {noteAttachment.messageType === 'audio' && 'Áudio'}
+                {noteAttachment.messageType === 'document' && 'Documento'}
               </p>
             </div>
             <Button

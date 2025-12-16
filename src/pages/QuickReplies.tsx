@@ -467,8 +467,8 @@ export default function QuickReplies() {
         {type === 'document' && (
           <div className="flex items-center gap-2 p-2">
             <FileText className="w-8 h-8 text-muted-foreground" />
-            <span className="text-sm text-muted-foreground truncate">
-              {isEdit && editMediaFile ? editMediaFile.name : mediaFile?.name || 'Documento'}
+            <span className="text-sm text-muted-foreground">
+              Documento
             </span>
           </div>
         )}

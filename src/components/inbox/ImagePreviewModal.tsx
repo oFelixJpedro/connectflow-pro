@@ -141,7 +141,7 @@ export function ImagePreviewModal({
 
           {/* File info */}
           <div className="text-sm text-muted-foreground">
-            <p><strong>Nome:</strong> {file.name}</p>
+            <p><strong>Tipo:</strong> Imagem</p>
             <p><strong>Tamanho:</strong> {formatFileSize(file.size)}</p>
           </div>
 
