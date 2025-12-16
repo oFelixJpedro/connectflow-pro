@@ -81,7 +81,7 @@ export function QuotedMessagePreview({
       {/* Message preview */}
       <div
         className={cn(
-          "text-sm line-clamp-2",
+          "text-sm line-clamp-2 [overflow-wrap:anywhere]",
           isOutbound ? "text-blue-900/80" : "text-slate-700"
         )}
       >
@@ -131,7 +131,7 @@ export function ReplyInputPreview({ quotedMessage, onCancel }: ReplyInputPreview
         <p className="text-xs font-medium text-muted-foreground">
           Respondendo a {getSenderLabel()}
         </p>
-        <p className="text-sm text-foreground line-clamp-2 mt-0.5">
+        <p className="text-sm text-foreground line-clamp-2 mt-0.5 [overflow-wrap:anywhere]">
           {getPreviewContent()}
         </p>
       </div>
