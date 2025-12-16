@@ -244,7 +244,7 @@ export function useNotifications() {
         mentioner:profiles!mentioner_user_id(full_name)
       `)
       .eq('mentioned_user_id', profile.id)
-      .eq('source_type', 'whatsapp')
+      .eq('source_type', 'internal_note')
       .order('created_at', { ascending: false })
       .limit(20);
 
