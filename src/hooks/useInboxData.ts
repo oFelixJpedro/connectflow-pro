@@ -136,6 +136,7 @@ export function useInboxData() {
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [accessLevel, setAccessLevel] = useState<'full' | 'assigned_only'>('full');
+  const [tabUnreadCounts, setTabUnreadCounts] = useState<{ minhas: number; fila: number; todas: number }>({ minhas: 0, fila: 0, todas: 0 });
   
   const [isLoadingConversations, setIsLoadingConversations] = useState(true);
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
@@ -383,7 +384,46 @@ export function useInboxData() {
   }, [profile?.company_id, selectedConnectionId, conversationFilters, user?.id, userRole?.role, setCurrentAccessLevel, inboxColumn]);
 
   // ============================================================
-  // 2. CARREGAR MENSAGENS DE UMA CONVERSA
+  // 1.5. CARREGAR CONTAGEM DE NÃO LIDAS POR ABA (INDEPENDENTE DA ABA ATUAL)
+  // ============================================================
+  const loadUnreadCounts = useCallback(async () => {
+    if (!profile?.company_id || !selectedConnectionId) {
+      setTabUnreadCounts({ minhas: 0, fila: 0, todas: 0 });
+      return;
+    }
+
+    try {
+      // Query ALL conversations for this connection (no tab filter, no closed)
+      const { data, error } = await supabase
+        .from('conversations')
+        .select('id, assigned_user_id, unread_count, metadata')
+        .eq('whatsapp_connection_id', selectedConnectionId)
+        .neq('status', 'closed');
+
+      if (error) {
+        console.error('[useInboxData] Erro ao carregar contagens:', error);
+        return;
+      }
+
+      const allConversations = data || [];
+      
+      // Calculate unread counts for each tab
+      const getIsUnread = (conv: any) => {
+        const hasRealUnread = (conv.unread_count || 0) > 0;
+        const isMarkedAsUnread = conv.metadata?.markedAsUnread === true;
+        return hasRealUnread || isMarkedAsUnread;
+      };
+
+      const minhas = allConversations.filter(c => c.assigned_user_id === user?.id && getIsUnread(c)).length;
+      const fila = allConversations.filter(c => !c.assigned_user_id && getIsUnread(c)).length;
+      const todas = allConversations.filter(c => getIsUnread(c)).length;
+
+      setTabUnreadCounts({ minhas, fila, todas });
+    } catch (err) {
+      console.error('[useInboxData] Erro ao calcular contagens:', err);
+    }
+  }, [profile?.company_id, selectedConnectionId, user?.id]);
+
   // ============================================================
   const loadMessages = useCallback(async (conversationId: string) => {
     console.log('[useInboxData] Carregando mensagens para conversa:', conversationId);
@@ -950,6 +990,13 @@ export function useInboxData() {
     }
   }, [profile?.company_id, selectedConnectionId, loadConversations]);
 
+  // Carregar contagens de não lidas separadamente (não depende da aba atual)
+  useEffect(() => {
+    if (profile?.company_id && selectedConnectionId) {
+      loadUnreadCounts();
+    }
+  }, [profile?.company_id, selectedConnectionId, loadUnreadCounts]);
+
   // Limpar conversa selecionada quando conexão muda
   useEffect(() => {
     setSelectedConversation(null);
@@ -1218,6 +1265,9 @@ export function useInboxData() {
             });
           });
           
+          // Atualizar contagens de não lidas
+          loadUnreadCounts();
+          
           // Se for a conversa selecionada, manter unreadCount em 0 (usuário já está visualizando)
           if (isSelectedConversation) {
             const hasAssignedUserId = 'assigned_user_id' in updatedData;
@@ -1271,6 +1321,7 @@ export function useInboxData() {
           
           // Recarregar todas as conversas para pegar os dados relacionados (contact, etc)
           loadConversations();
+          loadUnreadCounts();
         }
       )
       .subscribe((status) => {
@@ -1281,7 +1332,7 @@ export function useInboxData() {
       console.log('[Realtime] Cancelando subscription de conversas');
       supabase.removeChannel(channel);
     };
-  }, [profile?.company_id, selectedConnectionId, loadConversations]);
+  }, [profile?.company_id, selectedConnectionId, loadConversations, loadUnreadCounts]);
 
   // ============================================================
   // REALTIME: CONTATOS (PARA ATUALIZAR TAGS EM TEMPO REAL)
@@ -1497,6 +1548,7 @@ export function useInboxData() {
     conversations,
     selectedConversation,
     messages,
+    tabUnreadCounts,
     
     // Loading states
     isLoadingConversations,
@@ -1505,6 +1557,7 @@ export function useInboxData() {
     
     // Ações
     loadConversations,
+    loadUnreadCounts,
     selectConversation,
     sendMessage,
     sendInternalNote,

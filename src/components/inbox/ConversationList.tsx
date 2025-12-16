@@ -33,6 +33,7 @@ interface ConversationListProps {
   inboxColumn: InboxColumn;
   onColumnChange: (column: InboxColumn) => void;
   tags?: Tag[];
+  tabUnreadCounts?: { minhas: number; fila: number; todas: number };
 }
 
 const priorityColors = {
@@ -65,6 +66,7 @@ export function ConversationList({
   inboxColumn,
   onColumnChange,
   tags = [],
+  tabUnreadCounts,
 }: ConversationListProps) {
   const { user } = useAuth();
   const { isFollowed, isAdminOrOwner } = useFollowedConversations();
@@ -83,19 +85,9 @@ export function ConversationList({
     return true;
   });
 
-  // Calculate UNREAD counts for each tab (only conversations with unread messages)
-  const tabUnreadCounts = useMemo(() => {
-    const getUnreadCount = (conv: Conversation) => {
-      const hasRealUnread = (conv.unreadCount || 0) > 0;
-      const isMarkedAsUnread = conv.metadata?.markedAsUnread === true;
-      return hasRealUnread || isMarkedAsUnread;
-    };
-    
-    const minhas = conversations.filter(c => c.assignedUserId === user?.id && getUnreadCount(c)).length;
-    const fila = conversations.filter(c => !c.assignedUserId && getUnreadCount(c)).length;
-    const todas = conversations.filter(c => getUnreadCount(c)).length;
-    return { minhas, fila, todas };
-  }, [conversations, user?.id]);
+  // Use tabUnreadCounts from props (loaded independently from hook)
+  // This ensures counts persist across tab changes
+  const effectiveCounts = tabUnreadCounts || { minhas: 0, fila: 0, todas: 0 };
 
   const formatTimestamp = (dateString?: string): string => {
     if (!dateString) return '';
@@ -200,7 +192,7 @@ export function ConversationList({
         activeTab={inboxColumn}
         onTabChange={onColumnChange}
         isRestricted={isRestricted}
-        counts={tabUnreadCounts}
+        counts={effectiveCounts}
       />
 
       {/* Conversation List */}
