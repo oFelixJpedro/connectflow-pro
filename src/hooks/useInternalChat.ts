@@ -338,7 +338,8 @@ export function useInternalChat() {
       const { data: newRoomId, error: roomError } = await supabase
         .rpc('create_internal_chat_room', {
           p_type: 'direct',
-          p_name: null
+          p_name: null,
+          p_description: null
         });
 
       if (roomError || !newRoomId) {
