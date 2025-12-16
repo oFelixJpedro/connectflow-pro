@@ -1,15 +1,17 @@
 import { useState, useEffect } from 'react';
-import { Filter, X } from 'lucide-react';
+import { Filter } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
+import { SearchableDropdown } from '@/components/ui/searchable-dropdown';
+import { MultiSelectDropdown } from '@/components/ui/multi-select-dropdown';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import type { ConversationFilters as FiltersType } from '@/types';
@@ -17,11 +19,24 @@ import type { ConversationFilters as FiltersType } from '@/types';
 interface Department {
   id: string;
   name: string;
+  color?: string;
 }
 
 interface Agent {
   id: string;
   full_name: string;
+}
+
+interface Tag {
+  id: string;
+  name: string;
+  color: string;
+}
+
+interface KanbanColumn {
+  id: string;
+  name: string;
+  color: string;
 }
 
 interface ConversationFiltersProps {
@@ -33,9 +48,10 @@ interface ConversationFiltersProps {
 }
 
 const STATUS_OPTIONS = [
-  { value: 'all', label: 'Todos' },
   { value: 'open', label: 'Abertas' },
   { value: 'in_progress', label: 'Em atendimento' },
+  { value: 'pending', label: 'Pendentes' },
+  { value: 'waiting', label: 'Aguardando' },
   { value: 'closed', label: 'Fechadas' },
 ] as const;
 
@@ -50,6 +66,8 @@ export function ConversationFiltersComponent({
   const [isOpen, setIsOpen] = useState(false);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
+  const [tags, setTags] = useState<Tag[]>([]);
+  const [kanbanColumns, setKanbanColumns] = useState<KanbanColumn[]>([]);
   const [localFilters, setLocalFilters] = useState<FiltersType>(filters);
 
   const isAdminOrOwner = userRole?.role === 'owner' || userRole?.role === 'admin';
@@ -64,7 +82,7 @@ export function ConversationFiltersComponent({
 
       const { data, error } = await supabase
         .from('departments')
-        .select('id, name')
+        .select('id, name, color')
         .eq('whatsapp_connection_id', connectionId)
         .eq('active', true)
         .order('name');
@@ -105,17 +123,76 @@ export function ConversationFiltersComponent({
     loadAgents();
   }, [isAdminOrOwner]);
 
+  // Load tags
+  useEffect(() => {
+    async function loadTags() {
+      const { data, error } = await supabase
+        .from('tags')
+        .select('id, name, color')
+        .order('name');
+
+      if (error) {
+        console.error('[ConversationFilters] Error loading tags:', error);
+        return;
+      }
+
+      setTags(data || []);
+    }
+
+    loadTags();
+  }, []);
+
+  // Load kanban columns for the connection
+  useEffect(() => {
+    async function loadKanbanColumns() {
+      if (!connectionId) {
+        setKanbanColumns([]);
+        return;
+      }
+
+      // First get the board for this connection
+      const { data: boardData, error: boardError } = await supabase
+        .from('kanban_boards')
+        .select('id')
+        .eq('whatsapp_connection_id', connectionId)
+        .maybeSingle();
+
+      if (boardError || !boardData) {
+        setKanbanColumns([]);
+        return;
+      }
+
+      // Then get columns for this board
+      const { data, error } = await supabase
+        .from('kanban_columns')
+        .select('id, name, color')
+        .eq('board_id', boardData.id)
+        .order('position');
+
+      if (error) {
+        console.error('[ConversationFilters] Error loading kanban columns:', error);
+        return;
+      }
+
+      setKanbanColumns(data || []);
+    }
+
+    loadKanbanColumns();
+  }, [connectionId]);
+
   // Sync local filters when props change
   useEffect(() => {
     setLocalFilters(filters);
   }, [filters]);
 
-  // Count active filters (excluding column-based assignment)
+  // Count active filters
   const activeFiltersCount = [
-    filters.status && filters.status !== 'all',
-    filters.departmentId && filters.departmentId !== 'all',
-    isAdminOrOwner && filters.filterByAgentId,
-    isAdminOrOwner && filters.isFollowing,
+    localFilters.status && localFilters.status.length > 0,
+    localFilters.departmentId,
+    isAdminOrOwner && localFilters.filterByAgentId,
+    localFilters.tags && localFilters.tags.length > 0,
+    localFilters.kanbanColumnId,
+    isAdminOrOwner && localFilters.isFollowing,
   ].filter(Boolean).length;
 
   const handleApply = () => {
@@ -126,9 +203,11 @@ export function ConversationFiltersComponent({
 
   const handleClear = () => {
     const clearedFilters: FiltersType = {
-      status: 'all',
+      status: [],
       departmentId: undefined,
       filterByAgentId: undefined,
+      tags: undefined,
+      kanbanColumnId: undefined,
       isFollowing: undefined,
     };
     setLocalFilters(clearedFilters);
@@ -137,31 +216,24 @@ export function ConversationFiltersComponent({
     setIsOpen(false);
   };
 
-  const removeFilter = (filterKey: keyof FiltersType) => {
-    const newFilters = { ...filters };
-    if (filterKey === 'status') {
-      newFilters.status = 'all';
-    } else if (filterKey === 'departmentId') {
-      newFilters.departmentId = undefined;
-    } else if (filterKey === 'filterByAgentId') {
-      newFilters.filterByAgentId = undefined;
+  const handleStatusChange = (statusValue: string, checked: boolean) => {
+    const currentStatuses = localFilters.status || [];
+    let newStatuses: string[];
+    
+    if (checked) {
+      newStatuses = [...currentStatuses, statusValue];
+    } else {
+      newStatuses = currentStatuses.filter(s => s !== statusValue);
     }
-    onFiltersChange(newFilters);
-    localStorage.setItem('conversationFilters', JSON.stringify(newFilters));
+    
+    setLocalFilters(prev => ({ ...prev, status: newStatuses }));
   };
 
-  const getFilterLabel = (key: keyof FiltersType, value: string | undefined): string => {
-    if (key === 'status') {
-      return STATUS_OPTIONS.find(o => o.value === value)?.label || value || '';
-    }
-    if (key === 'departmentId') {
-      return departments.find(d => d.id === value)?.name || 'Departamento';
-    }
-    if (key === 'filterByAgentId') {
-      return agents.find(a => a.id === value)?.full_name || 'Atendente';
-    }
-    return '';
-  };
+  // Convert options for dropdowns
+  const agentOptions = agents.map(a => ({ value: a.id, label: a.full_name }));
+  const departmentOptions = departments.map(d => ({ value: d.id, label: d.name, color: d.color }));
+  const tagOptions = tags.map(t => ({ value: t.id, label: t.name, color: t.color }));
+  const kanbanOptions = kanbanColumns.map(k => ({ value: k.id, label: k.name, color: k.color }));
 
   return (
     <Popover open={isOpen} onOpenChange={setIsOpen}>
@@ -184,14 +256,14 @@ export function ConversationFiltersComponent({
       </PopoverTrigger>
       <PopoverContent 
         align="end" 
-        className="w-72 p-0 bg-popover border-border flex flex-col max-h-[60vh]"
+        className="w-80 p-0 bg-popover border-border flex flex-col max-h-[70vh]"
         sideOffset={4}
       >
         <div className="p-3 border-b border-border shrink-0">
           <h4 className="font-medium text-sm">Filtrar Conversas</h4>
         </div>
         
-        <div className="flex-1 overflow-y-auto min-h-0 max-h-[300px]">
+        <div className="flex-1 overflow-y-auto min-h-0">
           <div className="p-3 space-y-4">
             {/* Agent Filter - Only for admin/owner */}
             {isAdminOrOwner && agents.length > 0 && (
@@ -200,57 +272,92 @@ export function ConversationFiltersComponent({
                   <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
                     Por Atendente
                   </Label>
-                  <RadioGroup
-                    value={localFilters.filterByAgentId || 'all'}
-                    onValueChange={(value) => 
-                      setLocalFilters(prev => ({ 
-                        ...prev, 
-                        filterByAgentId: value === 'all' ? undefined : value 
-                      }))
-                    }
-                    className="space-y-1.5"
-                  >
-                    <div className="flex items-center space-x-2">
-                      <RadioGroupItem value="all" id="agent-all" />
-                      <Label 
-                        htmlFor="agent-all"
-                        className="text-sm font-normal cursor-pointer"
-                      >
-                        Todos os atendentes
-                      </Label>
-                    </div>
-                    {agents.map((agent) => (
-                      <div key={agent.id} className="flex items-center space-x-2">
-                        <RadioGroupItem value={agent.id} id={`agent-${agent.id}`} />
-                        <Label 
-                          htmlFor={`agent-${agent.id}`}
-                          className="text-sm font-normal cursor-pointer"
-                        >
-                          {agent.full_name}
-                        </Label>
-                      </div>
-                    ))}
-                  </RadioGroup>
+                  <SearchableDropdown
+                    options={agentOptions}
+                    value={localFilters.filterByAgentId}
+                    onChange={(value) => setLocalFilters(prev => ({ ...prev, filterByAgentId: value }))}
+                    placeholder="Todos os atendentes"
+                    searchPlaceholder="Buscar atendente..."
+                    emptyMessage="Nenhum atendente encontrado"
+                  />
                 </div>
                 <Separator />
               </>
             )}
 
-            {/* Status Filter */}
+            {/* Department Filter */}
+            {departments.length > 0 && (
+              <>
+                <div className="space-y-2">
+                  <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                    Departamento
+                  </Label>
+                  <SearchableDropdown
+                    options={departmentOptions}
+                    value={localFilters.departmentId}
+                    onChange={(value) => setLocalFilters(prev => ({ ...prev, departmentId: value }))}
+                    placeholder="Todos os departamentos"
+                    searchPlaceholder="Buscar departamento..."
+                    emptyMessage="Nenhum departamento encontrado"
+                  />
+                </div>
+                <Separator />
+              </>
+            )}
+
+            {/* Tags Filter */}
+            {tags.length > 0 && (
+              <>
+                <div className="space-y-2">
+                  <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                    Tags
+                  </Label>
+                  <MultiSelectDropdown
+                    options={tagOptions}
+                    values={localFilters.tags || []}
+                    onChange={(values) => setLocalFilters(prev => ({ ...prev, tags: values.length > 0 ? values : undefined }))}
+                    placeholder="Todas as tags"
+                    searchPlaceholder="Buscar tags..."
+                    emptyMessage="Nenhuma tag encontrada"
+                  />
+                </div>
+                <Separator />
+              </>
+            )}
+
+            {/* Kanban Funnel Stage Filter */}
+            {kanbanColumns.length > 0 && (
+              <>
+                <div className="space-y-2">
+                  <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                    Estágio do Funil
+                  </Label>
+                  <SearchableDropdown
+                    options={kanbanOptions}
+                    value={localFilters.kanbanColumnId}
+                    onChange={(value) => setLocalFilters(prev => ({ ...prev, kanbanColumnId: value }))}
+                    placeholder="Todos os estágios"
+                    searchPlaceholder="Buscar estágio..."
+                    emptyMessage="Nenhum estágio encontrado"
+                  />
+                </div>
+                <Separator />
+              </>
+            )}
+
+            {/* Status Filter with Checkboxes */}
             <div className="space-y-2">
               <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
                 Status
               </Label>
-              <RadioGroup
-                value={localFilters.status || 'all'}
-                onValueChange={(value) => 
-                  setLocalFilters(prev => ({ ...prev, status: value as FiltersType['status'] }))
-                }
-                className="space-y-1.5"
-              >
+              <div className="space-y-2">
                 {STATUS_OPTIONS.map((option) => (
                   <div key={option.value} className="flex items-center space-x-2">
-                    <RadioGroupItem value={option.value} id={`status-${option.value}`} />
+                    <Checkbox
+                      id={`status-${option.value}`}
+                      checked={(localFilters.status || []).includes(option.value)}
+                      onCheckedChange={(checked) => handleStatusChange(option.value, checked as boolean)}
+                    />
                     <Label 
                       htmlFor={`status-${option.value}`}
                       className="text-sm font-normal cursor-pointer"
@@ -259,52 +366,8 @@ export function ConversationFiltersComponent({
                     </Label>
                   </div>
                 ))}
-              </RadioGroup>
+              </div>
             </div>
-
-            {departments.length > 0 && (
-              <>
-                <Separator />
-
-                {/* Department Filter */}
-                <div className="space-y-2">
-                  <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                    Departamento
-                  </Label>
-                  <RadioGroup
-                    value={localFilters.departmentId || 'all'}
-                    onValueChange={(value) => 
-                      setLocalFilters(prev => ({ 
-                        ...prev, 
-                        departmentId: value === 'all' ? undefined : value 
-                      }))
-                    }
-                    className="space-y-1.5"
-                  >
-                    <div className="flex items-center space-x-2">
-                      <RadioGroupItem value="all" id="department-all" />
-                      <Label 
-                        htmlFor="department-all"
-                        className="text-sm font-normal cursor-pointer"
-                      >
-                        Todos
-                      </Label>
-                    </div>
-                    {departments.map((dept) => (
-                      <div key={dept.id} className="flex items-center space-x-2">
-                        <RadioGroupItem value={dept.id} id={`department-${dept.id}`} />
-                        <Label 
-                          htmlFor={`department-${dept.id}`}
-                          className="text-sm font-normal cursor-pointer"
-                        >
-                          {dept.name}
-                        </Label>
-                      </div>
-                    ))}
-                  </RadioGroup>
-                </div>
-              </>
-            )}
 
             {/* OUTROS Filter - Only for admin/owner */}
             {isAdminOrOwner && (
@@ -316,17 +379,15 @@ export function ConversationFiltersComponent({
                     Outros
                   </Label>
                   <div className="flex items-center space-x-2">
-                    <input
-                      type="checkbox"
+                    <Checkbox
                       id="filter-following"
                       checked={localFilters.isFollowing || false}
-                      onChange={(e) => 
+                      onCheckedChange={(checked) => 
                         setLocalFilters(prev => ({ 
                           ...prev, 
-                          isFollowing: e.target.checked ? true : undefined 
+                          isFollowing: checked ? true : undefined 
                         }))
                       }
-                      className="h-4 w-4 rounded border-border text-primary focus:ring-primary"
                     />
                     <Label 
                       htmlFor="filter-following"
