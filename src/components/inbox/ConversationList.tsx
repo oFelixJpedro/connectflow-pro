@@ -83,13 +83,17 @@ export function ConversationList({
     return true;
   });
 
-  // Calculate counts for each tab
-  const tabCounts = useMemo(() => {
-    // Note: These are just placeholder counts based on current conversations
-    // Real counts would need to come from the backend
-    const minhas = conversations.filter(c => c.assignedUserId === user?.id).length;
-    const fila = conversations.filter(c => !c.assignedUserId).length;
-    const todas = conversations.length;
+  // Calculate UNREAD counts for each tab (only conversations with unread messages)
+  const tabUnreadCounts = useMemo(() => {
+    const getUnreadCount = (conv: Conversation) => {
+      const hasRealUnread = (conv.unreadCount || 0) > 0;
+      const isMarkedAsUnread = conv.metadata?.markedAsUnread === true;
+      return hasRealUnread || isMarkedAsUnread;
+    };
+    
+    const minhas = conversations.filter(c => c.assignedUserId === user?.id && getUnreadCount(c)).length;
+    const fila = conversations.filter(c => !c.assignedUserId && getUnreadCount(c)).length;
+    const todas = conversations.filter(c => getUnreadCount(c)).length;
     return { minhas, fila, todas };
   }, [conversations, user?.id]);
 
@@ -196,6 +200,7 @@ export function ConversationList({
         activeTab={inboxColumn}
         onTabChange={onColumnChange}
         isRestricted={isRestricted}
+        counts={tabUnreadCounts}
       />
 
       {/* Conversation List */}
