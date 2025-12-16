@@ -194,16 +194,24 @@ export function ConversationList({
           ) : (
             filteredConversations.map((conversation) => {
               const isAssignedToMe = conversation.assignedUserId === user?.id;
+              const isUnread = (conversation.unreadCount || 0) > 0;
+              const isSelected = selectedId === conversation.id;
+              const isRead = !isUnread;
               
               return (
                 <div
                   key={conversation.id}
                   onClick={() => onSelect(conversation)}
                   className={cn(
-                    'conversation-item p-4 border-l-4 relative',
-                    statusColors[conversation.status] || 'border-l-transparent',
-                    selectedId === conversation.id && 'active',
-                    isAssignedToMe && 'bg-success/5'
+                    'conversation-item p-4 border-l-4 relative transition-colors duration-200',
+                    // Background colors based on read/selected state
+                    isUnread && 'bg-[#E0F2FE] dark:bg-primary/20',
+                    isRead && !isSelected && 'bg-transparent',
+                    isRead && isSelected && 'bg-[#D9F9E5] dark:bg-success/20',
+                    // Border colors: selected green, unread blue, otherwise status color
+                    isRead && isSelected ? 'border-l-success' : 
+                      isUnread ? 'border-l-primary' : 
+                      (statusColors[conversation.status] || 'border-l-transparent')
                   )}
                 >
                   <div className="flex gap-3">
