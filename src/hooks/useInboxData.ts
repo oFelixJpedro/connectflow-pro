@@ -874,8 +874,8 @@ export function useInboxData() {
           mentioner_user_id: user.id,
           message_id: newMessage.id,
           conversation_id: selectedConversation.id,
-          source_type: 'whatsapp',
-          has_access: true, // Will be validated on the notification display side
+          source_type: 'internal_note',
+          has_access: true,
           is_read: false,
         }));
 
