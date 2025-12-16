@@ -317,8 +317,14 @@ export function useNotifications() {
         if (accessLevel === 'assigned_only') {
           return conv.assigned_user_id === profile.id;
         }
-        return true;
+        // For full access, only show assigned to me or unassigned (not assigned to others)
+        return conv.assigned_user_id === profile.id || conv.assigned_user_id === null;
       });
+    } else {
+      // Admin/owner: only show assigned to me or unassigned (not assigned to others)
+      filteredConversations = filteredConversations.filter(conv => 
+        conv.assigned_user_id === profile.id || conv.assigned_user_id === null
+      );
     }
 
     // Add conversation notifications
