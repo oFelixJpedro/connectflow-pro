@@ -900,6 +900,49 @@ export function ChatPanel({
     return groups;
   }, {} as Record<string, Message[]>);
 
+  // Group messages by 5-minute time intervals within same sender/direction
+  const groupMessagesByTimeInterval = (messages: Message[]) => {
+    const groups: { timestamp: string; messages: Message[] }[] = [];
+    let currentGroup: { timestamp: string; messages: Message[] } | null = null;
+
+    messages.forEach((message, index) => {
+      const messageTime = new Date(message.createdAt).getTime();
+      const isOutbound = message.direction === 'outbound';
+      
+      if (!currentGroup) {
+        // Start first group
+        currentGroup = {
+          timestamp: message.createdAt,
+          messages: [message]
+        };
+      } else {
+        const lastMessage = currentGroup.messages[currentGroup.messages.length - 1];
+        const lastMessageTime = new Date(lastMessage.createdAt).getTime();
+        const lastIsOutbound = lastMessage.direction === 'outbound';
+        const timeDiff = (messageTime - lastMessageTime) / 1000 / 60; // minutes
+        
+        // Same direction and within 5 minutes? Add to current group
+        if (isOutbound === lastIsOutbound && timeDiff <= 5 && !message.isInternalNote && !lastMessage.isInternalNote) {
+          currentGroup.messages.push(message);
+        } else {
+          // Different direction, more than 5 min apart, or internal note - start new group
+          groups.push(currentGroup);
+          currentGroup = {
+            timestamp: message.createdAt,
+            messages: [message]
+          };
+        }
+      }
+    });
+
+    // Don't forget the last group
+    if (currentGroup) {
+      groups.push(currentGroup);
+    }
+
+    return groups;
+  };
+
   if (!conversation) {
     return (
       <div className="flex-1 flex items-center justify-center bg-muted/30">
@@ -1039,11 +1082,22 @@ export function ChatPanel({
                     </Badge>
                   </div>
 
-                  {/* Messages */}
-                  <div className="space-y-3">
-                    {dateMessages.map((message) => {
-                      const isOutbound = message.direction === 'outbound';
-                      const isFailed = message.status === 'failed';
+                  {/* Messages grouped by time intervals */}
+                  <div className="space-y-1">
+                    {groupMessagesByTimeInterval(dateMessages).map((timeGroup, groupIndex) => (
+                      <div key={`group-${groupIndex}`} className="space-y-0.5">
+                        {/* Time group header */}
+                        <div className="flex items-center justify-center my-2">
+                          <span className="text-[10px] text-muted-foreground">
+                            {formatMessageTime(timeGroup.timestamp)}
+                          </span>
+                        </div>
+                        
+                        {/* Messages in this time group */}
+                        {timeGroup.messages.map((message, messageIndex) => {
+                          const isLastInGroup = messageIndex === timeGroup.messages.length - 1;
+                    const isOutbound = message.direction === 'outbound';
+                    const isFailed = message.status === 'failed';
                       
                       return (
                         <div
@@ -1337,34 +1391,23 @@ export function ChatPanel({
                               )
                             )}
                             
-                            {/* Message footer - only for non-audio/image/video or audio/image/video without URL */}
-                            {((message.messageType !== 'audio' && message.messageType !== 'image' && message.messageType !== 'video' && message.messageType !== 'document') || (!message.mediaUrl)) && (
-                              <div className={cn(
-                                'flex items-center gap-1 mt-1',
-                                isOutbound ? 'justify-end' : 'justify-start'
-                              )}>
-                                <span className={cn(
-                                  'text-xs',
-                                  isOutbound ? 'text-primary-foreground/70' : 'text-muted-foreground'
-                                )}>
-                                  {formatMessageTime(message.createdAt)}
-                                </span>
-                                {isOutbound && (
-                                  <Tooltip>
-                                    <TooltipTrigger asChild>
-                                      <span className={cn(
-                                        'text-primary-foreground/70 cursor-default',
-                                        message.status === 'read' && 'text-primary-foreground',
-                                        message.status === 'failed' && 'text-destructive'
-                                      )}>
-                                        {statusIcons[message.status]}
-                                      </span>
-                                    </TooltipTrigger>
-                                    <TooltipContent side="left">
-                                      {statusTooltips[message.status] || message.status}
-                                    </TooltipContent>
-                                  </Tooltip>
-                                )}
+                            {/* Message footer - show status only on last message of group */}
+                            {isLastInGroup && isOutbound && ((message.messageType !== 'audio' && message.messageType !== 'image' && message.messageType !== 'video' && message.messageType !== 'document') || (!message.mediaUrl)) && (
+                              <div className="flex items-center justify-end gap-1 mt-0.5">
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <span className={cn(
+                                      'text-[hsl(var(--chat-bubble-outgoing-foreground))]/70 cursor-default',
+                                      message.status === 'read' && 'text-primary',
+                                      message.status === 'failed' && 'text-destructive'
+                                    )}>
+                                      {statusIcons[message.status]}
+                                    </span>
+                                  </TooltipTrigger>
+                                  <TooltipContent side="left">
+                                    {statusTooltips[message.status] || message.status}
+                                  </TooltipContent>
+                                </Tooltip>
                               </div>
                             )}
 
@@ -1431,6 +1474,8 @@ export function ChatPanel({
                         </div>
                       );
                     })}
+                      </div>
+                    ))}
                   </div>
                 </div>
               ))}

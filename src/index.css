@@ -68,7 +68,8 @@
     --sidebar-ring: 217 91% 60%;
     
     /* Chat specific */
-    --chat-bubble-outgoing: 217 91% 60%;
+    --chat-bubble-outgoing: 213 80% 88%;
+    --chat-bubble-outgoing-foreground: 217 47% 25%;
     --chat-bubble-incoming: 210 40% 96%;
     --chat-input-bg: 0 0% 100%;
     
@@ -142,7 +143,8 @@
     --sidebar-border: 217 33% 17%;
     --sidebar-ring: 217 91% 60%;
     
-    --chat-bubble-outgoing: 217 91% 50%;
+    --chat-bubble-outgoing: 213 60% 35%;
+    --chat-bubble-outgoing-foreground: 213 80% 92%;
     --chat-bubble-incoming: 217 33% 17%;
     --chat-input-bg: 222 47% 9%;
 
@@ -182,18 +184,18 @@
 }
 
 @layer components {
-  /* Message bubbles */
+  /* Message bubbles - WhatsApp Web style thin borders */
   .message-bubble-outgoing {
-    @apply bg-primary text-primary-foreground rounded-2xl rounded-br-md px-4 py-2;
+    @apply bg-[hsl(var(--chat-bubble-outgoing))] text-[hsl(var(--chat-bubble-outgoing-foreground))] rounded-lg rounded-br-sm px-3 py-1.5;
   }
   
   .message-bubble-incoming {
-    @apply bg-muted text-foreground rounded-2xl rounded-bl-md px-4 py-2;
+    @apply bg-muted text-foreground rounded-lg rounded-bl-sm px-3 py-1.5;
   }
   
   /* Internal note message bubble - Post-it style */
   .message-bubble-internal-note {
-    @apply bg-amber-100 dark:bg-amber-900/40 text-amber-900 dark:text-amber-100 rounded-2xl rounded-br-md px-4 py-2 border border-amber-200 dark:border-amber-800;
+    @apply bg-amber-100 dark:bg-amber-900/40 text-amber-900 dark:text-amber-100 rounded-lg rounded-br-sm px-3 py-1.5 border border-amber-200 dark:border-amber-800;
   }
   
   /* Internal note input active state */
@@ -280,11 +282,11 @@
   }
 
   .internal-chat-message-own {
-    @apply bg-emerald-600 text-white rounded-2xl rounded-br-md px-3 py-2;
+    @apply bg-emerald-600 text-white rounded-lg rounded-br-sm px-3 py-1.5;
   }
 
   .internal-chat-message-other {
-    @apply bg-muted rounded-2xl rounded-bl-md px-3 py-2;
+    @apply bg-muted rounded-lg rounded-bl-sm px-3 py-1.5;
   }
 
   .internal-chat-input {
