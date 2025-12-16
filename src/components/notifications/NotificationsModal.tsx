@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Dialog,
@@ -13,6 +13,7 @@ import { Badge } from '@/components/ui/badge';
 import { MessageSquare, Smartphone, CheckCheck, Bell } from 'lucide-react';
 import { NotificationItem, NotificationData } from './NotificationItem';
 import { NoAccessModal, AccessDeniedReason } from './NoAccessModal';
+import { ConversationPreviewModal } from '@/components/crm/ConversationPreviewModal';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -40,71 +41,17 @@ export function NotificationsModal({
     open: boolean;
     reason: AccessDeniedReason;
   }>({ open: false, reason: 'no_connection' });
+  const [previewModal, setPreviewModal] = useState<{
+    open: boolean;
+    contactId: string;
+    contactName?: string;
+    contactPhone?: string;
+    contactAvatarUrl?: string;
+  } | null>(null);
 
   const internalUnread = internalNotifications.filter(n => !n.isRead).length;
   const whatsappUnread = whatsappNotifications.filter(n => !n.isRead).length;
 
-  // Check if user has access to a conversation
-  const checkConversationAccess = useCallback(async (conversationId: string): Promise<{
-    hasAccess: boolean;
-    reason?: AccessDeniedReason;
-  }> => {
-    if (!profile?.id) return { hasAccess: false, reason: 'no_connection' };
-
-    const isAdminOrOwner = userRole?.role === 'owner' || userRole?.role === 'admin';
-    if (isAdminOrOwner) return { hasAccess: true };
-
-    try {
-      // Get conversation details
-      const { data: conversation, error } = await supabase
-        .from('conversations')
-        .select('whatsapp_connection_id, department_id, assigned_user_id')
-        .eq('id', conversationId)
-        .single();
-
-      if (error || !conversation) {
-        return { hasAccess: false, reason: 'no_connection' };
-      }
-
-      // Check connection access
-      const { data: connectionAccess } = await supabase
-        .from('connection_users')
-        .select('access_level, department_access_mode')
-        .eq('user_id', profile.id)
-        .eq('connection_id', conversation.whatsapp_connection_id)
-        .single();
-
-      if (!connectionAccess) {
-        return { hasAccess: false, reason: 'no_connection' };
-      }
-
-      // If assigned_only, check if conversation is assigned to user
-      if (connectionAccess.access_level === 'assigned_only') {
-        if (conversation.assigned_user_id !== profile.id) {
-          return { hasAccess: false, reason: 'not_assigned' };
-        }
-      }
-
-      // Check department access
-      if (conversation.department_id && connectionAccess.department_access_mode === 'specific') {
-        const { data: deptAccess } = await supabase
-          .from('department_users')
-          .select('id')
-          .eq('user_id', profile.id)
-          .eq('department_id', conversation.department_id)
-          .single();
-
-        if (!deptAccess) {
-          return { hasAccess: false, reason: 'no_department' };
-        }
-      }
-
-      return { hasAccess: true };
-    } catch (error) {
-      console.error('Error checking conversation access:', error);
-      return { hasAccess: false, reason: 'no_connection' };
-    }
-  }, [profile?.id, userRole?.role]);
 
   const handleNotificationClick = useCallback(async (notification: NotificationData) => {
     // Mark as read
@@ -119,31 +66,35 @@ export function NotificationsModal({
       return;
     }
 
-    // If WhatsApp, check access first
-    if (notification.source === 'whatsapp') {
-      // If we already know there's no access
-      if (!notification.hasAccess && notification.accessDeniedReason) {
-        setNoAccessModal({
-          open: true,
-          reason: notification.accessDeniedReason,
-        });
-        return;
-      }
+    // If WhatsApp notification (mention or message), open preview modal instead of navigating
+    if (notification.source === 'whatsapp' && notification.conversationId) {
+      try {
+        // Fetch contact data from conversation
+        const { data: convData, error } = await supabase
+          .from('conversations')
+          .select('contact_id, contacts(id, name, phone_number, avatar_url)')
+          .eq('id', notification.conversationId)
+          .single();
 
-      // Double-check access for WhatsApp notifications
-      if (notification.conversationId) {
-        const { hasAccess, reason } = await checkConversationAccess(notification.conversationId);
-        
-        if (!hasAccess && reason) {
-          setNoAccessModal({ open: true, reason });
+        if (error || !convData?.contacts) {
+          console.error('Error fetching conversation for preview:', error);
           return;
         }
 
-        onClose();
-        navigate(`/inbox?conversation=${notification.conversationId}${notification.messageId ? `&message=${notification.messageId}` : ''}`);
+        const contact = convData.contacts as { id: string; name: string | null; phone_number: string; avatar_url: string | null };
+        
+        setPreviewModal({
+          open: true,
+          contactId: contact.id,
+          contactName: contact.name || undefined,
+          contactPhone: contact.phone_number,
+          contactAvatarUrl: contact.avatar_url || undefined,
+        });
+      } catch (err) {
+        console.error('Error opening preview modal:', err);
       }
     }
-  }, [navigate, onClose, onMarkAsRead, checkConversationAccess]);
+  }, [navigate, onClose, onMarkAsRead]);
 
   const currentNotifications = activeTab === 'internal' ? internalNotifications : whatsappNotifications;
   const currentUnread = activeTab === 'internal' ? internalUnread : whatsappUnread;
@@ -214,6 +165,19 @@ export function NotificationsModal({
         onClose={() => setNoAccessModal({ open: false, reason: 'no_connection' })}
         reason={noAccessModal.reason}
       />
+
+      {previewModal && (
+        <ConversationPreviewModal
+          open={previewModal.open}
+          onOpenChange={(open) => !open && setPreviewModal(null)}
+          contactId={previewModal.contactId}
+          contactName={previewModal.contactName}
+          contactPhone={previewModal.contactPhone}
+          contactAvatarUrl={previewModal.contactAvatarUrl}
+          currentUserId={profile?.id}
+          userRole={userRole?.role}
+        />
+      )}
     </>
   );
 }
