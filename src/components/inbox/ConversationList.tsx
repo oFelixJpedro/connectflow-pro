@@ -193,7 +193,10 @@ export function ConversationList({
             </div>
           ) : (
             filteredConversations.map((conversation) => {
-              const isUnread = (conversation.unreadCount || 0) > 0;
+              // Check for metadata.markedAsUnread
+              const isMarkedAsUnread = conversation.metadata?.markedAsUnread === true;
+              const hasRealUnread = (conversation.unreadCount || 0) > 0;
+              const isUnread = hasRealUnread || isMarkedAsUnread;
               const isSelected = selectedId === conversation.id;
 
               // Left border logic:
@@ -230,10 +233,20 @@ export function ConversationList({
                         size="lg"
                       />
                       
-                      {/* Unread badge on avatar */}
-                      {conversation.unreadCount > 0 && (
-                        <span className="absolute -top-1 -right-1 bg-primary text-primary-foreground text-xs font-semibold rounded-full min-w-[20px] h-5 px-1.5 flex items-center justify-center shadow-md z-10">
-                          {conversation.unreadCount > 99 ? '99+' : conversation.unreadCount}
+                      {/* Unread badge on avatar - red pastel if marked as unread, blue if real unread */}
+                      {(hasRealUnread || isMarkedAsUnread) && (
+                        <span 
+                          className={cn(
+                            "absolute -top-1 -right-1 text-xs font-semibold rounded-full min-w-[20px] h-5 px-1.5 flex items-center justify-center shadow-md z-10",
+                            isMarkedAsUnread && !hasRealUnread
+                              ? "bg-red-200 text-red-700 dark:bg-red-900/50 dark:text-red-300"
+                              : "bg-primary text-primary-foreground"
+                          )}
+                        >
+                          {hasRealUnread 
+                            ? (conversation.unreadCount > 99 ? '99+' : conversation.unreadCount)
+                            : '!'
+                          }
                         </span>
                       )}
                     </div>

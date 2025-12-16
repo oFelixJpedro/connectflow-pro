@@ -101,6 +101,11 @@ export interface Conversation {
   lastMessage?: Message;
   assignedAt?: string;
   closedAt?: string;
+  metadata?: {
+    markedAsUnread?: boolean;
+    markedAsUnreadAt?: string;
+    [key: string]: unknown;
+  };
   createdAt: string;
   updatedAt: string;
 }
