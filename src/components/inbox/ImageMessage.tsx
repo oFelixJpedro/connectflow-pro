@@ -189,21 +189,6 @@ export function ImageMessage({
         )}
       </div>
 
-      {/* Image info */}
-      {!isLoading && !hasError && (width || height || fileSize) && (
-        <div className="flex items-center gap-2 mt-1 opacity-70">
-          {width && height && (
-            <span className="text-[10px] text-muted-foreground">
-              {width}×{height}
-            </span>
-          )}
-          {fileSize && (
-            <span className="text-[10px] text-muted-foreground">
-              {formatFileSize(fileSize)}
-            </span>
-          )}
-        </div>
-      )}
 
       {/* Lightbox */}
       <Dialog open={isLightboxOpen} onOpenChange={setIsLightboxOpen}>
