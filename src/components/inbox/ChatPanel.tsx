@@ -1582,7 +1582,7 @@ export function ChatPanel({
         )}
 
         {!isRecordingAudio && !audioFile && !isRecordingNoteAudio && (
-          <div className="flex items-end gap-1.5">
+          <div className="flex items-center gap-1.5">
             {/* 1. Agendar mensagem (mockup) */}
             <Tooltip>
               <TooltipTrigger asChild>
