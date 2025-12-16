@@ -149,8 +149,8 @@ export function DocumentPreviewModal({
 
           {/* File info */}
           <div className="text-sm text-muted-foreground space-y-1">
-            <p><strong>Nome:</strong> {file.name}</p>
-            <p><strong>Tipo:</strong> {docInfo.type}</p>
+            <p><strong>Tipo:</strong> Documento</p>
+            <p><strong>Formato:</strong> {docInfo.type}</p>
             <p><strong>Tamanho:</strong> {formatFileSize(file.size)}</p>
           </div>
 

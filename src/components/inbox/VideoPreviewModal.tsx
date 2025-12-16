@@ -178,7 +178,7 @@ export function VideoPreviewModal({
 
           {/* File info */}
           <div className="text-sm text-muted-foreground">
-            <p><strong>Nome:</strong> {file.name}</p>
+            <p><strong>Tipo:</strong> Vídeo</p>
             <p><strong>Tamanho:</strong> {formatFileSize(file.size)}</p>
             {durationFormatted && <p><strong>Duração:</strong> {durationFormatted}</p>}
           </div>
