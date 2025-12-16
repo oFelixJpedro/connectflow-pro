@@ -33,10 +33,10 @@ interface ConversationFiltersProps {
 }
 
 const STATUS_OPTIONS = [
-  { value: 'all', label: 'Todos', textColor: '' },
-  { value: 'open', label: 'Abertas', textColor: 'text-primary' },
-  { value: 'in_progress', label: 'Em atendimento', textColor: 'text-success' },
-  { value: 'closed', label: 'Fechadas', textColor: 'text-destructive' },
+  { value: 'all', label: 'Todos' },
+  { value: 'open', label: 'Abertas' },
+  { value: 'in_progress', label: 'Em atendimento' },
+  { value: 'closed', label: 'Fechadas' },
 ] as const;
 
 export function ConversationFiltersComponent({
@@ -253,7 +253,7 @@ export function ConversationFiltersComponent({
                     <RadioGroupItem value={option.value} id={`status-${option.value}`} />
                     <Label 
                       htmlFor={`status-${option.value}`}
-                      className={`text-sm font-normal cursor-pointer ${option.textColor}`}
+                      className="text-sm font-normal cursor-pointer"
                     >
                       {option.label}
                     </Label>
