@@ -56,3 +56,6 @@ verify_jwt = true
 
 [functions.transcribe-audio]
 verify_jwt = true
+
+[functions.correct-text]
+verify_jwt = true
