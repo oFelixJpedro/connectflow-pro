@@ -1087,8 +1087,11 @@ export function ChatPanel({
                   <div className="space-y-1">
                     {groupMessagesByTimeInterval(dateMessages).map((timeGroup, groupIndex) => (
                       <div key={`group-${groupIndex}`} className="space-y-0.5">
-                        {/* Time group header */}
-                        <div className="flex items-center justify-center my-2">
+                        {/* Time group header - align based on message direction */}
+                        <div className={cn(
+                          "flex items-center my-2",
+                          timeGroup.messages[0]?.direction === 'outbound' ? 'justify-end' : 'justify-start'
+                        )}>
                           <span className="text-[10px] text-muted-foreground">
                             {formatMessageTime(timeGroup.timestamp)}
                           </span>
