@@ -874,9 +874,10 @@ serve(async (req) => {
     const isFromMe = payload.message?.fromMe === true
     const messageTimestamp = convertTimestamp(payload.message?.messageTimestamp)
     
-    const { data: existingConversation } = await supabase
+    // First: try to find an OPEN conversation
+    const { data: openConversation } = await supabase
       .from('conversations')
-      .select('id, unread_count')
+      .select('id, unread_count, status')
       .eq('contact_id', contactId)
       .eq('whatsapp_connection_id', whatsappConnectionId)
       .neq('status', 'closed')
@@ -886,8 +887,9 @@ serve(async (req) => {
     
     let conversationId: string
     
-    if (existingConversation) {
-      const newUnreadCount = isFromMe ? existingConversation.unread_count : (existingConversation.unread_count || 0) + 1
+    if (openConversation) {
+      // Use existing open conversation
+      const newUnreadCount = isFromMe ? openConversation.unread_count : (openConversation.unread_count || 0) + 1
       
       await supabase
         .from('conversations')
@@ -896,10 +898,63 @@ serve(async (req) => {
           unread_count: newUnreadCount,
           updated_at: new Date().toISOString()
         })
-        .eq('id', existingConversation.id)
+        .eq('id', openConversation.id)
       
-      conversationId = existingConversation.id
+      conversationId = openConversation.id
     } else {
+      // No open conversation found - check for a CLOSED conversation to reopen
+      const { data: closedConversation } = await supabase
+        .from('conversations')
+        .select('id, status, metadata')
+        .eq('contact_id', contactId)
+        .eq('whatsapp_connection_id', whatsappConnectionId)
+        .eq('status', 'closed')
+        .order('closed_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      
+      if (closedConversation) {
+        // REOPEN the closed conversation (don't create a new one!)
+        console.log(`🔄 Reabrindo conversa fechada: ${closedConversation.id}`)
+        
+        const existingMetadata = (closedConversation.metadata as Record<string, unknown>) || {}
+        
+        await supabase
+          .from('conversations')
+          .update({
+            status: 'open',
+            closed_at: null,
+            assigned_user_id: null,
+            assigned_at: null,
+            unread_count: isFromMe ? 0 : 1,
+            last_message_at: messageTimestamp,
+            updated_at: new Date().toISOString(),
+            metadata: {
+              ...existingMetadata,
+              autoReopened: true,
+              reopenedAt: new Date().toISOString(),
+              reopenedByClient: true
+            }
+          })
+          .eq('id', closedConversation.id)
+        
+        // Log the reopening in conversation history
+        await supabase
+          .from('conversation_history')
+          .insert({
+            conversation_id: closedConversation.id,
+            event_type: 'reopened',
+            event_data: {
+              reason: 'client_message',
+              previous_status: 'closed'
+            },
+            performed_by: null,
+            performed_by_name: 'Sistema',
+            is_automatic: true
+          })
+        
+        conversationId = closedConversation.id
+      } else {
       const { data: newConversation, error: createConvError } = await supabase
         .from('conversations')
         .insert({
@@ -922,26 +977,27 @@ serve(async (req) => {
         )
       }
       
-      conversationId = newConversation.id
-      
-      // Log conversation creation
-      await supabase
-        .from('conversation_history')
-        .insert({
-          conversation_id: conversationId,
-          event_type: 'created',
-          event_data: {
-            connection_id: whatsappConnectionId,
-            connection_name: connection.name || 'WhatsApp',
-            department_id: defaultDepartmentId,
-            department_name: defaultDepartment?.name || 'Geral',
-            contact_name: contactName,
-            contact_phone: phoneNumber
-          },
-          performed_by: null,
-          performed_by_name: 'Sistema',
-          is_automatic: true
-        })
+        conversationId = newConversation.id
+        
+        // Log conversation creation
+        await supabase
+          .from('conversation_history')
+          .insert({
+            conversation_id: conversationId,
+            event_type: 'created',
+            event_data: {
+              connection_id: whatsappConnectionId,
+              connection_name: connection.name || 'WhatsApp',
+              department_id: defaultDepartmentId,
+              department_name: defaultDepartment?.name || 'Geral',
+              contact_name: contactName,
+              contact_phone: phoneNumber
+            },
+            performed_by: null,
+            performed_by_name: 'Sistema',
+            is_automatic: true
+          })
+      }
     }
     
     // ═══════════════════════════════════════════════════════════════════

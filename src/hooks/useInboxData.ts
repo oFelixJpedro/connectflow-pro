@@ -271,9 +271,16 @@ export function useInboxData() {
       }
 
       // Apply filters
-      // Status filter
-      if (conversationFilters.status && conversationFilters.status !== 'all') {
+      // Status filter - hide closed conversations by default
+      if (conversationFilters.status === 'closed') {
+        // Explicitly filtering for closed - show only closed
+        query = query.eq('status', 'closed');
+      } else if (conversationFilters.status && conversationFilters.status !== 'all') {
+        // Specific status filter (not closed, not all)
         query = query.eq('status', conversationFilters.status);
+      } else {
+        // Default behavior: hide closed conversations
+        query = query.neq('status', 'closed');
       }
 
       // Column-based assignment filter

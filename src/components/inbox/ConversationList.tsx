@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Search, Star } from 'lucide-react';
+import { Search, Star, RotateCcw } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -274,6 +274,17 @@ export function ConversationList({
 
                       {/* Assignment, department badges and contact tags */}
                       <div className="flex items-center gap-1 mt-2 overflow-hidden">
+                        {/* Reopened badge - shows when conversation was auto-reopened */}
+                        {conversation.metadata?.autoReopened && (
+                          <Badge 
+                            variant="outline" 
+                            className="text-xs px-1.5 py-0 h-5 flex-shrink-0 bg-amber-100 text-amber-700 border-amber-300 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-700"
+                          >
+                            <RotateCcw className="w-3 h-3 mr-0.5" />
+                            Reaberta
+                          </Badge>
+                        )}
+                        
                         {/* Assignment badge */}
                         <AssignmentBadge
                           assignedUser={conversation.assignedUser}

@@ -104,6 +104,9 @@ export interface Conversation {
   metadata?: {
     markedAsUnread?: boolean;
     markedAsUnreadAt?: string;
+    autoReopened?: boolean;
+    reopenedAt?: string;
+    reopenedByClient?: boolean;
     [key: string]: unknown;
   };
   createdAt: string;
