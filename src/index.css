@@ -83,7 +83,11 @@
     --conv-pending: 38 92% 50%;
     --conv-in-progress: 217 91% 60%;
     --conv-closed: 215 16% 47%;
-    
+
+    /* Conversation list backgrounds (pastel) */
+    --conv-unread-bg: 198 93% 93%; /* ~#E0F2FE */
+    --conv-selected-bg: 142 69% 89%; /* ~#D9F9E5 */
+
     /* Priority */
     --priority-urgent: 0 84% 60%;
     --priority-high: 38 92% 50%;
@@ -141,6 +145,10 @@
     --chat-bubble-outgoing: 217 91% 50%;
     --chat-bubble-incoming: 217 33% 17%;
     --chat-input-bg: 222 47% 9%;
+
+    /* Conversation list backgrounds (pastel) */
+    --conv-unread-bg: 217 60% 18%;
+    --conv-selected-bg: 160 45% 18%;
   }
 }
 

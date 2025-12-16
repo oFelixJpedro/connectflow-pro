@@ -193,27 +193,44 @@ export function ConversationList({
             </div>
           ) : (
             filteredConversations.map((conversation) => {
-              const isAssignedToMe = conversation.assignedUserId === user?.id;
               const isUnread = (conversation.unreadCount || 0) > 0;
               const isSelected = selectedId === conversation.id;
               const isRead = !isUnread;
-              
+
+              const statusBorderColor = (() => {
+                switch (conversation.status) {
+                  case 'open':
+                    return 'hsl(var(--primary))';
+                  case 'in_progress':
+                    return 'hsl(var(--success))';
+                  case 'pending':
+                  case 'waiting':
+                    return 'hsl(var(--warning))';
+                  case 'resolved':
+                  case 'closed':
+                    return 'hsl(var(--muted-foreground))';
+                  default:
+                    return 'hsl(var(--border))';
+                }
+              })();
+
+              const borderLeftColor = isRead && isSelected
+                ? 'hsl(var(--success))'
+                : isUnread
+                  ? 'hsl(var(--primary))'
+                  : statusBorderColor;
+
               return (
                 <div
                   key={conversation.id}
                   onClick={() => onSelect(conversation)}
+                  style={{ borderLeftColor, borderLeftStyle: 'solid' }}
                   className={cn(
-                    'conversation-item p-4 relative transition-colors duration-200',
+                    'conversation-item p-4 relative transition-colors duration-200 border-l-4',
                     // Background colors based on read/selected state
-                    isUnread && 'bg-[#E0F2FE] dark:bg-primary/20',
+                    isUnread && 'bg-[hsl(var(--conv-unread-bg))]',
                     isRead && !isSelected && 'bg-transparent',
-                    isRead && isSelected && 'bg-[#D9F9E5] dark:bg-success/20',
-                    // Border left - always 4px width
-                    'border-l-4',
-                    // Border colors: selected green, unread blue, otherwise status color
-                    isRead && isSelected && 'border-l-[#10B981]',
-                    isUnread && !isSelected && 'border-l-[#3B82F6]',
-                    !isUnread && !isSelected && (statusColors[conversation.status] || 'border-l-transparent')
+                    isRead && isSelected && 'bg-[hsl(var(--conv-selected-bg))]'
                   )}
                 >
                   <div className="flex gap-3">
