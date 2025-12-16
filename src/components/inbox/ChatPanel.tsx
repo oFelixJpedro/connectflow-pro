@@ -199,8 +199,9 @@ export function ChatPanel({
       return false;
     }
     
-    // Only text messages
-    if (message.messageType !== 'text') {
+    // Allow deletable message types (text, image, video, audio, document, sticker)
+    const deletableTypes = ['text', 'image', 'video', 'audio', 'document', 'sticker'];
+    if (!deletableTypes.includes(message.messageType)) {
       return false;
     }
     
