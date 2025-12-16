@@ -1206,6 +1206,7 @@ export function ChatPanel({
                                 deletedByName={message.deletedByName}
                                 deletedAt={message.deletedAt}
                                 messageType={message.messageType}
+                                mediaUrl={message.mediaUrl}
                                 isOutbound={isOutbound}
                                 canViewOriginal={true}
                               />
