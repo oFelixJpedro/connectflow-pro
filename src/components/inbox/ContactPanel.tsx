@@ -663,7 +663,7 @@ export function ContactPanel({ conversation, onClose, onContactUpdated, onScroll
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 placeholder="Adicione notas sobre este contato..."
-                className="min-h-[80px] resize-none bg-[#FFFBEB]"
+                className="min-h-[80px] resize-none bg-[#FFFBEB] text-slate-900 placeholder:text-slate-500 border-amber-200"
               />
               <p className="text-xs text-muted-foreground mt-2">
                 Notas são visíveis apenas para a equipe • Salvamento automático

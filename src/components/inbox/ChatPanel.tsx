@@ -1674,7 +1674,7 @@ export function ChatPanel({
                 className={cn(
                   "min-h-[44px] max-h-32 resize-none pr-10 transition-colors duration-200",
                   !canReply && !isInternalNoteMode && "bg-muted/50 cursor-not-allowed",
-                  isInternalNoteMode && "bg-amber-50 border-amber-300 focus-visible:ring-amber-400 placeholder:text-amber-600/70"
+                  isInternalNoteMode && "bg-amber-50 border-amber-300 focus-visible:ring-amber-400 placeholder:text-amber-600/70 text-slate-900"
                 )}
                 rows={1}
                 disabled={isSendingMessage || (!canReply && !isInternalNoteMode)}
