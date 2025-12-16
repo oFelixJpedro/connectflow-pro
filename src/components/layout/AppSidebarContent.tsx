@@ -306,12 +306,12 @@ export function AppSidebarContent({
                   onClick={handleNavClick}
                   className={({ isActive }) =>
                     cn(
-                      "sidebar-link w-full flex items-center justify-center gap-0 relative z-20",
+                      "sidebar-link w-full flex items-center justify-center gap-0 relative z-20 text-sidebar-foreground",
                       isActive && "sidebar-link-internal-chat-active"
                     )
                   }
                 >
-                  <MessageSquare className="w-5 h-5 flex-shrink-0" />
+                  <MessageSquare className="w-5 h-5 flex-shrink-0 text-sidebar-foreground" />
                 </NavLink>
               </TooltipTrigger>
               <TooltipContent side="right" className="flex items-center gap-2">
