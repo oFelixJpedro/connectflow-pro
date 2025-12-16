@@ -109,7 +109,7 @@ export function ConversationActions({
     checkFollowing();
   }, [conversation.id, currentUserId, isAdminOrOwner]);
 
-  // Carregar agentes que têm acesso à conexão da conversa
+  // Carregar agentes que têm acesso à conexão e departamento da conversa
   useEffect(() => {
     async function loadAgents() {
       if (!conversation.whatsappConnectionId) return;
@@ -123,7 +123,7 @@ export function ConversationActions({
 
       if (!profileData) return;
 
-      // Buscar todos os profiles da empresa
+      // Buscar todos os profiles ativos da empresa (exceto usuário atual)
       const { data: allProfiles, error: profilesError } = await supabase
         .from('profiles')
         .select('id, full_name, avatar_url')
@@ -141,27 +141,55 @@ export function ConversationActions({
 
       const rolesMap = new Map((userRoles || []).map(r => [r.user_id, r.role]));
 
-      // Buscar quem tem acesso a esta conexão
+      // Buscar quem tem acesso a esta conexão (com department_access_mode)
       const { data: connectionUsers } = await supabase
         .from('connection_users')
-        .select('user_id')
+        .select('user_id, department_access_mode')
         .eq('connection_id', conversation.whatsappConnectionId!);
 
-      const usersWithConnectionAccess = new Set((connectionUsers || []).map(cu => cu.user_id));
+      const connectionAccessMap = new Map(
+        (connectionUsers || []).map(cu => [cu.user_id, cu.department_access_mode])
+      );
 
-      // Filtrar: owner/admin têm acesso automático, outros precisam de connection_users
+      // Se a conversa tem departamento, buscar quem tem acesso ao departamento
+      let departmentUsersSet = new Set<string>();
+      if (conversation.departmentId) {
+        const { data: departmentUsers } = await supabase
+          .from('department_users')
+          .select('user_id')
+          .eq('department_id', conversation.departmentId);
+        
+        departmentUsersSet = new Set((departmentUsers || []).map(du => du.user_id));
+      }
+
+      // Filtrar agentes com acesso à conexão E departamento
       const filteredAgents = allProfiles.filter(agent => {
         const role = rolesMap.get(agent.id);
-        // Owner e admin sempre têm acesso
+        
+        // Owner e admin SEMPRE têm acesso (bypass completo)
         if (role === 'owner' || role === 'admin') return true;
-        // Outros roles precisam de acesso explícito à conexão
-        return usersWithConnectionAccess.has(agent.id);
+        
+        // Para outros roles, verificar acesso à conexão
+        const departmentAccessMode = connectionAccessMap.get(agent.id);
+        if (!departmentAccessMode) return false; // Sem acesso à conexão
+        
+        // Se conversa não tem departamento, apenas verificar conexão
+        if (!conversation.departmentId) return true;
+        
+        // Verificar acesso ao departamento
+        if (departmentAccessMode === 'all') return true;
+        if (departmentAccessMode === 'none') return false;
+        if (departmentAccessMode === 'specific') {
+          return departmentUsersSet.has(agent.id);
+        }
+        
+        return false;
       });
 
       setAgents(filteredAgents);
     }
     loadAgents();
-  }, [currentUserId, conversation.whatsappConnectionId]);
+  }, [currentUserId, conversation.whatsappConnectionId, conversation.departmentId]);
 
   // Carregar departamentos
   useEffect(() => {

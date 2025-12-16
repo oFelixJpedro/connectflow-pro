@@ -269,12 +269,25 @@ serve(async (req) => {
           )
         }
         
+        // Buscar metadata existente para preservar dados
+        const existingMetadata = (conversation.metadata as Record<string, unknown>) || {}
+        
         updateData = {
           assigned_user_id: targetUserId,
-          assigned_at: new Date().toISOString()
+          assigned_at: new Date().toISOString(),
+          // Marcar como não lida para chamar atenção do destinatário
+          metadata: {
+            ...existingMetadata,
+            markedAsUnread: true,
+            markedAsUnreadAt: new Date().toISOString(),
+            transferredFrom: conversation.assigned_user_id,
+            transferredBy: userId
+          },
+          // Mover para o topo da fila atualizando last_message_at
+          last_message_at: new Date().toISOString()
         }
         
-        console.log('📝 Transferindo conversa para:', targetUserId)
+        console.log('📝 Transferindo conversa para:', targetUserId, '(com marcação de não lida)')
         break
       }
       
