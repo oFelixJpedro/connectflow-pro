@@ -315,10 +315,12 @@ serve(async (req) => {
         
         updateData = {
           status: 'closed',
-          closed_at: new Date().toISOString()
+          closed_at: new Date().toISOString(),
+          assigned_user_id: null,
+          assigned_at: null
         }
         
-        console.log('📝 Fechando conversa')
+        console.log('📝 Fechando conversa e desatribuindo atendente')
         break
       }
       
