@@ -28,6 +28,13 @@ export interface ContactFormData {
   email: string;
   tags: string[];
   notes: string;
+  // New contact fields
+  connectionId?: string;
+  initialMessage?: string;
+  initialMessageMedia?: {
+    type: 'image' | 'video' | 'audio' | 'document';
+    file: File;
+  };
 }
 
 export interface Department {
@@ -530,6 +537,7 @@ export function useContactsData() {
     if (!profile?.company_id) return null;
 
     try {
+      // Create the contact
       const { data: newContact, error } = await supabase
         .from('contacts')
         .insert({
@@ -545,6 +553,50 @@ export function useContactsData() {
 
       if (error) throw error;
 
+      // If connection is provided, create conversation and add to CRM
+      if (data.connectionId) {
+        // Get default department for this connection
+        const { data: defaultDept } = await supabase
+          .from('departments')
+          .select('id')
+          .eq('whatsapp_connection_id', data.connectionId)
+          .eq('is_default', true)
+          .maybeSingle();
+
+        // Create conversation
+        const { data: newConversation, error: convError } = await supabase
+          .from('conversations')
+          .insert({
+            company_id: profile.company_id,
+            contact_id: newContact.id,
+            whatsapp_connection_id: data.connectionId,
+            department_id: defaultDept?.id || null,
+            status: 'open',
+            priority: 'normal',
+            channel: 'whatsapp'
+          })
+          .select()
+          .single();
+
+        if (convError) {
+          console.error('Error creating conversation:', convError);
+        }
+
+        // Add to CRM first column
+        await addContactToCRM(newContact.id, data.connectionId);
+
+        // Send initial message if provided
+        if (newConversation && (data.initialMessage || data.initialMessageMedia)) {
+          await sendInitialMessage(
+            newContact.id,
+            newConversation.id,
+            data.connectionId,
+            data.initialMessage,
+            data.initialMessageMedia
+          );
+        }
+      }
+
       setContacts(prev => [{ ...newContact, tags: newContact.tags || [] }, ...prev]);
       setStats(prev => ({ ...prev, total: prev.total + 1 }));
       toast.success('Contato criado com sucesso');
@@ -557,6 +609,232 @@ export function useContactsData() {
         toast.error('Erro ao criar contato');
       }
       return null;
+    }
+  };
+
+  const addContactToCRM = async (contactId: string, connectionId: string) => {
+    try {
+      // Get or create board for this connection
+      let { data: board } = await supabase
+        .from('kanban_boards')
+        .select('id')
+        .eq('whatsapp_connection_id', connectionId)
+        .single();
+
+      if (!board) {
+        // Board doesn't exist, skip CRM (board will be created when admin configures CRM)
+        return;
+      }
+
+      // Get first column
+      const { data: columns } = await supabase
+        .from('kanban_columns')
+        .select('id')
+        .eq('board_id', board.id)
+        .order('position')
+        .limit(1);
+
+      if (!columns || columns.length === 0) return;
+
+      const firstColumnId = columns[0].id;
+
+      // Get max position in column
+      const { data: maxPosData } = await supabase
+        .from('kanban_cards')
+        .select('position')
+        .eq('column_id', firstColumnId)
+        .order('position', { ascending: false })
+        .limit(1);
+
+      const nextPosition = (maxPosData?.[0]?.position ?? -1) + 1;
+
+      // Create card
+      await supabase
+        .from('kanban_cards')
+        .insert({
+          contact_id: contactId,
+          column_id: firstColumnId,
+          position: nextPosition,
+          priority: 'medium'
+        });
+
+      // Log history
+      const { data: card } = await supabase
+        .from('kanban_cards')
+        .select('id')
+        .eq('contact_id', contactId)
+        .single();
+
+      if (card) {
+        await supabase
+          .from('kanban_card_history')
+          .insert({
+            card_id: card.id,
+            action_type: 'created',
+            new_value: { column_id: firstColumnId, priority: 'medium' },
+            user_id: profile?.id
+          });
+      }
+    } catch (error) {
+      console.error('Error adding contact to CRM:', error);
+      // Don't throw - CRM addition is secondary
+    }
+  };
+
+  const sendInitialMessage = async (
+    contactId: string,
+    conversationId: string,
+    connectionId: string,
+    message?: string,
+    media?: { type: 'image' | 'video' | 'audio' | 'document'; file: File }
+  ) => {
+    try {
+      // Get connection details
+      const { data: connection } = await supabase
+        .from('whatsapp_connections')
+        .select('instance_token, uazapi_base_url, phone_number')
+        .eq('id', connectionId)
+        .single();
+
+      if (!connection) return;
+
+      // Get contact phone number
+      const { data: contact } = await supabase
+        .from('contacts')
+        .select('phone_number')
+        .eq('id', contactId)
+        .single();
+
+      if (!contact) return;
+
+      const recipientPhone = contact.phone_number;
+
+      if (media) {
+        // Upload media to storage
+        const sanitizedName = media.file.name
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
+          .replace(/[^a-zA-Z0-9._-]/g, '_');
+        
+        const now = new Date();
+        const yearMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+        const storagePath = `${profile?.company_id}/${connectionId}/${yearMonth}/${Date.now()}_${sanitizedName}`;
+
+        const { error: uploadError } = await supabase.storage
+          .from('whatsapp-media')
+          .upload(storagePath, media.file);
+
+        if (uploadError) {
+          console.error('Error uploading media:', uploadError);
+          return;
+        }
+
+        const { data: urlData } = supabase.storage
+          .from('whatsapp-media')
+          .getPublicUrl(storagePath);
+
+        const mediaUrl = urlData.publicUrl;
+
+        // Determine which edge function to call based on media type
+        const functionMap = {
+          image: 'send-whatsapp-image',
+          video: 'send-whatsapp-video',
+          audio: 'send-whatsapp-audio',
+          document: 'send-whatsapp-document'
+        };
+
+        const functionName = functionMap[media.type];
+
+        // Create message record first
+        const { data: messageRecord, error: msgError } = await supabase
+          .from('messages')
+          .insert({
+            conversation_id: conversationId,
+            content: message || null,
+            message_type: media.type,
+            direction: 'outbound',
+            sender_type: 'user',
+            sender_id: profile?.id,
+            status: 'pending',
+            media_url: mediaUrl,
+            media_mime_type: media.file.type,
+            metadata: { fileName: media.file.name, fileSize: media.file.size }
+          })
+          .select()
+          .single();
+
+        if (msgError) {
+          console.error('Error creating message record:', msgError);
+          return;
+        }
+
+        // Call edge function
+        const { error: sendError } = await supabase.functions.invoke(functionName, {
+          body: {
+            connectionId,
+            recipientPhone,
+            mediaUrl,
+            caption: message || '',
+            fileName: media.file.name,
+            messageId: messageRecord.id
+          }
+        });
+
+        if (sendError) {
+          console.error('Error sending media:', sendError);
+          await supabase
+            .from('messages')
+            .update({ status: 'failed', error_message: sendError.message })
+            .eq('id', messageRecord.id);
+        }
+      } else if (message) {
+        // Text only message
+        const { data: messageRecord, error: msgError } = await supabase
+          .from('messages')
+          .insert({
+            conversation_id: conversationId,
+            content: message,
+            message_type: 'text',
+            direction: 'outbound',
+            sender_type: 'user',
+            sender_id: profile?.id,
+            status: 'pending'
+          })
+          .select()
+          .single();
+
+        if (msgError) {
+          console.error('Error creating message record:', msgError);
+          return;
+        }
+
+        // Call edge function
+        const { error: sendError } = await supabase.functions.invoke('send-whatsapp-message', {
+          body: {
+            connectionId,
+            recipientPhone,
+            message,
+            messageId: messageRecord.id
+          }
+        });
+
+        if (sendError) {
+          console.error('Error sending message:', sendError);
+          await supabase
+            .from('messages')
+            .update({ status: 'failed', error_message: sendError.message })
+            .eq('id', messageRecord.id);
+        }
+      }
+
+      // Update conversation last_message_at
+      await supabase
+        .from('conversations')
+        .update({ last_message_at: new Date().toISOString() })
+        .eq('id', conversationId);
+
+    } catch (error) {
+      console.error('Error sending initial message:', error);
     }
   };
 
