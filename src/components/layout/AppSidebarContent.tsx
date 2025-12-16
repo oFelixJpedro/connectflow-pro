@@ -305,7 +305,7 @@ export function AppSidebarContent({
                   to="/internal-chat"
                   onClick={handleNavClick}
                   className={({ isActive }) => cn(
-                    'sidebar-link',
+                    'sidebar-link justify-center',
                     isActive && 'sidebar-link-internal-chat-active'
                   )}
                 >
