@@ -52,6 +52,7 @@ export default function Inbox() {
     conversations,
     selectedConversation,
     messages,
+    tabUnreadCounts,
     isLoadingConversations,
     isLoadingMessages,
     isSendingMessage,
@@ -214,6 +215,7 @@ export default function Inbox() {
               inboxColumn={inboxColumn}
               onColumnChange={setInboxColumn}
               tags={tags}
+              tabUnreadCounts={tabUnreadCounts}
             />
           </div>
         )}
@@ -316,6 +318,7 @@ export default function Inbox() {
           inboxColumn={inboxColumn}
           onColumnChange={setInboxColumn}
           tags={tags}
+          tabUnreadCounts={tabUnreadCounts}
         />
 
       {/* Chat Panel */}
