@@ -563,7 +563,8 @@ export function useContactsData() {
           .eq('is_default', true)
           .maybeSingle();
 
-        // Create conversation
+        // Create conversation - assign to creator if sending initial message
+        const hasInitialMessage = !!(data.initialMessage || data.initialMessageMedia);
         const { data: newConversation, error: convError } = await supabase
           .from('conversations')
           .insert({
@@ -573,7 +574,10 @@ export function useContactsData() {
             department_id: defaultDept?.id || null,
             status: 'open',
             priority: 'normal',
-            channel: 'whatsapp'
+            channel: 'whatsapp',
+            // Auto-assign to creator when sending initial message
+            assigned_user_id: hasInitialMessage ? profile.id : null,
+            assigned_at: hasInitialMessage ? new Date().toISOString() : null
           })
           .select()
           .single();
