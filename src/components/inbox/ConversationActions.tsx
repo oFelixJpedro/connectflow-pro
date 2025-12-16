@@ -132,12 +132,17 @@ export function ConversationActions({
         .eq('active', true)
         .order('full_name');
 
-      if (profilesError || !allProfiles) return;
+      if (profilesError || !allProfiles || allProfiles.length === 0) {
+        setAgents([]);
+        return;
+      }
 
-      // Buscar roles de todos os usuários
+      // Buscar roles dos usuários da empresa (filtrar pelos IDs para evitar problemas com RLS)
+      const userIds = allProfiles.map(p => p.id);
       const { data: userRoles } = await supabase
         .from('user_roles')
-        .select('user_id, role');
+        .select('user_id, role')
+        .in('user_id', userIds);
 
       const rolesMap = new Map((userRoles || []).map(r => [r.user_id, r.role]));
 
