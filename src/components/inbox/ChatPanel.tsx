@@ -4,6 +4,7 @@ import {
   Check,
   CheckCheck,
   Clock,
+  CalendarClock,
   AlertCircle,
   Phone,
   Loader2,
@@ -1581,22 +1582,57 @@ export function ChatPanel({
         )}
 
         {!isRecordingAudio && !audioFile && !isRecordingNoteAudio && (
-          <div className="flex items-end gap-2">
-            <AttachmentMenu
-              onImageSelect={handleImageSelect}
-              onVideoSelect={handleVideoSelect}
-              onAudioSelect={handleAudioFileSelect}
-              onDocumentSelect={handleDocumentSelect}
-              disabled={!canReply && !isInternalNoteMode}
-              variant={isInternalNoteMode ? 'amber' : 'default'}
-              onNoteAttachmentReady={isInternalNoteMode ? (messageType, mediaUrl, mediaMimeType, metadata) => {
-                setNoteAttachment({ messageType, mediaUrl, mediaMimeType, metadata });
-              } : undefined}
-              conversationId={conversation?.id}
-            />
-            
-            <div className="flex-1 relative">
-              {/* Quick Replies Picker */}
+          <div className="flex items-end gap-1.5">
+            {/* 1. Agendar mensagem (mockup) */}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => {
+                    const { toast } = require('@/hooks/use-toast');
+                    toast({
+                      title: "Em breve",
+                      description: "Agendamento de mensagens será disponibilizado em breve.",
+                    });
+                  }}
+                  className="h-9 w-9 flex-shrink-0"
+                >
+                  <CalendarClock className="w-5 h-5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Agendar mensagem (em breve)</TooltipContent>
+            </Tooltip>
+
+            {/* 2. Ativar nota interna */}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  variant={isInternalNoteMode ? "default" : "ghost"}
+                  size="icon"
+                  onClick={() => {
+                    setIsInternalNoteMode(!isInternalNoteMode);
+                    if (isInternalNoteMode) {
+                      setNoteAttachment(null);
+                    }
+                  }}
+                  className={cn(
+                    "h-9 w-9 flex-shrink-0",
+                    isInternalNoteMode && "bg-amber-500 hover:bg-amber-600 text-white"
+                  )}
+                >
+                  <StickyNote className="w-4 h-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                {isInternalNoteMode ? 'Desativar nota interna' : 'Ativar nota interna'}
+              </TooltipContent>
+            </Tooltip>
+
+            {/* 3. Input de texto + emoji */}
+            <div className="flex-1 relative min-w-0">
               <QuickRepliesPicker
                 inputValue={inputValue}
                 onSelect={handleQuickReplySelect}
@@ -1604,34 +1640,6 @@ export function ChatPanel({
                 isOpen={showQuickReplies && canReply}
               />
               
-              {/* Internal Note Toggle Button */}
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    type="button"
-                    variant={isInternalNoteMode ? "default" : "ghost"}
-                    size="icon"
-                    onClick={() => {
-                      setIsInternalNoteMode(!isInternalNoteMode);
-                      // Clear attachment when leaving note mode
-                      if (isInternalNoteMode) {
-                        setNoteAttachment(null);
-                      }
-                    }}
-                    className={cn(
-                      "h-8 w-8 flex-shrink-0",
-                      isInternalNoteMode && "bg-amber-500 hover:bg-amber-600 text-white"
-                    )}
-                  >
-                    <StickyNote className="w-4 h-4" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>
-                  {isInternalNoteMode ? 'Desativar nota interna' : 'Ativar nota interna'}
-                </TooltipContent>
-              </Tooltip>
-
-              {/* Mention Picker for internal notes */}
               {isInternalNoteMode && (
                 <MentionPicker
                   isOpen={showMentionPicker}
@@ -1664,7 +1672,7 @@ export function ChatPanel({
                       : blockInfo.message
                 }
                 className={cn(
-                  "min-h-[44px] max-h-32 resize-none pr-12 transition-colors duration-200",
+                  "min-h-[44px] max-h-32 resize-none pr-10 transition-colors duration-200",
                   !canReply && !isInternalNoteMode && "bg-muted/50 cursor-not-allowed",
                   isInternalNoteMode && "bg-amber-50 border-amber-300 focus-visible:ring-amber-400 placeholder:text-amber-600/70"
                 )}
@@ -1685,7 +1693,7 @@ export function ChatPanel({
               />
             </div>
 
-            {/* Mic button - show when no text and not with attachment */}
+            {/* 4. Gravar áudio / Enviar */}
             {!inputValue.trim() && !noteAttachment && !isRecordingNoteAudio ? (
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -1699,8 +1707,9 @@ export function ChatPanel({
                     }}
                     disabled={!canReply && !isInternalNoteMode}
                     variant="ghost"
+                    size="icon"
                     className={cn(
-                      "flex-shrink-0",
+                      "h-9 w-9 flex-shrink-0",
                       isInternalNoteMode && "text-amber-600 hover:text-amber-700 hover:bg-amber-100"
                     )}
                   >
@@ -1715,8 +1724,9 @@ export function ChatPanel({
               <Button 
                 onClick={handleSend}
                 disabled={(!inputValue.trim() && !noteAttachment) || isSendingMessage || (!canReply && !isInternalNoteMode)}
+                size="icon"
                 className={cn(
-                  "flex-shrink-0",
+                  "h-9 w-9 flex-shrink-0",
                   isInternalNoteMode && "bg-amber-500 hover:bg-amber-600"
                 )}
               >
@@ -1727,6 +1737,20 @@ export function ChatPanel({
                 )}
               </Button>
             )}
+
+            {/* 5. Anexar arquivo */}
+            <AttachmentMenu
+              onImageSelect={handleImageSelect}
+              onVideoSelect={handleVideoSelect}
+              onAudioSelect={handleAudioFileSelect}
+              onDocumentSelect={handleDocumentSelect}
+              disabled={!canReply && !isInternalNoteMode}
+              variant={isInternalNoteMode ? 'amber' : 'default'}
+              onNoteAttachmentReady={isInternalNoteMode ? (messageType, mediaUrl, mediaMimeType, metadata) => {
+                setNoteAttachment({ messageType, mediaUrl, mediaMimeType, metadata });
+              } : undefined}
+              conversationId={conversation?.id}
+            />
           </div>
         )}
       </div>
