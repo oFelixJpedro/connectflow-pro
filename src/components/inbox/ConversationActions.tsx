@@ -562,7 +562,6 @@ export function ConversationActions({
             <DropdownMenuItem
               onClick={() => executeAction('mark_unread')}
               disabled={loadingAction === 'mark_unread'}
-              className="text-destructive focus:text-destructive"
             >
               <MailWarning className="w-4 h-4 mr-2" />
               <span>Marcar como não lido</span>
@@ -575,7 +574,6 @@ export function ConversationActions({
           {isClosed ? (
             <DropdownMenuItem
               onClick={handleReopen}
-              className="text-primary focus:text-primary"
             >
               <RotateCcw className="w-4 h-4 mr-2" />
               <span>Reabrir conversa</span>
@@ -584,7 +582,6 @@ export function ConversationActions({
             <DropdownMenuItem
               onClick={handleClose}
               disabled={!canClose}
-              className="text-success focus:text-success"
             >
               <CheckCircle className="w-4 h-4 mr-2" />
               <span>Concluir atendimento</span>
