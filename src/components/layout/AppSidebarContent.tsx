@@ -304,10 +304,12 @@ export function AppSidebarContent({
                 <NavLink
                   to="/internal-chat"
                   onClick={handleNavClick}
-                  className={({ isActive }) => cn(
-                    'sidebar-link w-full justify-center',
-                    isActive && 'sidebar-link-internal-chat-active'
-                  )}
+                  className={({ isActive }) =>
+                    cn(
+                      "sidebar-link w-full flex items-center justify-center gap-0 relative z-20",
+                      isActive && "sidebar-link-internal-chat-active"
+                    )
+                  }
                 >
                   <MessageSquare className="w-5 h-5 flex-shrink-0" />
                 </NavLink>
