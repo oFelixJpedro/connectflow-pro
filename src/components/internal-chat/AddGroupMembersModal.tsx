@@ -215,10 +215,7 @@ export function AddGroupMembersModal({ isOpen, onClose, roomId, onMembersAdded }
                       onCheckedChange={() => toggleMember(member.id)}
                     />
                     <Avatar className="w-8 h-8">
-                      <AvatarImage 
-                        src={member.avatarUrl || undefined} 
-                        className="object-cover object-top"
-                      />
+                      <AvatarImage src={member.avatarUrl || undefined} />
                       <AvatarFallback className="bg-emerald-100 text-emerald-700 text-xs">
                         {getInitials(member.fullName)}
                       </AvatarFallback>
