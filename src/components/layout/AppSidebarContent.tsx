@@ -46,7 +46,7 @@ const baseMenuItems = [
   },
   { 
     icon: MessageSquare, 
-    label: 'Inbox', 
+    label: 'Conversas', 
     path: '/inbox',
     badgeKey: 'whatsapp' as string | null,
     adminOnly: false,
