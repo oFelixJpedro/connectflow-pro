@@ -353,6 +353,219 @@ export function ConversationActions({
   // Pode mover departamento: sempre se não está fechada
   const canMoveDepartment = !isClosed;
 
+  // Função auxiliar para escapar HTML
+  const escapeHTML = (str: string): string => {
+    return str
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  };
+
+  // Função para gerar HTML da conversa
+  const generateConversationHTML = (
+    contactName: string,
+    contactPhone: string,
+    status: string,
+    exportDate: string,
+    messages: any[]
+  ): string => {
+    const statusMap: Record<string, string> = {
+      open: 'Aberta',
+      pending: 'Pendente',
+      in_progress: 'Em Atendimento',
+      waiting: 'Aguardando',
+      resolved: 'Resolvida',
+      closed: 'Fechada',
+    };
+
+    let messagesHTML = '';
+    
+    messages.forEach((msg) => {
+      if (msg.is_deleted) return; // Pular mensagens deletadas
+      
+      const timestamp = new Date(msg.created_at).toLocaleString('pt-BR');
+      const senderName = msg.direction === 'inbound' ? contactName : 'Atendente';
+      const direction = msg.direction === 'inbound' ? 'inbound' : 'outbound';
+      const isInternal = msg.is_internal_note;
+      
+      // Notas internas com estilo diferenciado
+      if (isInternal) {
+        messagesHTML += `
+          <div class="message internal">
+            <div class="timestamp">📝 Nota interna - ${timestamp}</div>
+            <p>${escapeHTML(msg.content || '')}</p>
+            ${msg.media_url ? `<a href="${msg.media_url}" target="_blank" class="media-link">📎 Anexo</a>` : ''}
+          </div>
+        `;
+        return;
+      }
+
+      let contentHTML = '';
+      const metadata = msg.metadata as Record<string, any> | null;
+      
+      switch (msg.message_type) {
+        case 'text':
+          contentHTML = `<p>${escapeHTML(msg.content || '')}</p>`;
+          break;
+          
+        case 'image':
+          contentHTML = `
+            <p>📷 Imagem</p>
+            ${msg.media_url ? `
+              <a href="${msg.media_url}" target="_blank" class="media-link">
+                <img src="${msg.media_url}" class="media-preview" alt="Imagem" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
+                <span style="display:none;">⚠️ Imagem não disponível</span>
+              </a>
+              <br><a href="${msg.media_url}" target="_blank" class="media-link">📥 Abrir imagem em nova aba</a>
+            ` : '<p><em>Mídia não disponível</em></p>'}
+            ${msg.content ? `<br><small>Legenda: ${escapeHTML(msg.content)}</small>` : ''}
+          `;
+          break;
+          
+        case 'video':
+          contentHTML = `
+            <p>🎬 Vídeo</p>
+            ${msg.media_url ? `
+              <video controls class="media-preview" src="${msg.media_url}"></video>
+              <br><a href="${msg.media_url}" target="_blank" class="media-link">📥 Baixar vídeo</a>
+            ` : '<p><em>Mídia não disponível</em></p>'}
+            ${msg.content ? `<br><small>Legenda: ${escapeHTML(msg.content)}</small>` : ''}
+          `;
+          break;
+          
+        case 'audio':
+          contentHTML = `
+            <p>🎵 Áudio</p>
+            ${msg.media_url ? `
+              <audio controls src="${msg.media_url}"></audio>
+              <br><a href="${msg.media_url}" target="_blank" class="media-link">📥 Baixar áudio</a>
+            ` : '<p><em>Mídia não disponível</em></p>'}
+          `;
+          break;
+          
+        case 'document':
+          const fileName = metadata?.fileName || 'documento';
+          contentHTML = `
+            <p>📄 Documento: ${escapeHTML(fileName)}</p>
+            ${msg.media_url ? `
+              <a href="${msg.media_url}" target="_blank" class="media-link">📥 Baixar documento (${escapeHTML(fileName)})</a>
+            ` : '<p><em>Documento não disponível</em></p>'}
+            ${msg.content ? `<br><small>Descrição: ${escapeHTML(msg.content)}</small>` : ''}
+          `;
+          break;
+          
+        case 'sticker':
+          contentHTML = `
+            <p>🎨 Figurinha</p>
+            ${msg.media_url ? `
+              <img src="${msg.media_url}" class="sticker-preview" alt="Figurinha" onerror="this.outerHTML='<p><em>Figurinha não disponível</em></p>';">
+            ` : '<p><em>Figurinha não disponível</em></p>'}
+          `;
+          break;
+          
+        default:
+          contentHTML = `<p>[${msg.message_type}]</p>`;
+      }
+      
+      messagesHTML += `
+        <div class="message ${direction}">
+          <div class="timestamp">${timestamp} - ${escapeHTML(senderName)}</div>
+          ${contentHTML}
+        </div>
+      `;
+    });
+
+    return `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Conversa - ${escapeHTML(contactName)} - ${new Date().toISOString().split('T')[0]}</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { 
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
+      max-width: 800px; 
+      margin: 0 auto; 
+      padding: 20px; 
+      background: #f0f2f5;
+    }
+    .header { 
+      background: white; 
+      padding: 20px; 
+      border-radius: 12px; 
+      margin-bottom: 20px; 
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    .header h2 { margin-top: 0; color: #075e54; }
+    .messages { display: flex; flex-direction: column; gap: 8px; }
+    .message { 
+      padding: 12px 16px; 
+      border-radius: 12px; 
+      max-width: 80%;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+    }
+    .inbound { 
+      background: white; 
+      align-self: flex-start;
+      border-bottom-left-radius: 4px;
+    }
+    .outbound { 
+      background: #dcf8c6; 
+      align-self: flex-end;
+      border-bottom-right-radius: 4px;
+    }
+    .internal {
+      background: #fff9c4;
+      align-self: center;
+      font-style: italic;
+      border: 1px dashed #f9a825;
+      max-width: 90%;
+    }
+    .timestamp { 
+      font-size: 11px; 
+      color: #667781; 
+      margin-bottom: 4px;
+    }
+    .message p { margin: 4px 0; word-wrap: break-word; }
+    .media-link { color: #0066cc; text-decoration: none; }
+    .media-link:hover { text-decoration: underline; }
+    .media-preview { 
+      max-width: 100%; 
+      max-height: 300px; 
+      border-radius: 8px; 
+      margin: 8px 0;
+      display: block;
+    }
+    .sticker-preview {
+      max-width: 150px;
+      max-height: 150px;
+      margin: 8px 0;
+    }
+    audio { width: 100%; max-width: 300px; margin: 8px 0; }
+    video { max-width: 100%; border-radius: 8px; }
+    small { color: #667781; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h2>📱 Exportação de Conversa</h2>
+    <p><strong>Contato:</strong> ${escapeHTML(contactName)}</p>
+    <p><strong>Telefone:</strong> ${escapeHTML(contactPhone)}</p>
+    <p><strong>Status:</strong> ${statusMap[status] || status}</p>
+    <p><strong>Exportado em:</strong> ${exportDate}</p>
+    <p><strong>Total de mensagens:</strong> ${messages.filter(m => !m.is_deleted).length}</p>
+  </div>
+  
+  <div class="messages">
+    ${messagesHTML}
+  </div>
+</body>
+</html>`;
+  };
+
   const handleExportConversation = async () => {
     setIsLoading(true);
     setLoadingAction('export');
@@ -368,54 +581,25 @@ export function ConversationActions({
       if (error) throw error;
 
       const contactName = conversation.contact?.name || conversation.contact?.phoneNumber || 'Contato';
-      
-      // Formatar data para o nome do arquivo
+      const contactPhone = conversation.contact?.phoneNumber || 'N/A';
       const now = new Date();
       const dateStr = now.toISOString().split('T')[0];
       
-      // Criar conteúdo do arquivo
-      let content = `=== EXPORTAÇÃO DE CONVERSA ===\n`;
-      content += `Contato: ${contactName}\n`;
-      content += `Telefone: ${conversation.contact?.phoneNumber || 'N/A'}\n`;
-      content += `Status: ${conversation.status}\n`;
-      content += `Data de exportação: ${now.toLocaleString('pt-BR')}\n`;
-      content += `Total de mensagens: ${messages?.length || 0}\n`;
-      content += `${'='.repeat(40)}\n\n`;
+      // Gerar HTML
+      const htmlContent = generateConversationHTML(
+        contactName,
+        contactPhone,
+        conversation.status,
+        now.toLocaleString('pt-BR'),
+        messages || []
+      );
 
-      messages?.forEach((msg) => {
-        const timestamp = new Date(msg.created_at).toLocaleString('pt-BR');
-        const senderName = msg.direction === 'inbound' 
-          ? contactName 
-          : 'Atendente';
-        const direction = msg.direction === 'inbound' ? '←' : '→';
-        
-        content += `[${timestamp}] ${direction} ${senderName}:\n`;
-        
-        if (msg.message_type === 'text') {
-          content += `${msg.content || ''}\n`;
-        } else if (msg.message_type === 'image') {
-          content += `[Imagem${msg.content ? `: ${msg.content}` : ''}]\n`;
-        } else if (msg.message_type === 'audio') {
-          content += `[Áudio]\n`;
-        } else if (msg.message_type === 'video') {
-          content += `[Vídeo${msg.content ? `: ${msg.content}` : ''}]\n`;
-        } else if (msg.message_type === 'document') {
-          content += `[Documento${msg.content ? `: ${msg.content}` : ''}]\n`;
-        } else if (msg.message_type === 'sticker') {
-          content += `[Figurinha]\n`;
-        } else {
-          content += `[${msg.message_type}]\n`;
-        }
-        
-        content += '\n';
-      });
-
-      // Criar e baixar arquivo
-      const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+      // Criar e baixar arquivo HTML
+      const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `conversa_${contactName.replace(/[^a-zA-Z0-9]/g, '_')}_${dateStr}.txt`;
+      a.download = `conversa_${contactName.replace(/[^a-zA-Z0-9]/g, '_')}_${dateStr}.html`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -423,7 +607,7 @@ export function ConversationActions({
 
       toast({
         title: 'Conversa exportada',
-        description: 'O arquivo foi baixado com sucesso.',
+        description: 'O arquivo HTML foi baixado com sucesso.',
       });
     } catch (error: any) {
       console.error('[ConversationActions] Erro ao exportar:', error);
