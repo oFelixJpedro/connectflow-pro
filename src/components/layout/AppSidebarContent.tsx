@@ -296,6 +296,54 @@ export function AppSidebarContent({
           )}
         </nav>
 
+        {/* Internal Chat - Above expand button */}
+        <div className={cn("px-3 pb-2", collapsed && "pb-1")}>
+          {collapsed ? (
+            <Tooltip delayDuration={0}>
+              <TooltipTrigger asChild>
+                <NavLink
+                  to="/internal-chat"
+                  onClick={handleNavClick}
+                  className={({ isActive }) => cn(
+                    'sidebar-link',
+                    isActive && 'sidebar-link-internal-chat-active'
+                  )}
+                >
+                  <MessageSquare className="w-5 h-5 flex-shrink-0" />
+                </NavLink>
+              </TooltipTrigger>
+              <TooltipContent side="right" className="flex items-center gap-2">
+                Chat Interno
+                {unreadCounts.internalChat > 0 && (
+                  <Badge variant="secondary" className="text-xs">
+                    {unreadCounts.internalChat > 99 ? '99+' : unreadCounts.internalChat}
+                  </Badge>
+                )}
+              </TooltipContent>
+            </Tooltip>
+          ) : (
+            <NavLink
+              to="/internal-chat"
+              onClick={handleNavClick}
+              className={({ isActive }) => cn(
+                'sidebar-link',
+                isActive && 'sidebar-link-internal-chat-active'
+              )}
+            >
+              <MessageSquare className="w-5 h-5 flex-shrink-0" />
+              <span className="flex-1">Chat Interno</span>
+              {unreadCounts.internalChat > 0 && (
+                <Badge 
+                  variant="secondary" 
+                  className="bg-success text-success-foreground text-xs px-2 py-0.5"
+                >
+                  {unreadCounts.internalChat > 99 ? '99+' : unreadCounts.internalChat}
+                </Badge>
+              )}
+            </NavLink>
+          )}
+        </div>
+
         {/* Expand button when collapsed */}
         {collapsed && showCollapseButton && onToggleCollapse && (
           <div className="px-3 pb-4">
