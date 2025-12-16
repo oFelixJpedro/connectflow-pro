@@ -64,15 +64,15 @@ export function QuotedMessagePreview({
         "mb-2 pl-3 pr-2 py-2 border-l-4 rounded-md cursor-pointer transition-colors",
         "hover:opacity-80",
         isOutbound
-          ? "bg-blue-200/40 border-blue-400"
-          : "bg-slate-200/60 border-slate-400"
+          ? "bg-primary/20 border-primary"
+          : "bg-muted border-muted-foreground/50"
       )}
     >
       {/* Sender name */}
       <p
         className={cn(
           "text-xs font-semibold mb-0.5",
-          isOutbound ? "text-blue-700" : "text-slate-600"
+          isOutbound ? "text-primary" : "text-muted-foreground"
         )}
       >
         {getSenderLabel()}
@@ -82,7 +82,7 @@ export function QuotedMessagePreview({
       <div
         className={cn(
           "text-sm line-clamp-2 [overflow-wrap:anywhere]",
-          isOutbound ? "text-blue-900/80" : "text-slate-700"
+          isOutbound ? "text-foreground/80" : "text-foreground/80"
         )}
       >
         {getPreviewContent()}

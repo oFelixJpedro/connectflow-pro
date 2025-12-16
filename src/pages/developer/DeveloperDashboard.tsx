@@ -19,8 +19,11 @@ import {
   Trash2,
   Key,
   UserCog,
-  RefreshCw
+  RefreshCw,
+  Moon,
+  Sun
 } from 'lucide-react';
+import { useTheme } from 'next-themes';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { toast } from 'sonner';
@@ -56,6 +59,27 @@ interface User {
   created_at: string;
   last_seen_at: string | null;
   role?: string;
+}
+
+function DeveloperThemeToggle() {
+  const { theme, setTheme } = useTheme();
+  const isDark = theme === "dark";
+  
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      onClick={() => setTheme(isDark ? "light" : "dark")}
+      className="h-8 w-8 p-0"
+      title={isDark ? "Modo claro" : "Modo escuro"}
+    >
+      {isDark ? (
+        <Sun className="h-3 w-3 md:h-4 md:w-4" />
+      ) : (
+        <Moon className="h-3 w-3 md:h-4 md:w-4" />
+      )}
+    </Button>
+  );
 }
 
 export default function DeveloperDashboard() {
@@ -474,6 +498,7 @@ export default function DeveloperDashboard() {
               <span className="hidden sm:inline">Limpar Empresas</span>
             </Button>
             <span className="text-xs text-muted-foreground hidden md:inline">{developer?.email}</span>
+            <DeveloperThemeToggle />
             <Button variant="ghost" size="sm" onClick={handleLogout} className="text-xs">
               <LogOut className="h-3 w-3 md:h-4 md:w-4 mr-1" />
               Sair

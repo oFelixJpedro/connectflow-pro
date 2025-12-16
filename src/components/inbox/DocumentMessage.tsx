@@ -71,7 +71,7 @@ function getFileIcon(fileName?: string, mimeType?: string) {
     }
   }
   
-  if (!mimeType) return <File className="w-10 h-10 text-slate-400" />;
+  if (!mimeType) return <File className="w-10 h-10 text-muted-foreground" />;
   
   // Markdown by mimetype
   if (mimeType.includes('markdown')) {
@@ -105,11 +105,11 @@ function getFileIcon(fileName?: string, mimeType?: string) {
   
   // Text files
   if (mimeType.includes('text')) {
-    return <FileText className="w-10 h-10 text-slate-500" />;
+    return <FileText className="w-10 h-10 text-muted-foreground" />;
   }
   
   // Default
-  return <File className="w-10 h-10 text-slate-400" />;
+  return <File className="w-10 h-10 text-muted-foreground" />;
 }
 
 export function DocumentMessage({
@@ -164,80 +164,80 @@ export function DocumentMessage({
             'p-4',
             caption ? 'rounded-t-xl' : 'rounded-xl',
             isOutbound 
-              ? 'bg-gradient-to-br from-blue-100 to-blue-200'
-              : 'bg-slate-100'
+              ? 'bg-primary/10 dark:bg-primary/20'
+              : 'bg-muted'
           )}
         >
           {/* Error state */}
-          {isFailed ? (
-            <div className="flex items-center gap-3">
-              <div className={cn(
-                "flex items-center justify-center w-12 h-12 rounded-lg",
-                isOutbound ? "bg-blue-200/50" : "bg-slate-200/50"
-              )}>
-                <FileX className="w-8 h-8 text-destructive" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className={cn(
-                  "text-sm font-medium truncate",
-                  isOutbound ? "text-blue-900" : "text-slate-900"
+            {isFailed ? (
+              <div className="flex items-center gap-3">
+                <div className={cn(
+                  "flex items-center justify-center w-12 h-12 rounded-lg",
+                  isOutbound ? "bg-primary/20" : "bg-muted-foreground/10"
                 )}>
-                  Documento indisponível
-                </p>
-                <p className={cn(
-                  "text-xs",
-                  isOutbound ? "text-blue-800/70" : "text-slate-600"
-                )}>
-                  {errorMessage || 'Falha ao carregar'}
-                </p>
+                  <FileX className="w-8 h-8 text-destructive" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className={cn(
+                    "text-sm font-medium truncate",
+                    isOutbound ? "text-primary-foreground dark:text-primary" : "text-foreground"
+                  )}>
+                    Documento indisponível
+                  </p>
+                  <p className={cn(
+                    "text-xs",
+                    isOutbound ? "text-primary-foreground/70 dark:text-primary/70" : "text-muted-foreground"
+                  )}>
+                    {errorMessage || 'Falha ao carregar'}
+                  </p>
+                </div>
+                <AlertCircle className="w-5 h-5 text-destructive flex-shrink-0" />
               </div>
-              <AlertCircle className="w-5 h-5 text-destructive flex-shrink-0" />
-            </div>
           ) : (
-            <div className="flex items-center gap-3">
-              {/* File icon */}
-              <div className={cn(
-                "flex items-center justify-center w-12 h-12 rounded-lg flex-shrink-0",
-                isOutbound ? "bg-blue-200/50" : "bg-slate-200/50"
-              )}>
-                {getFileIcon(fileName, mimeType)}
-              </div>
-              
-              {/* File info */}
-              <div className="flex-1 min-w-0">
-                <p 
-                  className={cn(
-                    "text-sm font-semibold truncate",
-                    isOutbound ? "text-blue-900" : "text-slate-900"
-                  )}
-                  title={displayName}
-                >
-                  {truncatedName}
-                </p>
-                <p className={cn(
-                  "text-xs mt-0.5",
-                  isOutbound ? "text-blue-800/70" : "text-slate-600"
+              <div className="flex items-center gap-3">
+                {/* File icon */}
+                <div className={cn(
+                  "flex items-center justify-center w-12 h-12 rounded-lg flex-shrink-0",
+                  isOutbound ? "bg-primary/20" : "bg-muted-foreground/10"
                 )}>
-                  {metaString || 'Documento'}
-                </p>
+                  {getFileIcon(fileName, mimeType)}
+                </div>
+                
+                {/* File info */}
+                <div className="flex-1 min-w-0">
+                  <p 
+                    className={cn(
+                      "text-sm font-semibold truncate",
+                      isOutbound ? "text-foreground" : "text-foreground"
+                    )}
+                    title={displayName}
+                  >
+                    {truncatedName}
+                  </p>
+                  <p className={cn(
+                    "text-xs mt-0.5",
+                    isOutbound ? "text-muted-foreground" : "text-muted-foreground"
+                  )}>
+                    {metaString || 'Documento'}
+                  </p>
+                </div>
+                
+                {/* Download button */}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={handleDownload}
+                  className={cn(
+                    "h-9 w-9 rounded-full flex-shrink-0",
+                    isOutbound 
+                      ? "hover:bg-primary/20 text-primary"
+                      : "hover:bg-muted text-muted-foreground"
+                  )}
+                  title="Baixar documento"
+                >
+                  <Download className="w-4 h-4" />
+                </Button>
               </div>
-              
-              {/* Download button */}
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={handleDownload}
-                className={cn(
-                  "h-9 w-9 rounded-full flex-shrink-0",
-                  isOutbound 
-                    ? "hover:bg-blue-300/50 text-blue-700"
-                    : "hover:bg-slate-200 text-slate-600"
-                )}
-                title="Baixar documento"
-              >
-                <Download className="w-4 h-4" />
-              </Button>
-            </div>
           )}
         </div>
 
@@ -248,8 +248,8 @@ export function DocumentMessage({
               "px-4 py-3 rounded-b-xl text-sm leading-relaxed",
               "whitespace-pre-wrap break-words",
               isOutbound 
-                ? "bg-gradient-to-br from-blue-100 to-blue-200 text-blue-900 border-t border-blue-200/50"
-                : "bg-slate-100 text-slate-900 border-t border-slate-200/50"
+                ? "bg-primary/10 dark:bg-primary/20 text-foreground border-t border-primary/20"
+                : "bg-muted text-foreground border-t border-border"
             )}
           >
             {caption}

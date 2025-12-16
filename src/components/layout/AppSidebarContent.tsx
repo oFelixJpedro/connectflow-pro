@@ -35,6 +35,7 @@ import { toast } from 'sonner';
 import { SettingsSubmenu } from './SettingsSubmenu';
 import { useNotifications } from '@/hooks/useNotifications';
 import { ProfileModal } from '@/components/profile/ProfileModal';
+import { ThemeToggleMenuItem } from '@/components/ui/theme-toggle';
 
 const baseMenuItems = [
   { 
@@ -406,6 +407,7 @@ export function AppSidebarContent({
                   <Settings className="w-4 h-4 mr-2" />
                   Configurações
                 </DropdownMenuItem>
+                <ThemeToggleMenuItem />
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={handleSignOut} className="text-red-600 focus:text-red-600">
                   <LogOut className="w-4 h-4 mr-2" />
