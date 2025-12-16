@@ -182,7 +182,7 @@ export function ConversationList({
           ) : filteredConversations.length === 0 ? (
             <div className="p-8 text-center text-muted-foreground">
               <p className="text-sm">
-                {searchQuery || (filters.status && filters.status !== 'all') || filters.departmentId || filters.filterByAgentId
+                {searchQuery || (filters.status && filters.status.length > 0) || filters.departmentId || filters.filterByAgentId || filters.tags?.length || filters.kanbanColumnId
                   ? 'Nenhuma conversa com estes filtros'
                   : inboxColumn === 'minhas' 
                     ? 'Nenhuma conversa atribuída a você'

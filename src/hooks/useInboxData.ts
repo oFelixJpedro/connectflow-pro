@@ -271,15 +271,14 @@ export function useInboxData() {
       }
 
       // Apply filters
-      // Status filter - hide closed conversations by default
-      if (conversationFilters.status === 'closed') {
-        // Explicitly filtering for closed - show only closed
-        query = query.eq('status', 'closed');
-      } else if (conversationFilters.status && conversationFilters.status !== 'all') {
-        // Specific status filter (not closed, not all)
-        query = query.eq('status', conversationFilters.status);
+      // Status filter - handle array of statuses
+      const statusFilters = conversationFilters.status || [];
+      
+      if (statusFilters.length > 0) {
+        // User selected specific statuses - cast to the expected type
+        query = query.in('status', statusFilters as ('open' | 'pending' | 'in_progress' | 'waiting' | 'resolved' | 'closed')[]);
       } else {
-        // Default behavior: hide closed conversations
+        // No status filter - hide closed by default
         query = query.neq('status', 'closed');
       }
 
@@ -316,6 +315,11 @@ export function useInboxData() {
         query = query.eq('department_id', conversationFilters.departmentId);
       }
 
+      // Tags filter - filter conversations that have any of the selected tags
+      if (conversationFilters.tags && conversationFilters.tags.length > 0) {
+        query = query.overlaps('tags', conversationFilters.tags);
+      }
+
       // Ordenar por última mensagem
       query = query.order('last_message_at', { ascending: false, nullsFirst: false });
 
@@ -334,6 +338,21 @@ export function useInboxData() {
       console.log('[useInboxData] Conversas carregadas:', data?.length || 0);
       
       let transformedConversations = (data || []).map(transformConversation);
+
+      // Apply kanban column filter (post-query since it requires contact_id lookup)
+      if (conversationFilters.kanbanColumnId) {
+        const { data: kanbanCards } = await supabase
+          .from('kanban_cards')
+          .select('contact_id')
+          .eq('column_id', conversationFilters.kanbanColumnId);
+
+        if (kanbanCards && kanbanCards.length > 0) {
+          const contactIds = new Set(kanbanCards.map(c => c.contact_id));
+          transformedConversations = transformedConversations.filter(c => contactIds.has(c.contactId));
+        } else {
+          transformedConversations = [];
+        }
+      }
 
       // Apply "isFollowing" filter if active (filter by conversation_followers)
       if (conversationFilters.isFollowing && user?.id) {
