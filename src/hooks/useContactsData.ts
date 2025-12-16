@@ -714,131 +714,129 @@ export function useContactsData() {
       const recipientPhone = contact.phone_number;
 
       if (media) {
-        // Upload media to storage
-        const sanitizedName = media.file.name
-          .normalize('NFD')
-          .replace(/[\u0300-\u036f]/g, '')
-          .replace(/[^a-zA-Z0-9._-]/g, '_');
-        
-        const now = new Date();
-        const yearMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-        const storagePath = `${profile?.company_id}/${connectionId}/${yearMonth}/${Date.now()}_${sanitizedName}`;
+        // IMPORTANT: our media Edge Functions expect base64 (imageData/videoData/audioData/documentData)
+        // and handle Storage + DB message creation internally.
+        const fileToDataUrl = (file: File) =>
+          new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(String(reader.result));
+            reader.onerror = () => reject(reader.error);
+            reader.readAsDataURL(file);
+          });
 
-        const { error: uploadError } = await supabase.storage
-          .from('whatsapp-media')
-          .upload(storagePath, media.file);
+        const dataUrl = await fileToDataUrl(media.file);
 
-        if (uploadError) {
-          console.error('Error uploading media:', uploadError);
+        if (media.type === 'image') {
+          const { error } = await supabase.functions.invoke('send-whatsapp-image', {
+            body: {
+              imageData: dataUrl,
+              fileName: media.file.name,
+              mimeType: media.file.type,
+              conversationId,
+              connectionId,
+              contactPhoneNumber: recipientPhone,
+              caption: message || '',
+              quotedMessageId: null,
+            },
+          });
+
+          if (error) console.error('Error sending image:', error);
           return;
         }
 
-        const { data: urlData } = supabase.storage
-          .from('whatsapp-media')
-          .getPublicUrl(storagePath);
+        if (media.type === 'video') {
+          const { error } = await supabase.functions.invoke('send-whatsapp-video', {
+            body: {
+              videoData: dataUrl,
+              fileName: media.file.name,
+              mimeType: media.file.type,
+              conversationId,
+              connectionId,
+              contactPhoneNumber: recipientPhone,
+              text: message || '',
+              duration: null,
+              quotedMessageId: null,
+            },
+          });
 
-        const mediaUrl = urlData.publicUrl;
+          if (error) console.error('Error sending video:', error);
+          return;
+        }
 
-        // Determine which edge function to call based on media type
-        const functionMap = {
-          image: 'send-whatsapp-image',
-          video: 'send-whatsapp-video',
-          audio: 'send-whatsapp-audio',
-          document: 'send-whatsapp-document'
-        };
+        if (media.type === 'document') {
+          const { error } = await supabase.functions.invoke('send-whatsapp-document', {
+            body: {
+              documentData: dataUrl,
+              fileName: media.file.name,
+              mimeType: media.file.type,
+              conversationId,
+              connectionId,
+              contactPhoneNumber: recipientPhone,
+              text: message || '',
+              quotedMessageId: null,
+            },
+          });
 
-        const functionName = functionMap[media.type];
+          if (error) console.error('Error sending document:', error);
+          return;
+        }
 
-        // Create message record first
+        if (media.type === 'audio') {
+          // Audio function uses conversationId to find contact/connection
+          const { error } = await supabase.functions.invoke('send-whatsapp-audio', {
+            body: {
+              audioData: dataUrl,
+              fileName: media.file.name,
+              mimeType: media.file.type,
+              duration: null,
+              conversationId,
+              quotedMessageId: null,
+            },
+          });
+
+          if (error) console.error('Error sending audio:', error);
+          return;
+        }
+
+        return;
+      }
+
+      if (message && message.trim()) {
+        // Text message uses send-whatsapp-message which expects messageId + conversationId
         const { data: messageRecord, error: msgError } = await supabase
           .from('messages')
           .insert({
             conversation_id: conversationId,
-            content: message || null,
-            message_type: media.type,
-            direction: 'outbound',
-            sender_type: 'user',
-            sender_id: profile?.id,
-            status: 'pending',
-            media_url: mediaUrl,
-            media_mime_type: media.file.type,
-            metadata: { fileName: media.file.name, fileSize: media.file.size }
-          })
-          .select()
-          .single();
-
-        if (msgError) {
-          console.error('Error creating message record:', msgError);
-          return;
-        }
-
-        // Call edge function
-        const { error: sendError } = await supabase.functions.invoke(functionName, {
-          body: {
-            connectionId,
-            contactPhoneNumber: recipientPhone,
-            conversationId,
-            mediaUrl,
-            caption: message || '',
-            fileName: media.file.name,
-            mimeType: media.file.type,
-            messageId: messageRecord.id
-          }
-        });
-
-        if (sendError) {
-          console.error('Error sending media:', sendError);
-          await supabase
-            .from('messages')
-            .update({ status: 'failed', error_message: sendError.message })
-            .eq('id', messageRecord.id);
-        }
-      } else if (message) {
-        // Text only message
-        const { data: messageRecord, error: msgError } = await supabase
-          .from('messages')
-          .insert({
-            conversation_id: conversationId,
-            content: message,
+            content: message.trim(),
             message_type: 'text',
             direction: 'outbound',
             sender_type: 'user',
             sender_id: profile?.id,
-            status: 'pending'
+            status: 'pending',
           })
-          .select()
+          .select('id')
           .single();
 
-        if (msgError) {
-          console.error('Error creating message record:', msgError);
+        if (msgError || !messageRecord) {
+          console.error('Error creating text message record:', msgError);
           return;
         }
 
-        // Call edge function
         const { error: sendError } = await supabase.functions.invoke('send-whatsapp-message', {
           body: {
-            connectionId,
-            recipientPhone,
-            message,
-            messageId: messageRecord.id
-          }
+            messageId: messageRecord.id,
+            conversationId,
+          },
         });
 
         if (sendError) {
-          console.error('Error sending message:', sendError);
+          console.error('Error sending text message:', sendError);
           await supabase
             .from('messages')
             .update({ status: 'failed', error_message: sendError.message })
             .eq('id', messageRecord.id);
         }
       }
-
-      // Update conversation last_message_at
-      await supabase
-        .from('conversations')
-        .update({ last_message_at: new Date().toISOString() })
-        .eq('id', conversationId);
-
     } catch (error) {
       console.error('Error sending initial message:', error);
     }
