@@ -970,16 +970,16 @@ export function ChatPanel({
                 "text-xs",
                 conversation.assignedUserId === currentUserId 
                   ? "bg-success/10 text-success border-success/30"
-                  : "bg-muted text-muted-foreground"
+                  : "bg-warning/20 text-warning border-warning/30"
               )}
             >
               {conversation.assignedUserId === currentUserId 
                 ? 'Atribuída a você'
-                : `Atribuída a ${conversation.assignedUser.fullName?.split(' ')[0]}`
+                : `${conversation.assignedUser.fullName?.split(' ')[0]}`
               }
             </Badge>
           ) : (
-            <Badge variant="outline" className="text-xs bg-warning/10 text-warning border-warning/30">
+            <Badge variant="outline" className="text-xs bg-destructive/20 text-destructive border-destructive/30">
               Sem responsável
             </Badge>
           )}
