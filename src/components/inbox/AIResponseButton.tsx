@@ -16,13 +16,13 @@ export function AIResponseButton({ onClick, disabled = false, isLoading = false 
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="absolute left-1 bottom-1 h-8 w-8"
-          disabled={disabled || isLoading}
-          onClick={onClick}
-        >
+      <Button
+        variant="ghost"
+        size="icon"
+        className="absolute left-1 top-1/2 -translate-y-1/2 h-8 w-8"
+        disabled={disabled || isLoading}
+        onClick={onClick}
+      >
           {isLoading ? (
             <Loader2 className="w-5 h-5 animate-spin text-primary" />
           ) : (
