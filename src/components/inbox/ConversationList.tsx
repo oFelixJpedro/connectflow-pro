@@ -199,12 +199,12 @@ export function ConversationList({
               // Left border logic:
               // - selected => green
               // - not selected + unread => blue
-              // - not selected + read => gray
+              // - not selected + read => light gray (pastel)
               const borderLeftColor = isSelected
                 ? 'hsl(var(--success))'
                 : isUnread
                   ? 'hsl(var(--primary))'
-                  : 'hsl(var(--muted-foreground))';
+                  : 'hsl(var(--border))';
 
               return (
                 <div
