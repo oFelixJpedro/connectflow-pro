@@ -203,15 +203,17 @@ export function ConversationList({
                   key={conversation.id}
                   onClick={() => onSelect(conversation)}
                   className={cn(
-                    'conversation-item p-4 border-l-4 relative transition-colors duration-200',
+                    'conversation-item p-4 relative transition-colors duration-200',
                     // Background colors based on read/selected state
                     isUnread && 'bg-[#E0F2FE] dark:bg-primary/20',
                     isRead && !isSelected && 'bg-transparent',
                     isRead && isSelected && 'bg-[#D9F9E5] dark:bg-success/20',
+                    // Border left - always 4px width
+                    'border-l-4',
                     // Border colors: selected green, unread blue, otherwise status color
-                    isRead && isSelected ? 'border-l-success' : 
-                      isUnread ? 'border-l-primary' : 
-                      (statusColors[conversation.status] || 'border-l-transparent')
+                    isRead && isSelected && 'border-l-[#10B981]',
+                    isUnread && !isSelected && 'border-l-[#3B82F6]',
+                    !isUnread && !isSelected && (statusColors[conversation.status] || 'border-l-transparent')
                   )}
                 >
                   <div className="flex gap-3">
