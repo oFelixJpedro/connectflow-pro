@@ -776,10 +776,12 @@ export function useContactsData() {
         const { error: sendError } = await supabase.functions.invoke(functionName, {
           body: {
             connectionId,
-            recipientPhone,
+            contactPhoneNumber: recipientPhone,
+            conversationId,
             mediaUrl,
             caption: message || '',
             fileName: media.file.name,
+            mimeType: media.file.type,
             messageId: messageRecord.id
           }
         });
