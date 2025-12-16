@@ -107,8 +107,10 @@ export function ContactFormModal({
     file: File;
   } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const audioFileInputRef = useRef<HTMLInputElement>(null);
   const [mediaType, setMediaType] = useState<'image' | 'video' | 'audio' | 'document'>('image');
   const [isRecordingAudio, setIsRecordingAudio] = useState(false);
+  const [showAudioChoiceModal, setShowAudioChoiceModal] = useState(false);
   const audioRecorder = useAudioRecorder();
   const audioPreviewRef = useRef<HTMLAudioElement | null>(null);
   const [audioPreviewPlaying, setAudioPreviewPlaying] = useState(false);
@@ -441,10 +443,9 @@ export function ContactFormModal({
   };
 
   const handleFileSelect = (type: 'image' | 'video' | 'audio' | 'document') => {
-    // For audio, start recording instead of file select
+    // For audio, show choice modal
     if (type === 'audio') {
-      setIsRecordingAudio(true);
-      audioRecorder.startRecording();
+      setShowAudioChoiceModal(true);
       return;
     }
     
@@ -453,6 +454,29 @@ export function ContactFormModal({
     if (fileInputRef.current && mediaConfig) {
       fileInputRef.current.accept = mediaConfig.accept;
       fileInputRef.current.click();
+    }
+  };
+
+  const handleAudioChoiceRecord = () => {
+    setShowAudioChoiceModal(false);
+    setIsRecordingAudio(true);
+    audioRecorder.startRecording();
+  };
+
+  const handleAudioChoiceFile = () => {
+    setShowAudioChoiceModal(false);
+    if (audioFileInputRef.current) {
+      audioFileInputRef.current.click();
+    }
+  };
+
+  const handleAudioFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setInitialMessageMedia({ type: 'audio', file });
+    }
+    if (audioFileInputRef.current) {
+      audioFileInputRef.current.value = '';
     }
   };
 
@@ -707,6 +731,13 @@ export function ContactFormModal({
                           type="file"
                           className="hidden"
                           onChange={handleFileChange}
+                        />
+                        <input
+                          ref={audioFileInputRef}
+                          type="file"
+                          accept="audio/*"
+                          className="hidden"
+                          onChange={handleAudioFileChange}
                         />
                       </div>
                     )}
@@ -1183,6 +1214,52 @@ export function ContactFormModal({
           </form>
         </DialogContent>
       </Dialog>
+
+      {/* Audio Choice Modal */}
+      <AlertDialog open={showAudioChoiceModal} onOpenChange={setShowAudioChoiceModal}>
+        <AlertDialogContent className="sm:max-w-[350px]">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <Mic className="w-5 h-5 text-primary" />
+              Adicionar Áudio
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Como você deseja adicionar o áudio?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="flex flex-col gap-2 py-4">
+            <Button
+              variant="outline"
+              className="w-full justify-start gap-3 h-12"
+              onClick={handleAudioChoiceRecord}
+            >
+              <div className="w-8 h-8 rounded-full bg-destructive/10 flex items-center justify-center">
+                <Mic className="w-4 h-4 text-destructive" />
+              </div>
+              <div className="text-left">
+                <div className="font-medium">Gravar áudio</div>
+                <div className="text-xs text-muted-foreground">Gravar na hora</div>
+              </div>
+            </Button>
+            <Button
+              variant="outline"
+              className="w-full justify-start gap-3 h-12"
+              onClick={handleAudioChoiceFile}
+            >
+              <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
+                <FileText className="w-4 h-4 text-primary" />
+              </div>
+              <div className="text-left">
+                <div className="font-medium">Enviar arquivo</div>
+                <div className="text-xs text-muted-foreground">Selecionar do dispositivo</div>
+              </div>
+            </Button>
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Migration Confirmation Dialog */}
       <AlertDialog open={showMigrationConfirm} onOpenChange={setShowMigrationConfirm}>
