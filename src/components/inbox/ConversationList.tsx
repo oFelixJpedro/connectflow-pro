@@ -195,30 +195,16 @@ export function ConversationList({
             filteredConversations.map((conversation) => {
               const isUnread = (conversation.unreadCount || 0) > 0;
               const isSelected = selectedId === conversation.id;
-              const isRead = !isUnread;
 
-              const statusBorderColor = (() => {
-                switch (conversation.status) {
-                  case 'open':
-                    return 'hsl(var(--primary))';
-                  case 'in_progress':
-                    return 'hsl(var(--success))';
-                  case 'pending':
-                  case 'waiting':
-                    return 'hsl(var(--warning))';
-                  case 'resolved':
-                  case 'closed':
-                    return 'hsl(var(--muted-foreground))';
-                  default:
-                    return 'hsl(var(--border))';
-                }
-              })();
-
-              const borderLeftColor = isRead && isSelected
+              // Left border logic:
+              // - selected => green
+              // - not selected + unread => blue
+              // - not selected + read => gray
+              const borderLeftColor = isSelected
                 ? 'hsl(var(--success))'
                 : isUnread
                   ? 'hsl(var(--primary))'
-                  : statusBorderColor;
+                  : 'hsl(var(--muted-foreground))';
 
               return (
                 <div
@@ -227,10 +213,12 @@ export function ConversationList({
                   style={{ borderLeftColor, borderLeftStyle: 'solid' }}
                   className={cn(
                     'conversation-item p-4 relative transition-colors duration-200 border-l-4',
-                    // Background colors based on read/selected state
-                    isUnread && 'bg-[hsl(var(--conv-unread-bg))]',
-                    isRead && !isSelected && 'bg-transparent',
-                    isRead && isSelected && 'bg-[hsl(var(--conv-selected-bg))]'
+                    // Background colors based on state
+                    isSelected
+                      ? 'bg-[hsl(var(--conv-selected-bg))]'
+                      : isUnread
+                        ? 'bg-[hsl(var(--conv-unread-bg))]'
+                        : 'bg-transparent'
                   )}
                 >
                   <div className="flex gap-3">
