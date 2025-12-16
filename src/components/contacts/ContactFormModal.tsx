@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -31,7 +31,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { X, Loader2, LayoutGrid, Trash2, Smartphone, AlertTriangle, Users } from 'lucide-react';
+import { X, Loader2, LayoutGrid, Trash2, Smartphone, AlertTriangle, Users, Paperclip, MessageSquare, Image, Video, FileText, Mic } from 'lucide-react';
 import { Contact, ContactFormData } from '@/hooks/useContactsData';
 import { useContactCRM } from '@/hooks/useContactCRM';
 import { supabase } from '@/integrations/supabase/client';
@@ -43,6 +43,7 @@ interface ContactFormModalProps {
   contact?: Contact | null;
   tags: { id: string; name: string; color: string }[];
   onSave: (data: ContactFormData) => Promise<boolean | string>; // string = new contact ID
+  preselectedConnectionId?: string | null;
 }
 
 interface WhatsAppConnection {
@@ -64,12 +65,20 @@ const PRIORITY_OPTIONS = [
   { value: 'urgent', label: 'Urgente', color: 'bg-red-100 text-red-700' },
 ];
 
+const MEDIA_TYPES = [
+  { type: 'image', label: 'Imagem', icon: Image, accept: 'image/*' },
+  { type: 'video', label: 'Vídeo', icon: Video, accept: 'video/*' },
+  { type: 'audio', label: 'Áudio', icon: Mic, accept: 'audio/*' },
+  { type: 'document', label: 'Documento', icon: FileText, accept: '*/*' },
+];
+
 export function ContactFormModal({
   open,
   onOpenChange,
   contact,
   tags,
-  onSave
+  onSave,
+  preselectedConnectionId
 }: ContactFormModalProps) {
   const { profile } = useAuth();
   const [loading, setLoading] = useState(false);
@@ -80,6 +89,16 @@ export function ContactFormModal({
     tags: [],
     notes: ''
   });
+
+  // New contact fields
+  const [selectedConnectionId, setSelectedConnectionId] = useState<string>('');
+  const [initialMessage, setInitialMessage] = useState('');
+  const [initialMessageMedia, setInitialMessageMedia] = useState<{
+    type: 'image' | 'video' | 'audio' | 'document';
+    file: File;
+  } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [mediaType, setMediaType] = useState<'image' | 'video' | 'audio' | 'document'>('image');
 
   // Migration state - Connection
   const [allConnections, setAllConnections] = useState<WhatsAppConnection[]>([]);
@@ -193,8 +212,17 @@ export function ContactFormModal({
       setDepartmentMigrationEnabled(false);
       setTargetDepartmentId('');
       setKanbanChanged(false);
+      // Reset new contact fields
+      setInitialMessage('');
+      setInitialMessageMedia(null);
+      // Pre-select connection if provided
+      if (!contact && preselectedConnectionId) {
+        setSelectedConnectionId(preselectedConnectionId);
+      } else if (!contact) {
+        setSelectedConnectionId('');
+      }
     }
-  }, [open]);
+  }, [open, contact, preselectedConnectionId]);
 
   // Initialize form data when contact changes
   useEffect(() => {
@@ -257,6 +285,11 @@ export function ContactFormModal({
       return;
     }
 
+    // For new contacts, connection is mandatory
+    if (!contact && !selectedConnectionId) {
+      return;
+    }
+
     // If connection migration is enabled, show confirmation
     if (isConnectionMigrationActive) {
       setPendingFormData(formData);
@@ -269,7 +302,20 @@ export function ContactFormModal({
 
   const executeSubmit = async (data: ContactFormData) => {
     setLoading(true);
-    const result = await onSave(data);
+    
+    // For new contacts, include connection and initial message data
+    const submitData: ContactFormData = { ...data };
+    if (!contact) {
+      submitData.connectionId = selectedConnectionId;
+      if (initialMessage.trim()) {
+        submitData.initialMessage = initialMessage.trim();
+      }
+      if (initialMessageMedia) {
+        submitData.initialMessageMedia = initialMessageMedia;
+      }
+    }
+    
+    const result = await onSave(submitData);
     const success = result === true || typeof result === 'string';
     const contactId = contact?.id || (typeof result === 'string' ? result : null);
     
@@ -334,7 +380,7 @@ export function ContactFormModal({
     }
     
     // Handle CRM changes (only if not migrating connection)
-    if (success && contactId && !connectionChanging) {
+    if (success && contactId && !connectionChanging && contact) {
       if (crmEnabled && currentConnectionId && selectedColumn) {
         await setCardPosition(contactId, currentConnectionId, selectedColumn, selectedPriority);
       } else if (!crmEnabled && currentPosition) {
@@ -379,6 +425,33 @@ export function ContactFormModal({
     return `+${digits.slice(0, 2)} (${digits.slice(2, 4)}) ${digits.slice(4, 9)}-${digits.slice(9, 13)}`;
   };
 
+  const handleFileSelect = (type: 'image' | 'video' | 'audio' | 'document') => {
+    setMediaType(type);
+    const mediaConfig = MEDIA_TYPES.find(m => m.type === type);
+    if (fileInputRef.current && mediaConfig) {
+      fileInputRef.current.accept = mediaConfig.accept;
+      fileInputRef.current.click();
+    }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setInitialMessageMedia({
+        type: mediaType,
+        file
+      });
+    }
+    // Reset input
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  const removeMedia = () => {
+    setInitialMessageMedia(null);
+  };
+
   // Get columns for current connection's board
   const currentBoard = currentConnectionId ? boards.get(currentConnectionId) : null;
   const availableColumns = currentBoard?.columns || [];
@@ -405,7 +478,10 @@ export function ContactFormModal({
     targetConnectionDepartments.length > 0 && 
     !targetConnectionDepartmentId;
 
-  const canSave = !loading && !needsDepartmentSelection;
+  // For new contacts, connection must be selected
+  const needsConnectionForNewContact = !contact && !selectedConnectionId;
+
+  const canSave = !loading && !needsDepartmentSelection && !needsConnectionForNewContact;
 
   return (
     <>
@@ -444,6 +520,33 @@ export function ContactFormModal({
                 required
               />
             </div>
+
+            {/* Connection Selection - Only for new contacts */}
+            {!contact && (
+              <div className="space-y-2">
+                <Label htmlFor="connection">Conexão WhatsApp *</Label>
+                <Select
+                  value={selectedConnectionId}
+                  onValueChange={setSelectedConnectionId}
+                >
+                  <SelectTrigger id="connection">
+                    <SelectValue placeholder="Selecione uma conexão" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {allConnections.map((conn) => (
+                      <SelectItem key={conn.id} value={conn.id}>
+                        {conn.name} ({conn.phone_number})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {allConnections.length === 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    Nenhuma conexão disponível. Conecte um WhatsApp primeiro.
+                  </p>
+                )}
+              </div>
+            )}
 
             <div className="space-y-2">
               <Label htmlFor="email">E-mail</Label>
@@ -489,6 +592,80 @@ export function ContactFormModal({
                 rows={3}
               />
             </div>
+
+            {/* Initial Message Section - Only for new contacts */}
+            {!contact && selectedConnectionId && (
+              <>
+                <Separator className="my-4" />
+                
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2">
+                    <MessageSquare className="w-4 h-4 text-muted-foreground" />
+                    <Label className="text-base font-medium">Mensagem Inicial (Opcional)</Label>
+                  </div>
+                  
+                  <p className="text-xs text-muted-foreground">
+                    Envie uma mensagem ao criar o contato
+                  </p>
+
+                  <div className="space-y-3">
+                    <Textarea
+                      value={initialMessage}
+                      onChange={(e) => setInitialMessage(e.target.value)}
+                      placeholder="Digite uma mensagem para enviar ao contato..."
+                      rows={3}
+                    />
+
+                    {/* Media attachment */}
+                    <div className="flex items-center gap-2">
+                      <div className="flex gap-1">
+                        {MEDIA_TYPES.map((media) => (
+                          <Button
+                            key={media.type}
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleFileSelect(media.type as typeof mediaType)}
+                            className="h-8 px-2"
+                            title={media.label}
+                          >
+                            <media.icon className="w-4 h-4" />
+                          </Button>
+                        ))}
+                      </div>
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        className="hidden"
+                        onChange={handleFileChange}
+                      />
+                    </div>
+
+                    {/* Selected media preview */}
+                    {initialMessageMedia && (
+                      <div className="flex items-center gap-2 p-2 bg-muted rounded-md">
+                        <Paperclip className="w-4 h-4 text-muted-foreground" />
+                        <span className="text-sm flex-1 truncate">
+                          {initialMessageMedia.file.name}
+                        </span>
+                        <Badge variant="secondary" className="text-xs">
+                          {initialMessageMedia.type}
+                        </Badge>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={removeMedia}
+                          className="h-6 w-6 p-0"
+                        >
+                          <X className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </>
+            )}
 
             {/* Connection Migration Section - Only for existing contacts */}
             {contact && currentConnectionId && allConnections.length > 1 && (
@@ -581,8 +758,8 @@ export function ContactFormModal({
                       )}
 
                       {targetConnectionId && (
-                        <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
-                          <p className="text-sm text-amber-800 flex items-center gap-2">
+                        <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 dark:bg-amber-900/20 dark:border-amber-800">
+                          <p className="text-sm text-amber-800 dark:text-amber-300 flex items-center gap-2">
                             <AlertTriangle className="w-4 h-4" />
                             As conversas e o card do CRM serão migrados para a nova conexão
                           </p>
@@ -654,8 +831,8 @@ export function ContactFormModal({
                           </div>
 
                           {targetDepartmentId && (
-                            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                              <p className="text-sm text-blue-800 flex items-center gap-2">
+                            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 dark:bg-blue-900/20 dark:border-blue-800">
+                              <p className="text-sm text-blue-800 dark:text-blue-300 flex items-center gap-2">
                                 <Users className="w-4 h-4" />
                                 As conversas serão migradas para o novo departamento
                               </p>
@@ -804,8 +981,8 @@ export function ContactFormModal({
                   </div>
                 </div>
 
-                <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
-                  <p className="text-sm text-amber-800">
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 dark:bg-amber-900/20 dark:border-amber-800">
+                  <p className="text-sm text-amber-800 dark:text-amber-300">
                     <strong>Atenção:</strong> Todas as conversas deste contato serão transferidas para a nova conexão e o card do CRM será movido para a primeira coluna do novo Kanban.
                   </p>
                 </div>

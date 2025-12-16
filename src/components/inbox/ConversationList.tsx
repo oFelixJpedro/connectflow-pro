@@ -1,18 +1,22 @@
 import { useState, useMemo } from 'react';
-import { Search, Star, RotateCcw } from 'lucide-react';
+import { Search, Star, RotateCcw, UserPlus } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Button } from '@/components/ui/button';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { ConnectionSelector } from '@/components/inbox/ConnectionSelector';
 import { ConversationFiltersComponent } from '@/components/inbox/ConversationFilters';
 import { InboxTabs, type InboxColumn } from '@/components/inbox/InboxTabs';
 import { AssignmentBadge } from '@/components/inbox/AssignmentBadge';
 import { ContactAvatar } from '@/components/ui/contact-avatar';
+import { ContactFormModal } from '@/components/contacts/ContactFormModal';
 import { cn } from '@/lib/utils';
 import type { Conversation, ConversationFilters } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
 import { useFollowedConversations } from '@/hooks/useFollowedConversations';
+import { useContactsData } from '@/hooks/useContactsData';
 import type { Tag } from '@/hooks/useTagsData';
 
 interface ConversationListProps {
@@ -64,7 +68,9 @@ export function ConversationList({
 }: ConversationListProps) {
   const { user } = useAuth();
   const { isFollowed, isAdminOrOwner } = useFollowedConversations();
+  const { tags: contactTags, createContact } = useContactsData();
   const [searchQuery, setSearchQuery] = useState('');
+  const [showContactModal, setShowContactModal] = useState(false);
 
   // Filter by local search only (other filters are applied in backend)
   const filteredConversations = conversations.filter((conv) => {
@@ -134,12 +140,33 @@ export function ConversationList({
     <div className="w-full md:w-80 lg:w-80 border-r border-border bg-card flex flex-col h-full">
       {/* Header with connection selector */}
       <div className="p-4 border-b border-border space-y-3">
-        {/* Connection Selector */}
-        <ConnectionSelector
-          selectedConnectionId={selectedConnectionId}
-          onConnectionChange={onConnectionChange}
-          onNoConnections={onNoConnections}
-        />
+        {/* Connection Selector + Add Contact Button */}
+        <div className="flex items-center gap-2">
+          <div className="flex-1">
+            <ConnectionSelector
+              selectedConnectionId={selectedConnectionId}
+              onConnectionChange={onConnectionChange}
+              onNoConnections={onNoConnections}
+            />
+          </div>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-9 w-9 flex-shrink-0"
+                  onClick={() => setShowContactModal(true)}
+                >
+                  <UserPlus className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Cadastrar novo contato</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        </div>
         
         {/* Search + Filter Row */}
         <div className="flex items-center gap-2">
@@ -358,6 +385,19 @@ export function ConversationList({
           )}
         </div>
       </ScrollArea>
+
+      {/* Contact Form Modal */}
+      <ContactFormModal
+        open={showContactModal}
+        onOpenChange={setShowContactModal}
+        contact={null}
+        tags={contactTags}
+        onSave={async (data) => {
+          const result = await createContact(data);
+          return result ? result.id : false;
+        }}
+        preselectedConnectionId={selectedConnectionId}
+      />
     </div>
   );
 }
