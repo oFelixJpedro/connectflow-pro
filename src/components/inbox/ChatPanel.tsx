@@ -296,6 +296,8 @@ export function ChatPanel({
         content: msg.content,
         direction: msg.direction,
         messageType: msg.messageType,
+        mediaUrl: msg.mediaUrl,
+        metadata: msg.metadata,
       }));
 
       if (validMessages.length === 0) {
