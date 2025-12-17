@@ -337,8 +337,7 @@ serve(async (req) => {
             { role: 'system', content: enrichedSystemPrompt },
             { role: 'user', content: `Analise esta conversa e gere a próxima resposta imitando o estilo do atendente:\n\n${formattedMessages}` }
           ],
-          max_tokens: 800,
-          temperature: 0.5,
+          max_completion_tokens: 800,
         }),
       });
 
