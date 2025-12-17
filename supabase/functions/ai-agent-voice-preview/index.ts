@@ -8,6 +8,41 @@ const corsHeaders = {
 
 const PREVIEW_TEXT = "Olá! Eu sou a assistente virtual. Como posso ajudar você hoje?";
 
+// Convert L16 PCM to WAV format (browser-compatible)
+function convertL16ToWav(pcmData: Uint8Array, sampleRate: number = 24000): Uint8Array {
+  const numChannels = 1;
+  const bitsPerSample = 16;
+  const byteRate = sampleRate * numChannels * (bitsPerSample / 8);
+  const blockAlign = numChannels * (bitsPerSample / 8);
+  const dataSize = pcmData.length;
+  const headerSize = 44;
+  
+  const wav = new Uint8Array(headerSize + dataSize);
+  const view = new DataView(wav.buffer);
+  
+  // RIFF header
+  wav.set([0x52, 0x49, 0x46, 0x46], 0); // "RIFF"
+  view.setUint32(4, 36 + dataSize, true); // File size - 8
+  wav.set([0x57, 0x41, 0x56, 0x45], 8); // "WAVE"
+  
+  // fmt chunk
+  wav.set([0x66, 0x6d, 0x74, 0x20], 12); // "fmt "
+  view.setUint32(16, 16, true); // Subchunk1Size (16 for PCM)
+  view.setUint16(20, 1, true); // AudioFormat (1 = PCM)
+  view.setUint16(22, numChannels, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, byteRate, true);
+  view.setUint16(32, blockAlign, true);
+  view.setUint16(34, bitsPerSample, true);
+  
+  // data chunk
+  wav.set([0x64, 0x61, 0x74, 0x61], 36); // "data"
+  view.setUint32(40, dataSize, true);
+  wav.set(pcmData, 44);
+  
+  return wav;
+}
+
 // Map voice names to Gemini voice IDs
 const VOICE_MAP: Record<string, string> = {
   'Zephyr': 'Zephyr',
@@ -73,8 +108,8 @@ serve(async (req) => {
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Check if cached preview exists
-    const cacheKey = `voice-previews/${voiceName.toLowerCase()}.mp3`;
+    // Check if cached preview exists (use .wav extension)
+    const cacheKey = `voice-previews/${voiceName.toLowerCase()}.wav`;
     const { data: existingFile } = await supabase.storage
       .from('ai-agent-media')
       .createSignedUrl(cacheKey, 3600); // 1 hour signed URL
@@ -116,8 +151,7 @@ serve(async (req) => {
                 }
               }
             }
-          },
-          outputAudioEncoding: "MP3"
+          }
         }),
       }
     );
@@ -135,7 +169,6 @@ serve(async (req) => {
     
     // Extract audio data from Gemini response
     const audioData = data.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-    const mimeType = data.candidates?.[0]?.content?.parts?.[0]?.inlineData?.mimeType || 'audio/mp3';
 
     if (!audioData) {
       console.error('No audio data in response:', JSON.stringify(data));
@@ -145,18 +178,21 @@ serve(async (req) => {
       );
     }
 
-    // Decode base64 audio
+    // Decode base64 audio (L16/PCM format from Gemini)
     const binaryString = atob(audioData);
-    const bytes = new Uint8Array(binaryString.length);
+    const pcmBytes = new Uint8Array(binaryString.length);
     for (let i = 0; i < binaryString.length; i++) {
-      bytes[i] = binaryString.charCodeAt(i);
+      pcmBytes[i] = binaryString.charCodeAt(i);
     }
 
-    // Upload to storage for caching
+    // Convert L16 PCM to WAV (browser-compatible)
+    const wavBytes = convertL16ToWav(pcmBytes, 24000);
+
+    // Upload to storage for caching as WAV
     const { error: uploadError } = await supabase.storage
       .from('ai-agent-media')
-      .upload(cacheKey, bytes, {
-        contentType: mimeType,
+      .upload(cacheKey, wavBytes, {
+        contentType: 'audio/wav',
         upsert: true
       });
 
@@ -170,11 +206,12 @@ serve(async (req) => {
       .createSignedUrl(cacheKey, 3600);
 
     if (signedUrlError || !signedUrlData?.signedUrl) {
-      // Return base64 directly if can't get signed URL
+      // Return base64 WAV directly if can't get signed URL
+      const wavBase64 = btoa(String.fromCharCode(...wavBytes));
       return new Response(
         JSON.stringify({ 
-          audioBase64: audioData, 
-          mimeType,
+          audioBase64: wavBase64, 
+          mimeType: 'audio/wav',
           cached: false 
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
