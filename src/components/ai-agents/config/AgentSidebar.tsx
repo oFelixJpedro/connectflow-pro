@@ -395,14 +395,14 @@ export function AgentSidebar({ agent, totalChars, charLimit, onAgentUpdate }: Ag
               {agent.audio_enabled && (
                 <>
                   <div className="grid grid-cols-2 gap-2">
-                    <div className="p-2 border rounded-lg space-y-1">
+                    <div className="p-2 border rounded-lg flex items-center justify-between">
                       <Label className="text-xs">Responder Áudio com Áudio</Label>
                       <Switch
                         checked={agent.audio_respond_with_audio}
                         onCheckedChange={(v) => handleUpdateField('audio_respond_with_audio', v)}
                       />
                     </div>
-                    <div className="p-2 border rounded-lg space-y-1">
+                    <div className="p-2 border rounded-lg flex items-center justify-between">
                       <Label className="text-xs">Sempre Responder com Áudio</Label>
                       <Switch
                         checked={agent.audio_always_respond_audio}
