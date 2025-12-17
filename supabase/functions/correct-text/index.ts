@@ -121,7 +121,7 @@ serve(async (req) => {
 
     console.log('📝 Corrigindo texto:', text.substring(0, 100) + (text.length > 100 ? '...' : ''));
 
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    const response = await fetch('https://api.openai.com/v1/responses', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${openAIApiKey}`,
@@ -129,11 +129,10 @@ serve(async (req) => {
       },
       body: JSON.stringify({
         model: 'gpt-5-nano',
-        messages: [
-          { role: 'system', content: SYSTEM_PROMPT },
-          { role: 'user', content: text }
-        ],
-        max_completion_tokens: 1000,
+        input: [{
+          role: 'user',
+          content: [{ type: 'input_text', text: `${SYSTEM_PROMPT}\n\nTexto para corrigir:\n${text}` }]
+        }]
       }),
     });
 
@@ -147,7 +146,7 @@ serve(async (req) => {
     }
 
     const data = await response.json();
-    const correctedText = data.choices?.[0]?.message?.content?.trim();
+    const correctedText = data.output?.[0]?.content?.[0]?.text?.trim();
 
     if (!correctedText) {
       console.error('❌ Resposta vazia da API');

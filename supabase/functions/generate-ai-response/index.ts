@@ -322,10 +322,12 @@ serve(async (req) => {
       generatedResponse = data.output?.[0]?.content?.[0]?.text?.trim() || '';
       
     } else {
-      // No images - use standard chat/completions (faster)
-      console.log('📝 Usando endpoint padrão /v1/chat/completions com gpt-5-nano');
+      // No images - use /v1/responses endpoint (compatible with GPT-5 models)
+      console.log('📝 Usando endpoint /v1/responses com gpt-5-nano');
       
-      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      const userPrompt = `${enrichedSystemPrompt}\n\nAnalise esta conversa e gere a próxima resposta imitando o estilo do atendente:\n\n${formattedMessages}`;
+      
+      const response = await fetch('https://api.openai.com/v1/responses', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${openAIApiKey}`,
@@ -333,11 +335,10 @@ serve(async (req) => {
         },
         body: JSON.stringify({
           model: 'gpt-5-nano',
-          messages: [
-            { role: 'system', content: enrichedSystemPrompt },
-            { role: 'user', content: `Analise esta conversa e gere a próxima resposta imitando o estilo do atendente:\n\n${formattedMessages}` }
-          ],
-          max_completion_tokens: 800,
+          input: [{
+            role: 'user',
+            content: [{ type: 'input_text', text: userPrompt }]
+          }]
         }),
       });
 
@@ -351,7 +352,7 @@ serve(async (req) => {
       }
 
       const data = await response.json();
-      generatedResponse = data.choices?.[0]?.message?.content?.trim() || '';
+      generatedResponse = data.output?.[0]?.content?.[0]?.text?.trim() || '';
     }
 
     if (!generatedResponse) {

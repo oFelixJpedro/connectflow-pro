@@ -496,11 +496,19 @@ ${agent.faq_content}
       aiResponse = aiData.output?.[0]?.content?.[0]?.text || '';
       
     } else {
-      // Use standard chat/completions (faster for text-only)
-      console.log('📝 Usando endpoint padrão /v1/chat/completions com gpt-5-mini');
+      // Use /v1/responses endpoint (compatible with GPT-5 models)
+      console.log('📝 Usando endpoint /v1/responses com gpt-5-mini');
       modelUsed = 'gpt-5-mini';
       
-      const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+      // Build conversation context as single prompt
+      const conversationContext = conversationHistory
+        .filter(msg => msg !== null)
+        .map(msg => `${msg!.role === 'assistant' ? '[ATENDENTE]' : '[CLIENTE]'}: ${msg!.content}`)
+        .join('\n');
+      
+      const fullPrompt = `${systemPrompt}\n\nHistórico da conversa:\n${conversationContext}\n\n[CLIENTE]: ${processedMessageContent || '[Mensagem sem texto]'}\n\nGere a resposta do atendente:`;
+      
+      const openaiResponse = await fetch('https://api.openai.com/v1/responses', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${AI_API_KEY}`,
@@ -508,12 +516,10 @@ ${agent.faq_content}
         },
         body: JSON.stringify({
           model: 'gpt-5-mini',
-          messages: [
-            { role: 'system', content: systemPrompt },
-            ...conversationHistory,
-            { role: 'user', content: processedMessageContent || '[Mensagem sem texto]' }
-          ],
-          max_completion_tokens: 500,
+          input: [{
+            role: 'user',
+            content: [{ type: 'input_text', text: fullPrompt }]
+          }]
         }),
       });
 
@@ -537,7 +543,7 @@ ${agent.faq_content}
       }
 
       const aiData = await openaiResponse.json();
-      aiResponse = aiData.choices?.[0]?.message?.content || '';
+      aiResponse = aiData.output?.[0]?.content?.[0]?.text || '';
     }
 
     if (!aiResponse) {
