@@ -317,9 +317,9 @@ export function ScheduleMessageModal({
           }}>
             <TabsList className="w-full grid grid-cols-5">
               {MESSAGE_TYPES.map(({ type, label, icon: Icon }) => (
-                <TabsTrigger key={type} value={type} className="text-xs">
-                  <Icon className="w-4 h-4 mr-1" />
-                  {label}
+                <TabsTrigger key={type} value={type} className="text-xs min-w-0 px-2">
+                  <Icon className="w-4 h-4 mr-1 flex-shrink-0" />
+                  <span className="truncate">{label}</span>
                 </TabsTrigger>
               ))}
             </TabsList>
