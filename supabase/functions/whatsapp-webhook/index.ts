@@ -413,8 +413,13 @@ async function processAIAgentResponse(params: {
     
     const aiResponse = result.response;
     const delaySeconds = result.delaySeconds || 0;
+    const voiceName = result.voiceName;
+    const speechSpeed = result.speechSpeed || 1.0;
+    const audioTemperature = result.audioTemperature || 0.7;
+    const languageCode = result.languageCode || 'pt-BR';
     
     console.log(`✅ [AI AGENT] Resposta gerada, aguardando ${delaySeconds}s antes de enviar...`);
+    console.log(`🎤 [AI AGENT] Voice config: ${voiceName ? `${voiceName} (speed: ${speechSpeed}, temp: ${audioTemperature}, lang: ${languageCode})` : 'TEXTO'}`);
     
     // Wait for configured delay
     if (delaySeconds > 0) {
@@ -438,33 +443,107 @@ async function processAIAgentResponse(params: {
     
     const phoneNumber = contactData.phone_number;
     
-    // Send message via UAZAPI
-    const sendUrl = `${UAZAPI_BASE_URL}/send/text`;
+    let whatsappMessageId: string | null = null;
+    let messageType: 'text' | 'audio' = 'text';
+    let mediaUrl: string | null = null;
     
-    console.log(`📤 [AI AGENT] Enviando para ${phoneNumber}...`);
-    
-    const sendResponse = await fetch(sendUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'token': instanceToken,
-      },
-      body: JSON.stringify({
-        number: phoneNumber,
-        text: aiResponse
-      }),
-    });
-    
-    if (!sendResponse.ok) {
-      const errorText = await sendResponse.text();
-      console.log(`❌ [AI AGENT] Erro ao enviar: ${sendResponse.status} - ${errorText}`);
-      return;
+    // Check if should send audio (voice_name configured)
+    if (voiceName) {
+      console.log(`🎵 [AI AGENT] Gerando áudio com voz: ${voiceName}`);
+      
+      // Call ai-agent-tts to generate audio
+      const ttsUrl = `${supabaseUrl}/functions/v1/ai-agent-tts`;
+      
+      const ttsResponse = await fetch(ttsUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${supabaseServiceKey}`,
+        },
+        body: JSON.stringify({
+          text: aiResponse,
+          voiceName: voiceName,
+          speed: speechSpeed,
+          temperature: audioTemperature,
+          languageCode: languageCode
+        }),
+      });
+      
+      if (ttsResponse.ok) {
+        const ttsResult = await ttsResponse.json();
+        const audioUrl = ttsResult.audioUrl;
+        
+        if (audioUrl) {
+          console.log(`✅ [AI AGENT] Áudio gerado: ${audioUrl}`);
+          
+          // Send audio via UAZAPI
+          const sendAudioUrl = `${UAZAPI_BASE_URL}/send/audio`;
+          
+          console.log(`📤 [AI AGENT] Enviando áudio para ${phoneNumber}...`);
+          
+          const sendResponse = await fetch(sendAudioUrl, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'token': instanceToken,
+            },
+            body: JSON.stringify({
+              number: phoneNumber,
+              audio: audioUrl
+            }),
+          });
+          
+          if (sendResponse.ok) {
+            const sendResult = await sendResponse.json();
+            whatsappMessageId = sendResult.key?.id || sendResult.messageId || sendResult.id;
+            messageType = 'audio';
+            mediaUrl = audioUrl;
+            console.log(`✅ [AI AGENT] Áudio enviado! WhatsApp ID: ${whatsappMessageId}`);
+          } else {
+            const errorText = await sendResponse.text();
+            console.log(`❌ [AI AGENT] Erro ao enviar áudio: ${sendResponse.status} - ${errorText}`);
+            console.log(`⚠️ [AI AGENT] Fallback para envio de texto...`);
+          }
+        } else {
+          console.log(`❌ [AI AGENT] audioUrl não retornado pelo TTS`);
+          console.log(`⚠️ [AI AGENT] Fallback para envio de texto...`);
+        }
+      } else {
+        const errorText = await ttsResponse.text();
+        console.log(`❌ [AI AGENT] Erro ao gerar TTS: ${ttsResponse.status} - ${errorText}`);
+        console.log(`⚠️ [AI AGENT] Fallback para envio de texto...`);
+      }
     }
     
-    const sendResult = await sendResponse.json();
-    const whatsappMessageId = sendResult.key?.id || sendResult.messageId || sendResult.id;
-    
-    console.log(`✅ [AI AGENT] Mensagem enviada! WhatsApp ID: ${whatsappMessageId}`);
+    // Fallback to text if audio failed or not configured
+    if (!whatsappMessageId) {
+      const sendUrl = `${UAZAPI_BASE_URL}/send/text`;
+      
+      console.log(`📤 [AI AGENT] Enviando texto para ${phoneNumber}...`);
+      
+      const sendResponse = await fetch(sendUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'token': instanceToken,
+        },
+        body: JSON.stringify({
+          number: phoneNumber,
+          text: aiResponse
+        }),
+      });
+      
+      if (!sendResponse.ok) {
+        const errorText = await sendResponse.text();
+        console.log(`❌ [AI AGENT] Erro ao enviar: ${sendResponse.status} - ${errorText}`);
+        return;
+      }
+      
+      const sendResult = await sendResponse.json();
+      whatsappMessageId = sendResult.key?.id || sendResult.messageId || sendResult.id;
+      messageType = 'text';
+      console.log(`✅ [AI AGENT] Texto enviado! WhatsApp ID: ${whatsappMessageId}`);
+    }
     
     // Save message to database
     await supabase
@@ -475,13 +554,17 @@ async function processAIAgentResponse(params: {
         sender_type: 'bot',
         sender_id: null,
         content: aiResponse,
-        message_type: 'text',
+        message_type: messageType,
+        media_url: mediaUrl,
+        media_mime_type: mediaUrl ? 'audio/wav' : null,
         whatsapp_message_id: whatsappMessageId,
         status: 'sent',
         metadata: {
           sentByAIAgent: true,
           agentId: result.agentId,
-          agentName: result.agentName
+          agentName: result.agentName,
+          audioGenerated: messageType === 'audio',
+          voiceName: voiceName || null
         }
       });
     
@@ -494,7 +577,7 @@ async function processAIAgentResponse(params: {
       })
       .eq('id', conversationId);
     
-    console.log(`🎉 [AI AGENT] Processamento completo!`);
+    console.log(`🎉 [AI AGENT] Processamento completo! (${messageType})`);
     
   } catch (error) {
     console.error(`❌ [AI AGENT] Erro:`, error);
