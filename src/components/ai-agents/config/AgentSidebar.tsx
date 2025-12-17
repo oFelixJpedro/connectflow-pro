@@ -215,7 +215,7 @@ export function AgentSidebar({ agent, totalChars, charLimit, onAgentUpdate }: Ag
   };
 
   return (
-    <div className="w-80 border-l bg-muted/30 flex flex-col">
+    <div className="w-[40%] border-l bg-muted/30 flex flex-col">
       <ScrollArea className="flex-1">
         <div className="p-4 space-y-4">
           {/* Total de Caracteres */}
