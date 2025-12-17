@@ -499,7 +499,7 @@ ${agent.faq_content}
 
       const aiData = await response.json();
       console.log('📦 Resposta API (multimodal):', JSON.stringify(aiData, null, 2));
-      aiResponse = aiData.output_text || '';
+      aiResponse = aiData.output?.find((o: any) => o.type === 'message')?.content?.[0]?.text?.trim() || '';
       
     } else {
       // Use /v1/responses endpoint (compatible with GPT-5 models)
@@ -555,7 +555,7 @@ ${agent.faq_content}
 
       const aiData = await openaiResponse.json();
       console.log('📦 Resposta API (texto):', JSON.stringify(aiData, null, 2));
-      aiResponse = aiData.output_text || '';
+      aiResponse = aiData.output?.find((o: any) => o.type === 'message')?.content?.[0]?.text?.trim() || '';
     }
 
     if (!aiResponse) {

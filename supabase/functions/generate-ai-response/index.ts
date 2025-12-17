@@ -325,7 +325,7 @@ serve(async (req) => {
 
       const data = await response.json();
       console.log('📦 Resposta API (multimodal):', JSON.stringify(data, null, 2));
-      generatedResponse = data.output_text?.trim() || '';
+      generatedResponse = data.output?.find((o: any) => o.type === 'message')?.content?.[0]?.text?.trim() || '';
       
     } else {
       // No images - use /v1/responses endpoint (compatible with GPT-5 models)
@@ -364,7 +364,7 @@ serve(async (req) => {
 
       const data = await response.json();
       console.log('📦 Resposta API (texto):', JSON.stringify(data, null, 2));
-      generatedResponse = data.output_text?.trim() || '';
+      generatedResponse = data.output?.find((o: any) => o.type === 'message')?.content?.[0]?.text?.trim() || '';
     }
 
     if (!generatedResponse) {

@@ -152,7 +152,7 @@ serve(async (req) => {
 
     const data = await response.json();
     console.log('📦 Resposta API:', JSON.stringify(data, null, 2));
-    const correctedText = data.output_text?.trim();
+    const correctedText = data.output?.find((o: any) => o.type === 'message')?.content?.[0]?.text?.trim();
 
     if (!correctedText) {
       console.error('❌ Resposta vazia da API');
