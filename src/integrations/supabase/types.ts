@@ -221,6 +221,7 @@ export type Database = {
           audio_always_respond_audio: boolean | null
           audio_enabled: boolean | null
           audio_respond_with_audio: boolean | null
+          audio_temperature: number | null
           company_id: string
           company_info: Json | null
           contract_link: string | null
@@ -251,6 +252,7 @@ export type Database = {
           audio_always_respond_audio?: boolean | null
           audio_enabled?: boolean | null
           audio_respond_with_audio?: boolean | null
+          audio_temperature?: number | null
           company_id: string
           company_info?: Json | null
           contract_link?: string | null
@@ -281,6 +283,7 @@ export type Database = {
           audio_always_respond_audio?: boolean | null
           audio_enabled?: boolean | null
           audio_respond_with_audio?: boolean | null
+          audio_temperature?: number | null
           company_id?: string
           company_info?: Json | null
           contract_link?: string | null

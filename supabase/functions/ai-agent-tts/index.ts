@@ -95,7 +95,7 @@ serve(async (req) => {
   }
 
   try {
-    const { text, voiceName, speed = 1.0 } = await req.json();
+    const { text, voiceName, speed = 1.0, temperature = 0.7 } = await req.json();
 
     if (!text) {
       return new Response(
@@ -131,7 +131,7 @@ serve(async (req) => {
     const speedPrefix = getSpeedPrefix(speed);
     const textWithSpeed = speedPrefix + text;
 
-    console.log(`Generating TTS for voice: ${voiceName} at speed: ${speed}`);
+    console.log(`Generating TTS for voice: ${voiceName} at speed: ${speed}, temperature: ${temperature}`);
     console.log(`Text length: ${text.length} chars, with prefix: ${textWithSpeed.length} chars`);
 
     // Generate audio using Gemini TTS API
@@ -154,6 +154,7 @@ serve(async (req) => {
           ],
           generationConfig: {
             responseModalities: ["AUDIO"],
+            temperature: temperature,
             speechConfig: {
               voiceConfig: {
                 prebuiltVoiceConfig: {

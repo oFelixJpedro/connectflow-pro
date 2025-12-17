@@ -16,7 +16,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import { Slider } from '@/components/ui/slider';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -292,35 +291,37 @@ export function AgentSidebar({ agent, totalChars, charLimit, onAgentUpdate }: Ag
               </div>
 
               {/* Temperatura da IA */}
-              <div className="space-y-2">
+              <div className="space-y-1.5">
                 <div className="flex items-center gap-1">
-                  <Label className="text-xs">Temperatura da IA</Label>
+                  <Label className="text-xs">Temperatura da IA (Texto)</Label>
                   <Tooltip>
                     <TooltipTrigger>
                       <Info className="w-3 h-3 text-muted-foreground" />
                     </TooltipTrigger>
                     <TooltipContent>
                       <p className="text-xs max-w-[200px]">
-                        Controla a criatividade das respostas. 
-                        Valores baixos = mais preciso e consistente. 
-                        Valores altos = mais criativo e variado.
+                        Controla a criatividade das respostas de texto. 
+                        Valores baixos = mais preciso. 
+                        Valores altos = mais criativo.
                       </p>
                     </TooltipContent>
                   </Tooltip>
                 </div>
-                <Slider
-                  value={[agent.temperature ?? 0.7]}
-                  onValueChange={([v]) => handleUpdateField('temperature', v)}
-                  min={0}
-                  max={1}
-                  step={0.1}
-                  className="w-full"
-                />
-                <div className="flex justify-between text-xs text-muted-foreground">
-                  <span>Preciso</span>
-                  <span className="font-medium">{(agent.temperature ?? 0.7).toFixed(1)}</span>
-                  <span>Criativo</span>
-                </div>
+                <Select 
+                  value={String(agent.temperature ?? 0.7)} 
+                  onValueChange={(v) => handleUpdateField('temperature', Number(v))}
+                >
+                  <SelectTrigger className="h-8 text-sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {[0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0].map((val) => (
+                      <SelectItem key={val} value={String(val)}>
+                        {val.toFixed(1)} {val <= 0.3 ? '(Preciso)' : val >= 0.8 ? '(Criativo)' : ''}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             </CollapsibleContent>
           </Collapsible>
@@ -510,6 +511,40 @@ export function AgentSidebar({ agent, totalChars, charLimit, onAgentUpdate }: Ag
                         <SelectItem value="0.7">Devagar (0.7x)</SelectItem>
                         <SelectItem value="1">Normal (1.0x)</SelectItem>
                         <SelectItem value="1.2">Rápido (1.2x)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Temperatura do Áudio */}
+                  <div className="space-y-1.5">
+                    <div className="flex items-center gap-1">
+                      <Label className="text-xs">Temperatura do Áudio</Label>
+                      <Tooltip>
+                        <TooltipTrigger>
+                          <Info className="w-3 h-3 text-muted-foreground" />
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p className="text-xs max-w-[200px]">
+                            Controla a variação na geração de voz. 
+                            Valores baixos = mais consistente. 
+                            Valores altos = mais expressivo.
+                          </p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </div>
+                    <Select 
+                      value={String(agent.audio_temperature ?? 0.7)} 
+                      onValueChange={(v) => handleUpdateField('audio_temperature', Number(v))}
+                    >
+                      <SelectTrigger className="h-8 text-sm">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {[0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0].map((val) => (
+                          <SelectItem key={val} value={String(val)}>
+                            {val.toFixed(1)} {val <= 0.3 ? '(Consistente)' : val >= 0.8 ? '(Expressivo)' : ''}
+                          </SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </div>
