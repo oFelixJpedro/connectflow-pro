@@ -45,6 +45,8 @@ import { AttachmentMenu } from './AttachmentMenu';
 import { ImagePreviewModal } from './ImagePreviewModal';
 import { VideoPreviewModal } from './VideoPreviewModal';
 import { DocumentPreviewModal } from './DocumentPreviewModal';
+import { MultiFilePreviewModal } from './MultiFilePreviewModal';
+import { DropZone } from './DropZone';
 import { MessageReactions } from './MessageReactions';
 import { ReactionPicker } from './ReactionPicker';
 import { EmojiMessagePicker } from './EmojiMessagePicker';
@@ -150,6 +152,8 @@ export function ChatPanel({
   const [teamMembers, setTeamMembers] = useState<{ id: string; fullName: string }[]>([]);
   const [isCorrectingText, setIsCorrectingText] = useState(false);
   const [isGeneratingResponse, setIsGeneratingResponse] = useState(false);
+  const [pendingMultiFiles, setPendingMultiFiles] = useState<File[]>([]);
+  const [isMultiFilePreviewOpen, setIsMultiFilePreviewOpen] = useState(false);
   
   // Mentions for internal notes
   const {
@@ -650,6 +654,133 @@ export function ChatPanel({
   const handleDocumentSelect = (file: File) => {
     setDocumentFile(file);
     setIsDocumentPreviewOpen(true);
+  };
+
+  // Handle multiple files selection (from drop zone or file picker)
+  const handleMultipleFilesSelect = useCallback((files: File[]) => {
+    if (files.length === 1) {
+      // Single file - use existing handlers
+      const file = files[0];
+      if (file.type.startsWith('image/')) {
+        handleImageSelect(file);
+      } else if (file.type.startsWith('video/')) {
+        handleVideoSelect(file);
+      } else if (file.type.startsWith('audio/')) {
+        handleAudioFileSelect(file);
+      } else {
+        handleDocumentSelect(file);
+      }
+    } else if (files.length > 1) {
+      // Multiple files - open multi-file preview modal
+      setPendingMultiFiles(files);
+      setIsMultiFilePreviewOpen(true);
+    }
+  }, []);
+
+  // Handle paste event for images
+  const handlePaste = useCallback((e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items || (!canReply && !isInternalNoteMode)) return;
+
+    for (const item of items) {
+      if (item.type.startsWith('image/')) {
+        e.preventDefault();
+        const file = item.getAsFile();
+        if (file) {
+          // Create a named file for pasted image
+          const extension = item.type.split('/')[1] || 'png';
+          const pastedFile = new File([file], `imagem_colada_${Date.now()}.${extension}`, {
+            type: item.type,
+          });
+          handleImageSelect(pastedFile);
+        }
+        break;
+      }
+    }
+  }, [canReply, isInternalNoteMode]);
+
+  // Handle sending multiple files sequentially
+  const handleSendMultipleFiles = async (files: { file: File; caption: string }[]) => {
+    if (!conversation) return;
+    
+    for (const { file, caption } of files) {
+      const fileType = file.type.startsWith('image/') ? 'image' 
+                     : file.type.startsWith('video/') ? 'video'
+                     : file.type.startsWith('audio/') ? 'audio'
+                     : 'document';
+      
+      try {
+        // Convert file to base64
+        const reader = new FileReader();
+        const base64Promise = new Promise<string>((resolve, reject) => {
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = reject;
+        });
+        reader.readAsDataURL(file);
+        const base64Data = await base64Promise;
+
+        const contactPhone = conversation.contact?.phoneNumber || '';
+
+        if (fileType === 'image') {
+          await supabase.functions.invoke('send-whatsapp-image', {
+            body: {
+              imageData: base64Data,
+              fileName: file.name,
+              mimeType: file.type,
+              conversationId: conversation.id,
+              connectionId: conversation.whatsappConnectionId,
+              contactPhoneNumber: contactPhone,
+              caption: caption || undefined,
+            }
+          });
+        } else if (fileType === 'video') {
+          await supabase.functions.invoke('send-whatsapp-video', {
+            body: {
+              videoData: base64Data,
+              fileName: file.name,
+              mimeType: file.type,
+              conversationId: conversation.id,
+              connectionId: conversation.whatsappConnectionId,
+              contactPhoneNumber: contactPhone,
+              text: caption || undefined,
+            }
+          });
+        } else if (fileType === 'audio') {
+          await supabase.functions.invoke('send-whatsapp-audio', {
+            body: {
+              audioData: base64Data,
+              fileName: file.name,
+              mimeType: file.type,
+              conversationId: conversation.id,
+            }
+          });
+        } else {
+          await supabase.functions.invoke('send-whatsapp-document', {
+            body: {
+              documentData: base64Data,
+              fileName: file.name,
+              mimeType: file.type || 'application/octet-stream',
+              conversationId: conversation.id,
+              connectionId: conversation.whatsappConnectionId,
+              contactPhoneNumber: contactPhone,
+              text: caption || undefined,
+            }
+          });
+        }
+      } catch (error) {
+        console.error(`Erro ao enviar ${file.name}:`, error);
+        throw error;
+      }
+    }
+    
+    toast({
+      title: 'Arquivos enviados',
+      description: `${files.length} arquivo${files.length > 1 ? 's' : ''} enviado${files.length > 1 ? 's' : ''} com sucesso.`,
+    });
+    
+    setIsMultiFilePreviewOpen(false);
+    setPendingMultiFiles([]);
+    onRefresh?.();
   };
 
   // Send internal note audio handler
@@ -1187,7 +1318,12 @@ export function ChatPanel({
         </div>
       </div>
 
-      {/* Messages Area */}
+      {/* Messages Area - wrapped with DropZone for drag and drop */}
+      <DropZone 
+        onFilesDropped={handleMultipleFilesSelect}
+        disabled={!canReply && !isInternalNoteMode}
+        className="flex-1 flex flex-col overflow-hidden"
+      >
       <div className="flex-1 relative overflow-hidden">
         <div 
           ref={scrollContainerRef}
@@ -1837,6 +1973,7 @@ export function ChatPanel({
                 value={inputValue}
                 onChange={handleInputChange}
                 onKeyDown={handleKeyDown}
+                onPaste={handlePaste}
                 placeholder={
                   isInternalNoteMode
                     ? "Digite sua nota interna... Use @ para mencionar"
@@ -1918,6 +2055,7 @@ export function ChatPanel({
               onVideoSelect={handleVideoSelect}
               onAudioSelect={handleAudioFileSelect}
               onDocumentSelect={handleDocumentSelect}
+              onMultipleFilesSelect={handleMultipleFilesSelect}
               disabled={!canReply && !isInternalNoteMode}
               variant={isInternalNoteMode ? 'amber' : 'default'}
               onNoteAttachmentReady={isInternalNoteMode ? (messageType, mediaUrl, mediaMimeType, metadata) => {
@@ -1928,8 +2066,8 @@ export function ChatPanel({
           </div>
         )}
       </div>
+      </DropZone>
 
-      {/* Image Preview Modal */}
       <ImagePreviewModal
         file={imageFile}
         isOpen={isImagePreviewOpen}
@@ -1997,6 +2135,17 @@ export function ChatPanel({
           };
           input.click();
         }}
+      />
+
+      {/* Multi-File Preview Modal */}
+      <MultiFilePreviewModal
+        files={pendingMultiFiles}
+        isOpen={isMultiFilePreviewOpen}
+        onClose={() => {
+          setIsMultiFilePreviewOpen(false);
+          setPendingMultiFiles([]);
+        }}
+        onSendFiles={handleSendMultipleFiles}
       />
 
       {/* Quick Reply Confirmation Modal */}
