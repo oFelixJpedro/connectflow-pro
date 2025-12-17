@@ -30,7 +30,7 @@ import {
   Video, 
   FileText, 
   Mic, 
-  File as FileIcon,
+  Paperclip,
   Loader2, 
   X, 
   AlertTriangle,
@@ -62,7 +62,7 @@ const MESSAGE_TYPES = [
   { type: 'image' as const, label: 'Imagem', icon: Image },
   { type: 'video' as const, label: 'Vídeo', icon: Video },
   { type: 'audio' as const, label: 'Áudio', icon: Mic },
-  { type: 'document' as const, label: 'Documento', icon: FileIcon },
+  { type: 'document' as const, label: 'Documento', icon: Paperclip },
 ];
 
 function formatRecordingTime(seconds: number): string {
