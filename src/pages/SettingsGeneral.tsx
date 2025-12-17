@@ -6,8 +6,6 @@ import {
   Save,
   Upload,
   Loader2,
-  Volume2,
-  Filter,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -18,7 +16,6 @@ import { Separator } from '@/components/ui/separator';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Slider } from '@/components/ui/slider';
 import {
   Select,
   SelectContent,
@@ -29,7 +26,6 @@ import {
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
-import { useNotificationSettings } from '@/hooks/useNotificationSettings';
 import { cn } from '@/lib/utils';
 
 interface BusinessHours {
@@ -209,16 +205,6 @@ export default function SettingsGeneral() {
       },
     }));
   };
-
-  // Notification settings
-  const {
-    settings: notificationSettings,
-    isSaving: savingNotifications,
-    notificationPermission,
-    updateSetting,
-    saveSettings: saveNotificationSettings,
-    requestNotificationPermission,
-  } = useNotificationSettings();
 
   return (
     <div className="h-full overflow-auto">
@@ -497,166 +483,15 @@ export default function SettingsGeneral() {
             </Card>
           </TabsContent>
 
-          {/* Notification Settings */}
+          {/* Notification Settings - Em breve */}
           <TabsContent value="notifications" className="space-y-6">
             <Card>
-              <CardHeader>
-                <CardTitle>Configurações de Notificações</CardTitle>
-                <CardDescription>
-                  Personalize como você recebe notificações
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-6 px-4 md:px-6">
-                {/* Sons */}
-                <div className="space-y-4">
-                  <h4 className="font-medium flex items-center gap-2">
-                    <Volume2 className="w-4 h-4" />
-                    Sons
-                  </h4>
-                  
-                  <div className="flex items-center justify-between">
-                    <Label htmlFor="sound-enabled">Habilitar sons de notificação</Label>
-                    <Switch 
-                      id="sound-enabled"
-                      checked={notificationSettings.soundEnabled} 
-                      onCheckedChange={(checked) => updateSetting('soundEnabled', checked)} 
-                    />
-                  </div>
-                  
-                  {notificationSettings.soundEnabled && (
-                    <div className="space-y-4 pl-4 border-l-2 border-muted">
-                      <div className="space-y-2">
-                        <Label>Volume ({notificationSettings.soundVolume}%)</Label>
-                        <Slider 
-                          value={[notificationSettings.soundVolume]} 
-                          onValueChange={(v) => updateSetting('soundVolume', v[0])} 
-                          max={100}
-                          min={0}
-                          step={5}
-                          className="w-full max-w-xs"
-                        />
-                      </div>
-                      
-                      <div className="flex items-center justify-between">
-                        <Label htmlFor="whatsapp-sound">Som para mensagens WhatsApp</Label>
-                        <Switch 
-                          id="whatsapp-sound"
-                          checked={notificationSettings.whatsappSound} 
-                          onCheckedChange={(checked) => updateSetting('whatsappSound', checked)} 
-                        />
-                      </div>
-                      
-                      <div className="flex items-center justify-between">
-                        <Label htmlFor="internal-sound">Som para Chat Interno</Label>
-                        <Switch 
-                          id="internal-sound"
-                          checked={notificationSettings.internalChatSound} 
-                          onCheckedChange={(checked) => updateSetting('internalChatSound', checked)} 
-                        />
-                      </div>
-                      
-                      <div className="flex items-center justify-between">
-                        <Label htmlFor="mention-sound">Som para Menções (@)</Label>
-                        <Switch 
-                          id="mention-sound"
-                          checked={notificationSettings.mentionSound} 
-                          onCheckedChange={(checked) => updateSetting('mentionSound', checked)} 
-                        />
-                      </div>
-                    </div>
-                  )}
-                </div>
-                
-                <Separator />
-                
-                {/* Notificações do navegador */}
-                <div className="space-y-4">
-                  <h4 className="font-medium flex items-center gap-2">
-                    <Bell className="w-4 h-4" />
-                    Notificações do Navegador
-                  </h4>
-                  
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <Label>Notificações desktop</Label>
-                      <p className="text-xs text-muted-foreground">
-                        Receba alertas mesmo quando a aba não estiver ativa
-                      </p>
-                    </div>
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
-                      onClick={requestNotificationPermission}
-                      disabled={notificationPermission === 'granted'}
-                    >
-                      {notificationPermission === 'granted' ? '✓ Ativado' : 'Ativar'}
-                    </Button>
-                  </div>
-                  
-                  {notificationPermission === 'granted' && (
-                    <div className="flex items-center justify-between pl-4 border-l-2 border-muted">
-                      <Label htmlFor="show-preview">Mostrar preview da mensagem</Label>
-                      <Switch 
-                        id="show-preview"
-                        checked={notificationSettings.showPreview} 
-                        onCheckedChange={(checked) => updateSetting('showPreview', checked)} 
-                      />
-                    </div>
-                  )}
-                </div>
-                
-                <Separator />
-                
-                {/* Filtros */}
-                <div className="space-y-4">
-                  <h4 className="font-medium flex items-center gap-2">
-                    <Filter className="w-4 h-4" />
-                    Filtros de Notificação
-                  </h4>
-                  
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <Label htmlFor="only-mentions">Notificar apenas quando mencionado</Label>
-                      <p className="text-xs text-muted-foreground">
-                        Receba apenas notificações de menções com @
-                      </p>
-                    </div>
-                    <Switch 
-                      id="only-mentions"
-                      checked={notificationSettings.notifyOnlyMentions} 
-                      onCheckedChange={(checked) => updateSetting('notifyOnlyMentions', checked)} 
-                    />
-                  </div>
-                  
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <Label htmlFor="only-assigned">Notificar apenas conversas atribuídas</Label>
-                      <p className="text-xs text-muted-foreground">
-                        Receba apenas notificações de conversas na sua fila
-                      </p>
-                    </div>
-                    <Switch 
-                      id="only-assigned"
-                      checked={notificationSettings.notifyOnlyAssigned} 
-                      onCheckedChange={(checked) => updateSetting('notifyOnlyAssigned', checked)} 
-                    />
-                  </div>
-                </div>
-                
-                <div className="flex justify-end pt-4">
-                  <Button 
-                    onClick={() => saveNotificationSettings(notificationSettings)} 
-                    disabled={savingNotifications}
-                    className="w-full sm:w-auto"
-                  >
-                    {savingNotifications ? (
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    ) : (
-                      <Save className="w-4 h-4 mr-2" />
-                    )}
-                    {savingNotifications ? 'Salvando...' : 'Salvar Configurações'}
-                  </Button>
-                </div>
+              <CardContent className="flex flex-col items-center justify-center py-16">
+                <Bell className="w-12 h-12 text-muted-foreground mb-4" />
+                <h3 className="text-lg font-medium">Em breve</h3>
+                <p className="text-muted-foreground text-center mt-2 max-w-md">
+                  As configurações de notificação estarão disponíveis em breve.
+                </p>
               </CardContent>
             </Card>
           </TabsContent>

@@ -343,7 +343,7 @@ export function AppSidebarContent({
           ) : (
             <button
               onClick={() => setNotificationsOpen(true)}
-              className="sidebar-link w-full relative"
+              className="sidebar-link w-full text-left relative"
             >
               <Bell className="w-5 h-5 flex-shrink-0" />
               <span className="flex-1">Notificações</span>
