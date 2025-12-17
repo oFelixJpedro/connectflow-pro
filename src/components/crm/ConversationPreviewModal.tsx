@@ -456,6 +456,7 @@ export function ConversationPreviewModal({
                                 isOutbound={isOutbound}
                                 status={message.status}
                                 errorMessage={message.errorMessage}
+                                initialTranscription={(message.metadata as any)?.transcription}
                               />
                             ) : message.messageType === 'image' && message.mediaUrl ? (
                               <ImageMessage

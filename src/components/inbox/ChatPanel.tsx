@@ -338,6 +338,32 @@ export function ChatPanel({
     }
   };
 
+  // Save transcription to message metadata
+  const handleTranscriptionComplete = async (messageId: string, text: string) => {
+    try {
+      // Find the message to get current metadata
+      const message = messages.find(m => m.id === messageId);
+      const currentMetadata = (message?.metadata as Record<string, unknown>) || {};
+      
+      // Update message with transcription in metadata
+      const { error } = await supabase
+        .from('messages')
+        .update({ 
+          metadata: { 
+            ...currentMetadata, 
+            transcription: text 
+          } 
+        })
+        .eq('id', messageId);
+        
+      if (error) {
+        console.error('Erro ao salvar transcrição:', error);
+      }
+    } catch (error) {
+      console.error('Erro ao salvar transcrição:', error);
+    }
+  };
+
   const handleSendAudio = async (audioBlob: Blob, duration: number) => {
     if (!conversation) return;
 
@@ -1325,6 +1351,8 @@ export function ChatPanel({
                                 status={message.status}
                                 errorMessage={message.errorMessage}
                                 variant={message.isInternalNote ? 'amber' : 'default'}
+                                initialTranscription={(message.metadata as any)?.transcription}
+                                onTranscriptionComplete={(text) => handleTranscriptionComplete(message.id, text)}
                               />
                             ) : message.messageType === 'audio' ? (
                               // Audio without URL (loading or failed)
