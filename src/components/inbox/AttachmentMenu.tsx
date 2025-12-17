@@ -21,6 +21,7 @@ interface AttachmentMenuProps {
   onVideoSelect: (file: File) => void;
   onAudioSelect: (file: File) => void;
   onDocumentSelect: (file: File) => void;
+  onMultipleFilesSelect?: (files: File[]) => void;
   disabled?: boolean;
   variant?: 'default' | 'amber';
   // For internal notes mode
@@ -65,7 +66,8 @@ export function AttachmentMenu({
   onImageSelect, 
   onVideoSelect, 
   onAudioSelect, 
-  onDocumentSelect, 
+  onDocumentSelect,
+  onMultipleFilesSelect,
   disabled,
   variant = 'default',
   onNoteAttachmentReady,
@@ -182,40 +184,73 @@ export function AttachmentMenu({
   };
 
   const handleMediaChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const isVideo = file.type.startsWith('video/');
-      const isImage = file.type.startsWith('image/');
-      
-      if (isVideo) {
-        console.log(`🎬 Vídeo selecionado: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`);
-        onVideoSelect(file);
-      } else if (isImage) {
-        console.log(`📷 Imagem selecionada: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`);
-        onImageSelect(file);
-      } else {
-        console.log(`❓ Arquivo desconhecido: ${file.name} (${file.type})`);
-      }
+    const files = e.target.files;
+    if (!files || files.length === 0) {
+      e.target.value = '';
+      return;
     }
+
+    // If multiple files selected and handler exists
+    if (files.length > 1 && onMultipleFilesSelect) {
+      onMultipleFilesSelect(Array.from(files));
+      e.target.value = '';
+      return;
+    }
+
+    // Single file handling
+    const file = files[0];
+    const isVideo = file.type.startsWith('video/');
+    const isImage = file.type.startsWith('image/');
+    
+    if (isVideo) {
+      console.log(`🎬 Vídeo selecionado: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`);
+      onVideoSelect(file);
+    } else if (isImage) {
+      console.log(`📷 Imagem selecionada: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`);
+      onImageSelect(file);
+    } else {
+      console.log(`❓ Arquivo desconhecido: ${file.name} (${file.type})`);
+    }
+
     // Reset input to allow selecting the same file again
     e.target.value = '';
   };
 
   const handleAudioChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      console.log(`✅ Áudio selecionado: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`);
-      onAudioSelect(file);
+    const files = e.target.files;
+    if (!files || files.length === 0) {
+      e.target.value = '';
+      return;
     }
+    
+    if (files.length > 1 && onMultipleFilesSelect) {
+      onMultipleFilesSelect(Array.from(files));
+      e.target.value = '';
+      return;
+    }
+
+    const file = files[0];
+    console.log(`✅ Áudio selecionado: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`);
+    onAudioSelect(file);
     e.target.value = '';
   };
 
   const handleDocumentChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      console.log(`📄 Documento selecionado: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`);
-      onDocumentSelect(file);
+    const files = e.target.files;
+    if (!files || files.length === 0) {
+      e.target.value = '';
+      return;
     }
+    
+    if (files.length > 1 && onMultipleFilesSelect) {
+      onMultipleFilesSelect(Array.from(files));
+      e.target.value = '';
+      return;
+    }
+
+    const file = files[0];
+    console.log(`📄 Documento selecionado: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`);
+    onDocumentSelect(file);
     e.target.value = '';
   };
 
@@ -291,6 +326,7 @@ export function AttachmentMenu({
         accept="image/jpeg,image/png,image/gif,image/webp,video/mp4,video/avi,video/x-msvideo,video/quicktime,video/x-matroska,video/webm,.jpg,.jpeg,.png,.gif,.webp,.mp4,.avi,.mov,.mkv,.webm"
         className="hidden"
         onChange={handleMediaChange}
+        multiple
       />
       <input
         ref={audioInputRef}
@@ -298,6 +334,7 @@ export function AttachmentMenu({
         accept="audio/mp3,audio/mpeg,audio/ogg,audio/wav,audio/webm,audio/aac,.mp3,.ogg,.wav,.webm,.aac,.m4a"
         className="hidden"
         onChange={handleAudioChange}
+        multiple
       />
       <input
         ref={documentInputRef}
@@ -305,6 +342,7 @@ export function AttachmentMenu({
         accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.md,.zip,.rar,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,text/plain,text/csv,text/markdown,application/zip,application/x-rar-compressed"
         className="hidden"
         onChange={handleDocumentChange}
+        multiple
       />
       {/* Hidden file input for Internal Notes mode */}
       <input
