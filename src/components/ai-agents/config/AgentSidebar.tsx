@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { 
   Settings, 
   Zap, 
@@ -9,7 +9,8 @@ import {
   Pause,
   Plus,
   X,
-  Info
+  Info,
+  Loader2
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -32,10 +33,24 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
 import { useAIAgents } from '@/hooks/useAIAgents';
+import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/integrations/supabase/client';
 import { AI_AGENT_VOICES, AI_AGENT_DELAY_OPTIONS } from '@/types/ai-agents';
 import type { AIAgent } from '@/types/ai-agents';
 import { toast } from 'sonner';
+
+interface WhatsAppConnection {
+  id: string;
+  name: string;
+  phone_number: string;
+  status: string;
+}
 
 interface AgentSidebarProps {
   agent: AIAgent;
@@ -46,6 +61,7 @@ interface AgentSidebarProps {
 
 export function AgentSidebar({ agent, totalChars, charLimit, onAgentUpdate }: AgentSidebarProps) {
   const { updateAgent, addConnection, removeConnection } = useAIAgents();
+  const { profile } = useAuth();
   
   const [basicOpen, setBasicOpen] = useState(true);
   const [triggersOpen, setTriggersOpen] = useState(true);
@@ -54,9 +70,63 @@ export function AgentSidebar({ agent, totalChars, charLimit, onAgentUpdate }: Ag
   
   const [newTrigger, setNewTrigger] = useState('');
   const [isPlayingPreview, setIsPlayingPreview] = useState(false);
+  const [audioElement, setAudioElement] = useState<HTMLAudioElement | null>(null);
+  
+  // Connection selector state
+  const [availableConnections, setAvailableConnections] = useState<WhatsAppConnection[]>([]);
+  const [isLoadingConnections, setIsLoadingConnections] = useState(false);
+  const [connectionPopoverOpen, setConnectionPopoverOpen] = useState(false);
 
   const charPercentage = Math.min(100, (totalChars / charLimit) * 100);
   const isOverLimit = totalChars > charLimit;
+
+  // Load available connections when popover opens
+  useEffect(() => {
+    if (connectionPopoverOpen && profile?.company_id) {
+      loadAvailableConnections();
+    }
+  }, [connectionPopoverOpen, profile?.company_id]);
+
+  const loadAvailableConnections = async () => {
+    if (!profile?.company_id) return;
+    
+    setIsLoadingConnections(true);
+    try {
+      const { data, error } = await supabase
+        .from('whatsapp_connections')
+        .select('id, name, phone_number, status')
+        .eq('company_id', profile.company_id)
+        .eq('status', 'connected');
+
+      if (error) throw error;
+
+      // Filter out connections already linked to this agent
+      const linkedConnectionIds = agent.connections?.map(c => c.connection_id) || [];
+      const available = (data || []).filter(conn => !linkedConnectionIds.includes(conn.id));
+      
+      setAvailableConnections(available);
+    } catch (err) {
+      console.error('Erro ao carregar conexões:', err);
+      toast.error('Erro ao carregar conexões disponíveis');
+    } finally {
+      setIsLoadingConnections(false);
+    }
+  };
+
+  const handleAddConnectionClick = async (connectionId: string) => {
+    const success = await addConnection(agent.id, connectionId);
+    if (success) {
+      setConnectionPopoverOpen(false);
+      onAgentUpdate();
+    }
+  };
+
+  const handleRemoveConnection = async (connectionId: string) => {
+    const success = await removeConnection(agent.id, connectionId);
+    if (success) {
+      onAgentUpdate();
+    }
+  };
 
   const handleUpdateField = async (field: string, value: unknown) => {
     await updateAgent(agent.id, { [field]: value });
@@ -79,11 +149,69 @@ export function AgentSidebar({ agent, totalChars, charLimit, onAgentUpdate }: Ag
     onAgentUpdate();
   };
 
-  const handlePlayVoicePreview = () => {
-    // TODO: Implementar preview de voz com Gemini TTS
-    toast.info('Preview de voz em desenvolvimento');
+  const handlePlayVoicePreview = async () => {
+    // Stop current audio if playing
+    if (audioElement) {
+      audioElement.pause();
+      audioElement.currentTime = 0;
+      setAudioElement(null);
+      setIsPlayingPreview(false);
+      return;
+    }
+
     setIsPlayingPreview(true);
-    setTimeout(() => setIsPlayingPreview(false), 2000);
+
+    try {
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ai-agent-voice-preview`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+          },
+          body: JSON.stringify({ voiceName: agent.voice_name }),
+        }
+      );
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Erro ao gerar preview');
+      }
+
+      const data = await response.json();
+
+      let audioUrl: string;
+      
+      if (data.audioUrl) {
+        audioUrl = data.audioUrl;
+      } else if (data.audioBase64) {
+        audioUrl = `data:${data.mimeType || 'audio/mp3'};base64,${data.audioBase64}`;
+      } else {
+        throw new Error('Nenhum áudio retornado');
+      }
+
+      const audio = new Audio(audioUrl);
+      
+      audio.onended = () => {
+        setIsPlayingPreview(false);
+        setAudioElement(null);
+      };
+
+      audio.onerror = () => {
+        toast.error('Erro ao reproduzir áudio');
+        setIsPlayingPreview(false);
+        setAudioElement(null);
+      };
+
+      setAudioElement(audio);
+      await audio.play();
+
+    } catch (error) {
+      console.error('Erro no preview de voz:', error);
+      toast.error(error instanceof Error ? error.message : 'Erro ao gerar preview de voz');
+      setIsPlayingPreview(false);
+    }
   };
 
   return (
@@ -303,14 +431,26 @@ export function AgentSidebar({ agent, totalChars, charLimit, onAgentUpdate }: Ag
                         size="sm"
                         className="h-7 text-xs"
                         onClick={handlePlayVoicePreview}
-                        disabled={isPlayingPreview}
+                        disabled={isPlayingPreview && !audioElement}
                       >
                         {isPlayingPreview ? (
-                          <Pause className="w-3 h-3 mr-1" />
+                          audioElement ? (
+                            <>
+                              <Pause className="w-3 h-3 mr-1" />
+                              Parar
+                            </>
+                          ) : (
+                            <>
+                              <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                              Gerando...
+                            </>
+                          )
                         ) : (
-                          <Play className="w-3 h-3 mr-1" />
+                          <>
+                            <Play className="w-3 h-3 mr-1" />
+                            Ouvir
+                          </>
                         )}
-                        {isPlayingPreview ? 'Reproduzindo...' : 'Ouvir'}
                       </Button>
                     </div>
                   </div>
@@ -370,7 +510,7 @@ export function AgentSidebar({ agent, totalChars, charLimit, onAgentUpdate }: Ag
                         variant="ghost"
                         size="icon"
                         className="h-7 w-7"
-                        onClick={() => removeConnection(agent.id, conn.connection_id)}
+                        onClick={() => handleRemoveConnection(conn.connection_id)}
                       >
                         <X className="w-4 h-4" />
                       </Button>
@@ -382,10 +522,45 @@ export function AgentSidebar({ agent, totalChars, charLimit, onAgentUpdate }: Ag
                   Nenhuma conexão vinculada
                 </p>
               )}
-              <Button variant="outline" size="sm" className="w-full text-xs">
-                <Plus className="w-3 h-3 mr-1" />
-                Adicionar Conexão
-              </Button>
+              
+              <Popover open={connectionPopoverOpen} onOpenChange={setConnectionPopoverOpen}>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" size="sm" className="w-full text-xs">
+                    <Plus className="w-3 h-3 mr-1" />
+                    Adicionar Conexão
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-72 p-2" align="start">
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium px-2 py-1">Selecione uma conexão</p>
+                    {isLoadingConnections ? (
+                      <div className="flex items-center justify-center py-4">
+                        <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+                      </div>
+                    ) : availableConnections.length === 0 ? (
+                      <p className="text-xs text-muted-foreground text-center py-4">
+                        Nenhuma conexão disponível
+                      </p>
+                    ) : (
+                      <div className="space-y-1">
+                        {availableConnections.map((conn) => (
+                          <button
+                            key={conn.id}
+                            onClick={() => handleAddConnectionClick(conn.id)}
+                            className="w-full flex items-center gap-2 p-2 rounded-md hover:bg-muted text-left transition-colors"
+                          >
+                            <div className="w-2 h-2 rounded-full bg-emerald-500" />
+                            <div className="min-w-0 flex-1">
+                              <p className="text-sm font-medium truncate">{conn.name}</p>
+                              <p className="text-xs text-muted-foreground">{conn.phone_number}</p>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </PopoverContent>
+              </Popover>
             </CollapsibleContent>
           </Collapsible>
         </div>
