@@ -11,7 +11,8 @@ import {
   Building2,
   User,
   LayoutGrid,
-  Bell
+  Bell,
+  Bot
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
@@ -53,6 +54,13 @@ const baseMenuItems = [
     path: '/inbox',
     badgeKey: 'whatsapp' as string | null,
     adminOnly: false,
+  },
+  { 
+    icon: Bot, 
+    label: 'Agentes de IA', 
+    path: '/ai-agents',
+    badgeKey: null as string | null,
+    adminOnly: true,
   },
   { 
     icon: Users, 
@@ -220,9 +228,12 @@ export function AppSidebarContent({
 
         {/* Navigation */}
         <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-          {baseMenuItems.map((item) => {
+          {baseMenuItems
+            .filter(item => !item.adminOnly || userRole?.role === 'owner' || userRole?.role === 'admin')
+            .map((item) => {
             const isActive = location.pathname === item.path || 
-              (item.path === '/inbox' && location.pathname.startsWith('/inbox'));
+              (item.path === '/inbox' && location.pathname.startsWith('/inbox')) ||
+              (item.path === '/ai-agents' && location.pathname.startsWith('/ai-agents'));
             
             // Get badge count - use red for Conversas
             const badgeCount = item.badgeKey 
