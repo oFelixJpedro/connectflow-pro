@@ -302,10 +302,15 @@ serve(async (req) => {
         },
         body: JSON.stringify({
           model: 'gpt-5-nano',
-          input: [{
-            role: 'user',
-            content: inputContent
-          }]
+          input: inputContent,
+          text: {
+            format: { type: 'text' },
+            verbosity: 'medium'
+          },
+          reasoning: {
+            effort: 'medium',
+            summary: 'auto'
+          }
         }),
       });
 
@@ -319,7 +324,8 @@ serve(async (req) => {
       }
 
       const data = await response.json();
-      generatedResponse = data.output?.[0]?.content?.[0]?.text?.trim() || '';
+      console.log('📦 Resposta API (multimodal):', JSON.stringify(data, null, 2));
+      generatedResponse = data.output_text?.trim() || '';
       
     } else {
       // No images - use /v1/responses endpoint (compatible with GPT-5 models)
@@ -335,10 +341,15 @@ serve(async (req) => {
         },
         body: JSON.stringify({
           model: 'gpt-5-nano',
-          input: [{
-            role: 'user',
-            content: [{ type: 'input_text', text: userPrompt }]
-          }]
+          input: userPrompt,
+          text: {
+            format: { type: 'text' },
+            verbosity: 'medium'
+          },
+          reasoning: {
+            effort: 'medium',
+            summary: 'auto'
+          }
         }),
       });
 
@@ -352,7 +363,8 @@ serve(async (req) => {
       }
 
       const data = await response.json();
-      generatedResponse = data.output?.[0]?.content?.[0]?.text?.trim() || '';
+      console.log('📦 Resposta API (texto):', JSON.stringify(data, null, 2));
+      generatedResponse = data.output_text?.trim() || '';
     }
 
     if (!generatedResponse) {
