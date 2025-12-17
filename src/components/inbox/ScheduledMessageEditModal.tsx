@@ -55,6 +55,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from '@/hooks/use-toast';
 import { useAudioRecorder } from '@/hooks/useAudioRecorder';
+import { AudioPlayer } from '@/components/inbox/AudioPlayer';
 
 interface ScheduledMessage {
   id: string;
@@ -486,7 +487,13 @@ export function ScheduledMessageEditModal({
               </Button>
             </div>
             {mediaSource && (
-              <audio src={mediaSource} controls className="w-full mt-2" />
+              <div className="mt-2">
+                <AudioPlayer
+                  src={mediaSource}
+                  isOutbound={true}
+                  variant="default"
+                />
+              </div>
             )}
           </div>
         );
