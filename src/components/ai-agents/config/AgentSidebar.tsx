@@ -20,6 +20,7 @@ import { Slider } from '@/components/ui/slider';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Separator } from '@/components/ui/separator';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import {
   Select,
@@ -235,6 +236,8 @@ export function AgentSidebar({ agent, totalChars, charLimit, onAgentUpdate }: Ag
             </p>
           </div>
 
+          <Separator className="opacity-50" />
+
           {/* Configurações Básicas */}
           <Collapsible open={basicOpen} onOpenChange={setBasicOpen}>
             <CollapsibleTrigger className="flex items-center justify-between w-full p-2 hover:bg-muted rounded-lg transition-colors">
@@ -286,6 +289,8 @@ export function AgentSidebar({ agent, totalChars, charLimit, onAgentUpdate }: Ag
               </div>
             </CollapsibleContent>
           </Collapsible>
+
+          <Separator className="opacity-50" />
 
           {/* Gatilhos de Ativação */}
           <Collapsible open={triggersOpen} onOpenChange={setTriggersOpen}>
@@ -367,6 +372,8 @@ export function AgentSidebar({ agent, totalChars, charLimit, onAgentUpdate }: Ag
               )}
             </CollapsibleContent>
           </Collapsible>
+
+          <Separator className="opacity-50" />
 
           {/* Configurações de Áudio */}
           <Collapsible open={audioOpen} onOpenChange={setAudioOpen}>
@@ -478,6 +485,8 @@ export function AgentSidebar({ agent, totalChars, charLimit, onAgentUpdate }: Ag
               )}
             </CollapsibleContent>
           </Collapsible>
+
+          <Separator className="opacity-50" />
 
           {/* Conexões Vinculadas */}
           <Collapsible open={connectionsOpen} onOpenChange={setConnectionsOpen}>
