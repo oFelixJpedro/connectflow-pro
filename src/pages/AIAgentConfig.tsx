@@ -215,14 +215,12 @@ export default function AIAgentConfig() {
                   <AgentRulesTab
                     content={rulesContent}
                     onChange={(content) => handleContentChange('rules', content)}
-                    charLimit={AI_AGENT_CHAR_LIMITS.rules}
                   />
                 </TabsContent>
                 <TabsContent value="script" className="m-0">
                   <AgentScriptTab
                     content={scriptContent}
                     onChange={(content) => handleContentChange('script', content)}
-                    charLimit={AI_AGENT_CHAR_LIMITS.script}
                     agentId={agent.id}
                   />
                 </TabsContent>
@@ -230,7 +228,6 @@ export default function AIAgentConfig() {
                   <AgentFAQTab
                     content={faqContent}
                     onChange={(content) => handleContentChange('faq', content)}
-                    charLimit={AI_AGENT_CHAR_LIMITS.faq}
                     companyInfo={companyInfo}
                     onCompanyInfoChange={setCompanyInfo}
                     contractLink={contractLink}

@@ -1,8 +1,6 @@
-import { useState } from 'react';
-import { List, Wand2, Plus, Image, Video, Mic, FileText, Link, Type } from 'lucide-react';
+import { Wand2, Plus, Image, Video, Mic, FileText, Link, Type } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import { Progress } from '@/components/ui/progress';
 import { Label } from '@/components/ui/label';
 import {
   DropdownMenu,
@@ -14,7 +12,6 @@ import {
 interface AgentScriptTabProps {
   content: string;
   onChange: (content: string) => void;
-  charLimit: number;
   agentId: string;
 }
 
@@ -67,11 +64,7 @@ Se o cliente pedir para falar com humano:
 - Informe que um atendente assumirá em breve
 - Desative a IA para essa conversa`;
 
-export function AgentScriptTab({ content, onChange, charLimit, agentId }: AgentScriptTabProps) {
-  const charCount = content.length;
-  const charPercentage = Math.min(100, (charCount / charLimit) * 100);
-  const isOverLimit = charCount > charLimit;
-
+export function AgentScriptTab({ content, onChange, agentId }: AgentScriptTabProps) {
   const handleGenerateTemplate = () => {
     onChange(DEFAULT_SCRIPT_TEMPLATE);
   };
@@ -149,26 +142,6 @@ export function AgentScriptTab({ content, onChange, charLimit, agentId }: AgentS
           placeholder="Digite o roteiro de atendimento aqui..."
           className="min-h-[400px] resize-none font-mono text-sm"
         />
-      </div>
-
-      <div className="space-y-2">
-        <div className="flex items-center justify-between text-sm">
-          <span className={isOverLimit ? 'text-destructive' : 'text-muted-foreground'}>
-            {charCount.toLocaleString()} / {charLimit.toLocaleString()} caracteres
-          </span>
-          <span className={isOverLimit ? 'text-destructive' : 'text-muted-foreground'}>
-            {Math.round(charPercentage)}%
-          </span>
-        </div>
-        <Progress 
-          value={charPercentage} 
-          className={isOverLimit ? '[&>div]:bg-destructive' : ''}
-        />
-        {isOverLimit && (
-          <p className="text-xs text-destructive">
-            Você excedeu o limite de caracteres. Reduza o texto para salvar.
-          </p>
-        )}
       </div>
     </div>
   );
