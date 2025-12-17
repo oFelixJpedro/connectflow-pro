@@ -56,6 +56,7 @@ Use EXATAMENTE o mesmo padrão identificado no Passo 1.
 10. SE o cliente está frustrado ou irritado, seja empático e compreensivo
 11. Use o nome do cliente quando apropriado para personalização
 12. BASEIE sua resposta 100% no contexto da conversa
+13. SE houver imagens enviadas pelo cliente, ANALISE o conteúdo visual e responda considerando o que está na imagem
 
 ## FORMATO DA CONVERSA
 - [CLIENTE]: mensagens enviadas pelo cliente
@@ -101,6 +102,12 @@ interface MessageInput {
   content: string | null;
   direction: 'inbound' | 'outbound';
   messageType: string;
+  mediaUrl?: string;
+  metadata?: {
+    transcription?: string;
+    fileName?: string;
+    file_name?: string;
+  };
 }
 
 interface RequestBody {
@@ -111,8 +118,54 @@ interface RequestBody {
   tags?: string[];
 }
 
+// Helper function to transcribe audio
+async function transcribeAudio(audioUrl: string, apiKey: string): Promise<string | null> {
+  try {
+    console.log('🎤 Transcrevendo áudio:', audioUrl.substring(0, 80) + '...');
+    
+    const audioResponse = await fetch(audioUrl);
+    if (!audioResponse.ok) {
+      console.log('❌ Falha ao baixar áudio:', audioResponse.status);
+      return null;
+    }
+    
+    const audioBlob = await audioResponse.blob();
+    const contentType = audioResponse.headers.get('content-type') || 'audio/ogg';
+    
+    let extension = 'ogg';
+    if (contentType.includes('mp3')) extension = 'mp3';
+    else if (contentType.includes('wav')) extension = 'wav';
+    else if (contentType.includes('webm')) extension = 'webm';
+    else if (contentType.includes('m4a')) extension = 'm4a';
+    else if (contentType.includes('mpeg')) extension = 'mp3';
+    
+    const formData = new FormData();
+    formData.append('file', audioBlob, `audio.${extension}`);
+    formData.append('model', 'gpt-4o-transcribe');
+    formData.append('language', 'pt');
+    
+    const transcriptionResponse = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${apiKey}` },
+      body: formData,
+    });
+    
+    if (!transcriptionResponse.ok) {
+      const errorText = await transcriptionResponse.text();
+      console.log('❌ Erro na transcrição:', transcriptionResponse.status, errorText);
+      return null;
+    }
+    
+    const result = await transcriptionResponse.json();
+    console.log('✅ Áudio transcrito:', result.text?.substring(0, 50) + '...');
+    return result.text || null;
+  } catch (error) {
+    console.error('❌ Erro ao transcrever áudio:', error);
+    return null;
+  }
+}
+
 serve(async (req) => {
-  // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
@@ -135,46 +188,68 @@ serve(async (req) => {
       );
     }
 
-    // Limit to last 100 messages for better context
+    // Limit to last 100 messages
     const recentMessages = messages.slice(-100);
     
-    // Format messages with clear labels for AI analysis
-    const formattedMessages = recentMessages.map(msg => {
+    // Collect images for multimodal analysis
+    const imageUrls: string[] = [];
+    
+    // Process messages and collect media
+    const processedMessages: string[] = [];
+    
+    for (const msg of recentMessages) {
       const prefix = msg.direction === 'inbound' ? '[CLIENTE]' : '[ATENDENTE]';
-      
-      // Handle different message types
       let content = msg.content;
-      if (!content || content.trim() === '') {
-        const mediaPrefix = msg.direction === 'inbound' ? 'Cliente' : 'Atendente';
-        switch (msg.messageType) {
-          case 'image':
-            content = `[${mediaPrefix} enviou uma imagem]`;
-            break;
-          case 'audio':
-            content = `[${mediaPrefix} enviou um áudio]`;
-            break;
-          case 'video':
-            content = `[${mediaPrefix} enviou um vídeo]`;
-            break;
-          case 'document':
-            content = `[${mediaPrefix} enviou um documento]`;
-            break;
-          case 'sticker':
-            content = `[${mediaPrefix} enviou um sticker]`;
-            break;
-          default:
-            content = '[Mensagem sem texto]';
+      const metadata = msg.metadata;
+      
+      if (msg.messageType === 'audio') {
+        // Handle audio - use transcription if available, otherwise transcribe
+        if (metadata?.transcription) {
+          content = `[Áudio transcrito]: ${metadata.transcription}`;
+        } else if (msg.mediaUrl) {
+          const transcription = await transcribeAudio(msg.mediaUrl, openAIApiKey);
+          content = transcription 
+            ? `[Áudio transcrito]: ${transcription}`
+            : '[Áudio sem transcrição disponível]';
+        } else {
+          content = '[Mensagem de áudio]';
         }
+      } else if (msg.messageType === 'image') {
+        // Collect image URL for multimodal analysis
+        if (msg.mediaUrl) {
+          imageUrls.push(msg.mediaUrl);
+          content = msg.content 
+            ? `[Imagem com legenda: ${msg.content}] (imagem será analisada)`
+            : '[Cliente enviou uma imagem] (imagem será analisada)';
+        } else {
+          content = msg.content 
+            ? `[Imagem com legenda]: ${msg.content}`
+            : '[Cliente enviou uma imagem]';
+        }
+      } else if (msg.messageType === 'video') {
+        content = msg.content 
+          ? `[Vídeo com legenda]: ${msg.content}`
+          : '[Cliente enviou um vídeo]';
+      } else if (msg.messageType === 'document') {
+        const fileName = metadata?.fileName || metadata?.file_name || 'documento';
+        content = msg.content 
+          ? `[Documento "${fileName}"]: ${msg.content}`
+          : `[Cliente enviou documento: ${fileName}]`;
+      } else if (msg.messageType === 'sticker') {
+        content = '[Cliente enviou um sticker]';
+      } else if (!content || content.trim() === '') {
+        content = '[Mensagem sem texto]';
       }
       
-      return `${prefix}: ${content}`;
-    }).join('\n');
-
-    // Build enriched system prompt with additional context
-    let enrichedSystemPrompt = SYSTEM_PROMPT;
+      processedMessages.push(`${prefix}: ${content}`);
+    }
     
-    // Add context information
+    const formattedMessages = processedMessages.join('\n');
+
+    // Build enriched system prompt
+    let enrichedSystemPrompt = SYSTEM_PROMPT;
     const contextParts: string[] = [];
+    
     if (contactName && contactName !== 'Cliente') {
       contextParts.push(`Nome do cliente: ${contactName}`);
     }
@@ -194,38 +269,91 @@ serve(async (req) => {
 
     console.log('🤖 Gerando resposta com IA para', contactName);
     console.log('📊 Total de mensagens:', recentMessages.length);
+    console.log('🖼️ Imagens para analisar:', imageUrls.length);
     console.log('👤 Atendente:', agentName || 'N/A');
-    console.log('🏢 Departamento:', department || 'N/A');
-    console.log('🏷️ Tags:', tags?.join(', ') || 'N/A');
 
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${openAIApiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o-mini',
-        messages: [
-          { role: 'system', content: enrichedSystemPrompt },
-          { role: 'user', content: `Analise esta conversa e gere a próxima resposta imitando o estilo do atendente:\n\n${formattedMessages}` }
-        ],
-        max_tokens: 800,
-        temperature: 0.5,
-      }),
-    });
+    let generatedResponse: string;
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('OpenAI API error:', response.status, errorText);
-      return new Response(
-        JSON.stringify({ error: 'Erro ao gerar resposta' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+    if (imageUrls.length > 0) {
+      // Use multimodal endpoint with gpt-5-nano for image analysis
+      console.log('🖼️ Usando endpoint multimodal /v1/responses com gpt-5-nano');
+      
+      const inputContent: any[] = [
+        { 
+          type: 'input_text', 
+          text: `${enrichedSystemPrompt}\n\nAnalise esta conversa e gere a próxima resposta imitando o estilo do atendente. Considere o conteúdo das imagens enviadas na sua análise:\n\n${formattedMessages}` 
+        }
+      ];
+      
+      // Add all images (limit to last 5 to avoid token limits)
+      const imagesToAnalyze = imageUrls.slice(-5);
+      for (const imageUrl of imagesToAnalyze) {
+        inputContent.push({
+          type: 'input_image',
+          image_url: imageUrl
+        });
+      }
+      
+      const response = await fetch('https://api.openai.com/v1/responses', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${openAIApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'gpt-5-nano',
+          input: [{
+            role: 'user',
+            content: inputContent
+          }]
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('OpenAI /v1/responses API error:', response.status, errorText);
+        return new Response(
+          JSON.stringify({ error: 'Erro ao gerar resposta com análise de imagem' }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      const data = await response.json();
+      generatedResponse = data.output?.[0]?.content?.[0]?.text?.trim() || '';
+      
+    } else {
+      // No images - use standard chat/completions (faster)
+      console.log('📝 Usando endpoint padrão /v1/chat/completions com gpt-4o-mini');
+      
+      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${openAIApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'gpt-4o-mini',
+          messages: [
+            { role: 'system', content: enrichedSystemPrompt },
+            { role: 'user', content: `Analise esta conversa e gere a próxima resposta imitando o estilo do atendente:\n\n${formattedMessages}` }
+          ],
+          max_tokens: 800,
+          temperature: 0.5,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('OpenAI API error:', response.status, errorText);
+        return new Response(
+          JSON.stringify({ error: 'Erro ao gerar resposta' }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      const data = await response.json();
+      generatedResponse = data.choices?.[0]?.message?.content?.trim() || '';
     }
-
-    const data = await response.json();
-    const generatedResponse = data.choices?.[0]?.message?.content?.trim();
 
     if (!generatedResponse) {
       return new Response(

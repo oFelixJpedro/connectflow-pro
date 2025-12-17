@@ -6,6 +6,53 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Helper function to transcribe audio
+async function transcribeAudio(audioUrl: string, apiKey: string): Promise<string | null> {
+  try {
+    console.log('🎤 Transcrevendo áudio:', audioUrl.substring(0, 80) + '...');
+    
+    const audioResponse = await fetch(audioUrl);
+    if (!audioResponse.ok) {
+      console.log('❌ Falha ao baixar áudio:', audioResponse.status);
+      return null;
+    }
+    
+    const audioBlob = await audioResponse.blob();
+    const contentType = audioResponse.headers.get('content-type') || 'audio/ogg';
+    
+    let extension = 'ogg';
+    if (contentType.includes('mp3')) extension = 'mp3';
+    else if (contentType.includes('wav')) extension = 'wav';
+    else if (contentType.includes('webm')) extension = 'webm';
+    else if (contentType.includes('m4a')) extension = 'm4a';
+    else if (contentType.includes('mpeg')) extension = 'mp3';
+    
+    const formData = new FormData();
+    formData.append('file', audioBlob, `audio.${extension}`);
+    formData.append('model', 'gpt-4o-transcribe');
+    formData.append('language', 'pt');
+    
+    const transcriptionResponse = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${apiKey}` },
+      body: formData,
+    });
+    
+    if (!transcriptionResponse.ok) {
+      const errorText = await transcriptionResponse.text();
+      console.log('❌ Erro na transcrição:', transcriptionResponse.status, errorText);
+      return null;
+    }
+    
+    const result = await transcriptionResponse.json();
+    console.log('✅ Áudio transcrito:', result.text?.substring(0, 50) + '...');
+    return result.text || null;
+  } catch (error) {
+    console.error('❌ Erro ao transcrever áudio:', error);
+    return null;
+  }
+}
+
 serve(async (req) => {
   console.log('\n');
   console.log('╔══════════════════════════════════════════════════════════════════╗');
@@ -23,10 +70,11 @@ serve(async (req) => {
       messageContent, 
       contactName,
       contactPhone,
-      messageType 
+      messageType,
+      mediaUrl
     } = await req.json();
 
-    console.log('📥 Input:', { connectionId, conversationId, messageType, contactName });
+    console.log('📥 Input:', { connectionId, conversationId, messageType, contactName, hasMediaUrl: !!mediaUrl });
 
     if (!connectionId || !conversationId) {
       return new Response(
@@ -111,7 +159,7 @@ serve(async (req) => {
       }
     }
 
-    // 3️⃣ PRIMEIRO: Verificar estado da conversa (ANTES dos triggers)
+    // 3️⃣ Check conversation state
     console.log('\n┌─────────────────────────────────────────────────────────────────┐');
     console.log('│ 2️⃣  VERIFICAR ESTADO DA CONVERSA                                │');
     console.log('└─────────────────────────────────────────────────────────────────┘');
@@ -126,11 +174,9 @@ serve(async (req) => {
     console.log('📋 Estado atual:', convState?.status || 'nenhum');
     console.log('📋 Conversa ativa:', isConversationActive);
 
-    // Se a conversa JÁ está ativa, verificar apenas pausas/desativações
     if (isConversationActive) {
       console.log('✅ Conversa já ativada - pulando verificação de trigger');
       
-      // Verificar se foi desativada permanentemente
       if (convState.status === 'deactivated_permanently') {
         console.log('ℹ️ IA desativada permanentemente nesta conversa');
         return new Response(
@@ -139,7 +185,6 @@ serve(async (req) => {
         );
       }
 
-      // Verificar se está pausada
       if (convState.status === 'paused' && convState.paused_until) {
         const pausedUntil = new Date(convState.paused_until);
         if (pausedUntil > new Date()) {
@@ -151,7 +196,7 @@ serve(async (req) => {
         }
       }
     } else {
-      // 4️⃣ Conversa NÃO está ativa - verificar trigger para ativar
+      // 4️⃣ Not active - check trigger
       console.log('\n┌─────────────────────────────────────────────────────────────────┐');
       console.log('│ 3️⃣  VERIFICAR TRIGGERS DE ATIVAÇÃO (1ª MENSAGEM)               │');
       console.log('└─────────────────────────────────────────────────────────────────┘');
@@ -178,9 +223,8 @@ serve(async (req) => {
         console.log('✅ Trigger de ativação encontrado! Ativando conversa...');
       }
 
-      // 5️⃣ Criar ou atualizar estado para 'active'
+      // 5️⃣ Create or update state to 'active'
       if (!convState) {
-        // Criar novo estado ATIVO
         const { data: newState, error: createError } = await supabase
           .from('ai_conversation_states')
           .insert({
@@ -200,7 +244,6 @@ serve(async (req) => {
           console.log('✅ Estado da conversa criado (ativo)');
         }
       } else {
-        // Atualizar estado para ATIVO
         await supabase
           .from('ai_conversation_states')
           .update({ 
@@ -213,7 +256,7 @@ serve(async (req) => {
       }
     }
 
-    // 5️⃣ Build AI prompt and generate response
+    // 6️⃣ Generate AI Response
     console.log('\n┌─────────────────────────────────────────────────────────────────┐');
     console.log('│ 4️⃣  GERAR RESPOSTA COM IA                                       │');
     console.log('└─────────────────────────────────────────────────────────────────┘');
@@ -230,11 +273,14 @@ serve(async (req) => {
     // Get conversation history for context (including all message types)
     const { data: recentMessages } = await supabase
       .from('messages')
-      .select('content, direction, message_type, created_at, metadata')
+      .select('content, direction, message_type, created_at, metadata, media_url')
       .eq('conversation_id', conversationId)
       .eq('is_deleted', false)
       .order('created_at', { ascending: false })
       .limit(30);
+
+    // Collect images for potential multimodal analysis
+    const imageUrls: string[] = [];
 
     const conversationHistory = (recentMessages || [])
       .reverse()
@@ -243,19 +289,20 @@ serve(async (req) => {
         let messageText = '';
         
         if (m.message_type === 'text') {
-          // Mensagem de texto normal
           messageText = m.content || '';
         } else if (m.message_type === 'audio') {
-          // Áudio - usar transcrição se disponível
           if (metadata?.transcription) {
             messageText = `[Áudio transcrito]: ${metadata.transcription}`;
           } else if (m.content) {
-            // Respostas da IA têm o texto original em content
             messageText = m.content;
           } else {
             messageText = '[Mensagem de áudio]';
           }
         } else if (m.message_type === 'image') {
+          // Collect image URLs for multimodal analysis
+          if (m.media_url && m.direction === 'inbound') {
+            imageUrls.push(m.media_url);
+          }
           messageText = m.content 
             ? `[Imagem com legenda]: ${m.content}` 
             : '[Cliente enviou uma imagem]';
@@ -271,7 +318,6 @@ serve(async (req) => {
         } else if (m.message_type === 'sticker') {
           messageText = '[Cliente enviou um sticker]';
         } else {
-          // Outros tipos
           messageText = m.content || `[Mensagem do tipo ${m.message_type}]`;
         }
         
@@ -281,6 +327,53 @@ serve(async (req) => {
         } : null;
       })
       .filter(Boolean);
+
+    // Check if current message is image/audio that needs special processing
+    const currentMessageIsImage = messageType === 'image';
+    const currentMessageIsAudio = messageType === 'audio';
+    
+    // Get the actual mediaUrl if not provided (media may have been processed in background)
+    let actualMediaUrl = mediaUrl;
+    if ((currentMessageIsImage || currentMessageIsAudio) && !actualMediaUrl) {
+      // Fetch the most recent message to get the media_url
+      const { data: latestMsg } = await supabase
+        .from('messages')
+        .select('media_url, metadata')
+        .eq('conversation_id', conversationId)
+        .eq('direction', 'inbound')
+        .eq('message_type', messageType)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      
+      if (latestMsg?.media_url) {
+        actualMediaUrl = latestMsg.media_url;
+        console.log('📎 Media URL obtida do banco:', actualMediaUrl.substring(0, 50) + '...');
+      }
+    }
+
+    // Process current message content
+    let processedMessageContent = messageContent || '';
+    
+    // Handle audio transcription for current message
+    if (currentMessageIsAudio && actualMediaUrl && !processedMessageContent) {
+      console.log('🎤 Transcrevendo áudio do cliente...');
+      const transcription = await transcribeAudio(actualMediaUrl, AI_API_KEY);
+      if (transcription) {
+        processedMessageContent = transcription;
+        console.log('✅ Transcrição obtida:', transcription.substring(0, 50) + '...');
+      } else {
+        processedMessageContent = '[Cliente enviou um áudio que não pôde ser transcrito]';
+      }
+    }
+
+    // Add current image to analysis list
+    if (currentMessageIsImage && actualMediaUrl) {
+      // Add current image if not already in the list
+      if (!imageUrls.includes(actualMediaUrl)) {
+        imageUrls.push(actualMediaUrl);
+      }
+    }
 
     // Build system prompt
     const companyInfo = agent.company_info || {};
@@ -329,55 +422,124 @@ ${agent.faq_content}
 3. Use emojis moderadamente para criar conexão
 4. Se não souber responder algo específico, direcione para um atendente humano
 5. Nunca invente informações - use apenas o que está no roteiro, regras e FAQ
-6. Mantenha o tom profissional mas acolhedor`;
+6. Mantenha o tom profissional mas acolhedor
+7. Se o cliente enviar uma imagem, ANALISE o conteúdo visual e responda de forma contextualizada`;
 
     console.log('📝 System prompt criado (' + systemPrompt.length + ' chars)');
     console.log('📝 Histórico:', conversationHistory.length, 'mensagens');
+    console.log('🖼️ Imagens para análise:', imageUrls.length);
 
-    // Call OpenAI API
     const agentTemperature = agent.temperature ?? 0.7;
     console.log('🌡️ Temperatura configurada:', agentTemperature);
 
-    const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${AI_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o-mini',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          ...conversationHistory,
-          { role: 'user', content: messageContent || '[Mensagem sem texto]' }
-        ],
-        max_tokens: 500,
-        temperature: agentTemperature,
-      }),
-    });
+    let aiResponse: string;
+    let modelUsed: string;
 
-    if (!openaiResponse.ok) {
-      const errorText = await openaiResponse.text();
-      console.log('❌ OpenAI error:', openaiResponse.status, errorText);
+    // Determine if we should use multimodal (image analysis)
+    const shouldUseMultimodal = currentMessageIsImage && actualMediaUrl;
+
+    if (shouldUseMultimodal) {
+      // Use multimodal endpoint with gpt-5-nano for image analysis
+      console.log('🖼️ Usando endpoint multimodal /v1/responses com gpt-5-nano');
+      modelUsed = 'gpt-5-nano';
       
-      // Log the error
-      await supabase.from('ai_agent_logs').insert({
-        agent_id: agent.id,
-        conversation_id: conversationId,
-        action_type: 'response_error',
-        input_text: messageContent,
-        error_message: `OpenAI API error: ${openaiResponse.status}`,
-        metadata: { errorDetails: errorText }
+      const historyText = conversationHistory.map((m: any) => 
+        `${m.role === 'user' ? '[CLIENTE]' : '[AGENTE]'}: ${m.content}`
+      ).join('\n');
+      
+      const inputContent: any[] = [
+        { 
+          type: 'input_text', 
+          text: `${systemPrompt}\n\nHistórico da conversa:\n${historyText}\n\nO cliente acabou de enviar esta imagem${processedMessageContent ? ` com a seguinte mensagem: "${processedMessageContent}"` : ''}. Analise a imagem e responda de forma adequada ao contexto.`
+        },
+        {
+          type: 'input_image',
+          image_url: actualMediaUrl
+        }
+      ];
+      
+      const response = await fetch('https://api.openai.com/v1/responses', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${AI_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'gpt-5-nano',
+          input: [{
+            role: 'user',
+            content: inputContent
+          }]
+        }),
       });
 
-      return new Response(
-        JSON.stringify({ success: false, error: 'AI API error' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.log('❌ OpenAI /v1/responses error:', response.status, errorText);
+        
+        await supabase.from('ai_agent_logs').insert({
+          agent_id: agent.id,
+          conversation_id: conversationId,
+          action_type: 'response_error',
+          input_text: processedMessageContent,
+          error_message: `OpenAI /v1/responses error: ${response.status}`,
+          metadata: { errorDetails: errorText, messageType, hasImage: true }
+        });
 
-    const aiData = await openaiResponse.json();
-    const aiResponse = aiData.choices?.[0]?.message?.content;
+        return new Response(
+          JSON.stringify({ success: false, error: 'AI API error' }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      const aiData = await response.json();
+      aiResponse = aiData.output?.[0]?.content?.[0]?.text || '';
+      
+    } else {
+      // Use standard chat/completions (faster for text-only)
+      console.log('📝 Usando endpoint padrão /v1/chat/completions com gpt-4o-mini');
+      modelUsed = 'gpt-4o-mini';
+      
+      const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${AI_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'gpt-4o-mini',
+          messages: [
+            { role: 'system', content: systemPrompt },
+            ...conversationHistory,
+            { role: 'user', content: processedMessageContent || '[Mensagem sem texto]' }
+          ],
+          max_tokens: 500,
+          temperature: agentTemperature,
+        }),
+      });
+
+      if (!openaiResponse.ok) {
+        const errorText = await openaiResponse.text();
+        console.log('❌ OpenAI error:', openaiResponse.status, errorText);
+        
+        await supabase.from('ai_agent_logs').insert({
+          agent_id: agent.id,
+          conversation_id: conversationId,
+          action_type: 'response_error',
+          input_text: processedMessageContent,
+          error_message: `OpenAI API error: ${openaiResponse.status}`,
+          metadata: { errorDetails: errorText }
+        });
+
+        return new Response(
+          JSON.stringify({ success: false, error: 'AI API error' }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      const aiData = await openaiResponse.json();
+      aiResponse = aiData.choices?.[0]?.message?.content || '';
+    }
 
     if (!aiResponse) {
       console.log('❌ Nenhuma resposta gerada');
@@ -389,7 +551,7 @@ ${agent.faq_content}
 
     console.log('✅ Resposta gerada:', aiResponse.substring(0, 100) + '...');
 
-    // 6️⃣ Update conversation state
+    // 7️⃣ Update conversation state
     await supabase
       .from('ai_conversation_states')
       .update({
@@ -399,23 +561,26 @@ ${agent.faq_content}
       })
       .eq('conversation_id', conversationId);
 
-    // 7️⃣ Log the interaction
+    // 8️⃣ Log the interaction
     await supabase.from('ai_agent_logs').insert({
       agent_id: agent.id,
       conversation_id: conversationId,
       action_type: 'response_generated',
-      input_text: messageContent,
+      input_text: processedMessageContent || messageContent,
       output_text: aiResponse,
-      tokens_used: aiData.usage?.total_tokens || 0,
+      tokens_used: 0,
       processing_time_ms: 0,
       metadata: {
-        model: 'gpt-4o-mini',
+        model: modelUsed,
         contactName,
-        wasAlreadyActive: isConversationActive
+        wasAlreadyActive: isConversationActive,
+        messageType,
+        hasImage: shouldUseMultimodal,
+        wasTranscribed: currentMessageIsAudio
       }
     });
 
-    // 8️⃣ Return response with delay info and audio config
+    // 9️⃣ Return response with delay info and audio config
     return new Response(
       JSON.stringify({
         success: true,
@@ -423,7 +588,6 @@ ${agent.faq_content}
         agentId: agent.id,
         agentName: agent.name,
         delaySeconds: agent.delay_seconds || 0,
-        // Audio configuration for TTS
         voiceName: agent.voice_name || null,
         speechSpeed: agent.speech_speed || 1.0,
         audioTemperature: agent.audio_temperature || 0.7,
