@@ -61,7 +61,8 @@ serve(async (req) => {
           require_activation_trigger,
           delay_seconds,
           voice_name,
-          paused_until
+          paused_until,
+          temperature
         )
       `)
       .eq('connection_id', connectionId)
@@ -283,6 +284,9 @@ ${agent.faq_content}
     console.log('📝 Histórico:', conversationHistory.length, 'mensagens');
 
     // Call OpenAI API
+    const agentTemperature = agent.temperature ?? 0.7;
+    console.log('🌡️ Temperatura configurada:', agentTemperature);
+
     const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -297,7 +301,7 @@ ${agent.faq_content}
           { role: 'user', content: messageContent || '[Mensagem sem texto]' }
         ],
         max_tokens: 500,
-        temperature: 0.7,
+        temperature: agentTemperature,
       }),
     });
 
