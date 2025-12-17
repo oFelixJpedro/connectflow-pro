@@ -98,7 +98,7 @@ serve(async (req) => {
   }
 
   try {
-    const { voiceName, speed = 1.0 } = await req.json();
+    const { voiceName, speed = 1.0, languageCode = 'pt-BR' } = await req.json();
 
     if (!voiceName) {
       return new Response(
@@ -126,8 +126,8 @@ serve(async (req) => {
     // Normalize speed for cache key (0.7, 1.0, or 1.2)
     const normalizedSpeed = speed <= 0.85 ? 0.7 : speed >= 1.1 ? 1.2 : 1.0;
     
-    // Check if cached preview exists (include speed in cache key)
-    const cacheKey = `voice-previews/${voiceName.toLowerCase()}_${normalizedSpeed}.wav`;
+    // Check if cached preview exists (include speed and language in cache key)
+    const cacheKey = `voice-previews/${voiceName.toLowerCase()}_${normalizedSpeed}_${languageCode}.wav`;
     const { data: existingFile } = await supabase.storage
       .from('ai-agent-media')
       .createSignedUrl(cacheKey, 3600); // 1 hour signed URL
@@ -144,7 +144,7 @@ serve(async (req) => {
     const speedPrefix = getSpeedPrefix(speed);
     const textWithSpeed = speedPrefix + PREVIEW_TEXT;
 
-    console.log(`Generating voice preview for: ${voiceName} at speed: ${speed} (prefix: "${speedPrefix}")`);
+    console.log(`Generating voice preview for: ${voiceName} at speed: ${speed}, language: ${languageCode} (prefix: "${speedPrefix}")`);
 
     // Generate audio using Gemini TTS API
     const response = await fetch(
@@ -171,7 +171,8 @@ serve(async (req) => {
                 prebuiltVoiceConfig: {
                   voiceName: geminiVoice
                 }
-              }
+              },
+              languageCode: languageCode
             }
           }
         }),

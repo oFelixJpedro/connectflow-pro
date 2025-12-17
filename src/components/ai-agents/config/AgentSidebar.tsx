@@ -172,7 +172,8 @@ export function AgentSidebar({ agent, totalChars, charLimit, onAgentUpdate }: Ag
           },
           body: JSON.stringify({ 
             voiceName: agent.voice_name,
-            speed: agent.speech_speed || 1.0
+            speed: agent.speech_speed || 1.0,
+            languageCode: agent.language_code || 'pt-BR'
           }),
         }
       );
@@ -462,6 +463,35 @@ export function AgentSidebar({ agent, totalChars, charLimit, onAgentUpdate }: Ag
                             {voice.name} - {voice.description}
                           </SelectItem>
                         ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <div className="flex items-center gap-1">
+                      <Label className="text-xs">Idioma do Áudio</Label>
+                      <Tooltip>
+                        <TooltipTrigger>
+                          <Info className="w-3 h-3 text-muted-foreground" />
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p className="text-xs max-w-[200px]">
+                            Definir o idioma melhora sotaque, ritmo e pronúncia.
+                          </p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </div>
+                    <Select 
+                      value={agent.language_code || 'pt-BR'} 
+                      onValueChange={(v) => handleUpdateField('language_code', v)}
+                    >
+                      <SelectTrigger className="h-8 text-sm">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="pt-BR">🇧🇷 Português (Brasil)</SelectItem>
+                        <SelectItem value="en-US">🇺🇸 English (US)</SelectItem>
+                        <SelectItem value="es-ES">🇪🇸 Español (España)</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>

@@ -234,6 +234,7 @@ export type Database = {
           faq_content: string | null
           id: string
           is_primary: boolean | null
+          language_code: string | null
           name: string
           parent_agent_id: string | null
           paused_until: string | null
@@ -265,6 +266,7 @@ export type Database = {
           faq_content?: string | null
           id?: string
           is_primary?: boolean | null
+          language_code?: string | null
           name: string
           parent_agent_id?: string | null
           paused_until?: string | null
@@ -296,6 +298,7 @@ export type Database = {
           faq_content?: string | null
           id?: string
           is_primary?: boolean | null
+          language_code?: string | null
           name?: string
           parent_agent_id?: string | null
           paused_until?: string | null

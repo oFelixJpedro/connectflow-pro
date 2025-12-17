@@ -82,6 +82,7 @@ export interface AIAgent {
   voice_name: string;
   speech_speed: number;
   audio_temperature: number;
+  language_code: string;
   
   // Metadados
   created_at: string;
@@ -224,6 +225,7 @@ export interface UpdateAIAgentData {
   voice_name?: string;
   speech_speed?: number;
   audio_temperature?: number;
+  language_code?: string;
 }
 
 // Limite de caracteres
