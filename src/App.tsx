@@ -20,6 +20,8 @@ import Connections from "./pages/Connections";
 import SettingsGeneral from "./pages/SettingsGeneral";
 import Team from "./pages/Team";
 import InternalChat from "./pages/InternalChat";
+import AIAgents from "./pages/AIAgents";
+import AIAgentConfig from "./pages/AIAgentConfig";
 import NotFound from "./pages/NotFound";
 import DeveloperLogin from "./pages/developer/DeveloperLogin";
 import DeveloperDashboard from "./pages/developer/DeveloperDashboard";
@@ -58,6 +60,8 @@ const App = () => (
               }>
                 <Route path="/dashboard" element={<Dashboard />} />
                 <Route path="/inbox" element={<Inbox />} />
+                <Route path="/ai-agents" element={<AIAgents />} />
+                <Route path="/ai-agents/:agentId" element={<AIAgentConfig />} />
                 <Route path="/contacts" element={<Contacts />} />
                 <Route path="/crm" element={<CRM />} />
                 
