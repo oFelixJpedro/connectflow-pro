@@ -111,36 +111,9 @@ serve(async (req) => {
       }
     }
 
-    // 3️⃣ Check activation triggers
+    // 3️⃣ PRIMEIRO: Verificar estado da conversa (ANTES dos triggers)
     console.log('\n┌─────────────────────────────────────────────────────────────────┐');
-    console.log('│ 2️⃣  VERIFICAR TRIGGERS DE ATIVAÇÃO                              │');
-    console.log('└─────────────────────────────────────────────────────────────────┘');
-
-    const triggers = agent.activation_triggers || [];
-    const requireTrigger = agent.require_activation_trigger === true;
-
-    console.log('📋 Triggers:', triggers);
-    console.log('📋 Require trigger:', requireTrigger);
-
-    if (requireTrigger && triggers.length > 0) {
-      const messageNormalized = (messageContent || '').toLowerCase().trim();
-      const triggered = triggers.some((trigger: string) => 
-        messageNormalized.includes(trigger.toLowerCase().trim())
-      );
-
-      if (!triggered) {
-        console.log('ℹ️ Mensagem não contém trigger de ativação');
-        return new Response(
-          JSON.stringify({ success: false, skip: true, reason: 'No trigger matched' }),
-          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-      console.log('✅ Trigger de ativação encontrado!');
-    }
-
-    // 4️⃣ Check/Create conversation state
-    console.log('\n┌─────────────────────────────────────────────────────────────────┐');
-    console.log('│ 3️⃣  GERENCIAR ESTADO DA CONVERSA                                │');
+    console.log('│ 2️⃣  VERIFICAR ESTADO DA CONVERSA                                │');
     console.log('└─────────────────────────────────────────────────────────────────┘');
 
     let { data: convState } = await supabase
@@ -149,28 +122,15 @@ serve(async (req) => {
       .eq('conversation_id', conversationId)
       .maybeSingle();
 
-    if (!convState) {
-      // Create new conversation state
-      const { data: newState, error: createError } = await supabase
-        .from('ai_conversation_states')
-        .insert({
-          conversation_id: conversationId,
-          agent_id: agent.id,
-          status: 'active',
-          activated_at: new Date().toISOString(),
-          messages_processed: 0
-        })
-        .select()
-        .single();
+    const isConversationActive = convState?.status === 'active';
+    console.log('📋 Estado atual:', convState?.status || 'nenhum');
+    console.log('📋 Conversa ativa:', isConversationActive);
 
-      if (createError) {
-        console.log('❌ Erro ao criar estado:', createError.message);
-      } else {
-        convState = newState;
-        console.log('✅ Estado da conversa criado');
-      }
-    } else {
-      // Check if conversation state allows AI response
+    // Se a conversa JÁ está ativa, verificar apenas pausas/desativações
+    if (isConversationActive) {
+      console.log('✅ Conversa já ativada - pulando verificação de trigger');
+      
+      // Verificar se foi desativada permanentemente
       if (convState.status === 'deactivated_permanently') {
         console.log('ℹ️ IA desativada permanentemente nesta conversa');
         return new Response(
@@ -179,6 +139,7 @@ serve(async (req) => {
         );
       }
 
+      // Verificar se está pausada
       if (convState.status === 'paused' && convState.paused_until) {
         const pausedUntil = new Date(convState.paused_until);
         if (pausedUntil > new Date()) {
@@ -189,9 +150,57 @@ serve(async (req) => {
           );
         }
       }
+    } else {
+      // 4️⃣ Conversa NÃO está ativa - verificar trigger para ativar
+      console.log('\n┌─────────────────────────────────────────────────────────────────┐');
+      console.log('│ 3️⃣  VERIFICAR TRIGGERS DE ATIVAÇÃO (1ª MENSAGEM)               │');
+      console.log('└─────────────────────────────────────────────────────────────────┘');
 
-      // Activate if was inactive
-      if (convState.status !== 'active') {
+      const triggers = agent.activation_triggers || [];
+      const requireTrigger = agent.require_activation_trigger === true;
+
+      console.log('📋 Triggers:', triggers);
+      console.log('📋 Require trigger:', requireTrigger);
+
+      if (requireTrigger && triggers.length > 0) {
+        const messageNormalized = (messageContent || '').toLowerCase().trim();
+        const triggered = triggers.some((trigger: string) => 
+          messageNormalized.includes(trigger.toLowerCase().trim())
+        );
+
+        if (!triggered) {
+          console.log('ℹ️ Primeira mensagem não contém trigger - aguardando ativação');
+          return new Response(
+            JSON.stringify({ success: false, skip: true, reason: 'Waiting for activation trigger' }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+        console.log('✅ Trigger de ativação encontrado! Ativando conversa...');
+      }
+
+      // 5️⃣ Criar ou atualizar estado para 'active'
+      if (!convState) {
+        // Criar novo estado ATIVO
+        const { data: newState, error: createError } = await supabase
+          .from('ai_conversation_states')
+          .insert({
+            conversation_id: conversationId,
+            agent_id: agent.id,
+            status: 'active',
+            activated_at: new Date().toISOString(),
+            messages_processed: 0
+          })
+          .select()
+          .single();
+
+        if (createError) {
+          console.log('❌ Erro ao criar estado:', createError.message);
+        } else {
+          convState = newState;
+          console.log('✅ Estado da conversa criado (ativo)');
+        }
+      } else {
+        // Atualizar estado para ATIVO
         await supabase
           .from('ai_conversation_states')
           .update({ 
@@ -200,6 +209,7 @@ serve(async (req) => {
             activated_at: new Date().toISOString() 
           })
           .eq('id', convState.id);
+        console.log('✅ Estado da conversa atualizado para ativo');
       }
     }
 
@@ -363,7 +373,7 @@ ${agent.faq_content}
       metadata: {
         model: 'gpt-4o-mini',
         contactName,
-        triggered: requireTrigger
+        wasAlreadyActive: isConversationActive
       }
     });
 
