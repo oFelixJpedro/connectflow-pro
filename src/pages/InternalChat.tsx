@@ -888,12 +888,18 @@ export default function InternalChat() {
                     />
 
                     <div className="flex-1 relative">
-                      {/* Mention Picker */}
+                      {/* Mention Picker - only for groups and general chat */}
                       <MentionPicker
                         isOpen={showMentionPicker}
                         onSelect={handleSelectMention}
                         onClose={closeMentionPicker}
                         filterText={mentionFilterText}
+                        roomType={selectedRoom?.type as 'general' | 'direct' | 'group' | undefined}
+                        groupParticipants={selectedRoom?.type === 'group' ? selectedRoom.participants?.map(p => ({
+                          id: p.id,
+                          fullName: p.fullName,
+                          avatarUrl: p.avatarUrl,
+                        })) : undefined}
                       />
                       
                       <Textarea
