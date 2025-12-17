@@ -81,6 +81,7 @@ export interface AIAgent {
   audio_always_respond_audio: boolean;
   voice_name: string;
   speech_speed: number;
+  audio_temperature: number;
   
   // Metadados
   created_at: string;
@@ -222,6 +223,7 @@ export interface UpdateAIAgentData {
   audio_always_respond_audio?: boolean;
   voice_name?: string;
   speech_speed?: number;
+  audio_temperature?: number;
 }
 
 // Limite de caracteres
