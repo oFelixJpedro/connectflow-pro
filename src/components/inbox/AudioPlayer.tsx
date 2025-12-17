@@ -17,6 +17,7 @@ interface AudioPlayerProps {
     fileSize?: number;
     isPTT?: boolean;
   };
+  initialTranscription?: string;
   onTranscriptionComplete?: (text: string) => void;
 }
 
@@ -40,6 +41,7 @@ export function AudioPlayer({
   errorMessage,
   variant = 'default',
   metadata,
+  initialTranscription,
   onTranscriptionComplete,
 }: AudioPlayerProps) {
   const isAmber = variant === 'amber';
@@ -53,9 +55,9 @@ export function AudioPlayer({
   const [isDragging, setIsDragging] = useState(false);
   const [playbackSpeed, setPlaybackSpeed] = useState(1.0);
   
-  // Transcription state
+  // Transcription state - initialize with saved transcription if available
   const [isTranscribing, setIsTranscribing] = useState(false);
-  const [transcription, setTranscription] = useState<string | null>(null);
+  const [transcription, setTranscription] = useState<string | null>(initialTranscription || null);
 
   const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
 

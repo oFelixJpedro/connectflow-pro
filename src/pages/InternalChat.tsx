@@ -409,6 +409,7 @@ export default function InternalChat() {
               src={msg.mediaUrl}
               mimeType={msg.mediaMimeType || undefined}
               isOutbound={msg.isOwnMessage}
+              initialTranscription={(msg.metadata as any)?.transcription}
             />
           );
         }
