@@ -242,74 +242,84 @@ export function AudioPlayer({
     };
   }, [initialDuration, isDragging]);
 
+  // Hidden audio element - ALWAYS rendered to maintain ref stability
+  const audioElement = (
+    <audio ref={audioRef} src={src} preload="metadata" style={{ display: 'none' }} />
+  );
+
   // Error state
   if (status === 'failed' || hasError) {
     return (
-      <div className={cn(
-        "flex items-center gap-3 py-3 px-4 rounded-xl w-[336px] max-w-full shadow-sm",
-        isOutbound 
-          ? "bg-gradient-to-br from-red-100 to-red-200" 
-          : "bg-red-50"
-      )}>
-        <div className="flex-shrink-0 w-8 h-8 rounded-full bg-red-500/15 flex items-center justify-center">
-          <AlertCircle className="w-4 h-4 text-red-500" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-xs text-red-600 font-medium">
-            Falha ao carregar áudio
-          </p>
-          {errorMessage && (
-            <p className="text-[10px] text-red-500/70 truncate mt-0.5">
-              {errorMessage}
+      <>
+        {audioElement}
+        <div className={cn(
+          "flex items-center gap-3 py-3 px-4 rounded-xl w-[336px] max-w-full shadow-sm",
+          isOutbound 
+            ? "bg-gradient-to-br from-red-100 to-red-200" 
+            : "bg-red-50"
+        )}>
+          <div className="flex-shrink-0 w-8 h-8 rounded-full bg-red-500/15 flex items-center justify-center">
+            <AlertCircle className="w-4 h-4 text-red-500" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-xs text-red-600 font-medium">
+              Falha ao carregar áudio
             </p>
+            {errorMessage && (
+              <p className="text-[10px] text-red-500/70 truncate mt-0.5">
+                {errorMessage}
+              </p>
+            )}
+          </div>
+          {src && (
+            <button
+              onClick={handleDownload}
+              className="flex-shrink-0 w-8 h-8 rounded-full hover:bg-red-500/10 flex items-center justify-center transition-colors"
+              aria-label="Baixar áudio"
+            >
+              <Download className="w-4 h-4 text-red-500" />
+            </button>
           )}
         </div>
-        {src && (
-          <button
-            onClick={handleDownload}
-            className="flex-shrink-0 w-8 h-8 rounded-full hover:bg-red-500/10 flex items-center justify-center transition-colors"
-            aria-label="Baixar áudio"
-          >
-            <Download className="w-4 h-4 text-red-500" />
-          </button>
-        )}
-      </div>
+      </>
     );
   }
 
   // Loading skeleton
   if (isLoading) {
     return (
-      <div className={cn(
-        "flex items-center gap-3 py-3 px-4 rounded-xl w-[336px] max-w-full shadow-sm",
-        isAmber
-          ? (isOutbound ? "bg-gradient-to-br from-amber-100 to-amber-200" : "bg-amber-50")
-          : (isOutbound ? "bg-gradient-to-br from-blue-100 to-blue-200" : "bg-slate-100")
-      )}>
-        <audio ref={audioRef} src={src} preload="metadata" />
-        
-        {/* Mic icon skeleton */}
+      <>
+        {audioElement}
         <div className={cn(
-          "flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center",
-          isAmber ? "bg-amber-500/20" : "bg-blue-500/20"
+          "flex items-center gap-3 py-3 px-4 rounded-xl w-[336px] max-w-full shadow-sm",
+          isAmber
+            ? (isOutbound ? "bg-gradient-to-br from-amber-100 to-amber-200" : "bg-amber-50")
+            : (isOutbound ? "bg-gradient-to-br from-blue-100 to-blue-200" : "bg-slate-100")
         )}>
-          <Mic className={cn("w-4 h-4", isAmber ? "text-amber-500" : "text-blue-500")} />
+          {/* Mic icon skeleton */}
+          <div className={cn(
+            "flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center",
+            isAmber ? "bg-amber-500/20" : "bg-blue-500/20"
+          )}>
+            <Mic className={cn("w-4 h-4", isAmber ? "text-amber-500" : "text-blue-500")} />
+          </div>
+          
+          {/* Play button skeleton */}
+          <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gray-300/50 animate-pulse" />
+          
+          {/* Progress skeleton */}
+          <div className="flex-1 flex items-center gap-3">
+            <div className="flex-1 h-1 bg-gray-300/50 rounded-full animate-pulse" />
+            <div className="w-10 h-3 bg-gray-300/50 rounded animate-pulse" />
+          </div>
         </div>
-        
-        {/* Play button skeleton */}
-        <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gray-300/50 animate-pulse" />
-        
-        {/* Progress skeleton */}
-        <div className="flex-1 flex items-center gap-3">
-          <div className="flex-1 h-1 bg-gray-300/50 rounded-full animate-pulse" />
-          <div className="w-10 h-3 bg-gray-300/50 rounded animate-pulse" />
-        </div>
-      </div>
+      </>
     );
   }
 
   return (
     <div className="flex flex-col gap-1.5">
+      {audioElement}
       {/* Audio Player */}
       <div
         className={cn(
@@ -327,9 +337,6 @@ export function AudioPlayer({
         role="region"
         aria-label="Player de áudio"
       >
-        {/* Hidden audio element */}
-        <audio ref={audioRef} src={src} preload="metadata" />
-
         {/* Dynamic: Mic icon (paused) OR Speed control (playing) */}
         <div className="flex-shrink-0 w-[42px] h-8 flex items-center justify-center">
           {isPlaying ? (
