@@ -171,7 +171,10 @@ export function AgentSidebar({ agent, totalChars, charLimit, onAgentUpdate }: Ag
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
           },
-          body: JSON.stringify({ voiceName: agent.voice_name }),
+          body: JSON.stringify({ 
+            voiceName: agent.voice_name,
+            speed: agent.speech_speed || 1.0
+          }),
         }
       );
 

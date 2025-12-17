@@ -69,5 +69,8 @@ verify_jwt = false
 [functions.ai-agent-voice-preview]
 verify_jwt = true
 
+[functions.ai-agent-tts]
+verify_jwt = true
+
 [functions.ai-agent-process]
 verify_jwt = false
