@@ -65,3 +65,6 @@ verify_jwt = true
 
 [functions.send-scheduled-messages]
 verify_jwt = false
+
+[functions.ai-agent-voice-preview]
+verify_jwt = true
