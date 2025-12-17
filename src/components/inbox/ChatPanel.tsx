@@ -56,6 +56,7 @@ import { QuickReplyConfirmModal } from './QuickReplyConfirmModal';
 import { DeletedMessageIndicator } from './DeletedMessageIndicator';
 import { DeleteMessageModal } from './DeleteMessageModal';
 import { InternalNoteAudioRecorder } from './InternalNoteAudioRecorder';
+import { ScheduleMessageModal } from './ScheduleMessageModal';
 import { QuickReply } from '@/hooks/useQuickRepliesData';
 import { cn } from '@/lib/utils';
 import type { Conversation, Message, QuotedMessage } from '@/types';
@@ -154,6 +155,7 @@ export function ChatPanel({
   const [isGeneratingResponse, setIsGeneratingResponse] = useState(false);
   const [pendingMultiFiles, setPendingMultiFiles] = useState<File[]>([]);
   const [isMultiFilePreviewOpen, setIsMultiFilePreviewOpen] = useState(false);
+  const [scheduleModalOpen, setScheduleModalOpen] = useState(false);
   
   // Mentions for internal notes
   const {
@@ -1860,26 +1862,21 @@ export function ChatPanel({
 
         {!isRecordingAudio && !audioFile && !isRecordingNoteAudio && (
           <div className="flex items-center gap-1.5">
-            {/* 1. Agendar mensagem (mockup) */}
+            {/* 1. Agendar mensagem */}
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
                   type="button"
                   variant="ghost"
                   size="icon"
-                  onClick={() => {
-                    const { toast } = require('@/hooks/use-toast');
-                    toast({
-                      title: "Em breve",
-                      description: "Agendamento de mensagens será disponibilizado em breve.",
-                    });
-                  }}
+                  onClick={() => setScheduleModalOpen(true)}
+                  disabled={!conversation?.contact?.id}
                   className="h-9 w-9 flex-shrink-0"
                 >
                   <CalendarClock className="w-5 h-5" />
                 </Button>
               </TooltipTrigger>
-              <TooltipContent>Agendar mensagem (em breve)</TooltipContent>
+              <TooltipContent>Agendar mensagem</TooltipContent>
             </Tooltip>
 
             {/* 2. Ativar nota interna */}
@@ -2172,6 +2169,17 @@ export function ChatPanel({
         currentUserName={currentUserName}
         onDeleted={onRefresh}
       />
+
+      {/* Schedule Message Modal */}
+      {conversation?.contact?.id && (
+        <ScheduleMessageModal
+          open={scheduleModalOpen}
+          onOpenChange={setScheduleModalOpen}
+          contactId={conversation.contact.id}
+          contactName={conversation.contact.name || 'Contato'}
+          conversationId={conversation.id}
+        />
+      )}
     </div>
   );
 }
