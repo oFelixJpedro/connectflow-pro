@@ -129,10 +129,15 @@ serve(async (req) => {
       },
       body: JSON.stringify({
         model: 'gpt-5-nano',
-        input: [{
-          role: 'user',
-          content: [{ type: 'input_text', text: `${SYSTEM_PROMPT}\n\nTexto para corrigir:\n${text}` }]
-        }]
+        input: `${SYSTEM_PROMPT}\n\nTexto para corrigir:\n${text}`,
+        text: {
+          format: { type: 'text' },
+          verbosity: 'medium'
+        },
+        reasoning: {
+          effort: 'low',
+          summary: 'auto'
+        }
       }),
     });
 
@@ -146,7 +151,8 @@ serve(async (req) => {
     }
 
     const data = await response.json();
-    const correctedText = data.output?.[0]?.content?.[0]?.text?.trim();
+    console.log('📦 Resposta API:', JSON.stringify(data, null, 2));
+    const correctedText = data.output_text?.trim();
 
     if (!correctedText) {
       console.error('❌ Resposta vazia da API');

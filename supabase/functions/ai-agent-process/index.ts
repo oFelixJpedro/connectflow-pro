@@ -466,10 +466,15 @@ ${agent.faq_content}
         },
         body: JSON.stringify({
           model: 'gpt-5-nano',
-          input: [{
-            role: 'user',
-            content: inputContent
-          }]
+          input: inputContent,
+          text: {
+            format: { type: 'text' },
+            verbosity: 'medium'
+          },
+          reasoning: {
+            effort: 'medium',
+            summary: 'auto'
+          }
         }),
       });
 
@@ -493,7 +498,8 @@ ${agent.faq_content}
       }
 
       const aiData = await response.json();
-      aiResponse = aiData.output?.[0]?.content?.[0]?.text || '';
+      console.log('📦 Resposta API (multimodal):', JSON.stringify(aiData, null, 2));
+      aiResponse = aiData.output_text || '';
       
     } else {
       // Use /v1/responses endpoint (compatible with GPT-5 models)
@@ -516,10 +522,15 @@ ${agent.faq_content}
         },
         body: JSON.stringify({
           model: 'gpt-5-mini',
-          input: [{
-            role: 'user',
-            content: [{ type: 'input_text', text: fullPrompt }]
-          }]
+          input: fullPrompt,
+          text: {
+            format: { type: 'text' },
+            verbosity: 'medium'
+          },
+          reasoning: {
+            effort: 'medium',
+            summary: 'auto'
+          }
         }),
       });
 
@@ -543,7 +554,8 @@ ${agent.faq_content}
       }
 
       const aiData = await openaiResponse.json();
-      aiResponse = aiData.output?.[0]?.content?.[0]?.text || '';
+      console.log('📦 Resposta API (texto):', JSON.stringify(aiData, null, 2));
+      aiResponse = aiData.output_text || '';
     }
 
     if (!aiResponse) {
