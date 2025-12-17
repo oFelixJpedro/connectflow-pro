@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Bot, Plus, BookTemplate, Bell, RotateCcw, Search, Power, Settings } from 'lucide-react';
+import { Bot, Plus, BookTemplate, Bell, RotateCcw, Search, Power, Settings, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -8,6 +8,16 @@ import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { useAIAgents } from '@/hooks/useAIAgents';
 import { useAuth } from '@/contexts/AuthContext';
 import { CreateAgentTypeModal } from '@/components/ai-agents/CreateAgentTypeModal';
@@ -20,7 +30,7 @@ type SubMenuTab = 'agents' | 'followup';
 export default function AIAgents() {
   const navigate = useNavigate();
   const { profile, userRole } = useAuth();
-  const { primaryAgents, secondaryAgents, isLoading, setAgentStatus } = useAIAgents();
+  const { primaryAgents, secondaryAgents, isLoading, setAgentStatus, deleteAgent } = useAIAgents();
   
   const [activeTab, setActiveTab] = useState<SubMenuTab>('agents');
   const [searchQuery, setSearchQuery] = useState('');
@@ -30,6 +40,7 @@ export default function AIAgents() {
   const [selectedAgentType, setSelectedAgentType] = useState<AIAgentType | null>(null);
   const [primaryExpanded, setPrimaryExpanded] = useState(true);
   const [secondaryExpanded, setSecondaryExpanded] = useState(true);
+  const [agentToDelete, setAgentToDelete] = useState<AIAgent | null>(null);
 
   // Verificar permissão (owner/admin)
   const canManage = userRole?.role === 'owner' || userRole?.role === 'admin';
@@ -62,6 +73,18 @@ export default function AIAgents() {
     e.stopPropagation();
     const newStatus = agent.status === 'active' ? 'inactive' : 'active';
     await setAgentStatus(agent.id, newStatus);
+  };
+
+  const handleDeleteClick = (agent: AIAgent, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setAgentToDelete(agent);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (agentToDelete) {
+      await deleteAgent(agentToDelete.id);
+      setAgentToDelete(null);
+    }
   };
 
   // Filtrar agentes pela busca
@@ -173,7 +196,7 @@ export default function AIAgents() {
                     filteredPrimary.map((agent) => (
                       <Card 
                         key={agent.id} 
-                        className="cursor-pointer hover:border-primary/50 transition-colors"
+                        className="cursor-pointer hover:border-primary/50 transition-colors relative"
                         onClick={() => navigate(`/ai-agents/${agent.id}`)}
                       >
                         <CardHeader className="pb-3">
@@ -201,25 +224,36 @@ export default function AIAgents() {
                           </div>
                         </CardHeader>
                         <CardContent>
-                          {agent.connections && agent.connections.length > 0 && (
-                            <div className="space-y-2">
-                              <p className="text-xs font-medium text-muted-foreground uppercase">
-                                Conexões Vinculadas ({agent.connections.length})
-                              </p>
-                              <div className="flex flex-wrap gap-2">
-                                {agent.connections.slice(0, 3).map((conn) => (
-                                  <Badge key={conn.id} variant="outline" className="text-xs">
-                                    {conn.connection?.name || 'Conexão'} • {conn.connection?.phone_number}
-                                  </Badge>
-                                ))}
-                                {agent.connections.length > 3 && (
-                                  <Badge variant="outline" className="text-xs">
-                                    +{agent.connections.length - 3} mais
-                                  </Badge>
-                                )}
-                              </div>
+                          <div className="flex items-end justify-between">
+                            <div className="flex-1">
+                              {agent.connections && agent.connections.length > 0 && (
+                                <div className="space-y-2">
+                                  <p className="text-xs font-medium text-muted-foreground uppercase">
+                                    Conexões Vinculadas ({agent.connections.length})
+                                  </p>
+                                  <div className="flex flex-wrap gap-2">
+                                    {agent.connections.slice(0, 3).map((conn) => (
+                                      <Badge key={conn.id} variant="outline" className="text-xs">
+                                        {conn.connection?.name || 'Conexão'} • {conn.connection?.phone_number}
+                                      </Badge>
+                                    ))}
+                                    {agent.connections.length > 3 && (
+                                      <Badge variant="outline" className="text-xs">
+                                        +{agent.connections.length - 3} mais
+                                      </Badge>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
                             </div>
-                          )}
+                            <button
+                              onClick={(e) => handleDeleteClick(agent, e)}
+                              className="p-2 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors group"
+                              title="Excluir agente"
+                            >
+                              <Trash2 className="w-5 h-5 text-red-500 group-hover:text-red-600" />
+                            </button>
+                          </div>
                         </CardContent>
                       </Card>
                     ))
@@ -242,7 +276,7 @@ export default function AIAgents() {
                       {filteredSecondary.map((agent) => (
                         <Card 
                           key={agent.id}
-                          className="cursor-pointer hover:border-primary/50 transition-colors"
+                          className="cursor-pointer hover:border-primary/50 transition-colors relative"
                           onClick={() => navigate(`/ai-agents/${agent.id}`)}
                         >
                           <CardContent className="p-4 flex flex-col items-center text-center">
@@ -251,6 +285,13 @@ export default function AIAgents() {
                             </div>
                             <p className="font-medium text-sm line-clamp-1">{agent.name}</p>
                             {getStatusBadge(agent.status)}
+                            <button
+                              onClick={(e) => handleDeleteClick(agent, e)}
+                              className="absolute bottom-2 right-2 p-1.5 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors group"
+                              title="Excluir agente"
+                            >
+                              <Trash2 className="w-4 h-4 text-red-500 group-hover:text-red-600" />
+                            </button>
                           </CardContent>
                         </Card>
                       ))}
@@ -295,6 +336,28 @@ export default function AIAgents() {
           // TODO: implementar criação a partir de template
         }}
       />
+
+      {/* Modal de confirmação de exclusão */}
+      <AlertDialog open={!!agentToDelete} onOpenChange={() => setAgentToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir agente</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tem certeza que deseja excluir o agente "{agentToDelete?.name}"? 
+              Esta ação não pode ser desfeita.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={handleConfirmDelete}
+              className="bg-red-500 hover:bg-red-600"
+            >
+              Excluir
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
