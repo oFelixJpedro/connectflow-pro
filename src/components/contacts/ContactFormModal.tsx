@@ -129,6 +129,8 @@ export function ContactFormModal({
   const [departmentMigrationEnabled, setDepartmentMigrationEnabled] = useState(false);
   const [targetDepartmentId, setTargetDepartmentId] = useState<string>('');
   const [targetConnectionDepartmentId, setTargetConnectionDepartmentId] = useState<string>('');
+  const [scheduledMessagesCount, setScheduledMessagesCount] = useState(0);
+  const [showScheduledWarning, setShowScheduledWarning] = useState(false);
 
   // CRM state
   const {
@@ -227,6 +229,7 @@ export function ContactFormModal({
       setDepartmentMigrationEnabled(false);
       setTargetDepartmentId('');
       setKanbanChanged(false);
+      setShowScheduledWarning(false);
       // Reset new contact fields
       setInitialMessage('');
       setInitialMessageMedia(null);
@@ -237,6 +240,20 @@ export function ContactFormModal({
         setSelectedConnectionId(preselectedConnectionId);
       } else if (!contact) {
         setSelectedConnectionId('');
+      }
+      
+      // Load scheduled messages count for existing contacts
+      if (contact?.id) {
+        supabase
+          .from('scheduled_messages')
+          .select('*', { count: 'exact', head: true })
+          .eq('contact_id', contact.id)
+          .eq('status', 'pending')
+          .then(({ count }) => {
+            setScheduledMessagesCount(count || 0);
+          });
+      } else {
+        setScheduledMessagesCount(0);
       }
     }
   }, [open, contact, preselectedConnectionId]);
@@ -307,8 +324,13 @@ export function ContactFormModal({
       return;
     }
 
-    // If connection migration is enabled, show confirmation
+    // If connection migration is enabled, check for scheduled messages first
     if (isConnectionMigrationActive) {
+      if (scheduledMessagesCount > 0) {
+        setPendingFormData(formData);
+        setShowScheduledWarning(true);
+        return;
+      }
       setPendingFormData(formData);
       setShowMigrationConfirm(true);
       return;
@@ -422,6 +444,16 @@ export function ContactFormModal({
 
   const handleMigrationCancel = () => {
     setShowMigrationConfirm(false);
+    setPendingFormData(null);
+  };
+
+  const handleScheduledWarningConfirm = () => {
+    setShowScheduledWarning(false);
+    setShowMigrationConfirm(true);
+  };
+
+  const handleScheduledWarningCancel = () => {
+    setShowScheduledWarning(false);
     setPendingFormData(null);
   };
 
@@ -1298,6 +1330,39 @@ export function ContactFormModal({
             </AlertDialogCancel>
             <AlertDialogAction onClick={handleMigrationConfirm}>
               Confirmar Migração
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Scheduled Messages Warning Modal */}
+      <AlertDialog open={showScheduledWarning} onOpenChange={setShowScheduledWarning}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5 text-amber-500" />
+              Atenção: Mensagens Agendadas
+            </AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-3">
+                <p>
+                  Este contato possui <strong>{scheduledMessagesCount}</strong> mensage{scheduledMessagesCount === 1 ? 'm' : 'ns'} agendada{scheduledMessagesCount === 1 ? '' : 's'}.
+                </p>
+                <p>
+                  Ao migrar o contato para outra conexão/departamento, as mensagens agendadas serão enviadas pela <strong>NOVA</strong> conexão e departamento, não pela conexão atual.
+                </p>
+                <p className="text-muted-foreground">
+                  Deseja continuar com a migração?
+                </p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={handleScheduledWarningCancel}>
+              Cancelar
+            </AlertDialogCancel>
+            <AlertDialogAction onClick={handleScheduledWarningConfirm}>
+              Continuar
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
