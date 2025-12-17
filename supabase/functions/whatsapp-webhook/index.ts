@@ -476,12 +476,12 @@ async function processAIAgentResponse(params: {
         if (audioUrl) {
           console.log(`✅ [AI AGENT] Áudio gerado: ${audioUrl}`);
           
-          // Send audio via UAZAPI
-          const sendAudioUrl = `${UAZAPI_BASE_URL}/send/audio`;
+          // Send audio via UAZAPI /send/media with type: 'ptt' (push-to-talk)
+          const sendMediaUrl = `${UAZAPI_BASE_URL}/send/media`;
           
-          console.log(`📤 [AI AGENT] Enviando áudio para ${phoneNumber}...`);
+          console.log(`📤 [AI AGENT] Enviando áudio PTT para ${phoneNumber}...`);
           
-          const sendResponse = await fetch(sendAudioUrl, {
+          const sendResponse = await fetch(sendMediaUrl, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -489,7 +489,8 @@ async function processAIAgentResponse(params: {
             },
             body: JSON.stringify({
               number: phoneNumber,
-              audio: audioUrl
+              type: 'ptt',
+              file: audioUrl
             }),
           });
           
