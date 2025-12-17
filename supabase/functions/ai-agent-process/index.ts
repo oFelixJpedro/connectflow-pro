@@ -447,7 +447,7 @@ ${agent.faq_content}
         `${m.role === 'user' ? '[CLIENTE]' : '[AGENTE]'}: ${m.content}`
       ).join('\n');
       
-      const inputContent: any[] = [
+      const contentItems = [
         { 
           type: 'input_text', 
           text: `${systemPrompt}\n\nHistórico da conversa:\n${historyText}\n\nO cliente acabou de enviar esta imagem${processedMessageContent ? ` com a seguinte mensagem: "${processedMessageContent}"` : ''}. Analise a imagem e responda de forma adequada ao contexto.`
@@ -466,7 +466,13 @@ ${agent.faq_content}
         },
         body: JSON.stringify({
           model: 'gpt-5-nano',
-          input: inputContent,
+          input: [
+            {
+              type: 'message',
+              role: 'user',
+              content: contentItems
+            }
+          ],
           text: {
             format: { type: 'text' },
             verbosity: 'medium'

@@ -278,7 +278,7 @@ serve(async (req) => {
       // Use multimodal endpoint with gpt-5-nano for image analysis
       console.log('🖼️ Usando endpoint multimodal /v1/responses com gpt-5-nano');
       
-      const inputContent: any[] = [
+      const contentItems: any[] = [
         { 
           type: 'input_text', 
           text: `${enrichedSystemPrompt}\n\nAnalise esta conversa e gere a próxima resposta imitando o estilo do atendente. Considere o conteúdo das imagens enviadas na sua análise:\n\n${formattedMessages}` 
@@ -288,7 +288,7 @@ serve(async (req) => {
       // Add all images (limit to last 5 to avoid token limits)
       const imagesToAnalyze = imageUrls.slice(-5);
       for (const imageUrl of imagesToAnalyze) {
-        inputContent.push({
+        contentItems.push({
           type: 'input_image',
           image_url: imageUrl
         });
@@ -302,7 +302,13 @@ serve(async (req) => {
         },
         body: JSON.stringify({
           model: 'gpt-5-nano',
-          input: inputContent,
+          input: [
+            {
+              type: 'message',
+              role: 'user',
+              content: contentItems
+            }
+          ],
           text: {
             format: { type: 'text' },
             verbosity: 'medium'
