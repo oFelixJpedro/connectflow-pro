@@ -371,10 +371,12 @@ async function processAIAgentResponse(params: {
   contactPhone: string;
   companyId: string;
   instanceToken: string;
+  msgType?: string;
+  msgMediaUrl?: string;
 }) {
-  const { connectionId, conversationId, messageContent, contactName, contactPhone, companyId, instanceToken } = params;
+  const { connectionId, conversationId, messageContent, contactName, contactPhone, companyId, instanceToken, msgType = 'text', msgMediaUrl } = params;
   
-  console.log(`🤖 [AI AGENT] Iniciando processamento para conversa ${conversationId}`);
+  console.log(`🤖 [AI AGENT] Iniciando processamento para conversa ${conversationId} (tipo: ${msgType})`);
   
   const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
   const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -396,7 +398,8 @@ async function processAIAgentResponse(params: {
         messageContent,
         contactName,
         contactPhone,
-        messageType: 'text'
+        messageType: msgType,
+        mediaUrl: msgMediaUrl
       }),
     });
     
@@ -1416,18 +1419,22 @@ serve(async (req) => {
     // ═══════════════════════════════════════════════════════════════════
     // 🤖 PROCESS AI AGENT RESPONSE (Background Task)
     // ═══════════════════════════════════════════════════════════════════
-    if (!isFromMe && dbMessageType === 'text' && messageContent) {
-      console.log('🤖 Checking AI agent for this connection...');
+    // Process AI agent for text, audio and image messages (not stickers, documents, videos)
+    const aiSupportedTypes = ['text', 'audio', 'image'];
+    if (!isFromMe && aiSupportedTypes.includes(dbMessageType)) {
+      console.log(`🤖 Checking AI agent for this connection... (type: ${dbMessageType})`);
       
       EdgeRuntime.waitUntil(
         processAIAgentResponse({
           connectionId: whatsappConnectionId,
           conversationId,
-          messageContent,
+          messageContent: messageContent || '',
           contactName,
           contactPhone: phoneNumber,
           companyId,
-          instanceToken
+          instanceToken,
+          msgType: dbMessageType,
+          msgMediaUrl: undefined // Media URL will be fetched from DB after background processing
         })
       );
     }

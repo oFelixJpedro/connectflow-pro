@@ -121,20 +121,23 @@ serve(async (req) => {
 
     console.log('📝 Corrigindo texto:', text.substring(0, 100) + (text.length > 100 ? '...' : ''));
 
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    const response = await fetch('https://api.openai.com/v1/responses', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${openAIApiKey}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'gpt-4o-mini',
-        messages: [
-          { role: 'system', content: SYSTEM_PROMPT },
-          { role: 'user', content: text }
-        ],
-        max_tokens: 1000,
-        temperature: 0.1, // Low temperature for more deterministic output
+        model: 'gpt-5-nano',
+        input: `${SYSTEM_PROMPT}\n\nTexto para corrigir:\n${text}`,
+        text: {
+          format: { type: 'text' },
+          verbosity: 'medium'
+        },
+        reasoning: {
+          effort: 'low',
+          summary: 'auto'
+        }
       }),
     });
 
@@ -148,7 +151,8 @@ serve(async (req) => {
     }
 
     const data = await response.json();
-    const correctedText = data.choices?.[0]?.message?.content?.trim();
+    console.log('📦 Resposta API:', JSON.stringify(data, null, 2));
+    const correctedText = data.output?.find((o: any) => o.type === 'message')?.content?.[0]?.text?.trim();
 
     if (!correctedText) {
       console.error('❌ Resposta vazia da API');
