@@ -1,14 +1,11 @@
-import { useState } from 'react';
-import { FileText, Wand2 } from 'lucide-react';
+import { Wand2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import { Progress } from '@/components/ui/progress';
 import { Label } from '@/components/ui/label';
 
 interface AgentRulesTabProps {
   content: string;
   onChange: (content: string) => void;
-  charLimit: number;
 }
 
 const DEFAULT_RULES_TEMPLATE = `FUNÇÃO DO AGENTE
@@ -36,11 +33,7 @@ RESTRIÇÕES
 - Nunca discuta valores exatos sem autorização
 - Nunca critique concorrentes`;
 
-export function AgentRulesTab({ content, onChange, charLimit }: AgentRulesTabProps) {
-  const charCount = content.length;
-  const charPercentage = Math.min(100, (charCount / charLimit) * 100);
-  const isOverLimit = charCount > charLimit;
-
+export function AgentRulesTab({ content, onChange }: AgentRulesTabProps) {
   const handleGenerateTemplate = () => {
     onChange(DEFAULT_RULES_TEMPLATE);
   };
@@ -67,26 +60,6 @@ export function AgentRulesTab({ content, onChange, charLimit }: AgentRulesTabPro
           placeholder="Digite as regras gerais do agente aqui..."
           className="min-h-[400px] resize-none font-mono text-sm"
         />
-      </div>
-
-      <div className="space-y-2">
-        <div className="flex items-center justify-between text-sm">
-          <span className={isOverLimit ? 'text-destructive' : 'text-muted-foreground'}>
-            {charCount.toLocaleString()} / {charLimit.toLocaleString()} caracteres
-          </span>
-          <span className={isOverLimit ? 'text-destructive' : 'text-muted-foreground'}>
-            {Math.round(charPercentage)}%
-          </span>
-        </div>
-        <Progress 
-          value={charPercentage} 
-          className={isOverLimit ? '[&>div]:bg-destructive' : ''}
-        />
-        {isOverLimit && (
-          <p className="text-xs text-destructive">
-            Você excedeu o limite de caracteres. Reduza o texto para salvar.
-          </p>
-        )}
       </div>
     </div>
   );
