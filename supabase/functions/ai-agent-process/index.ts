@@ -227,22 +227,60 @@ serve(async (req) => {
       );
     }
 
-    // Get conversation history for context
+    // Get conversation history for context (including all message types)
     const { data: recentMessages } = await supabase
       .from('messages')
-      .select('content, direction, message_type, created_at')
+      .select('content, direction, message_type, created_at, metadata')
       .eq('conversation_id', conversationId)
       .eq('is_deleted', false)
       .order('created_at', { ascending: false })
-      .limit(20);
+      .limit(30);
 
     const conversationHistory = (recentMessages || [])
       .reverse()
-      .filter(m => m.message_type === 'text' && m.content)
-      .map(m => ({
-        role: m.direction === 'inbound' ? 'user' : 'assistant',
-        content: m.content
-      }));
+      .map(m => {
+        const metadata = m.metadata as any;
+        let messageText = '';
+        
+        if (m.message_type === 'text') {
+          // Mensagem de texto normal
+          messageText = m.content || '';
+        } else if (m.message_type === 'audio') {
+          // Áudio - usar transcrição se disponível
+          if (metadata?.transcription) {
+            messageText = `[Áudio transcrito]: ${metadata.transcription}`;
+          } else if (m.content) {
+            // Respostas da IA têm o texto original em content
+            messageText = m.content;
+          } else {
+            messageText = '[Mensagem de áudio]';
+          }
+        } else if (m.message_type === 'image') {
+          messageText = m.content 
+            ? `[Imagem com legenda]: ${m.content}` 
+            : '[Cliente enviou uma imagem]';
+        } else if (m.message_type === 'video') {
+          messageText = m.content 
+            ? `[Vídeo com legenda]: ${m.content}` 
+            : '[Cliente enviou um vídeo]';
+        } else if (m.message_type === 'document') {
+          const fileName = metadata?.fileName || metadata?.file_name || 'documento';
+          messageText = m.content 
+            ? `[Documento "${fileName}"]: ${m.content}` 
+            : `[Cliente enviou documento: ${fileName}]`;
+        } else if (m.message_type === 'sticker') {
+          messageText = '[Cliente enviou um sticker]';
+        } else {
+          // Outros tipos
+          messageText = m.content || `[Mensagem do tipo ${m.message_type}]`;
+        }
+        
+        return messageText ? {
+          role: m.direction === 'inbound' ? 'user' : 'assistant',
+          content: messageText
+        } : null;
+      })
+      .filter(Boolean);
 
     // Build system prompt
     const companyInfo = agent.company_info || {};
