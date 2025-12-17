@@ -1,4 +1,4 @@
-import { User, Users, Info } from 'lucide-react';
+import { User, Users } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -6,7 +6,6 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Card, CardContent } from '@/components/ui/card';
-import { Alert, AlertDescription } from '@/components/ui/alert';
 import type { AIAgentType } from '@/types/ai-agents';
 
 interface CreateAgentTypeModalProps {
@@ -28,15 +27,6 @@ export function CreateAgentTypeModal({
         </DialogHeader>
 
         <div className="space-y-6">
-          <div className="text-center">
-            <p className="text-muted-foreground">
-              Como você deseja criar seus agentes?
-            </p>
-            <p className="text-sm text-muted-foreground mt-1">
-              Escolha entre criar um agente único ou um sistema completo de multiagentes
-            </p>
-          </div>
-
           <div className="grid grid-cols-2 gap-4">
             {/* Agente Único */}
             <Card 
@@ -49,26 +39,22 @@ export function CreateAgentTypeModal({
                 </div>
                 <h3 className="font-semibold text-lg mb-2">Agente Único</h3>
                 <p className="text-sm text-muted-foreground mb-4">
-                  Perfeito para necessidades simples e específicas
+                  Um agente para todas as suas necessidades
                 </p>
                 <ul className="text-sm text-left space-y-2">
                   <li className="flex items-start gap-2">
                     <span className="text-emerald-500 mt-0.5">✓</span>
-                    <span>Criação do zero com total personalização</span>
+                    <span>Configuração rápida e simples</span>
                   </li>
                   <li className="flex items-start gap-2">
                     <span className="text-emerald-500 mt-0.5">✓</span>
-                    <span>Configuração rápida e direta</span>
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <span className="text-emerald-500 mt-0.5">✓</span>
-                    <span>Ideal para uma única área ou necessidade específica</span>
+                    <span>Ideal para um único fluxo de atendimento</span>
                   </li>
                 </ul>
               </CardContent>
             </Card>
 
-            {/* Sistema de Multiagentes */}
+            {/* Multiagentes */}
             <Card 
               className="cursor-pointer hover:border-primary transition-colors"
               onClick={() => onTypeSelected('multi')}
@@ -77,36 +63,23 @@ export function CreateAgentTypeModal({
                 <div className="w-16 h-16 mx-auto rounded-full bg-primary/10 flex items-center justify-center mb-4">
                   <Users className="w-8 h-8 text-primary" />
                 </div>
-                <h3 className="font-semibold text-lg mb-2">Sistema de Multiagentes</h3>
+                <h3 className="font-semibold text-lg mb-2">Multiagentes</h3>
                 <p className="text-sm text-muted-foreground mb-4">
-                  Solução completa com agentes especializados
+                  Vários agentes trabalhando juntos
                 </p>
                 <ul className="text-sm text-left space-y-2">
                   <li className="flex items-start gap-2">
                     <span className="text-emerald-500 mt-0.5">✓</span>
-                    <span>Agente principal de recepção (Nível 1)</span>
+                    <span>Agente de recepção + especialistas</span>
                   </li>
                   <li className="flex items-start gap-2">
                     <span className="text-emerald-500 mt-0.5">✓</span>
-                    <span>Agentes especialistas por área (Nível 2)</span>
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <span className="text-emerald-500 mt-0.5">✓</span>
-                    <span>Sistema inteligente de direcionamento</span>
+                    <span>Direcionamento inteligente por assunto</span>
                   </li>
                 </ul>
               </CardContent>
             </Card>
           </div>
-
-          <Alert>
-            <Info className="w-4 h-4" />
-            <AlertDescription>
-              <strong>Dica:</strong> Se você precisa atender diferentes áreas (ex: Bancário, 
-              Trabalhista, BPC), escolha o Sistema de Multiagentes. Para uma única área ou 
-              necessidade específica, o Agente Único é mais adequado.
-            </AlertDescription>
-          </Alert>
         </div>
       </DialogContent>
     </Dialog>
