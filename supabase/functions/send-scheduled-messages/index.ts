@@ -195,9 +195,17 @@ Deno.serve(async (req) => {
         } else {
           // For media messages
           uazapiEndpoint = `${baseUrl}/send/media`
+          
+          // Map message_type to UAZAPI type
+          let mediaType = 'image'
+          if (msg.message_type === 'video') mediaType = 'video'
+          else if (msg.message_type === 'audio') mediaType = 'audio'
+          else if (msg.message_type === 'document') mediaType = 'document'
+          
           uazapiBody = {
             number: phoneNumber,
-            media: msg.media_url,
+            type: mediaType,
+            file: msg.media_url,
             text: msg.content || ''
           }
         }
