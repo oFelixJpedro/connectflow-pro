@@ -323,7 +323,7 @@ serve(async (req) => {
       
     } else {
       // No images - use standard chat/completions (faster)
-      console.log('📝 Usando endpoint padrão /v1/chat/completions com gpt-4o-mini');
+      console.log('📝 Usando endpoint padrão /v1/chat/completions com gpt-5-nano');
       
       const response = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
@@ -332,7 +332,7 @@ serve(async (req) => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          model: 'gpt-4o-mini',
+          model: 'gpt-5-nano',
           messages: [
             { role: 'system', content: enrichedSystemPrompt },
             { role: 'user', content: `Analise esta conversa e gere a próxima resposta imitando o estilo do atendente:\n\n${formattedMessages}` }

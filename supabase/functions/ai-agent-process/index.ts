@@ -497,8 +497,8 @@ ${agent.faq_content}
       
     } else {
       // Use standard chat/completions (faster for text-only)
-      console.log('📝 Usando endpoint padrão /v1/chat/completions com gpt-4o-mini');
-      modelUsed = 'gpt-4o-mini';
+      console.log('📝 Usando endpoint padrão /v1/chat/completions com gpt-5-mini');
+      modelUsed = 'gpt-5-mini';
       
       const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
@@ -507,7 +507,7 @@ ${agent.faq_content}
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          model: 'gpt-4o-mini',
+          model: 'gpt-5-mini',
           messages: [
             { role: 'system', content: systemPrompt },
             ...conversationHistory,
