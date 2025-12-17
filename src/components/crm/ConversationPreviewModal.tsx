@@ -37,6 +37,7 @@ import { MentionText } from '@/components/mentions/MentionText';
 import type { Message, Conversation, MessageReaction } from '@/types';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { useAppStore } from '@/stores/appStore';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface ConversationPreviewModalProps {
   open: boolean;
@@ -100,6 +101,12 @@ export function ConversationPreviewModal({
 }: ConversationPreviewModalProps) {
   const navigate = useNavigate();
   const { setSelectedConnectionId } = useAppStore();
+  const { profile, userRole: authUserRole } = useAuth();
+  
+  // Use props if provided, otherwise fall back to auth context
+  const effectiveUserId = currentUserId || profile?.id;
+  const effectiveUserRole = userRole || authUserRole?.role;
+  
   const [conversation, setConversation] = useState<Conversation | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -540,11 +547,11 @@ export function ConversationPreviewModal({
 
         {/* Footer with action button */}
         <div className="px-4 py-3 border-t bg-muted/30 flex-shrink-0">
-          {(() => {
+        {(() => {
             // Owner/admin always have access
-            const isAdminOrOwner = userRole === 'owner' || userRole === 'admin';
+            const isAdminOrOwner = effectiveUserRole === 'owner' || effectiveUserRole === 'admin';
             // Check if conversation is assigned to current user
-            const isAssignedToMe = conversation?.assignedUserId === currentUserId;
+            const isAssignedToMe = conversation?.assignedUserId === effectiveUserId;
             const canAccessChat = isAdminOrOwner || isAssignedToMe;
 
             if (canAccessChat) {

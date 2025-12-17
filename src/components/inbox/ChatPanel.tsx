@@ -301,10 +301,18 @@ export function ChatPanel({
         return;
       }
 
+      // Get additional context for AI
+      const agentName = conversation.assignedUser?.fullName || profile?.full_name;
+      const departmentName = conversation.department?.name;
+      const conversationTags = conversation.tags || [];
+
       const { data, error } = await supabase.functions.invoke('generate-ai-response', {
         body: { 
           messages: validMessages,
-          contactName: conversation.contact?.name || 'Cliente'
+          contactName: conversation.contact?.name || 'Cliente',
+          agentName: agentName,
+          department: departmentName,
+          tags: conversationTags
         }
       });
       
