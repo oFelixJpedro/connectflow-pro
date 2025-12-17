@@ -513,8 +513,7 @@ ${agent.faq_content}
             ...conversationHistory,
             { role: 'user', content: processedMessageContent || '[Mensagem sem texto]' }
           ],
-          max_tokens: 500,
-          temperature: agentTemperature,
+          max_completion_tokens: 500,
         }),
       });
 
