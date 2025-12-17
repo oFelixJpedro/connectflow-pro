@@ -74,3 +74,12 @@ verify_jwt = true
 
 [functions.ai-agent-process]
 verify_jwt = false
+
+[functions.queue-processor]
+verify_jwt = false
+
+[functions.queue-retry]
+verify_jwt = false
+
+[functions.queue-stats]
+verify_jwt = true
