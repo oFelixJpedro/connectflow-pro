@@ -257,8 +257,16 @@ export function useInternalChat() {
         })
       );
 
-      console.log('[InternalChat] Rooms carregados:', roomsWithDetails.map(r => ({ id: r.id, type: r.type, name: r.name, participants: r.participants?.length })));
-      setRooms(roomsWithDetails);
+      // Filter out invalid direct rooms (must have exactly 2 participants)
+      const validRooms = roomsWithDetails.filter(room => {
+        if (room.type === 'direct') {
+          return room.participants && room.participants.length === 2;
+        }
+        return true; // Keep general and group rooms
+      });
+
+      console.log('[InternalChat] Rooms carregados:', validRooms.map(r => ({ id: r.id, type: r.type, name: r.name, participants: r.participants?.length })));
+      setRooms(validRooms);
     } catch (error) {
       console.error('[InternalChat] Erro ao carregar salas:', error);
     } finally {
