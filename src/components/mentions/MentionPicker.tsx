@@ -14,12 +14,20 @@ interface TeamMember {
   role: string;
 }
 
+interface GroupParticipant {
+  id: string;
+  fullName: string;
+  avatarUrl: string | null;
+}
+
 interface MentionPickerProps {
   isOpen: boolean;
   onSelect: (member: TeamMember) => void;
   onClose: () => void;
   position?: { top: number; left: number };
   filterText?: string;
+  roomType?: 'general' | 'direct' | 'group';
+  groupParticipants?: GroupParticipant[];
 }
 
 const roleLabels: Record<string, string> = {
@@ -38,7 +46,7 @@ const roleOrder: Record<string, number> = {
   viewer: 4,
 };
 
-export function MentionPicker({ isOpen, onSelect, onClose, position, filterText = '' }: MentionPickerProps) {
+export function MentionPicker({ isOpen, onSelect, onClose, position, filterText = '', roomType, groupParticipants }: MentionPickerProps) {
   const { company, profile } = useAuth();
   const [members, setMembers] = useState<TeamMember[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -47,12 +55,34 @@ export function MentionPicker({ isOpen, onSelect, onClose, position, filterText 
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // Don't show picker for direct chats
+  const shouldShowPicker = roomType !== 'direct';
+
   // Combine external filter and internal search
   const effectiveSearch = filterText || searchQuery;
 
-  // Load team members
+  // Load team members - for groups, use participants; for general, load all
   const loadMembers = useCallback(async () => {
     if (!company?.id) return;
+    
+    // For group chats, use provided participants
+    if (roomType === 'group' && groupParticipants) {
+      const participantMembers: TeamMember[] = groupParticipants
+        .filter(p => p.id !== profile?.id) // Exclude current user
+        .map(p => ({
+          id: p.id,
+          fullName: p.fullName,
+          avatarUrl: p.avatarUrl,
+          role: 'agent', // Role not critical for display in groups
+        }))
+        .sort((a, b) => a.fullName.localeCompare(b.fullName));
+      
+      setMembers(participantMembers);
+      setIsLoading(false);
+      return;
+    }
+
+    // For general chat, load all company members
     setIsLoading(true);
 
     try {
@@ -102,7 +132,7 @@ export function MentionPicker({ isOpen, onSelect, onClose, position, filterText 
     } finally {
       setIsLoading(false);
     }
-  }, [company?.id, profile?.id]);
+  }, [company?.id, profile?.id, roomType, groupParticipants]);
 
   // Load members when picker opens
   useEffect(() => {
@@ -168,7 +198,8 @@ export function MentionPicker({ isOpen, onSelect, onClose, position, filterText 
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isOpen, onClose]);
 
-  if (!isOpen) return null;
+  // Don't render for direct chats or when closed
+  if (!isOpen || !shouldShowPicker) return null;
 
   const getInitials = (name: string) => {
     return name
