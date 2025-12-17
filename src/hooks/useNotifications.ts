@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
-import { useDesktopNotification } from './useDesktopNotification';
 import { NotificationData } from '@/components/notifications/NotificationItem';
 
 interface UnreadCounts {
@@ -24,7 +23,6 @@ interface UserAccessPermissions {
 
 export function useNotifications() {
   const { profile, company, userRole } = useAuth();
-  const { showDesktopNotification } = useDesktopNotification();
   
   const [internalNotifications, setInternalNotifications] = useState<NotificationData[]>([]);
   const [whatsappNotifications, setWhatsappNotifications] = useState<NotificationData[]>([]);
@@ -626,11 +624,6 @@ export function useNotifications() {
             return;
           }
           
-          showDesktopNotification('Nova mensagem', {
-            body: message.content || 'Nova mensagem recebida',
-            tag: `whatsapp-${conversation.id}`,
-          });
-          
           refreshCounts();
           loadNotifications();
         }
@@ -640,7 +633,7 @@ export function useNotifications() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [company?.id, profile?.id, refreshCounts, loadNotifications, showDesktopNotification]);
+  }, [company?.id, profile?.id, refreshCounts, loadNotifications]);
 
   // Real-time for conversations
   useEffect(() => {
@@ -688,11 +681,6 @@ export function useNotifications() {
           
           processedMessageIds.current.add(message.id);
           
-          showDesktopNotification('Nova mensagem interna', {
-            body: message.content || 'Nova mensagem',
-            tag: `internal-${message.room_id}`,
-          });
-          
           refreshCounts();
           loadNotifications();
         }
@@ -702,7 +690,7 @@ export function useNotifications() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [company?.id, profile?.id, refreshCounts, loadNotifications, showDesktopNotification]);
+  }, [company?.id, profile?.id, refreshCounts, loadNotifications]);
 
   // Real-time for mention notifications
   useEffect(() => {
@@ -719,11 +707,6 @@ export function useNotifications() {
           filter: `mentioned_user_id=eq.${profile.id}`,
         },
         async () => {
-          showDesktopNotification('Você foi mencionado', {
-            body: 'Alguém te mencionou em uma mensagem',
-            tag: 'mention',
-          });
-          
           loadNotifications();
         }
       )
@@ -732,7 +715,7 @@ export function useNotifications() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [profile?.id, loadNotifications, showDesktopNotification]);
+  }, [profile?.id, loadNotifications]);
 
   return {
     internalNotifications,
