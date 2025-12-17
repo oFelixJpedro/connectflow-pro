@@ -241,6 +241,7 @@ export type Database = {
           script_content: string | null
           speech_speed: number | null
           status: string | null
+          temperature: number | null
           updated_at: string | null
           voice_name: string | null
         }
@@ -270,6 +271,7 @@ export type Database = {
           script_content?: string | null
           speech_speed?: number | null
           status?: string | null
+          temperature?: number | null
           updated_at?: string | null
           voice_name?: string | null
         }
@@ -299,6 +301,7 @@ export type Database = {
           script_content?: string | null
           speech_speed?: number | null
           status?: string | null
+          temperature?: number | null
           updated_at?: string | null
           voice_name?: string | null
         }

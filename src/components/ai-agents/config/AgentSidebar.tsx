@@ -290,6 +290,38 @@ export function AgentSidebar({ agent, totalChars, charLimit, onAgentUpdate }: Ag
                   </SelectContent>
                 </Select>
               </div>
+
+              {/* Temperatura da IA */}
+              <div className="space-y-2">
+                <div className="flex items-center gap-1">
+                  <Label className="text-xs">Temperatura da IA</Label>
+                  <Tooltip>
+                    <TooltipTrigger>
+                      <Info className="w-3 h-3 text-muted-foreground" />
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p className="text-xs max-w-[200px]">
+                        Controla a criatividade das respostas. 
+                        Valores baixos = mais preciso e consistente. 
+                        Valores altos = mais criativo e variado.
+                      </p>
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+                <Slider
+                  value={[agent.temperature ?? 0.7]}
+                  onValueChange={([v]) => handleUpdateField('temperature', v)}
+                  min={0}
+                  max={1}
+                  step={0.1}
+                  className="w-full"
+                />
+                <div className="flex justify-between text-xs text-muted-foreground">
+                  <span>Preciso</span>
+                  <span className="font-medium">{(agent.temperature ?? 0.7).toFixed(1)}</span>
+                  <span>Criativo</span>
+                </div>
+              </div>
             </CollapsibleContent>
           </Collapsible>
 
@@ -465,24 +497,21 @@ export function AgentSidebar({ agent, totalChars, charLimit, onAgentUpdate }: Ag
                     </div>
                   </div>
 
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <Label className="text-xs">Velocidade de Fala</Label>
-                      <span className="text-xs text-muted-foreground">{agent.speech_speed}x</span>
-                    </div>
-                    <Slider
-                      value={[agent.speech_speed]}
-                      onValueChange={([v]) => handleUpdateField('speech_speed', v)}
-                      min={0.5}
-                      max={2}
-                      step={0.1}
-                      className="w-full"
-                    />
-                    <div className="flex justify-between text-xs text-muted-foreground">
-                      <span>Devagar</span>
-                      <span>Normal</span>
-                      <span>Rápido</span>
-                    </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Velocidade de Fala</Label>
+                    <Select 
+                      value={String(agent.speech_speed ?? 1.0)} 
+                      onValueChange={(v) => handleUpdateField('speech_speed', Number(v))}
+                    >
+                      <SelectTrigger className="h-8 text-sm">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="0.7">Devagar (0.7x)</SelectItem>
+                        <SelectItem value="1">Normal (1.0x)</SelectItem>
+                        <SelectItem value="1.2">Rápido (1.2x)</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
                 </>
               )}
