@@ -6,8 +6,6 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const PREVIEW_TEXT = "Olá! Eu sou a assistente virtual. Como posso ajudar você hoje?";
-
 // Language names for Style Control
 const LANGUAGE_NAMES: Record<string, string> = {
   'pt-BR': 'Brazilian Portuguese',
@@ -104,7 +102,14 @@ serve(async (req) => {
   }
 
   try {
-    const { voiceName, speed = 1.0, languageCode = 'pt-BR' } = await req.json();
+    const { text, voiceName, speed = 1.0, temperature = 0.7, languageCode = 'pt-BR' } = await req.json();
+
+    if (!text) {
+      return new Response(
+        JSON.stringify({ error: 'text é obrigatório' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
 
     if (!voiceName) {
       return new Response(
@@ -129,28 +134,12 @@ serve(async (req) => {
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Normalize speed for cache key (0.7, 1.0, or 1.2)
-    const normalizedSpeed = speed <= 0.85 ? 0.7 : speed >= 1.1 ? 1.2 : 1.0;
-    
-    // Check if cached preview exists (include speed and language in cache key)
-    const cacheKey = `voice-previews/${voiceName.toLowerCase()}_${normalizedSpeed}_${languageCode}.wav`;
-    const { data: existingFile } = await supabase.storage
-      .from('ai-agent-media')
-      .createSignedUrl(cacheKey, 3600); // 1 hour signed URL
-
-    if (existingFile?.signedUrl) {
-      console.log(`Cache hit for voice: ${voiceName} at speed: ${normalizedSpeed}`);
-      return new Response(
-        JSON.stringify({ audioUrl: existingFile.signedUrl, cached: true }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
     // Apply style prefix via Style Control (includes speed + language)
     const stylePrefix = getStylePrefix(speed, languageCode);
-    const textWithStyle = stylePrefix + PREVIEW_TEXT;
+    const textWithStyle = stylePrefix + text;
 
-    console.log(`Generating voice preview for: ${voiceName} at speed: ${speed}, language: ${languageCode} (prefix: "${stylePrefix}")`);
+    console.log(`Generating TTS for voice: ${voiceName} at speed: ${speed}, temperature: ${temperature}, language: ${languageCode}`);
+    console.log(`Text length: ${text.length} chars, with style prefix: ${textWithStyle.length} chars`);
 
     // Generate audio using Gemini TTS API
     const response = await fetch(
@@ -172,6 +161,7 @@ serve(async (req) => {
           ],
           generationConfig: {
             responseModalities: ["AUDIO"],
+            temperature: temperature,
             speechConfig: {
               voiceConfig: {
                 prebuiltVoiceConfig: {
@@ -217,43 +207,62 @@ serve(async (req) => {
     // Convert L16 PCM to WAV (browser-compatible)
     const wavBytes = convertL16ToWav(pcmBytes, 24000);
 
-    // Upload to storage for caching as WAV
+    // Generate unique filename
+    const timestamp = Date.now();
+    const randomId = Math.random().toString(36).substring(7);
+    const audioKey = `tts-audio/${timestamp}_${randomId}.wav`;
+
+    // Upload to storage
     const { error: uploadError } = await supabase.storage
       .from('ai-agent-media')
-      .upload(cacheKey, wavBytes, {
+      .upload(audioKey, wavBytes, {
         contentType: 'audio/wav',
-        upsert: true
+        upsert: false
       });
 
     if (uploadError) {
-      console.warn('Failed to cache audio:', uploadError);
-    }
-
-    // Get signed URL for the uploaded file
-    const { data: signedUrlData, error: signedUrlError } = await supabase.storage
-      .from('ai-agent-media')
-      .createSignedUrl(cacheKey, 3600);
-
-    if (signedUrlError || !signedUrlData?.signedUrl) {
-      // Return base64 WAV directly if can't get signed URL
+      console.error('Failed to upload audio:', uploadError);
+      // Return base64 WAV directly if upload fails
       const wavBase64 = btoa(String.fromCharCode(...wavBytes));
       return new Response(
         JSON.stringify({ 
           audioBase64: wavBase64, 
-          mimeType: 'audio/wav',
-          cached: false 
+          mimeType: 'audio/wav'
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
+    // Get signed URL for the uploaded file (1 hour expiry)
+    const { data: signedUrlData, error: signedUrlError } = await supabase.storage
+      .from('ai-agent-media')
+      .createSignedUrl(audioKey, 3600);
+
+    if (signedUrlError || !signedUrlData?.signedUrl) {
+      console.error('Failed to get signed URL:', signedUrlError);
+      // Return base64 WAV directly if can't get signed URL
+      const wavBase64 = btoa(String.fromCharCode(...wavBytes));
+      return new Response(
+        JSON.stringify({ 
+          audioBase64: wavBase64, 
+          mimeType: 'audio/wav'
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    console.log(`✅ TTS audio generated successfully: ${audioKey}`);
+
     return new Response(
-      JSON.stringify({ audioUrl: signedUrlData.signedUrl, cached: false }),
+      JSON.stringify({ 
+        audioUrl: signedUrlData.signedUrl,
+        audioKey: audioKey
+      }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
 
   } catch (error) {
-    console.error('Error in ai-agent-voice-preview:', error);
+    console.error('Error in ai-agent-tts:', error);
     return new Response(
       JSON.stringify({ error: error instanceof Error ? error.message : 'Erro desconhecido' }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

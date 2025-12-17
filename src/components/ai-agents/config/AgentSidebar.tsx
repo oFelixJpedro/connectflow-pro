@@ -16,10 +16,10 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import { Slider } from '@/components/ui/slider';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Separator } from '@/components/ui/separator';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import {
   Select,
@@ -170,7 +170,11 @@ export function AgentSidebar({ agent, totalChars, charLimit, onAgentUpdate }: Ag
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
           },
-          body: JSON.stringify({ voiceName: agent.voice_name }),
+          body: JSON.stringify({ 
+            voiceName: agent.voice_name,
+            speed: agent.speech_speed || 1.0,
+            languageCode: agent.language_code || 'pt-BR'
+          }),
         }
       );
 
@@ -215,7 +219,7 @@ export function AgentSidebar({ agent, totalChars, charLimit, onAgentUpdate }: Ag
   };
 
   return (
-    <div className="w-80 border-l bg-muted/30 flex flex-col">
+    <div className="w-[40%] border-l bg-muted/30 flex flex-col">
       <ScrollArea className="flex-1">
         <div className="p-4 space-y-4">
           {/* Total de Caracteres */}
@@ -234,6 +238,8 @@ export function AgentSidebar({ agent, totalChars, charLimit, onAgentUpdate }: Ag
               {Math.round(charPercentage)}% do limite recomendado
             </p>
           </div>
+
+          <Separator className="opacity-50" />
 
           {/* Configurações Básicas */}
           <Collapsible open={basicOpen} onOpenChange={setBasicOpen}>
@@ -284,8 +290,44 @@ export function AgentSidebar({ agent, totalChars, charLimit, onAgentUpdate }: Ag
                   </SelectContent>
                 </Select>
               </div>
+
+              {/* Temperatura da IA */}
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-1">
+                  <Label className="text-xs">Temperatura da IA (Texto)</Label>
+                  <Tooltip>
+                    <TooltipTrigger>
+                      <Info className="w-3 h-3 text-muted-foreground" />
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p className="text-xs max-w-[200px]">
+                        Controla a criatividade das respostas de texto. 
+                        Valores baixos = mais preciso. 
+                        Valores altos = mais criativo.
+                      </p>
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+                <Select 
+                  value={String(agent.temperature ?? 0.7)} 
+                  onValueChange={(v) => handleUpdateField('temperature', Number(v))}
+                >
+                  <SelectTrigger className="h-8 text-sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {[0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0].map((val) => (
+                      <SelectItem key={val} value={String(val)}>
+                        {val.toFixed(1)} {val <= 0.3 ? '(Preciso)' : val >= 0.8 ? '(Criativo)' : ''}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </CollapsibleContent>
           </Collapsible>
+
+          <Separator className="opacity-50" />
 
           {/* Gatilhos de Ativação */}
           <Collapsible open={triggersOpen} onOpenChange={setTriggersOpen}>
@@ -368,6 +410,8 @@ export function AgentSidebar({ agent, totalChars, charLimit, onAgentUpdate }: Ag
             </CollapsibleContent>
           </Collapsible>
 
+          <Separator className="opacity-50" />
+
           {/* Configurações de Áudio */}
           <Collapsible open={audioOpen} onOpenChange={setAudioOpen}>
             <CollapsibleTrigger className="flex items-center justify-between w-full p-2 hover:bg-muted rounded-lg transition-colors">
@@ -388,14 +432,14 @@ export function AgentSidebar({ agent, totalChars, charLimit, onAgentUpdate }: Ag
               {agent.audio_enabled && (
                 <>
                   <div className="grid grid-cols-2 gap-2">
-                    <div className="p-2 border rounded-lg space-y-1">
+                    <div className="p-2 border rounded-lg flex items-center justify-between">
                       <Label className="text-xs">Responder Áudio com Áudio</Label>
                       <Switch
                         checked={agent.audio_respond_with_audio}
                         onCheckedChange={(v) => handleUpdateField('audio_respond_with_audio', v)}
                       />
                     </div>
-                    <div className="p-2 border rounded-lg space-y-1">
+                    <div className="p-2 border rounded-lg flex items-center justify-between">
                       <Label className="text-xs">Sempre Responder com Áudio</Label>
                       <Switch
                         checked={agent.audio_always_respond_audio}
@@ -419,6 +463,35 @@ export function AgentSidebar({ agent, totalChars, charLimit, onAgentUpdate }: Ag
                             {voice.name} - {voice.description}
                           </SelectItem>
                         ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <div className="flex items-center gap-1">
+                      <Label className="text-xs">Idioma do Áudio</Label>
+                      <Tooltip>
+                        <TooltipTrigger>
+                          <Info className="w-3 h-3 text-muted-foreground" />
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p className="text-xs max-w-[200px]">
+                            Definir o idioma melhora sotaque, ritmo e pronúncia.
+                          </p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </div>
+                    <Select 
+                      value={agent.language_code || 'pt-BR'} 
+                      onValueChange={(v) => handleUpdateField('language_code', v)}
+                    >
+                      <SelectTrigger className="h-8 text-sm">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="pt-BR">🇧🇷 Português (Brasil)</SelectItem>
+                        <SelectItem value="en-US">🇺🇸 English (US)</SelectItem>
+                        <SelectItem value="es-ES">🇪🇸 Español (España)</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -455,29 +528,62 @@ export function AgentSidebar({ agent, totalChars, charLimit, onAgentUpdate }: Ag
                     </div>
                   </div>
 
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <Label className="text-xs">Velocidade de Fala</Label>
-                      <span className="text-xs text-muted-foreground">{agent.speech_speed}x</span>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Velocidade de Fala</Label>
+                    <Select 
+                      value={String(agent.speech_speed ?? 1.0)} 
+                      onValueChange={(v) => handleUpdateField('speech_speed', Number(v))}
+                    >
+                      <SelectTrigger className="h-8 text-sm">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="0.7">Devagar (0.7x)</SelectItem>
+                        <SelectItem value="1">Normal (1.0x)</SelectItem>
+                        <SelectItem value="1.2">Rápido (1.2x)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Temperatura do Áudio */}
+                  <div className="space-y-1.5">
+                    <div className="flex items-center gap-1">
+                      <Label className="text-xs">Temperatura do Áudio</Label>
+                      <Tooltip>
+                        <TooltipTrigger>
+                          <Info className="w-3 h-3 text-muted-foreground" />
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p className="text-xs max-w-[200px]">
+                            Controla a variação na geração de voz. 
+                            Valores baixos = mais consistente. 
+                            Valores altos = mais expressivo.
+                          </p>
+                        </TooltipContent>
+                      </Tooltip>
                     </div>
-                    <Slider
-                      value={[agent.speech_speed]}
-                      onValueChange={([v]) => handleUpdateField('speech_speed', v)}
-                      min={0.5}
-                      max={2}
-                      step={0.1}
-                      className="w-full"
-                    />
-                    <div className="flex justify-between text-xs text-muted-foreground">
-                      <span>Devagar</span>
-                      <span>Normal</span>
-                      <span>Rápido</span>
-                    </div>
+                    <Select 
+                      value={String(agent.audio_temperature ?? 0.7)} 
+                      onValueChange={(v) => handleUpdateField('audio_temperature', Number(v))}
+                    >
+                      <SelectTrigger className="h-8 text-sm">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {[0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0].map((val) => (
+                          <SelectItem key={val} value={String(val)}>
+                            {val.toFixed(1)} {val <= 0.3 ? '(Consistente)' : val >= 0.8 ? '(Expressivo)' : ''}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                 </>
               )}
             </CollapsibleContent>
           </Collapsible>
+
+          <Separator className="opacity-50" />
 
           {/* Conexões Vinculadas */}
           <Collapsible open={connectionsOpen} onOpenChange={setConnectionsOpen}>

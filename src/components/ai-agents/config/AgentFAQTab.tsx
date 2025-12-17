@@ -1,8 +1,6 @@
 import { useState } from 'react';
-import { HelpCircle, Plus, Trash2, Save, Building2, ChevronDown, ChevronUp } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { HelpCircle, Building2, ChevronDown, ChevronUp } from 'lucide-react';
 import { Textarea } from '@/components/ui/textarea';
-import { Progress } from '@/components/ui/progress';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -13,7 +11,6 @@ import type { AIAgentCompanyInfo } from '@/types/ai-agents';
 interface AgentFAQTabProps {
   content: string;
   onChange: (content: string) => void;
-  charLimit: number;
   companyInfo: AIAgentCompanyInfo;
   onCompanyInfoChange: (info: AIAgentCompanyInfo) => void;
   contractLink: string;
@@ -36,7 +33,6 @@ const COMPANY_INFO_FIELDS = [
 export function AgentFAQTab({
   content,
   onChange,
-  charLimit,
   companyInfo,
   onCompanyInfoChange,
   contractLink,
@@ -44,10 +40,6 @@ export function AgentFAQTab({
 }: AgentFAQTabProps) {
   const [companyInfoOpen, setCompanyInfoOpen] = useState(true);
   const [faqOpen, setFaqOpen] = useState(true);
-
-  const charCount = content.length;
-  const charPercentage = Math.min(100, (charCount / charLimit) * 100);
-  const isOverLimit = charCount > charLimit;
 
   const handleCompanyFieldChange = (key: string, value: string) => {
     onCompanyInfoChange({
@@ -162,21 +154,6 @@ P: Quais documentos são necessários?
 R: Os documentos básicos são: RG, CPF, comprovante de residência e documentação específica do caso.`}
                 className="min-h-[300px] resize-none font-mono text-sm"
               />
-
-              <div className="space-y-2">
-                <div className="flex items-center justify-between text-sm">
-                  <span className={isOverLimit ? 'text-destructive' : 'text-muted-foreground'}>
-                    {charCount.toLocaleString()} / {charLimit.toLocaleString()} caracteres
-                  </span>
-                  <span className={isOverLimit ? 'text-destructive' : 'text-muted-foreground'}>
-                    {Math.round(charPercentage)}%
-                  </span>
-                </div>
-                <Progress 
-                  value={charPercentage} 
-                  className={isOverLimit ? '[&>div]:bg-destructive' : ''}
-                />
-              </div>
             </CardContent>
           </CollapsibleContent>
         </Card>

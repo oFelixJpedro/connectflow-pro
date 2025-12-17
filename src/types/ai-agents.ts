@@ -58,6 +58,7 @@ export interface AIAgent {
   
   // Configurações básicas
   delay_seconds: number;
+  temperature: number;
   
   // Conteúdo do agente
   rules_content: string | null;
@@ -80,6 +81,8 @@ export interface AIAgent {
   audio_always_respond_audio: boolean;
   voice_name: string;
   speech_speed: number;
+  audio_temperature: number;
+  language_code: string;
   
   // Metadados
   created_at: string;
@@ -206,6 +209,7 @@ export interface UpdateAIAgentData {
   description?: string;
   status?: AIAgentStatus;
   delay_seconds?: number;
+  temperature?: number;
   rules_content?: string;
   script_content?: string;
   faq_content?: string;
@@ -220,6 +224,8 @@ export interface UpdateAIAgentData {
   audio_always_respond_audio?: boolean;
   voice_name?: string;
   speech_speed?: number;
+  audio_temperature?: number;
+  language_code?: string;
 }
 
 // Limite de caracteres

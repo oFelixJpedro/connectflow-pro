@@ -221,6 +221,7 @@ export type Database = {
           audio_always_respond_audio: boolean | null
           audio_enabled: boolean | null
           audio_respond_with_audio: boolean | null
+          audio_temperature: number | null
           company_id: string
           company_info: Json | null
           contract_link: string | null
@@ -233,6 +234,7 @@ export type Database = {
           faq_content: string | null
           id: string
           is_primary: boolean | null
+          language_code: string | null
           name: string
           parent_agent_id: string | null
           paused_until: string | null
@@ -241,6 +243,7 @@ export type Database = {
           script_content: string | null
           speech_speed: number | null
           status: string | null
+          temperature: number | null
           updated_at: string | null
           voice_name: string | null
         }
@@ -250,6 +253,7 @@ export type Database = {
           audio_always_respond_audio?: boolean | null
           audio_enabled?: boolean | null
           audio_respond_with_audio?: boolean | null
+          audio_temperature?: number | null
           company_id: string
           company_info?: Json | null
           contract_link?: string | null
@@ -262,6 +266,7 @@ export type Database = {
           faq_content?: string | null
           id?: string
           is_primary?: boolean | null
+          language_code?: string | null
           name: string
           parent_agent_id?: string | null
           paused_until?: string | null
@@ -270,6 +275,7 @@ export type Database = {
           script_content?: string | null
           speech_speed?: number | null
           status?: string | null
+          temperature?: number | null
           updated_at?: string | null
           voice_name?: string | null
         }
@@ -279,6 +285,7 @@ export type Database = {
           audio_always_respond_audio?: boolean | null
           audio_enabled?: boolean | null
           audio_respond_with_audio?: boolean | null
+          audio_temperature?: number | null
           company_id?: string
           company_info?: Json | null
           contract_link?: string | null
@@ -291,6 +298,7 @@ export type Database = {
           faq_content?: string | null
           id?: string
           is_primary?: boolean | null
+          language_code?: string | null
           name?: string
           parent_agent_id?: string | null
           paused_until?: string | null
@@ -299,6 +307,7 @@ export type Database = {
           script_content?: string | null
           speech_speed?: number | null
           status?: string | null
+          temperature?: number | null
           updated_at?: string | null
           voice_name?: string | null
         }

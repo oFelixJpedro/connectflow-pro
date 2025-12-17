@@ -61,7 +61,11 @@ serve(async (req) => {
           require_activation_trigger,
           delay_seconds,
           voice_name,
-          paused_until
+          speech_speed,
+          audio_temperature,
+          language_code,
+          paused_until,
+          temperature
         )
       `)
       .eq('connection_id', connectionId)
@@ -283,6 +287,9 @@ ${agent.faq_content}
     console.log('📝 Histórico:', conversationHistory.length, 'mensagens');
 
     // Call OpenAI API
+    const agentTemperature = agent.temperature ?? 0.7;
+    console.log('🌡️ Temperatura configurada:', agentTemperature);
+
     const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -297,7 +304,7 @@ ${agent.faq_content}
           { role: 'user', content: messageContent || '[Mensagem sem texto]' }
         ],
         max_tokens: 500,
-        temperature: 0.7,
+        temperature: agentTemperature,
       }),
     });
 
@@ -360,14 +367,19 @@ ${agent.faq_content}
       }
     });
 
-    // 8️⃣ Return response with delay info
+    // 8️⃣ Return response with delay info and audio config
     return new Response(
       JSON.stringify({
         success: true,
         response: aiResponse,
         agentId: agent.id,
         agentName: agent.name,
-        delaySeconds: agent.delay_seconds || 0
+        delaySeconds: agent.delay_seconds || 0,
+        // Audio configuration for TTS
+        voiceName: agent.voice_name || null,
+        speechSpeed: agent.speech_speed || 1.0,
+        audioTemperature: agent.audio_temperature || 0.7,
+        languageCode: agent.language_code || 'pt-BR'
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
