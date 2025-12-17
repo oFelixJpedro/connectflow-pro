@@ -43,6 +43,8 @@ import { ContactFormModal } from '@/components/contacts/ContactFormModal';
 import { ContactFormData } from '@/hooks/useContactsData';
 import { ChatNotesModal } from './ChatNotesModal';
 import { ConversationHistoryModal } from './ConversationHistoryModal';
+import { ScheduledMessagesList } from './ScheduledMessagesList';
+import { useScheduledMessagesCount } from './ScheduledMessagesList';
 import { logConversationEvent } from '@/lib/conversationHistory';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -99,6 +101,9 @@ export function ContactPanel({ conversation, onClose, onContactUpdated, onScroll
   const [lastInteraction, setLastInteraction] = useState<string | null>(null);
 
   const contact = conversation?.contact;
+  
+  // Scheduled messages count
+  const scheduledMessagesCount = useScheduledMessagesCount(contact?.id);
 
   // Load initial data
   useEffect(() => {
@@ -636,6 +641,23 @@ export function ContactPanel({ conversation, onClose, onContactUpdated, onScroll
             <p className="text-xs text-muted-foreground">
               Notas feitas diretamente no chat para contexto rápido
             </p>
+          </div>
+
+          <Separator />
+
+          {/* Scheduled Messages */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <h5 className="text-sm font-medium text-foreground">Mensagens Agendadas</h5>
+                {scheduledMessagesCount > 0 && (
+                  <Badge variant="secondary" className="text-xs bg-primary/10 text-primary">
+                    {scheduledMessagesCount}
+                  </Badge>
+                )}
+              </div>
+            </div>
+            {contact?.id && <ScheduledMessagesList contactId={contact.id} />}
           </div>
 
           <Separator />

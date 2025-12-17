@@ -1590,6 +1590,108 @@ export type Database = {
           },
         ]
       }
+      scheduled_messages: {
+        Row: {
+          cancelled_at: string | null
+          cancelled_by: string | null
+          company_id: string
+          contact_id: string
+          content: string | null
+          conversation_id: string | null
+          created_at: string | null
+          created_by: string
+          error_message: string | null
+          id: string
+          media_file_name: string | null
+          media_mime_type: string | null
+          media_url: string | null
+          message_type: string
+          scheduled_at: string
+          sent_at: string | null
+          sent_message_id: string | null
+          status: string
+          timezone: string
+        }
+        Insert: {
+          cancelled_at?: string | null
+          cancelled_by?: string | null
+          company_id: string
+          contact_id: string
+          content?: string | null
+          conversation_id?: string | null
+          created_at?: string | null
+          created_by: string
+          error_message?: string | null
+          id?: string
+          media_file_name?: string | null
+          media_mime_type?: string | null
+          media_url?: string | null
+          message_type?: string
+          scheduled_at: string
+          sent_at?: string | null
+          sent_message_id?: string | null
+          status?: string
+          timezone?: string
+        }
+        Update: {
+          cancelled_at?: string | null
+          cancelled_by?: string | null
+          company_id?: string
+          contact_id?: string
+          content?: string | null
+          conversation_id?: string | null
+          created_at?: string | null
+          created_by?: string
+          error_message?: string | null
+          id?: string
+          media_file_name?: string | null
+          media_mime_type?: string | null
+          media_url?: string | null
+          message_type?: string
+          scheduled_at?: string
+          sent_at?: string | null
+          sent_message_id?: string | null
+          status?: string
+          timezone?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "scheduled_messages_cancelled_by_fkey"
+            columns: ["cancelled_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "scheduled_messages_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "scheduled_messages_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "scheduled_messages_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "scheduled_messages_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       tags: {
         Row: {
           color: string | null

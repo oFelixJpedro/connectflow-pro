@@ -62,3 +62,6 @@ verify_jwt = true
 
 [functions.generate-ai-response]
 verify_jwt = true
+
+[functions.send-scheduled-messages]
+verify_jwt = false
