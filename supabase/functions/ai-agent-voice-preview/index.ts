@@ -116,7 +116,8 @@ serve(async (req) => {
                 }
               }
             }
-          }
+          },
+          outputAudioEncoding: "MP3"
         }),
       }
     );

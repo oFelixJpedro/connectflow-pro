@@ -357,22 +357,166 @@ async function processMediaInBackground(params: {
     
   } catch (error) {
     console.error(`❌ [BACKGROUND] Erro ao processar ${mediaType}:`, error);
-    
-    const supabase = createClient(
-      Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-    );
-    
-    await supabase
-      .from('messages')
-      .update({
-        status: 'failed',
-        error_message: `Processing error: ${error instanceof Error ? error.message : 'Unknown error'}`,
-        metadata: { ...mediaMetadata, error: 'Processing failed', processedAt: new Date().toISOString() }
-      })
-      .eq('id', messageDbId);
   }
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PROCESSAMENTO ASSÍNCRONO DE AGENTE DE IA (Background Task)
+// ═══════════════════════════════════════════════════════════════════════════════
+async function processAIAgentResponse(params: {
+  connectionId: string;
+  conversationId: string;
+  messageContent: string;
+  contactName: string;
+  contactPhone: string;
+  companyId: string;
+  instanceToken: string;
+}) {
+  const { connectionId, conversationId, messageContent, contactName, contactPhone, companyId, instanceToken } = params;
+  
+  console.log(`🤖 [AI AGENT] Iniciando processamento para conversa ${conversationId}`);
+  
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+  const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+  const supabase = createClient(supabaseUrl, supabaseServiceKey);
+  
+  try {
+    // Call AI agent process function
+    const aiProcessUrl = `${supabaseUrl}/functions/v1/ai-agent-process`;
+    
+    const response = await fetch(aiProcessUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${supabaseServiceKey}`,
+      },
+      body: JSON.stringify({
+        connectionId,
+        conversationId,
+        messageContent,
+        contactName,
+        contactPhone,
+        messageType: 'text'
+      }),
+    });
+    
+    const result = await response.json();
+    
+    if (!result.success) {
+      if (result.skip) {
+        console.log(`🤖 [AI AGENT] Pulando: ${result.reason}`);
+      } else {
+        console.log(`❌ [AI AGENT] Erro: ${result.error}`);
+      }
+      return;
+    }
+    
+    const aiResponse = result.response;
+    const delaySeconds = result.delaySeconds || 0;
+    
+    console.log(`✅ [AI AGENT] Resposta gerada, aguardando ${delaySeconds}s antes de enviar...`);
+    
+    // Wait for configured delay
+    if (delaySeconds > 0) {
+      await new Promise(resolve => setTimeout(resolve, delaySeconds * 1000));
+    }
+    
+    // Get contact phone for sending
+    const { data: conversation } = await supabase
+      .from('conversations')
+      .select(`
+        contacts!inner (phone_number)
+      `)
+      .eq('id', conversationId)
+      .single();
+    
+    const contactData = conversation?.contacts as any;
+    if (!contactData?.phone_number) {
+      console.log('❌ [AI AGENT] Contato não encontrado');
+      return;
+    }
+    
+    const phoneNumber = contactData.phone_number;
+    
+    // Send message via UAZAPI
+    const sendUrl = `${UAZAPI_BASE_URL}/send/text`;
+    
+    console.log(`📤 [AI AGENT] Enviando para ${phoneNumber}...`);
+    
+    const sendResponse = await fetch(sendUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'token': instanceToken,
+      },
+      body: JSON.stringify({
+        number: phoneNumber,
+        text: aiResponse
+      }),
+    });
+    
+    if (!sendResponse.ok) {
+      const errorText = await sendResponse.text();
+      console.log(`❌ [AI AGENT] Erro ao enviar: ${sendResponse.status} - ${errorText}`);
+      return;
+    }
+    
+    const sendResult = await sendResponse.json();
+    const whatsappMessageId = sendResult.key?.id || sendResult.messageId || sendResult.id;
+    
+    console.log(`✅ [AI AGENT] Mensagem enviada! WhatsApp ID: ${whatsappMessageId}`);
+    
+    // Save message to database
+    await supabase
+      .from('messages')
+      .insert({
+        conversation_id: conversationId,
+        direction: 'outbound',
+        sender_type: 'bot',
+        sender_id: null,
+        content: aiResponse,
+        message_type: 'text',
+        whatsapp_message_id: whatsappMessageId,
+        status: 'sent',
+        metadata: {
+          sentByAIAgent: true,
+          agentId: result.agentId,
+          agentName: result.agentName
+        }
+      });
+    
+    // Update conversation
+    await supabase
+      .from('conversations')
+      .update({
+        last_message_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', conversationId);
+    
+    console.log(`🎉 [AI AGENT] Processamento completo!`);
+    
+  } catch (error) {
+    console.error(`❌ [AI AGENT] Erro:`, error);
+  }
+}
+
+// Helper function for error handling (unused but kept for reference)
+// async function _handleMediaProcessingError(messageDbId: string, mediaMetadata: any, error: unknown) {
+//     const supabase = createClient(
+//       Deno.env.get('SUPABASE_URL')!,
+//       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+//     );
+//     
+//     await supabase
+//       .from('messages')
+//       .update({
+//         status: 'failed',
+//         error_message: `Processing error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+//         metadata: { ...mediaMetadata, error: 'Processing failed', processedAt: new Date().toISOString() }
+//       })
+//       .eq('id', messageDbId);
+// }
 
 serve(async (req) => {
   const timestamp = new Date().toISOString()
@@ -1183,6 +1327,25 @@ serve(async (req) => {
           contentData
         })
       )
+    }
+    
+    // ═══════════════════════════════════════════════════════════════════
+    // 🤖 PROCESS AI AGENT RESPONSE (Background Task)
+    // ═══════════════════════════════════════════════════════════════════
+    if (!isFromMe && dbMessageType === 'text' && messageContent) {
+      console.log('🤖 Checking AI agent for this connection...');
+      
+      EdgeRuntime.waitUntil(
+        processAIAgentResponse({
+          connectionId: whatsappConnectionId,
+          conversationId,
+          messageContent,
+          contactName,
+          contactPhone: phoneNumber,
+          companyId,
+          instanceToken
+        })
+      );
     }
     
     // ═══════════════════════════════════════════════════════════════════
