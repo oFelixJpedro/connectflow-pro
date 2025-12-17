@@ -32,6 +32,11 @@ function formatSpeed(speed: number): string {
   return speed.toFixed(1).replace('.', ',') + '×';
 }
 
+// Helper to check if duration is valid (WebM files often return Infinity/NaN)
+function isValidDuration(d: number): boolean {
+  return d > 0 && isFinite(d) && !isNaN(d);
+}
+
 export function AudioPlayer({
   src,
   mimeType,
@@ -59,7 +64,7 @@ export function AudioPlayer({
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [transcription, setTranscription] = useState<string | null>(initialTranscription || null);
 
-  const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
+  const progress = isValidDuration(duration) ? (currentTime / duration) * 100 : 0;
   const showError = status === 'failed' || hasError;
 
   const togglePlayback = useCallback(() => {
@@ -197,12 +202,43 @@ export function AudioPlayer({
     const audio = audioRef.current;
     if (!audio) return;
 
+    let seekTrickApplied = false;
+
     const handleLoadedMetadata = () => {
-      setDuration(audio.duration || initialDuration);
-      setIsLoading(false);
+      if (isValidDuration(audio.duration)) {
+        setDuration(audio.duration);
+        setIsLoading(false);
+      } else if (!seekTrickApplied) {
+        // WebM files often don't have duration metadata
+        // Use seek trick to force duration calculation
+        seekTrickApplied = true;
+        audio.currentTime = 1e101; // Seek to very end to force duration calc
+      }
+    };
+
+    const handleDurationChange = () => {
+      if (isValidDuration(audio.duration)) {
+        setDuration(audio.duration);
+        // If seek trick was applied, reset to start
+        if (seekTrickApplied && audio.currentTime > 0) {
+          audio.currentTime = 0;
+          seekTrickApplied = false;
+        }
+        setIsLoading(false);
+      }
     };
 
     const handleTimeUpdate = () => {
+      // Capture duration when it becomes available via seek trick
+      if (!isValidDuration(duration) && isValidDuration(audio.duration)) {
+        setDuration(audio.duration);
+        if (seekTrickApplied) {
+          audio.currentTime = 0;
+          seekTrickApplied = false;
+        }
+        setIsLoading(false);
+      }
+      
       if (!isDragging) {
         setCurrentTime(audio.currentTime);
       }
@@ -212,6 +248,10 @@ export function AudioPlayer({
     const handlePause = () => setIsPlaying(false);
     const handleEnded = () => {
       setIsPlaying(false);
+      // If duration was never properly set, use currentTime as actual duration
+      if (!isValidDuration(duration) && audio.currentTime > 0) {
+        setDuration(audio.currentTime);
+      }
       setCurrentTime(0);
     };
 
@@ -224,24 +264,38 @@ export function AudioPlayer({
       setIsLoading(false);
     };
 
+    const handleSeeked = () => {
+      // When seek trick completes, duration should be available
+      if (seekTrickApplied && isValidDuration(audio.duration)) {
+        setDuration(audio.duration);
+        audio.currentTime = 0;
+        seekTrickApplied = false;
+        setIsLoading(false);
+      }
+    };
+
     audio.addEventListener('loadedmetadata', handleLoadedMetadata);
+    audio.addEventListener('durationchange', handleDurationChange);
     audio.addEventListener('timeupdate', handleTimeUpdate);
     audio.addEventListener('play', handlePlay);
     audio.addEventListener('pause', handlePause);
     audio.addEventListener('ended', handleEnded);
     audio.addEventListener('error', handleError);
     audio.addEventListener('canplay', handleCanPlay);
+    audio.addEventListener('seeked', handleSeeked);
 
     return () => {
       audio.removeEventListener('loadedmetadata', handleLoadedMetadata);
+      audio.removeEventListener('durationchange', handleDurationChange);
       audio.removeEventListener('timeupdate', handleTimeUpdate);
       audio.removeEventListener('play', handlePlay);
       audio.removeEventListener('pause', handlePause);
       audio.removeEventListener('ended', handleEnded);
       audio.removeEventListener('error', handleError);
       audio.removeEventListener('canplay', handleCanPlay);
+      audio.removeEventListener('seeked', handleSeeked);
     };
-  }, [initialDuration, isDragging]);
+  }, [initialDuration, isDragging, duration]);
 
   // SINGLE RETURN with conditional rendering - audio element is ALWAYS at the top level
   return (
