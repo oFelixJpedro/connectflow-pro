@@ -8,19 +8,25 @@ const corsHeaders = {
 
 const PREVIEW_TEXT = "Olá! Eu sou a assistente virtual. Como posso ajudar você hoje?";
 
-// Speed control via Style Control - natural language prefixes
-const SPEED_PREFIXES: Record<number, string> = {
-  0.7: "[speak slowly and calmly] ",
-  1.0: "", // Normal - no prefix
-  1.2: "[speak quickly and energetically] ",
+// Language names for Style Control
+const LANGUAGE_NAMES: Record<string, string> = {
+  'pt-BR': 'Brazilian Portuguese',
+  'en-US': 'American English',
+  'es-ES': 'Spanish from Spain',
 };
 
-// Get speed prefix based on speed value
-function getSpeedPrefix(speed: number): string {
-  // Find closest matching speed
-  if (speed <= 0.85) return SPEED_PREFIXES[0.7];
-  if (speed >= 1.1) return SPEED_PREFIXES[1.2];
-  return SPEED_PREFIXES[1.0];
+// Get style control prefix based on speed and language
+function getStylePrefix(speed: number, languageCode: string): string {
+  const langName = LANGUAGE_NAMES[languageCode] || 'Brazilian Portuguese';
+  
+  if (speed <= 0.85) {
+    return `[speak slowly and calmly in ${langName}] `;
+  }
+  if (speed >= 1.1) {
+    return `[speak quickly and energetically in ${langName}] `;
+  }
+  // Normal speed - still include language for consistency
+  return `[speak naturally in ${langName}] `;
 }
 
 // Convert L16 PCM to WAV format (browser-compatible)
@@ -140,11 +146,11 @@ serve(async (req) => {
       );
     }
 
-    // Apply speed prefix via Style Control
-    const speedPrefix = getSpeedPrefix(speed);
-    const textWithSpeed = speedPrefix + PREVIEW_TEXT;
+    // Apply style prefix via Style Control (includes speed + language)
+    const stylePrefix = getStylePrefix(speed, languageCode);
+    const textWithStyle = stylePrefix + PREVIEW_TEXT;
 
-    console.log(`Generating voice preview for: ${voiceName} at speed: ${speed}, language: ${languageCode} (prefix: "${speedPrefix}")`);
+    console.log(`Generating voice preview for: ${voiceName} at speed: ${speed}, language: ${languageCode} (prefix: "${stylePrefix}")`);
 
     // Generate audio using Gemini TTS API
     const response = await fetch(
@@ -159,7 +165,7 @@ serve(async (req) => {
             {
               parts: [
                 {
-                  text: textWithSpeed
+                  text: textWithStyle
                 }
               ]
             }

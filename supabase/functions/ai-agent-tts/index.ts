@@ -6,18 +6,25 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Speed control via Style Control - natural language prefixes
-const SPEED_PREFIXES: Record<number, string> = {
-  0.7: "[speak slowly and calmly] ",
-  1.0: "", // Normal - no prefix
-  1.2: "[speak quickly and energetically] ",
+// Language names for Style Control
+const LANGUAGE_NAMES: Record<string, string> = {
+  'pt-BR': 'Brazilian Portuguese',
+  'en-US': 'American English',
+  'es-ES': 'Spanish from Spain',
 };
 
-// Get speed prefix based on speed value
-function getSpeedPrefix(speed: number): string {
-  if (speed <= 0.85) return SPEED_PREFIXES[0.7];
-  if (speed >= 1.1) return SPEED_PREFIXES[1.2];
-  return SPEED_PREFIXES[1.0];
+// Get style control prefix based on speed and language
+function getStylePrefix(speed: number, languageCode: string): string {
+  const langName = LANGUAGE_NAMES[languageCode] || 'Brazilian Portuguese';
+  
+  if (speed <= 0.85) {
+    return `[speak slowly and calmly in ${langName}] `;
+  }
+  if (speed >= 1.1) {
+    return `[speak quickly and energetically in ${langName}] `;
+  }
+  // Normal speed - still include language for consistency
+  return `[speak naturally in ${langName}] `;
 }
 
 // Convert L16 PCM to WAV format (browser-compatible)
@@ -127,12 +134,12 @@ serve(async (req) => {
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Apply speed prefix via Style Control
-    const speedPrefix = getSpeedPrefix(speed);
-    const textWithSpeed = speedPrefix + text;
+    // Apply style prefix via Style Control (includes speed + language)
+    const stylePrefix = getStylePrefix(speed, languageCode);
+    const textWithStyle = stylePrefix + text;
 
     console.log(`Generating TTS for voice: ${voiceName} at speed: ${speed}, temperature: ${temperature}, language: ${languageCode}`);
-    console.log(`Text length: ${text.length} chars, with prefix: ${textWithSpeed.length} chars`);
+    console.log(`Text length: ${text.length} chars, with style prefix: ${textWithStyle.length} chars`);
 
     // Generate audio using Gemini TTS API
     const response = await fetch(
@@ -147,7 +154,7 @@ serve(async (req) => {
             {
               parts: [
                 {
-                  text: textWithSpeed
+                  text: textWithStyle
                 }
               ]
             }
