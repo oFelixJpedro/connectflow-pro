@@ -66,14 +66,15 @@ export function AgentSidebar({ agent, totalChars, charLimit, onAgentUpdate }: Ag
   const handleAddTrigger = async () => {
     if (!newTrigger.trim()) return;
     
-    const triggers = [...(agent.activation_triggers || []), newTrigger.trim()];
+    const currentTriggers = agent.activation_triggers || [];
+    const triggers = [...currentTriggers, newTrigger.trim()];
     await updateAgent(agent.id, { activation_triggers: triggers });
     setNewTrigger('');
     onAgentUpdate();
   };
 
   const handleRemoveTrigger = async (index: number) => {
-    const triggers = agent.activation_triggers.filter((_, i) => i !== index);
+    const triggers = (agent.activation_triggers || []).filter((_, i) => i !== index);
     await updateAgent(agent.id, { activation_triggers: triggers });
     onAgentUpdate();
   };
