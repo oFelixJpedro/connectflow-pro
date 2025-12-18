@@ -17,14 +17,16 @@ import { ptBR } from 'date-fns/locale';
 
 interface AIAgentActionsProps {
   conversationId: string | undefined;
+  whatsappConnectionId: string | undefined;
 }
 
 type ConfirmModalType = 'stop' | 'restart' | null;
 
-export function AIAgentActions({ conversationId }: AIAgentActionsProps) {
+export function AIAgentActions({ conversationId, whatsappConnectionId }: AIAgentActionsProps) {
   const { toast } = useToast();
-  const { state, isLoading, isActionLoading, startAI, pauseAI, stopAI, restartAI } = useAIConversationState({
+  const { state, isLoading, isActionLoading, hasAgent, agentName, startAI, pauseAI, stopAI, restartAI } = useAIConversationState({
     conversationId,
+    whatsappConnectionId,
   });
   
   const [pauseModalOpen, setPauseModalOpen] = useState(false);
@@ -138,7 +140,7 @@ export function AIAgentActions({ conversationId }: AIAgentActionsProps) {
       <div className="space-y-3">
         <div className="flex items-center gap-2">
           <Bot className="w-4 h-4 text-muted-foreground" />
-          <span className="text-sm font-medium text-foreground">Agente de IA</span>
+          <span className="text-sm font-medium text-foreground">Carregando...</span>
         </div>
         <div className="flex items-center justify-center py-3">
           <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
@@ -147,6 +149,9 @@ export function AIAgentActions({ conversationId }: AIAgentActionsProps) {
     );
   }
 
+  // Don't render if no agent is linked to this connection
+  if (!hasAgent) return null;
+
   return (
     <TooltipProvider delayDuration={200}>
       <div className="space-y-3">
@@ -154,7 +159,7 @@ export function AIAgentActions({ conversationId }: AIAgentActionsProps) {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Bot className="w-4 h-4 text-muted-foreground" />
-            <span className="text-sm font-medium text-foreground">Agente de IA</span>
+            <span className="text-sm font-medium text-foreground">{agentName}</span>
           </div>
           
           {/* Status badge */}
