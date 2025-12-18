@@ -518,6 +518,8 @@ ${agent.faq_content}
         }
       ];
       
+      const agentTemperature = agent.temperature ?? 0.7;
+      
       const response = await fetch('https://api.openai.com/v1/responses', {
         method: 'POST',
         headers: {
@@ -533,13 +535,14 @@ ${agent.faq_content}
               content: contentItems
             }
           ],
+          temperature: agentTemperature,
           text: {
             format: { type: 'text' },
             verbosity: 'medium'
           },
           reasoning: {
-            effort: 'medium',
-            summary: 'auto'
+            effort: 'low',
+            summary: 'brief'
           }
         }),
       });
@@ -567,6 +570,31 @@ ${agent.faq_content}
       console.log('📦 Resposta API (multimodal):', JSON.stringify(aiData, null, 2));
       aiResponse = aiData.output?.find((o: any) => o.type === 'message')?.content?.[0]?.text?.trim() || '';
       
+      // Retry with lower temperature if empty
+      if (!aiResponse) {
+        console.log('⚠️ Resposta multimodal vazia - tentando retry com temperatura 0.5');
+        const retryResponse = await fetch('https://api.openai.com/v1/responses', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${AI_API_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: 'gpt-5-nano',
+            input: [{ type: 'message', role: 'user', content: contentItems }],
+            temperature: 0.5,
+            text: { format: { type: 'text' }, verbosity: 'medium' },
+            reasoning: { effort: 'low', summary: 'brief' }
+          }),
+        });
+        
+        if (retryResponse.ok) {
+          const retryData = await retryResponse.json();
+          console.log('🔄 Retry multimodal result:', JSON.stringify(retryData, null, 2));
+          aiResponse = retryData.output?.find((o: any) => o.type === 'message')?.content?.[0]?.text?.trim() || '';
+        }
+      }
+      
     } else {
       // Use /v1/responses endpoint (compatible with GPT-5 models)
       console.log('📝 Usando endpoint /v1/responses com gpt-5-mini');
@@ -580,6 +608,8 @@ ${agent.faq_content}
       
       const fullPrompt = `${systemPrompt}\n\nHistórico da conversa:\n${conversationContext}\n\n[CLIENTE]: ${processedMessageContent || '[Mensagem sem texto]'}\n\nGere a resposta do atendente:`;
       
+      const agentTemperature = agent.temperature ?? 0.7;
+      
       const openaiResponse = await fetch('https://api.openai.com/v1/responses', {
         method: 'POST',
         headers: {
@@ -589,13 +619,14 @@ ${agent.faq_content}
         body: JSON.stringify({
           model: 'gpt-5-mini',
           input: fullPrompt,
+          temperature: agentTemperature,
           text: {
             format: { type: 'text' },
             verbosity: 'medium'
           },
           reasoning: {
-            effort: 'medium',
-            summary: 'auto'
+            effort: 'low',
+            summary: 'brief'
           }
         }),
       });
@@ -622,10 +653,75 @@ ${agent.faq_content}
       const aiData = await openaiResponse.json();
       console.log('📦 Resposta API (texto):', JSON.stringify(aiData, null, 2));
       aiResponse = aiData.output?.find((o: any) => o.type === 'message')?.content?.[0]?.text?.trim() || '';
+      
+      // Retry with lower temperature if empty
+      if (!aiResponse) {
+        console.log('⚠️ Resposta texto vazia - tentando retry com temperatura 0.5');
+        const retryResponse = await fetch('https://api.openai.com/v1/responses', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${AI_API_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: 'gpt-5-mini',
+            input: fullPrompt,
+            temperature: 0.5,
+            text: { format: { type: 'text' }, verbosity: 'medium' },
+            reasoning: { effort: 'low', summary: 'brief' }
+          }),
+        });
+        
+        if (retryResponse.ok) {
+          const retryData = await retryResponse.json();
+          console.log('🔄 Retry texto result:', JSON.stringify(retryData, null, 2));
+          aiResponse = retryData.output?.find((o: any) => o.type === 'message')?.content?.[0]?.text?.trim() || '';
+        }
+      }
+      
+      // Fallback to chat/completions if still empty
+      if (!aiResponse) {
+        console.log('⚠️ Ainda vazio - tentando fallback com chat/completions (gpt-4o-mini)');
+        const fallbackResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${AI_API_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: 'gpt-4o-mini',
+            messages: [
+              { role: 'system', content: systemPrompt },
+              ...conversationHistory.filter(Boolean).map((msg: any) => ({
+                role: msg.role,
+                content: msg.content
+              })),
+              { role: 'user', content: processedMessageContent || '[Mensagem sem texto]' }
+            ],
+            temperature: 0.7,
+            max_tokens: 500
+          }),
+        });
+        
+        if (fallbackResponse.ok) {
+          const fallbackData = await fallbackResponse.json();
+          console.log('✅ Fallback result:', JSON.stringify(fallbackData, null, 2));
+          aiResponse = fallbackData.choices?.[0]?.message?.content?.trim() || '';
+        }
+      }
     }
 
     if (!aiResponse) {
-      console.log('❌ Nenhuma resposta gerada');
+      console.log('❌ Nenhuma resposta gerada após todos os retries');
+      await supabase.from('ai_agent_logs').insert({
+        agent_id: agent.id,
+        conversation_id: conversationId,
+        action_type: 'response_error',
+        input_text: processedMessageContent,
+        error_message: 'No response generated after all retries',
+        metadata: { attemptedRetry: true, attemptedFallback: true }
+      });
+      
       return new Response(
         JSON.stringify({ success: false, error: 'No response generated' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
