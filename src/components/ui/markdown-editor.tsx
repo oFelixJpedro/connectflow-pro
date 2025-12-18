@@ -36,6 +36,7 @@ import {
   TextInputSelector,
 } from '@/components/ai-agents/slash-commands';
 import { SlashCommandMark } from './slash-command-mark';
+import { MediaTagMark } from './media-tag-mark';
 import { MediaSelectionModal } from '@/components/ai-agents/media/MediaSelectionModal';
 import { AgentMedia } from '@/hooks/useAgentMedia';
 
@@ -98,9 +99,9 @@ function markdownToHtml(markdown: string): string {
   html = html.replace(/(\/[a-z_]+:[^\s]+)/g, '<span data-slash-command="true" class="slash-command-badge">$1</span>');
   html = html.replace(/(\/desativar_agente)(?![:\w])/g, '<span data-slash-command="true" class="slash-command-badge">$1</span>');
   
-  // Media tags - wrap with styled span {{type:key}}
+  // Media tags - wrap with styled span {{type:key}} including data-media-key for editing
   html = html.replace(/\{\{(image|video|audio|document|text|link):([^}]+)\}\}/g, (match, type, key) => {
-    return `<span data-media-tag="true" data-media-type="${type}" class="media-tag media-tag-${type}">📎 ${type}:${key}</span>`;
+    return `<span data-media-tag="true" data-media-type="${type}" data-media-key="${key}" class="media-tag-badge media-tag-${type}">📎 ${type}:${key}</span>`;
   });
   // Ordered lists (before converting to paragraphs)
   const orderedListPattern = /(?:^|\n)((?:\d+\. .+\n?)+)/g;
@@ -174,13 +175,12 @@ function htmlToMarkdown(html: string): string {
   markdown = markdown.replace(/<span[^>]*data-slash-command[^>]*>([^<]+)<\/span>/g, '$1');
   
   // Convert media tag spans back to {{type:key}} format
-  markdown = markdown.replace(/<span[^>]*data-media-tag[^>]*data-media-type="([^"]+)"[^>]*>[^<]*<\/span>/g, (match, type) => {
-    // Extract the type:key from the span content
-    const contentMatch = match.match(/📎\s*([^<]+)/);
-    if (contentMatch) {
-      return `{{${contentMatch[1].trim()}}}`;
-    }
-    return match;
+  markdown = markdown.replace(/<span[^>]*data-media-tag[^>]*data-media-type="([^"]+)"[^>]*data-media-key="([^"]+)"[^>]*>[^<]*<\/span>/g, (match, type, key) => {
+    return `{{${type}:${key}}}`;
+  });
+  // Also handle spans where attributes are in different order
+  markdown = markdown.replace(/<span[^>]*data-media-key="([^"]+)"[^>]*data-media-type="([^"]+)"[^>]*>[^<]*<\/span>/g, (match, key, type) => {
+    return `{{${type}:${key}}}`;
   });
   
   // Unordered lists
@@ -308,6 +308,14 @@ export function MarkdownEditor({
   const [showMediaModal, setShowMediaModal] = useState(false);
   const [mediaCursorPosition, setMediaCursorPosition] = useState<number | null>(null);
   
+  // Editing existing media tag state
+  const [editingMedia, setEditingMedia] = useState<{
+    from: number;
+    to: number;
+    type: string;
+    key: string;
+  } | null>(null);
+  
   // Editing existing command state
   const [editingCommand, setEditingCommand] = useState<{
     from: number;
@@ -318,6 +326,24 @@ export function MarkdownEditor({
   
   // Ref to always have the latest editingCommand value (avoids stale closure)
   const editingCommandRef = useRef<typeof editingCommand>(null);
+  
+  // Handle media tag delete via X button
+  const handleMediaTagDelete = useCallback((from: number, to: number) => {
+    const ed = editorRef.current;
+    if (!ed) return;
+    
+    ed.chain()
+      .focus()
+      .setTextSelection({ from, to })
+      .deleteSelection()
+      .run();
+  }, []);
+  
+  // Handle click on existing media tag - opens modal to replace
+  const handleMediaTagClick = useCallback((type: string, key: string, from: number, to: number) => {
+    setEditingMedia({ from, to, type, key });
+    setShowMediaModal(true);
+  }, []);
 
   // Handle delete command via X button (uses ref to avoid circular dependency)
   const handleCommandDelete = useCallback((from: number, to: number) => {
@@ -378,6 +404,10 @@ export function MarkdownEditor({
       SlashCommandMark.configure({
         onCommandClick: enableSlashCommands ? handleCommandClick : undefined,
         onCommandDelete: enableSlashCommands ? handleCommandDelete : undefined,
+      }),
+      MediaTagMark.configure({
+        onMediaClick: enableMediaTrigger ? handleMediaTagClick : undefined,
+        onMediaDelete: enableMediaTrigger ? handleMediaTagDelete : undefined,
       }),
     ],
     content: markdownToHtml(value),
@@ -595,37 +625,46 @@ export function MarkdownEditor({
   const handleMediaSelect = useCallback((media: AgentMedia) => {
     if (!editor) return;
     
-    const { from } = editor.state.selection;
+    const mediaTagHtml = `<span data-media-tag="true" data-media-type="${media.media_type}" data-media-key="${media.media_key}" class="media-tag-badge media-tag-${media.media_type}">📎 ${media.media_type}:${media.media_key}</span>`;
     
-    // Delete the "{" that was typed (mediaCursorPosition points to it)
-    if (mediaCursorPosition !== null) {
+    if (editingMedia) {
+      // Editing existing media tag - delete old and insert new
       editor.chain()
         .focus()
-        .deleteRange({ from: mediaCursorPosition, to: from })
+        .setTextSelection({ from: editingMedia.from, to: editingMedia.to })
+        .deleteSelection()
         .run();
+      
+      setTimeout(() => {
+        editor.chain()
+          .focus()
+          .insertContent(mediaTagHtml)
+          .run();
+        
+        setEditingMedia(null);
+      }, 10);
+    } else {
+      // New media tag - delete the "{" that was typed
+      const { from } = editor.state.selection;
+      
+      if (mediaCursorPosition !== null) {
+        editor.chain()
+          .focus()
+          .deleteRange({ from: mediaCursorPosition, to: from })
+          .run();
+      }
+      
+      // Insert the media tag as styled HTML
+      editor.chain()
+        .focus()
+        .insertContent(mediaTagHtml)
+        .run();
+      
+      setMediaCursorPosition(null);
     }
     
-    // Insert the media tag as plain markdown text
-    const mediaTag = `{{${media.media_type}:${media.media_key}}}`;
-    editor.chain()
-      .focus()
-      .insertContent(mediaTag)
-      .run();
-    
-    // Force refresh to apply styling via markdownToHtml
-    setTimeout(() => {
-      if (editor && !editor.isDestroyed) {
-        const currentHtml = editor.getHTML();
-        const markdown = htmlToMarkdown(currentHtml);
-        isExternalUpdate.current = true;
-        editor.commands.setContent(markdownToHtml(markdown));
-        isExternalUpdate.current = false;
-      }
-    }, 10);
-    
     setShowMediaModal(false);
-    setMediaCursorPosition(null);
-  }, [editor, mediaCursorPosition]);
+  }, [editor, mediaCursorPosition, editingMedia]);
 
   if (!editor) {
     return null;
@@ -845,7 +884,13 @@ export function MarkdownEditor({
       {enableMediaTrigger && (
         <MediaSelectionModal
           open={showMediaModal}
-          onOpenChange={setShowMediaModal}
+          onOpenChange={(open) => {
+            setShowMediaModal(open);
+            if (!open) {
+              setEditingMedia(null);
+              setMediaCursorPosition(null);
+            }
+          }}
           medias={medias}
           onSelect={handleMediaSelect}
         />
@@ -953,33 +998,100 @@ export function MarkdownEditor({
           border-color: hsl(var(--primary) / 0.6);
         }
         
-        /* Media tag base styling */
-        .media-tag {
+        /* Media tag badge styling (same structure as slash-command-badge) */
+        .media-tag-badge {
           display: inline-flex;
           align-items: center;
-          padding: 2px 8px;
+          position: relative;
+          padding: 2px 24px 2px 8px;
           border-radius: 4px;
           font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
           font-size: 0.85em;
           border: 1px solid;
           margin: 0 2px;
           white-space: nowrap;
+          cursor: pointer;
+          transition: all 0.15s ease;
         }
         
-        /* Media tag type-specific colors */
-        .media-tag-image { background-color: hsl(210 100% 95%); color: hsl(210 100% 40%); border-color: hsl(210 100% 80%); }
-        .media-tag-video { background-color: hsl(270 100% 95%); color: hsl(270 100% 40%); border-color: hsl(270 100% 80%); }
-        .media-tag-audio { background-color: hsl(140 100% 95%); color: hsl(140 100% 30%); border-color: hsl(140 100% 70%); }
-        .media-tag-document { background-color: hsl(30 100% 95%); color: hsl(30 100% 35%); border-color: hsl(30 100% 75%); }
-        .media-tag-text { background-color: hsl(0 0% 95%); color: hsl(0 0% 40%); border-color: hsl(0 0% 80%); }
-        .media-tag-link { background-color: hsl(190 100% 95%); color: hsl(190 100% 35%); border-color: hsl(190 100% 75%); }
+        .media-tag-badge::after {
+          content: '×';
+          position: absolute;
+          right: 4px;
+          top: 50%;
+          transform: translateY(-50%);
+          font-size: 14px;
+          font-weight: bold;
+          opacity: 0.5;
+          width: 16px;
+          height: 16px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          border-radius: 50%;
+          transition: all 0.15s ease;
+        }
         
+        .media-tag-badge:hover::after {
+          opacity: 1;
+          background-color: hsl(var(--destructive) / 0.15);
+        }
+        
+        /* Media tag type-specific colors - Light mode */
+        .media-tag-image { background-color: hsl(210 100% 95%); color: hsl(210 100% 40%); border-color: hsl(210 100% 80%); }
+        .media-tag-image::after { color: hsl(210 100% 40%); }
+        .media-tag-image:hover { background-color: hsl(210 100% 90%); border-color: hsl(210 100% 70%); }
+        .media-tag-image:hover::after { color: hsl(var(--destructive)); }
+        
+        .media-tag-video { background-color: hsl(270 100% 95%); color: hsl(270 100% 40%); border-color: hsl(270 100% 80%); }
+        .media-tag-video::after { color: hsl(270 100% 40%); }
+        .media-tag-video:hover { background-color: hsl(270 100% 90%); border-color: hsl(270 100% 70%); }
+        .media-tag-video:hover::after { color: hsl(var(--destructive)); }
+        
+        .media-tag-audio { background-color: hsl(140 100% 95%); color: hsl(140 100% 30%); border-color: hsl(140 100% 70%); }
+        .media-tag-audio::after { color: hsl(140 100% 30%); }
+        .media-tag-audio:hover { background-color: hsl(140 100% 90%); border-color: hsl(140 100% 60%); }
+        .media-tag-audio:hover::after { color: hsl(var(--destructive)); }
+        
+        .media-tag-document { background-color: hsl(30 100% 95%); color: hsl(30 100% 35%); border-color: hsl(30 100% 75%); }
+        .media-tag-document::after { color: hsl(30 100% 35%); }
+        .media-tag-document:hover { background-color: hsl(30 100% 90%); border-color: hsl(30 100% 65%); }
+        .media-tag-document:hover::after { color: hsl(var(--destructive)); }
+        
+        .media-tag-text { background-color: hsl(0 0% 95%); color: hsl(0 0% 40%); border-color: hsl(0 0% 80%); }
+        .media-tag-text::after { color: hsl(0 0% 40%); }
+        .media-tag-text:hover { background-color: hsl(0 0% 90%); border-color: hsl(0 0% 70%); }
+        .media-tag-text:hover::after { color: hsl(var(--destructive)); }
+        
+        .media-tag-link { background-color: hsl(190 100% 95%); color: hsl(190 100% 35%); border-color: hsl(190 100% 75%); }
+        .media-tag-link::after { color: hsl(190 100% 35%); }
+        .media-tag-link:hover { background-color: hsl(190 100% 90%); border-color: hsl(190 100% 65%); }
+        .media-tag-link:hover::after { color: hsl(var(--destructive)); }
+        
+        /* Dark mode */
         .dark .media-tag-image { background-color: hsl(210 100% 20%); color: hsl(210 100% 75%); border-color: hsl(210 100% 35%); }
+        .dark .media-tag-image::after { color: hsl(210 100% 75%); }
+        .dark .media-tag-image:hover { background-color: hsl(210 100% 25%); border-color: hsl(210 100% 45%); }
+        
         .dark .media-tag-video { background-color: hsl(270 100% 20%); color: hsl(270 100% 75%); border-color: hsl(270 100% 35%); }
+        .dark .media-tag-video::after { color: hsl(270 100% 75%); }
+        .dark .media-tag-video:hover { background-color: hsl(270 100% 25%); border-color: hsl(270 100% 45%); }
+        
         .dark .media-tag-audio { background-color: hsl(140 100% 15%); color: hsl(140 100% 65%); border-color: hsl(140 100% 30%); }
+        .dark .media-tag-audio::after { color: hsl(140 100% 65%); }
+        .dark .media-tag-audio:hover { background-color: hsl(140 100% 20%); border-color: hsl(140 100% 40%); }
+        
         .dark .media-tag-document { background-color: hsl(30 100% 15%); color: hsl(30 100% 70%); border-color: hsl(30 100% 30%); }
+        .dark .media-tag-document::after { color: hsl(30 100% 70%); }
+        .dark .media-tag-document:hover { background-color: hsl(30 100% 20%); border-color: hsl(30 100% 40%); }
+        
         .dark .media-tag-text { background-color: hsl(0 0% 20%); color: hsl(0 0% 75%); border-color: hsl(0 0% 35%); }
+        .dark .media-tag-text::after { color: hsl(0 0% 75%); }
+        .dark .media-tag-text:hover { background-color: hsl(0 0% 25%); border-color: hsl(0 0% 45%); }
+        
         .dark .media-tag-link { background-color: hsl(190 100% 15%); color: hsl(190 100% 70%); border-color: hsl(190 100% 30%); }
+        .dark .media-tag-link::after { color: hsl(190 100% 70%); }
+        .dark .media-tag-link:hover { background-color: hsl(190 100% 20%); border-color: hsl(190 100% 40%); }
       `}</style>
     </div>
   );
