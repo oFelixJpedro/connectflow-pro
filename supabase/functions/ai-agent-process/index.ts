@@ -64,17 +64,30 @@ serve(async (req) => {
   }
 
   try {
+    const requestBody = await req.json();
+    
+    // Support both single message (legacy) and batch of messages (new)
     const { 
       connectionId, 
       conversationId, 
-      messageContent, 
+      messages, // New: array of messages from batch
+      messageContent, // Legacy: single message content
       contactName,
       contactPhone,
       messageType,
       mediaUrl
-    } = await req.json();
+    } = requestBody;
 
-    console.log('📥 Input:', { connectionId, conversationId, messageType, contactName, hasMediaUrl: !!mediaUrl });
+    // Determine if this is a batch request or legacy single message
+    const isBatchRequest = Array.isArray(messages) && messages.length > 0;
+    
+    console.log('📥 Input:', { 
+      connectionId, 
+      conversationId, 
+      isBatchRequest,
+      messageCount: isBatchRequest ? messages.length : 1,
+      contactName 
+    });
 
     if (!connectionId || !conversationId) {
       return new Response(
@@ -332,11 +345,58 @@ serve(async (req) => {
       .filter(Boolean);
 
     // Check if current message is image/audio that needs special processing
-    const currentMessageIsImage = messageType === 'image';
-    const currentMessageIsAudio = messageType === 'audio';
+    // For batch requests, check the last message type
+    let currentMessageIsImage = messageType === 'image';
+    let currentMessageIsAudio = messageType === 'audio';
+    let actualMediaUrl = mediaUrl;
+    
+    // Process batch messages if this is a batch request
+    let processedMessageContent = messageContent || '';
+    
+    if (isBatchRequest) {
+      // Combine all messages from the batch into context
+      const batchContents: string[] = [];
+      
+      for (const msg of messages) {
+        if (msg.type === 'text' && msg.content) {
+          batchContents.push(msg.content);
+        } else if (msg.type === 'audio') {
+          // Transcribe audio if we have URL
+          if (msg.mediaUrl) {
+            const transcription = await transcribeAudio(msg.mediaUrl, AI_API_KEY);
+            if (transcription) {
+              batchContents.push(`[Áudio transcrito]: ${transcription}`);
+            } else {
+              batchContents.push('[Mensagem de áudio]');
+            }
+          } else {
+            batchContents.push(msg.content || '[Mensagem de áudio]');
+          }
+        } else if (msg.type === 'image') {
+          currentMessageIsImage = true;
+          if (msg.mediaUrl) actualMediaUrl = msg.mediaUrl;
+          batchContents.push(msg.content ? `[Imagem com legenda]: ${msg.content}` : '[Cliente enviou uma imagem]');
+        }
+      }
+      
+      // Join all messages with newline for context
+      processedMessageContent = batchContents.join('\n');
+      
+      // Check last message type for special processing
+      const lastMsg = messages[messages.length - 1];
+      if (lastMsg) {
+        currentMessageIsImage = lastMsg.type === 'image';
+        currentMessageIsAudio = lastMsg.type === 'audio';
+        if (lastMsg.mediaUrl) actualMediaUrl = lastMsg.mediaUrl;
+      }
+      
+      console.log('📦 Batch combined:', processedMessageContent.substring(0, 100) + '...');
+    } else {
+      // Legacy single message processing
+      processedMessageContent = messageContent || '';
+    }
     
     // Get the actual mediaUrl if not provided (media may have been processed in background)
-    let actualMediaUrl = mediaUrl;
     if ((currentMessageIsImage || currentMessageIsAudio) && !actualMediaUrl) {
       // Fetch the most recent message to get the media_url
       const { data: latestMsg } = await supabase
@@ -344,7 +404,7 @@ serve(async (req) => {
         .select('media_url, metadata')
         .eq('conversation_id', conversationId)
         .eq('direction', 'inbound')
-        .eq('message_type', messageType)
+        .eq('message_type', isBatchRequest ? (messages[messages.length - 1]?.type || 'text') : messageType)
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle();
@@ -354,12 +414,9 @@ serve(async (req) => {
         console.log('📎 Media URL obtida do banco:', actualMediaUrl.substring(0, 50) + '...');
       }
     }
-
-    // Process current message content
-    let processedMessageContent = messageContent || '';
     
-    // Handle audio transcription for current message
-    if (currentMessageIsAudio && actualMediaUrl && !processedMessageContent) {
+    // Handle audio transcription for current message (legacy mode)
+    if (!isBatchRequest && currentMessageIsAudio && actualMediaUrl && !processedMessageContent) {
       console.log('🎤 Transcrevendo áudio do cliente...');
       const transcription = await transcribeAudio(actualMediaUrl, AI_API_KEY);
       if (transcription) {

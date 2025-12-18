@@ -1457,41 +1457,87 @@ serve(async (req) => {
     }
     
     // ═══════════════════════════════════════════════════════════════════
-    // 🤖 PROCESS AI AGENT (QUEUE or BACKGROUND)
+    // 🤖 PROCESS AI AGENT (BATCH SYSTEM)
     // ═══════════════════════════════════════════════════════════════════
     // Process AI agent for text, audio and image messages (not stickers, documents, videos)
     const aiSupportedTypes = ['text', 'audio', 'image'];
     if (!isFromMe && aiSupportedTypes.includes(dbMessageType)) {
-      const aiQueueData = {
-        connectionId: whatsappConnectionId,
-        conversationId,
-        messageContent: messageContent || '',
-        contactName,
-        contactPhone: phoneNumber,
-        companyId,
-        instanceToken,
-        msgType: dbMessageType,
-        msgMediaUrl: undefined
+      const messageData = {
+        content: messageContent || '',
+        type: dbMessageType,
+        mediaUrl: undefined as string | undefined,
+        timestamp: new Date().toISOString()
       }
       
-      // Use Redis queue if available, otherwise fallback to EdgeRuntime.waitUntil
+      // Use Redis batching if available
       if (redis) {
-        console.log(`📤 [QUEUE] Enqueuing AI agent task to Redis queue`)
+        const batchKey = `ai-batch:${conversationId}`
+        console.log(`📤 [BATCH] Checking batch for conversation ${conversationId}`)
+        
         try {
+          const existingBatchRaw = await redis.get(batchKey)
+          
+          if (existingBatchRaw) {
+            // Add message to existing batch
+            const existingBatch = typeof existingBatchRaw === 'string' 
+              ? JSON.parse(existingBatchRaw) 
+              : existingBatchRaw
+            
+            existingBatch.messages.push(messageData)
+            existingBatch.lastUpdated = new Date().toISOString()
+            
+            await redis.setex(batchKey, 300, JSON.stringify(existingBatch)) // TTL 5 min
+            console.log(`✅ [BATCH] Message added to existing batch (${existingBatch.messages.length} msgs)`)
+          } else {
+            // Create new batch
+            const newBatch = {
+              connectionId: whatsappConnectionId,
+              conversationId,
+              contactName,
+              contactPhone: phoneNumber,
+              companyId,
+              instanceToken,
+              messages: [messageData],
+              createdAt: new Date().toISOString(),
+              lastUpdated: new Date().toISOString()
+            }
+            
+            await redis.setex(batchKey, 300, JSON.stringify(newBatch))
+            console.log(`✅ [BATCH] New batch created for conversation`)
+          }
+        } catch (batchError) {
+          console.log(`⚠️ [BATCH] Redis error, falling back to direct queue:`, batchError)
+          // Fallback to direct queue
+          const aiQueueData = {
+            connectionId: whatsappConnectionId,
+            conversationId,
+            messageContent: messageContent || '',
+            contactName,
+            contactPhone: phoneNumber,
+            companyId,
+            instanceToken,
+            msgType: dbMessageType,
+            msgMediaUrl: undefined
+          }
           await redis.rpush('queue:ai-agent', JSON.stringify({
             data: aiQueueData,
             attempts: 0,
             enqueuedAt: new Date().toISOString()
           }))
-          console.log(`✅ [QUEUE] AI agent task enqueued successfully`)
-        } catch (queueError) {
-          console.log(`⚠️ [QUEUE] Redis error, falling back to waitUntil:`, queueError)
-          EdgeRuntime.waitUntil(
-            processAIAgentResponse(aiQueueData)
-          )
         }
       } else {
         console.log(`🤖 Checking AI agent for this connection... (type: ${dbMessageType}, no Redis)`)
+        const aiQueueData = {
+          connectionId: whatsappConnectionId,
+          conversationId,
+          messageContent: messageContent || '',
+          contactName,
+          contactPhone: phoneNumber,
+          companyId,
+          instanceToken,
+          msgType: dbMessageType,
+          msgMediaUrl: undefined
+        }
         EdgeRuntime.waitUntil(
           processAIAgentResponse(aiQueueData)
         )

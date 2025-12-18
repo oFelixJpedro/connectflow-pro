@@ -235,6 +235,7 @@ export type Database = {
           id: string
           is_primary: boolean | null
           language_code: string | null
+          message_batch_seconds: number | null
           name: string
           parent_agent_id: string | null
           paused_until: string | null
@@ -242,6 +243,8 @@ export type Database = {
           rules_content: string | null
           script_content: string | null
           speech_speed: number | null
+          split_message_delay_seconds: number | null
+          split_response_enabled: boolean | null
           status: string | null
           temperature: number | null
           updated_at: string | null
@@ -267,6 +270,7 @@ export type Database = {
           id?: string
           is_primary?: boolean | null
           language_code?: string | null
+          message_batch_seconds?: number | null
           name: string
           parent_agent_id?: string | null
           paused_until?: string | null
@@ -274,6 +278,8 @@ export type Database = {
           rules_content?: string | null
           script_content?: string | null
           speech_speed?: number | null
+          split_message_delay_seconds?: number | null
+          split_response_enabled?: boolean | null
           status?: string | null
           temperature?: number | null
           updated_at?: string | null
@@ -299,6 +305,7 @@ export type Database = {
           id?: string
           is_primary?: boolean | null
           language_code?: string | null
+          message_batch_seconds?: number | null
           name?: string
           parent_agent_id?: string | null
           paused_until?: string | null
@@ -306,6 +313,8 @@ export type Database = {
           rules_content?: string | null
           script_content?: string | null
           speech_speed?: number | null
+          split_message_delay_seconds?: number | null
+          split_response_enabled?: boolean | null
           status?: string | null
           temperature?: number | null
           updated_at?: string | null
