@@ -1,9 +1,10 @@
-import { Mark, mergeAttributes } from '@tiptap/core';
+import { Mark, mergeAttributes, getMarkRange } from '@tiptap/core';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
 
 export interface SlashCommandMarkOptions {
   HTMLAttributes: Record<string, any>;
   onCommandClick?: (commandText: string, from: number, to: number) => void;
+  onCommandDelete?: (from: number, to: number) => void;
 }
 
 declare module '@tiptap/core' {
@@ -22,6 +23,7 @@ export const SlashCommandMark = Mark.create<SlashCommandMarkOptions>({
     return {
       HTMLAttributes: {},
       onCommandClick: undefined,
+      onCommandDelete: undefined,
     };
   },
 
@@ -60,51 +62,45 @@ export const SlashCommandMark = Mark.create<SlashCommandMarkOptions>({
   },
 
   addProseMirrorPlugins() {
-    const { onCommandClick } = this.options;
+    const { onCommandClick, onCommandDelete } = this.options;
 
     return [
       new Plugin({
         key: new PluginKey('slashCommandClick'),
         props: {
           handleClick: (view, pos, event) => {
-            if (!onCommandClick) return false;
+            if (!onCommandClick && !onCommandDelete) return false;
 
             const { state } = view;
-            const { doc } = state;
-
-            // Get the node at position
+            const { doc, schema } = state;
             const $pos = doc.resolve(pos);
-            const marks = $pos.marks();
 
-            // Check if there's a slash command mark
-            const slashMark = marks.find((m) => m.type.name === 'slashCommand');
-            if (!slashMark) return false;
+            // Use getMarkRange for reliable boundary calculation
+            const markType = schema.marks.slashCommand;
+            const range = getMarkRange($pos, markType);
 
-            // Find the extent of the marked text
-            let from = pos;
-            let to = pos;
+            if (!range) return false;
 
-            // Walk backwards to find start
-            while (from > 0) {
-              const $before = doc.resolve(from - 1);
-              const beforeMarks = $before.marks();
-              if (!beforeMarks.find((m) => m.type.name === 'slashCommand')) break;
-              from--;
+            const commandText = doc.textBetween(range.from, range.to);
+            if (!commandText) return false;
+
+            // Check if click was on the "X" delete zone (last ~20px of badge)
+            const target = event.target as HTMLElement;
+            if (target.classList.contains('slash-command-badge')) {
+              const rect = target.getBoundingClientRect();
+              const clickX = event.clientX;
+              const deleteZone = rect.right - 20;
+
+              if (clickX >= deleteZone && onCommandDelete) {
+                // Click on X - delete command
+                onCommandDelete(range.from, range.to);
+                return true;
+              }
             }
 
-            // Walk forwards to find end
-            while (to < doc.content.size) {
-              const $after = doc.resolve(to);
-              const afterMarks = $after.marks();
-              if (!afterMarks.find((m) => m.type.name === 'slashCommand')) break;
-              to++;
-            }
-
-            // Get the text
-            const commandText = doc.textBetween(from, to);
-            
-            if (commandText) {
-              onCommandClick(commandText, from, to);
+            // Normal click - edit command
+            if (onCommandClick) {
+              onCommandClick(commandText, range.from, range.to);
               return true;
             }
 
