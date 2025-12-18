@@ -307,7 +307,7 @@ export function MarkdownEditor({
       .run();
   }, []);
 
-  // Handle click on existing command
+  // Handle click on existing command - opens main picker to allow category change
   const handleCommandClick = useCallback((commandText: string, from: number, to: number) => {
     const parsed = parseCommand(commandText);
     if (!parsed) return;
@@ -318,7 +318,6 @@ export function MarkdownEditor({
     // Get position for picker
     const containerRect = editorContainerRef.current?.getBoundingClientRect();
     if (containerRect) {
-      // Use a default position near the editor
       setSlashPosition({
         x: 20,
         y: 100,
@@ -333,8 +332,11 @@ export function MarkdownEditor({
     };
     
     setEditingCommand(editingData);
-    editingCommandRef.current = editingData; // Update ref immediately
-    setSelectedCommand(command);
+    editingCommandRef.current = editingData;
+    
+    // Show MAIN picker (not submenu) so user can change category
+    setSelectedCommand(null);
+    setShowSlashPicker(true);
   }, []);
 
   const editor = useEditor({
@@ -435,20 +437,48 @@ export function MarkdownEditor({
 
   // Handle slash command selection
   const handleCommandSelect = useCallback((command: SlashCommand) => {
+    const editing = editingCommandRef.current;
+    
     if (command.needsSelection) {
+      // Open submenu - editingCommand ref is preserved for handleSubMenuSelect
       setSelectedCommand(command);
       setShowSlashPicker(false);
     } else {
-      // Insert command directly with styling
+      // Command without submenu (e.g., /desativar_agente)
       if (editor) {
-        editor.chain()
-          .focus()
-          .insertContent({
-            type: 'text',
-            text: command.insertText,
-            marks: [{ type: 'slashCommand' }],
-          })
-          .run();
+        if (editing) {
+          // Delete old command first, then insert new
+          editor.chain()
+            .focus()
+            .setTextSelection({ from: editing.from, to: editing.to })
+            .deleteSelection()
+            .run();
+          
+          window.setTimeout(() => {
+            editor.chain()
+              .focus()
+              .setTextSelection(editing.from)
+              .insertContent({
+                type: 'text',
+                text: command.insertText,
+                marks: [{ type: 'slashCommand' }],
+              })
+              .run();
+            
+            setEditingCommand(null);
+            editingCommandRef.current = null;
+          }, 10);
+        } else {
+          // New command - just insert
+          editor.chain()
+            .focus()
+            .insertContent({
+              type: 'text',
+              text: command.insertText,
+              marks: [{ type: 'slashCommand' }],
+            })
+            .run();
+        }
       }
       setShowSlashPicker(false);
     }
@@ -456,15 +486,17 @@ export function MarkdownEditor({
 
   // Handle submenu value selection - insert with visual styling
   const handleSubMenuSelect = useCallback((value: string) => {
-    if (!editor) return;
+    if (!editor || !selectedCommand) return;
     
-    // Use ref to get the latest value (avoids stale closure issue)
+    // Use ref to get the latest editing state
     const editing = editingCommandRef.current;
+    
+    // Build the new command using SELECTED command (not old editing command)
+    const fullCommand = `${selectedCommand.insertText}${value}`;
     
     if (editing) {
       // Editing existing command - DELETE FIRST, then INSERT
-      const fullCommand = `${editing.command.insertText}${value}`;
-      const insertPosition = editing.from; // Save position before deleting
+      const insertPosition = editing.from;
       const ed = editor;
       
       // STEP 1: Delete the old command completely
@@ -489,9 +521,8 @@ export function MarkdownEditor({
         setEditingCommand(null);
         editingCommandRef.current = null;
       }, 10);
-    } else if (selectedCommand) {
-      // New command
-      const fullCommand = `${selectedCommand.insertText}${value}`;
+    } else {
+      // New command - just insert
       editor.chain()
         .focus()
         .insertContent({
