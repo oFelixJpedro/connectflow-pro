@@ -35,6 +35,7 @@ import {
   DepartmentSelector,
   TextInputSelector,
 } from '@/components/ai-agents/slash-commands';
+import { SlashCommandMark } from './slash-command-mark';
 
 // Emoji categories for the picker
 const emojiCategories = [
@@ -87,6 +88,10 @@ function markdownToHtml(markdown: string): string {
   
   // Strikethrough
   html = html.replace(/~~(.+?)~~/g, '<s>$1</s>');
+  
+  // Slash commands - wrap with span
+  html = html.replace(/(\/[a-z_]+:[a-z0-9-]+)/g, '<span data-slash-command="true" class="slash-command-badge">$1</span>');
+  html = html.replace(/(\/desativar_agente)(?![:\w])/g, '<span data-slash-command="true" class="slash-command-badge">$1</span>');
   
   // Ordered lists (before converting to paragraphs)
   const orderedListPattern = /(?:^|\n)((?:\d+\. .+\n?)+)/g;
@@ -155,6 +160,9 @@ function htmlToMarkdown(html: string): string {
   markdown = markdown.replace(/<s>(.+?)<\/s>/g, '~~$1~~');
   markdown = markdown.replace(/<strike>(.+?)<\/strike>/g, '~~$1~~');
   markdown = markdown.replace(/<del>(.+?)<\/del>/g, '~~$1~~');
+  
+  // Remove slash command spans (keep content)
+  markdown = markdown.replace(/<span[^>]*data-slash-command[^>]*>([^<]+)<\/span>/g, '$1');
   
   // Unordered lists
   markdown = markdown.replace(/<ul[^>]*>([\s\S]*?)<\/ul>/g, (match, content) => {
@@ -227,6 +235,33 @@ function ToolbarButton({ onClick, isActive, disabled, tooltip, children }: Toolb
   );
 }
 
+// Helper to parse command from text
+function parseCommand(commandText: string): { commandId: string; value: string } | null {
+  // Match /command_name:value or /command_name
+  const match = commandText.match(/^\/([a-z_]+):?(.*)$/);
+  if (!match) return null;
+  
+  const commandName = match[1];
+  const value = match[2] || '';
+  
+  // Map command names to IDs
+  const commandMap: Record<string, string> = {
+    'adicionar_etiqueta': 'add_tag',
+    'transferir_agente': 'transfer_agent',
+    'transferir_usuario': 'transfer_user',
+    'atribuir_origem': 'set_origin',
+    'mudar_etapa_crm': 'change_crm_stage',
+    'notificar_equipe': 'notify_team',
+    'atribuir_departamento': 'assign_department',
+    'desativar_agente': 'deactivate_agent',
+  };
+  
+  const commandId = commandMap[commandName];
+  if (!commandId) return null;
+  
+  return { commandId, value };
+}
+
 export function MarkdownEditor({
   value,
   onChange,
@@ -247,6 +282,41 @@ export function MarkdownEditor({
   const [selectedCommand, setSelectedCommand] = useState<SlashCommand | null>(null);
   const [slashSearchTerm, setSlashSearchTerm] = useState('');
   
+  // Editing existing command state
+  const [editingCommand, setEditingCommand] = useState<{
+    from: number;
+    to: number;
+    command: SlashCommand;
+    currentValue: string;
+  } | null>(null);
+
+  // Handle click on existing command
+  const handleCommandClick = useCallback((commandText: string, from: number, to: number) => {
+    const parsed = parseCommand(commandText);
+    if (!parsed) return;
+    
+    const command = SLASH_COMMANDS.find(c => c.id === parsed.commandId);
+    if (!command) return;
+    
+    // Get position for picker
+    const containerRect = editorContainerRef.current?.getBoundingClientRect();
+    if (containerRect) {
+      // Use a default position near the editor
+      setSlashPosition({
+        x: 20,
+        y: 100,
+      });
+    }
+    
+    setEditingCommand({
+      from,
+      to,
+      command,
+      currentValue: parsed.value,
+    });
+    setSelectedCommand(command);
+  }, []);
+  
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
@@ -258,6 +328,9 @@ export function MarkdownEditor({
       Placeholder.configure({
         placeholder,
         emptyEditorClass: 'is-editor-empty',
+      }),
+      SlashCommandMark.configure({
+        onCommandClick: enableSlashCommands ? handleCommandClick : undefined,
       }),
     ],
     content: markdownToHtml(value),
@@ -342,10 +415,16 @@ export function MarkdownEditor({
       setSelectedCommand(command);
       setShowSlashPicker(false);
     } else {
-      // Insert command directly
+      // Insert command directly with styling
       if (editor) {
-        // Remove the "/" that triggered the picker and insert command
-        editor.chain().focus().insertContent(command.insertText).run();
+        editor.chain()
+          .focus()
+          .insertContent({
+            type: 'text',
+            text: command.insertText,
+            marks: [{ type: 'slashCommand' }],
+          })
+          .run();
       }
       setShowSlashPicker(false);
     }
@@ -353,21 +432,46 @@ export function MarkdownEditor({
 
   // Handle submenu value selection - insert with visual styling
   const handleSubMenuSelect = useCallback((value: string) => {
-    if (editor && selectedCommand) {
+    if (!editor) return;
+    
+    if (editingCommand) {
+      // Editing existing command - replace it
+      const fullCommand = `${editingCommand.command.insertText}${value}`;
+      editor.chain()
+        .focus()
+        .deleteRange({ from: editingCommand.from, to: editingCommand.to })
+        .insertContent({
+          type: 'text',
+          text: fullCommand,
+          marks: [{ type: 'slashCommand' }],
+        })
+        .run();
+      setEditingCommand(null);
+    } else if (selectedCommand) {
+      // New command
       const fullCommand = `${selectedCommand.insertText}${value}`;
-      editor.chain().focus().insertContent(fullCommand).run();
+      editor.chain()
+        .focus()
+        .insertContent({
+          type: 'text',
+          text: fullCommand,
+          marks: [{ type: 'slashCommand' }],
+        })
+        .run();
     }
     setSelectedCommand(null);
-  }, [editor, selectedCommand]);
+  }, [editor, selectedCommand, editingCommand]);
 
   const closeAllPickers = useCallback(() => {
     setShowSlashPicker(false);
     setSelectedCommand(null);
+    setEditingCommand(null);
   }, []);
 
   // Handle back button - return to main picker
   const handleBackToMainPicker = useCallback(() => {
     setSelectedCommand(null);
+    setEditingCommand(null);
     setShowSlashPicker(true);
   }, []);
 
@@ -628,6 +732,37 @@ export function MarkdownEditor({
         }
         .ProseMirror u {
           text-decoration: underline;
+        }
+        
+        /* Slash command badge styling */
+        .slash-command-badge {
+          display: inline-flex;
+          align-items: center;
+          background-color: hsl(var(--primary) / 0.15);
+          color: hsl(var(--primary));
+          padding: 2px 8px;
+          border-radius: 4px;
+          font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+          font-size: 0.85em;
+          cursor: pointer;
+          border: 1px solid hsl(var(--primary) / 0.3);
+          transition: all 0.15s ease;
+          margin: 0 2px;
+        }
+        
+        .slash-command-badge:hover {
+          background-color: hsl(var(--primary) / 0.25);
+          border-color: hsl(var(--primary) / 0.5);
+        }
+        
+        .dark .slash-command-badge {
+          background-color: hsl(var(--primary) / 0.2);
+          border-color: hsl(var(--primary) / 0.4);
+        }
+        
+        .dark .slash-command-badge:hover {
+          background-color: hsl(var(--primary) / 0.3);
+          border-color: hsl(var(--primary) / 0.6);
         }
       `}</style>
     </div>
