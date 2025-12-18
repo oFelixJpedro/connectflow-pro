@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { Search, Bot } from 'lucide-react';
+import { Search, Bot, ArrowLeft } from 'lucide-react';
 import { Input } from '@/components/ui/input';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
 import { useAIAgents } from '@/hooks/useAIAgents';
 
@@ -9,10 +8,11 @@ interface AIAgentSelectorProps {
   position: { x: number; y: number };
   onSelect: (value: string) => void;
   onClose: () => void;
+  onBack?: () => void;
   currentAgentId?: string;
 }
 
-export function AIAgentSelector({ position, onSelect, onClose, currentAgentId }: AIAgentSelectorProps) {
+export function AIAgentSelector({ position, onSelect, onClose, onBack, currentAgentId }: AIAgentSelectorProps) {
   const { agents, isLoading: loading } = useAIAgents();
   const [search, setSearch] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -91,6 +91,19 @@ export function AIAgentSelector({ position, onSelect, onClose, currentAgentId }:
         top: position.y + 8,
       }}
     >
+      {/* Header with back button */}
+      <div className="flex items-center gap-2 px-3 py-2 border-b border-border bg-muted/30">
+        {onBack && (
+          <button
+            onClick={onBack}
+            className="p-1 rounded hover:bg-accent transition-colors"
+          >
+            <ArrowLeft className="h-4 w-4" />
+          </button>
+        )}
+        <span className="text-sm font-medium">Selecionar Agente</span>
+      </div>
+
       <div className="p-2 border-b border-border">
         <div className="relative">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -104,7 +117,7 @@ export function AIAgentSelector({ position, onSelect, onClose, currentAgentId }:
         </div>
       </div>
 
-      <ScrollArea className="max-h-60">
+      <div className="max-h-[240px] overflow-y-auto">
         <div className="p-1">
           {loading ? (
             <div className="p-4 text-center text-muted-foreground text-sm">
@@ -139,7 +152,7 @@ export function AIAgentSelector({ position, onSelect, onClose, currentAgentId }:
             ))
           )}
         </div>
-      </ScrollArea>
+      </div>
     </div>
   );
 }

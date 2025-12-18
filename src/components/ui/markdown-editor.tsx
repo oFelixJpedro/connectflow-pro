@@ -351,7 +351,7 @@ export function MarkdownEditor({
     }
   }, [editor]);
 
-  // Handle submenu value selection
+  // Handle submenu value selection - insert with visual styling
   const handleSubMenuSelect = useCallback((value: string) => {
     if (editor && selectedCommand) {
       const fullCommand = `${selectedCommand.insertText}${value}`;
@@ -363,6 +363,12 @@ export function MarkdownEditor({
   const closeAllPickers = useCallback(() => {
     setShowSlashPicker(false);
     setSelectedCommand(null);
+  }, []);
+
+  // Handle back button - return to main picker
+  const handleBackToMainPicker = useCallback(() => {
+    setSelectedCommand(null);
+    setShowSlashPicker(true);
   }, []);
 
   if (!editor) {
@@ -507,12 +513,13 @@ export function MarkdownEditor({
         />
       )}
 
-      {/* Submenus */}
+      {/* Submenus with back button */}
       {enableSlashCommands && selectedCommand?.id === 'add_tag' && (
         <TagSelector
           position={slashPosition}
           onSelect={handleSubMenuSelect}
           onClose={closeAllPickers}
+          onBack={handleBackToMainPicker}
         />
       )}
       
@@ -521,6 +528,7 @@ export function MarkdownEditor({
           position={slashPosition}
           onSelect={handleSubMenuSelect}
           onClose={closeAllPickers}
+          onBack={handleBackToMainPicker}
           currentAgentId={agentId}
         />
       )}
@@ -530,6 +538,7 @@ export function MarkdownEditor({
           position={slashPosition}
           onSelect={handleSubMenuSelect}
           onClose={closeAllPickers}
+          onBack={handleBackToMainPicker}
         />
       )}
       
@@ -538,6 +547,7 @@ export function MarkdownEditor({
           position={slashPosition}
           onSelect={handleSubMenuSelect}
           onClose={closeAllPickers}
+          onBack={handleBackToMainPicker}
           title="Atribuir Origem"
           placeholder="Ex: Google Ads, Facebook, Indicação..."
         />
@@ -548,6 +558,7 @@ export function MarkdownEditor({
           position={slashPosition}
           onSelect={handleSubMenuSelect}
           onClose={closeAllPickers}
+          onBack={handleBackToMainPicker}
           connectionId={connectionId}
         />
       )}
@@ -557,6 +568,7 @@ export function MarkdownEditor({
           position={slashPosition}
           onSelect={handleSubMenuSelect}
           onClose={closeAllPickers}
+          onBack={handleBackToMainPicker}
           title="Notificar Equipe"
           placeholder="Digite a mensagem de notificação..."
           multiline
@@ -568,11 +580,12 @@ export function MarkdownEditor({
           position={slashPosition}
           onSelect={handleSubMenuSelect}
           onClose={closeAllPickers}
+          onBack={handleBackToMainPicker}
           connectionId={connectionId}
         />
       )}
 
-      {/* Styles for placeholder */}
+      {/* Styles for placeholder and slash commands */}
       <style>{`
         .is-editor-empty:first-child::before {
           content: attr(data-placeholder);
