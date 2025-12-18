@@ -47,6 +47,7 @@ import { ScheduledMessagesList } from './ScheduledMessagesList';
 import { useScheduledMessagesCount } from './ScheduledMessagesList';
 import { logConversationEvent } from '@/lib/conversationHistory';
 import { useAuth } from '@/contexts/AuthContext';
+import { AIAgentActions } from './AIAgentActions';
 
 interface ContactPanelProps {
   conversation: Conversation | null;
@@ -465,6 +466,11 @@ export function ContactPanel({ conversation, onClose, onContactUpdated, onScroll
 
       <ScrollArea className="flex-1">
         <div className="p-4 space-y-6">
+          {/* AI Agent Actions */}
+          <AIAgentActions conversationId={conversation.id} />
+
+          <Separator />
+
           {/* Contact Info */}
           <div className="flex flex-col items-center text-center">
             <ContactAvatar
