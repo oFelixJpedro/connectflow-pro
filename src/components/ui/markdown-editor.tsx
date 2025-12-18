@@ -452,18 +452,28 @@ export function MarkdownEditor({
     if (!editor) return;
     
     if (editingCommand) {
-      // Editing existing command - replace it
+      // Editing existing command - DELETE FIRST, then INSERT
       const fullCommand = `${editingCommand.command.insertText}${value}`;
+      const insertPosition = editingCommand.from; // Save position before deleting
+      
+      // STEP 1: Delete the old command completely
       editor.chain()
         .focus()
         .setTextSelection({ from: editingCommand.from, to: editingCommand.to })
         .deleteSelection()
+        .run();
+      
+      // STEP 2: Insert new command at the saved position
+      editor.chain()
+        .focus()
+        .setTextSelection(insertPosition)
         .insertContent({
           type: 'text',
           text: fullCommand,
           marks: [{ type: 'slashCommand' }],
         })
         .run();
+      
       setEditingCommand(null);
     } else if (selectedCommand) {
       // New command
