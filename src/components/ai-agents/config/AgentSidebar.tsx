@@ -10,7 +10,8 @@ import {
   Plus,
   X,
   Info,
-  Loader2
+  Loader2,
+  MessageSquare
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -41,7 +42,7 @@ import {
 import { useAIAgents } from '@/hooks/useAIAgents';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
-import { AI_AGENT_VOICES, AI_AGENT_DELAY_OPTIONS } from '@/types/ai-agents';
+import { AI_AGENT_VOICES, AI_AGENT_DELAY_OPTIONS, AI_AGENT_BATCH_OPTIONS, AI_AGENT_SPLIT_DELAY_OPTIONS } from '@/types/ai-agents';
 import type { AIAgent } from '@/types/ai-agents';
 import { toast } from 'sonner';
 
@@ -86,6 +87,7 @@ export function AgentSidebar({ agent, totalChars, charLimit, onAgentUpdate }: Ag
   
   const [basicOpen, setBasicOpen] = useState(true);
   const [triggersOpen, setTriggersOpen] = useState(true);
+  const [responseOpen, setResponseOpen] = useState(true);
   const [audioOpen, setAudioOpen] = useState(true);
   const [connectionsOpen, setConnectionsOpen] = useState(true);
   
@@ -418,7 +420,90 @@ export function AgentSidebar({ agent, totalChars, charLimit, onAgentUpdate }: Ag
 
           <Separator className="opacity-50" />
 
-          {/* Áudio */}
+          {/* Resposta (Batching & Humanização) */}
+          <Collapsible open={responseOpen} onOpenChange={setResponseOpen}>
+            <CollapsibleTrigger className="flex items-center justify-between w-full p-2 hover:bg-muted rounded-lg transition-colors">
+              <div className="flex items-center gap-2">
+                <MessageSquare className="w-4 h-4" />
+                <span className="text-sm font-medium">Resposta</span>
+              </div>
+            </CollapsibleTrigger>
+            <CollapsibleContent className="pt-2 space-y-3">
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-1">
+                  <Label className="text-xs">Agrupamento</Label>
+                  <Tooltip>
+                    <TooltipTrigger>
+                      <Info className="w-3 h-3 text-muted-foreground" />
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p className="text-xs max-w-[200px]">
+                        Tempo para aguardar mais mensagens do cliente antes de gerar a resposta.
+                      </p>
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+                <Select 
+                  value={String(agent.message_batch_seconds ?? 75)} 
+                  onValueChange={(v) => handleUpdateField('message_batch_seconds', Number(v))}
+                >
+                  <SelectTrigger className="h-8 text-sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {AI_AGENT_BATCH_OPTIONS.map((opt) => (
+                      <SelectItem key={opt.value} value={String(opt.value)}>
+                        {opt.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1">
+                  <Label className="text-xs">Quebrar resposta</Label>
+                  <Tooltip>
+                    <TooltipTrigger>
+                      <Info className="w-3 h-3 text-muted-foreground" />
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p className="text-xs max-w-[200px]">
+                        Dividir resposta em várias mensagens para parecer mais humano.
+                      </p>
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+                <Switch
+                  checked={agent.split_response_enabled ?? true}
+                  onCheckedChange={(v) => handleUpdateField('split_response_enabled', v)}
+                />
+              </div>
+
+              {(agent.split_response_enabled ?? true) && (
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Delay entre msgs</Label>
+                  <Select 
+                    value={String(agent.split_message_delay_seconds ?? 2.0)} 
+                    onValueChange={(v) => handleUpdateField('split_message_delay_seconds', Number(v))}
+                  >
+                    <SelectTrigger className="h-8 text-sm">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {AI_AGENT_SPLIT_DELAY_OPTIONS.map((opt) => (
+                        <SelectItem key={opt.value} value={String(opt.value)}>
+                          {opt.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+            </CollapsibleContent>
+          </Collapsible>
+
+          <Separator className="opacity-50" />
           <Collapsible open={audioOpen} onOpenChange={setAudioOpen}>
             <CollapsibleTrigger className="flex items-center justify-between w-full p-2 hover:bg-muted rounded-lg transition-colors">
               <div className="flex items-center gap-2">
