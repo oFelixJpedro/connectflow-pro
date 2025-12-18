@@ -104,7 +104,7 @@ serve(async (req) => {
   }
 
   try {
-    const { voiceName, speed = 1.0, languageCode = 'pt-BR' } = await req.json();
+    const { voiceName, speed = 1.0, languageCode = 'pt-BR', temperature = 0.7 } = await req.json();
 
     if (!voiceName) {
       return new Response(
@@ -132,14 +132,14 @@ serve(async (req) => {
     // Normalize speed for cache key (0.7, 1.0, or 1.2)
     const normalizedSpeed = speed <= 0.85 ? 0.7 : speed >= 1.1 ? 1.2 : 1.0;
     
-    // Check if cached preview exists (include speed and language in cache key)
-    const cacheKey = `voice-previews/${voiceName.toLowerCase()}_${normalizedSpeed}_${languageCode}.wav`;
+    // Check if cached preview exists (include speed, language, and temperature in cache key)
+    const cacheKey = `voice-previews/${voiceName.toLowerCase()}_${normalizedSpeed}_${languageCode}_temp${temperature}.wav`;
     const { data: existingFile } = await supabase.storage
       .from('ai-agent-media')
       .createSignedUrl(cacheKey, 3600); // 1 hour signed URL
 
     if (existingFile?.signedUrl) {
-      console.log(`Cache hit for voice: ${voiceName} at speed: ${normalizedSpeed}`);
+      console.log(`Cache hit for voice: ${voiceName} at speed: ${normalizedSpeed}, temp: ${temperature}`);
       return new Response(
         JSON.stringify({ audioUrl: existingFile.signedUrl, cached: true }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -150,7 +150,7 @@ serve(async (req) => {
     const stylePrefix = getStylePrefix(speed, languageCode);
     const textWithStyle = stylePrefix + PREVIEW_TEXT;
 
-    console.log(`Generating voice preview for: ${voiceName} at speed: ${speed}, language: ${languageCode} (prefix: "${stylePrefix}")`);
+    console.log(`Generating voice preview for: ${voiceName} at speed: ${speed}, language: ${languageCode}, temperature: ${temperature} (prefix: "${stylePrefix}")`);
 
     // Generate audio using Gemini TTS API
     const response = await fetch(
@@ -171,6 +171,7 @@ serve(async (req) => {
             }
           ],
           generationConfig: {
+            temperature: temperature,
             responseModalities: ["AUDIO"],
             speechConfig: {
               voiceConfig: {
