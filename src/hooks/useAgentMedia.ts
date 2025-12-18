@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 
@@ -49,6 +49,32 @@ export function useAgentMedia(agentId: string | null) {
     }
   }, [agentId]);
 
+  // Real-time subscription for media changes
+  useEffect(() => {
+    if (!agentId) return;
+
+    const channel = supabase
+      .channel(`ai-agent-media-${agentId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'ai_agent_media',
+          filter: `agent_id=eq.${agentId}`,
+        },
+        () => {
+          // Reload medias when any change happens
+          loadMedias();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [agentId, loadMedias]);
+
   const uploadMedia = useCallback(async (
     mediaType: 'image' | 'video' | 'audio' | 'document',
     mediaKey: string,
@@ -88,7 +114,6 @@ export function useAgentMedia(agentId: string | null) {
       const result = await response.json();
       if (result.success) {
         toast.success('Mídia enviada com sucesso!');
-        await loadMedias();
         return result.media;
       } else {
         toast.error(result.error || 'Erro ao enviar mídia');
@@ -99,7 +124,7 @@ export function useAgentMedia(agentId: string | null) {
       toast.error('Erro ao enviar mídia');
       return null;
     }
-  }, [agentId, loadMedias]);
+  }, [agentId]);
 
   const createTextOrLink = useCallback(async (
     mediaType: 'text' | 'link',
@@ -130,7 +155,6 @@ export function useAgentMedia(agentId: string | null) {
       const result = await response.json();
       if (result.success) {
         toast.success(mediaType === 'text' ? 'Texto criado!' : 'Link criado!');
-        await loadMedias();
         return result.media;
       } else {
         toast.error(result.error || 'Erro ao criar');
@@ -141,7 +165,7 @@ export function useAgentMedia(agentId: string | null) {
       toast.error('Erro ao criar');
       return null;
     }
-  }, [agentId, loadMedias]);
+  }, [agentId]);
 
   const deleteMedia = useCallback(async (mediaId: string): Promise<boolean> => {
     try {

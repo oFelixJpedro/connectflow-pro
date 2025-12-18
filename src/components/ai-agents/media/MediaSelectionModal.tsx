@@ -119,48 +119,12 @@ function MediaCard({ media, onSelect }: { media: AgentMedia; onSelect: (m: Agent
     <button
       onClick={() => onSelect(media)}
       className={cn(
-        "flex flex-col items-start p-3 rounded-lg border text-left transition-all",
+        "flex items-center gap-2 p-3 rounded-lg border text-left transition-all",
         "hover:border-primary hover:bg-muted/50"
       )}
     >
-      <div className="flex items-center gap-2 w-full">
-        <Icon className={cn("w-4 h-4 flex-shrink-0", config.color)} />
-        <span className="font-mono text-sm truncate">{media.media_key}</span>
-      </div>
-      
-      {/* Preview based on type */}
-      {media.media_type === 'image' && media.media_url && (
-        <img 
-          src={media.media_url} 
-          alt={media.media_key}
-          className="w-full h-20 object-cover rounded mt-2"
-        />
-      )}
-      
-      {media.media_type === 'video' && media.media_url && (
-        <video 
-          src={media.media_url}
-          className="w-full h-20 object-cover rounded mt-2"
-        />
-      )}
-      
-      {media.media_type === 'audio' && media.media_url && (
-        <div className="w-full mt-2 text-xs text-muted-foreground">
-          {media.file_name || 'Áudio'}
-        </div>
-      )}
-      
-      {media.media_type === 'document' && (
-        <div className="w-full mt-2 text-xs text-muted-foreground truncate">
-          {media.file_name || 'Documento'}
-        </div>
-      )}
-      
-      {(media.media_type === 'text' || media.media_type === 'link') && media.media_content && (
-        <div className="w-full mt-2 text-xs text-muted-foreground line-clamp-2">
-          {media.media_content}
-        </div>
-      )}
+      <Icon className={cn("w-4 h-4 flex-shrink-0", config.color)} />
+      <span className="font-mono text-sm truncate">{media.media_key}</span>
     </button>
   );
 }
