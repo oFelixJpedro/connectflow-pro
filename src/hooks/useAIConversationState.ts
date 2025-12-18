@@ -4,6 +4,12 @@ import type { AIConversationState, AIConversationStatus } from '@/types/ai-agent
 
 interface UseAIConversationStateProps {
   conversationId: string | undefined;
+  whatsappConnectionId: string | undefined;
+}
+
+interface LinkedAgent {
+  id: string;
+  name: string;
 }
 
 interface UseAIConversationStateReturn {
@@ -11,6 +17,8 @@ interface UseAIConversationStateReturn {
   isLoading: boolean;
   error: string | null;
   isActionLoading: boolean;
+  hasAgent: boolean;
+  agentName: string | null;
   
   // Actions
   startAI: () => Promise<boolean>;
@@ -20,13 +28,55 @@ interface UseAIConversationStateReturn {
   refetch: () => Promise<void>;
 }
 
-export function useAIConversationState({ conversationId }: UseAIConversationStateProps): UseAIConversationStateReturn {
+export function useAIConversationState({ conversationId, whatsappConnectionId }: UseAIConversationStateProps): UseAIConversationStateReturn {
   const [state, setState] = useState<AIConversationState | null>(null);
+  const [linkedAgent, setLinkedAgent] = useState<LinkedAgent | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isActionLoading, setIsActionLoading] = useState(false);
 
-  // Load initial state
+  // Load linked agent for the connection
+  const loadLinkedAgent = useCallback(async () => {
+    if (!whatsappConnectionId) {
+      setLinkedAgent(null);
+      return;
+    }
+
+    try {
+      const { data, error: fetchError } = await supabase
+        .from('ai_agent_connections')
+        .select(`
+          agent_id,
+          ai_agents!inner (
+            id,
+            name,
+            is_primary
+          )
+        `)
+        .eq('connection_id', whatsappConnectionId);
+
+      if (fetchError) throw fetchError;
+
+      // Find primary agent or first agent
+      const primaryAgent = data?.find((item: any) => item.ai_agents?.is_primary);
+      const firstAgent = data?.[0];
+      const agentData = primaryAgent || firstAgent;
+
+      if (agentData?.ai_agents) {
+        setLinkedAgent({
+          id: agentData.ai_agents.id,
+          name: agentData.ai_agents.name,
+        });
+      } else {
+        setLinkedAgent(null);
+      }
+    } catch (err) {
+      console.error('[useAIConversationState] Error loading linked agent:', err);
+      setLinkedAgent(null);
+    }
+  }, [whatsappConnectionId]);
+
+  // Load conversation state
   const loadState = useCallback(async () => {
     if (!conversationId) {
       setIsLoading(false);
@@ -52,12 +102,17 @@ export function useAIConversationState({ conversationId }: UseAIConversationStat
     }
   }, [conversationId]);
 
-  // Load on mount and when conversationId changes
+  // Load on mount and when props change
   useEffect(() => {
-    loadState();
-  }, [loadState]);
+    const load = async () => {
+      setIsLoading(true);
+      await Promise.all([loadLinkedAgent(), loadState()]);
+      setIsLoading(false);
+    };
+    load();
+  }, [loadLinkedAgent, loadState]);
 
-  // Real-time subscription
+  // Real-time subscription for conversation state
   useEffect(() => {
     if (!conversationId) return;
 
@@ -147,6 +202,8 @@ export function useAIConversationState({ conversationId }: UseAIConversationStat
     isLoading,
     error,
     isActionLoading,
+    hasAgent: linkedAgent !== null,
+    agentName: linkedAgent?.name ?? null,
     startAI,
     pauseAI,
     stopAI,

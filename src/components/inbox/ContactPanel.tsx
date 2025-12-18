@@ -492,7 +492,7 @@ export function ContactPanel({ conversation, onClose, onContactUpdated, onScroll
           <Separator />
 
           {/* AI Agent Actions */}
-          <AIAgentActions conversationId={conversation.id} />
+          <AIAgentActions conversationId={conversation.id} whatsappConnectionId={conversation.whatsappConnectionId} />
 
           <Separator />
 
