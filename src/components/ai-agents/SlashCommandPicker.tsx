@@ -13,7 +13,6 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Input } from '@/components/ui/input';
-import { ScrollArea } from '@/components/ui/scroll-area';
 
 export interface SlashCommand {
   id: string;
@@ -210,7 +209,7 @@ export function SlashCommandPicker({
       </div>
 
       {/* Commands List */}
-      <ScrollArea className="h-auto max-h-[280px]">
+      <div className="max-h-[280px] overflow-y-auto">
         <div className="p-1">
           {filteredCommands.length === 0 ? (
             <div className="p-4 text-center text-muted-foreground text-sm">
@@ -244,7 +243,7 @@ export function SlashCommandPicker({
             })
           )}
         </div>
-      </ScrollArea>
+      </div>
 
       {/* Footer hint */}
       <div className="px-3 py-2 border-t border-border bg-muted/30">

@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { ArrowLeft } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -8,6 +9,7 @@ interface TextInputSelectorProps {
   position: { x: number; y: number };
   onSelect: (value: string) => void;
   onClose: () => void;
+  onBack?: () => void;
   title: string;
   placeholder: string;
   multiline?: boolean;
@@ -17,6 +19,7 @@ export function TextInputSelector({
   position, 
   onSelect, 
   onClose, 
+  onBack,
   title,
   placeholder,
   multiline = false
@@ -69,8 +72,17 @@ export function TextInputSelector({
         top: position.y + 8,
       }}
     >
-      <div className="p-3 border-b border-border">
-        <h4 className="font-medium text-sm">{title}</h4>
+      {/* Header with back button */}
+      <div className="flex items-center gap-2 px-3 py-2 border-b border-border bg-muted/30">
+        {onBack && (
+          <button
+            onClick={onBack}
+            className="p-1 rounded hover:bg-accent transition-colors"
+          >
+            <ArrowLeft className="h-4 w-4" />
+          </button>
+        )}
+        <span className="text-sm font-medium">{title}</span>
       </div>
       
       <div className="p-3 space-y-3">
