@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import { HelpCircle, Building2, ChevronDown, ChevronUp } from 'lucide-react';
-import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { MarkdownEditor } from '@/components/ui/markdown-editor';
 import type { AIAgentCompanyInfo } from '@/types/ai-agents';
 
 interface AgentFAQTabProps {
@@ -29,6 +29,21 @@ const COMPANY_INFO_FIELDS = [
   { key: 'cancellation_fee', label: 'Multa de Desistência', placeholder: 'Ex: R$ 0,00' },
   { key: 'minimum_wage', label: 'Salário Mínimo Vigente', placeholder: 'Ex: R$ 1.518,00' },
 ];
+
+const FAQ_PLACEHOLDER = `## Perguntas Frequentes
+
+**P: Qual o horário de atendimento?**
+R: Nosso horário de atendimento é de segunda a sexta, das 9h às 18h.
+
+**P: Quanto tempo demora o processo?**
+R: O prazo médio é de 6 a 12 meses, dependendo da complexidade do caso.
+
+**P: Quais documentos são necessários?**
+R: Os documentos básicos são:
+- RG
+- CPF
+- Comprovante de residência
+- Documentação específica do caso`;
 
 export function AgentFAQTab({
   content,
@@ -139,20 +154,11 @@ export function AgentFAQTab({
                 Adicione perguntas frequentes e suas respostas para o agente consultar durante o atendimento.
               </p>
 
-              <Textarea
+              <MarkdownEditor
                 value={content}
-                onChange={(e) => onChange(e.target.value)}
-                placeholder={`Exemplo:
-
-P: Qual o horário de atendimento?
-R: Nosso horário de atendimento é de segunda a sexta, das 9h às 18h.
-
-P: Quanto tempo demora o processo?
-R: O prazo médio é de 6 a 12 meses, dependendo da complexidade do caso.
-
-P: Quais documentos são necessários?
-R: Os documentos básicos são: RG, CPF, comprovante de residência e documentação específica do caso.`}
-                className="min-h-[300px] resize-none font-mono text-sm"
+                onChange={onChange}
+                placeholder={FAQ_PLACEHOLDER}
+                minHeight="300px"
               />
             </CardContent>
           </CollapsibleContent>
