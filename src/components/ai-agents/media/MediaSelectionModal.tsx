@@ -61,7 +61,7 @@ export function MediaSelectionModal({ open, onOpenChange, medias, onSelect }: Me
         </DialogHeader>
 
         <Tabs value={selectedTab} onValueChange={(v) => setSelectedTab(v as MediaType)}>
-          <TabsList className="grid grid-cols-6 w-full">
+          <TabsList className="grid grid-cols-6 w-full h-auto p-1">
             {MEDIA_TYPES.map((type) => {
               const config = mediaTypeConfig[type];
               const Icon = config.icon;
@@ -71,10 +71,10 @@ export function MediaSelectionModal({ open, onOpenChange, medias, onSelect }: Me
                 <TabsTrigger 
                   key={type} 
                   value={type}
-                  className="flex flex-col items-center gap-0.5 py-2 px-1"
+                  className="flex flex-col items-center gap-1 py-2 px-2 min-h-[52px]"
                 >
                   <Icon className={cn("w-4 h-4", config.color)} />
-                  <span className="text-[10px]">{count}</span>
+                  <span className="text-[10px] leading-none">{count}</span>
                 </TabsTrigger>
               );
             })}
