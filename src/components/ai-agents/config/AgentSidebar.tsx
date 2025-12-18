@@ -10,7 +10,13 @@ import {
   X,
   Info,
   Loader2,
-  MessageSquare
+  MessageSquare,
+  Paperclip,
+  Image,
+  Video,
+  Mic,
+  FileText,
+  Type,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -38,12 +44,20 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { useAIAgents } from '@/hooks/useAIAgents';
 import { useAuth } from '@/contexts/AuthContext';
+import { useAgentMedia } from '@/hooks/useAgentMedia';
 import { supabase } from '@/integrations/supabase/client';
 import { AI_AGENT_VOICES, AI_AGENT_BATCH_OPTIONS, AI_AGENT_SPLIT_DELAY_OPTIONS } from '@/types/ai-agents';
 import type { AIAgent } from '@/types/ai-agents';
 import { toast } from 'sonner';
+import { MediaUploadModal, TextLinkModal, MediaList } from '@/components/ai-agents/media';
 
 interface WhatsAppConnection {
   id: string;
@@ -83,17 +97,31 @@ const formatVoiceName = (voice: { name: string; description: string }) => {
 export function AgentSidebar({ agent, totalChars, charLimit, onAgentUpdate }: AgentSidebarProps) {
   const { updateAgent, addConnection, removeConnection } = useAIAgents();
   const { profile } = useAuth();
+  const { medias, isLoading: isLoadingMedias, loadMedias, uploadMedia, createTextOrLink, deleteMedia } = useAgentMedia(agent.id);
   
   const [basicOpen, setBasicOpen] = useState(true);
   const [triggersOpen, setTriggersOpen] = useState(true);
   const [responseOpen, setResponseOpen] = useState(true);
   const [audioOpen, setAudioOpen] = useState(true);
   const [connectionsOpen, setConnectionsOpen] = useState(true);
+  const [mediasOpen, setMediasOpen] = useState(true);
   
   const [newTrigger, setNewTrigger] = useState('');
   const [isPlayingPreview, setIsPlayingPreview] = useState(false);
   const [audioElement, setAudioElement] = useState<HTMLAudioElement | null>(null);
   
+  // Media upload modals
+  const [uploadModalOpen, setUploadModalOpen] = useState(false);
+  const [uploadMediaType, setUploadMediaType] = useState<'image' | 'video' | 'audio' | 'document'>('image');
+  const [textLinkModalOpen, setTextLinkModalOpen] = useState(false);
+  const [textLinkType, setTextLinkType] = useState<'text' | 'link'>('text');
+
+  // Load medias on mount
+  useEffect(() => {
+    if (agent.id) {
+      loadMedias();
+    }
+  }, [agent.id, loadMedias]);
   // Connection selector state
   const [availableConnections, setAvailableConnections] = useState<WhatsAppConnection[]>([]);
   const [isLoadingConnections, setIsLoadingConnections] = useState(false);
@@ -717,8 +745,89 @@ export function AgentSidebar({ agent, totalChars, charLimit, onAgentUpdate }: Ag
               </Popover>
             </CollapsibleContent>
           </Collapsible>
+
+          <Separator className="opacity-50" />
+
+          {/* Mídias */}
+          <Collapsible open={mediasOpen} onOpenChange={setMediasOpen}>
+            <CollapsibleTrigger className="flex items-center justify-between w-full p-2 hover:bg-muted rounded-lg transition-colors">
+              <div className="flex items-center gap-2">
+                <Paperclip className="w-4 h-4" />
+                <span className="text-sm font-medium">Mídias</span>
+                {medias.length > 0 && (
+                  <Badge variant="secondary" className="text-xs h-5 px-1.5">
+                    {medias.length}
+                  </Badge>
+                )}
+              </div>
+            </CollapsibleTrigger>
+            <CollapsibleContent className="pt-2 space-y-2">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="sm" className="w-full h-7 text-xs">
+                    <Plus className="w-3 h-3 mr-1" />
+                    Adicionar Mídia
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="w-48">
+                  <DropdownMenuItem onClick={() => { setUploadMediaType('image'); setUploadModalOpen(true); }}>
+                    <Image className="w-4 h-4 mr-2 text-blue-500" />
+                    Imagem
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => { setUploadMediaType('video'); setUploadModalOpen(true); }}>
+                    <Video className="w-4 h-4 mr-2 text-purple-500" />
+                    Vídeo
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => { setUploadMediaType('audio'); setUploadModalOpen(true); }}>
+                    <Mic className="w-4 h-4 mr-2 text-green-500" />
+                    Áudio
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => { setUploadMediaType('document'); setUploadModalOpen(true); }}>
+                    <FileText className="w-4 h-4 mr-2 text-orange-500" />
+                    Documento
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => { setTextLinkType('text'); setTextLinkModalOpen(true); }}>
+                    <Type className="w-4 h-4 mr-2 text-gray-500" />
+                    Texto Fixo
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => { setTextLinkType('link'); setTextLinkModalOpen(true); }}>
+                    <Link2 className="w-4 h-4 mr-2 text-cyan-500" />
+                    Link
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+
+              <MediaList 
+                medias={medias} 
+                onDelete={deleteMedia}
+                isLoading={isLoadingMedias}
+              />
+            </CollapsibleContent>
+          </Collapsible>
         </div>
       </ScrollArea>
+
+      {/* Media Upload Modal */}
+      <MediaUploadModal
+        open={uploadModalOpen}
+        onOpenChange={setUploadModalOpen}
+        mediaType={uploadMediaType}
+        onUpload={async (key, file) => {
+          const result = await uploadMedia(uploadMediaType, key, file);
+          return !!result;
+        }}
+      />
+
+      {/* Text/Link Modal */}
+      <TextLinkModal
+        open={textLinkModalOpen}
+        onOpenChange={setTextLinkModalOpen}
+        contentType={textLinkType}
+        onCreate={async (key, content) => {
+          const result = await createTextOrLink(textLinkType, key, content);
+          return !!result;
+        }}
+      />
     </div>
   );
 }

@@ -65,6 +65,8 @@ interface MarkdownEditorProps {
   enableSlashCommands?: boolean;
   connectionId?: string;
   agentId?: string;
+  medias?: Array<{ id: string; media_type: string; media_key: string; media_url?: string | null; media_content?: string | null }>;
+  onMediaSelect?: (media: { media_type: string; media_key: string }) => void;
 }
 
 // Convert Markdown to HTML for the editor
