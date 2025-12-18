@@ -36,6 +36,8 @@ import {
   TextInputSelector,
 } from '@/components/ai-agents/slash-commands';
 import { SlashCommandMark } from './slash-command-mark';
+import { MediaSelectionModal } from '@/components/ai-agents/media/MediaSelectionModal';
+import { AgentMedia } from '@/hooks/useAgentMedia';
 
 // Emoji categories for the picker
 const emojiCategories = [
@@ -63,10 +65,10 @@ interface MarkdownEditorProps {
   minHeight?: string;
   className?: string;
   enableSlashCommands?: boolean;
+  enableMediaTrigger?: boolean;
   connectionId?: string;
   agentId?: string;
-  medias?: Array<{ id: string; media_type: string; media_key: string; media_url?: string | null; media_content?: string | null }>;
-  onMediaSelect?: (media: { media_type: string; media_key: string }) => void;
+  medias?: AgentMedia[];
 }
 
 // Convert Markdown to HTML for the editor
@@ -272,8 +274,10 @@ export function MarkdownEditor({
   minHeight = '300px',
   className,
   enableSlashCommands = false,
+  enableMediaTrigger = false,
   connectionId,
   agentId,
+  medias = [],
 }: MarkdownEditorProps) {
   const [emojiOpen, setEmojiOpen] = useState(false);
   const isExternalUpdate = useRef(false);
@@ -285,6 +289,10 @@ export function MarkdownEditor({
   const [slashPosition, setSlashPosition] = useState({ x: 0, y: 0 });
   const [selectedCommand, setSelectedCommand] = useState<SlashCommand | null>(null);
   const [slashSearchTerm, setSlashSearchTerm] = useState('');
+  
+  // Media selection state
+  const [showMediaModal, setShowMediaModal] = useState(false);
+  const [mediaCursorPosition, setMediaCursorPosition] = useState<number | null>(null);
   
   // Editing existing command state
   const [editingCommand, setEditingCommand] = useState<{
@@ -395,6 +403,33 @@ export function MarkdownEditor({
           // Don't prevent default - let "/" be typed
           return false;
         }
+        
+        // Detect "{{" for media trigger
+        if (enableMediaTrigger && event.key === '{') {
+          const { from } = view.state.selection;
+          const textBefore = view.state.doc.textBetween(Math.max(0, from - 1), from);
+          
+          // Check if previous character is also "{"
+          if (textBefore === '{') {
+            // Insert closing braces and open media modal
+            setMediaCursorPosition(from + 1); // Position after the second "{"
+            setShowMediaModal(true);
+            
+            // Insert closing "}}" after a small delay
+            setTimeout(() => {
+              const ed = editorRef.current;
+              if (ed) {
+                ed.chain().focus().insertContent('}}').run();
+                // Move cursor back between the braces
+                const newPos = from + 1;
+                ed.chain().setTextSelection(newPos).run();
+              }
+            }, 10);
+            
+            return false;
+          }
+        }
+        
         return false;
       },
     },
@@ -551,6 +586,49 @@ export function MarkdownEditor({
     editingCommandRef.current = null;
     setShowSlashPicker(true);
   }, []);
+
+  // Handle media selection from modal
+  const handleMediaSelect = useCallback((media: AgentMedia) => {
+    if (!editor) return;
+    
+    const mediaTag = `{{${media.media_type}:${media.media_key}}}`;
+    
+    // Get current selection/cursor
+    const { from } = editor.state.selection;
+    
+    // Check if we're inside empty {{}} braces and replace them
+    const docText = editor.getText();
+    const cursorPos = from;
+    
+    // Look for {{}} pattern around cursor
+    const textBefore = docText.substring(Math.max(0, cursorPos - 10), cursorPos);
+    const textAfter = docText.substring(cursorPos, Math.min(docText.length, cursorPos + 10));
+    
+    const beforeMatch = textBefore.match(/\{\{$/);
+    const afterMatch = textAfter.match(/^\}\}/);
+    
+    if (beforeMatch && afterMatch) {
+      // We're inside empty {{}} - replace the whole thing
+      const startPos = cursorPos - 2;
+      const endPos = cursorPos + 2;
+      
+      editor.chain()
+        .focus()
+        .setTextSelection({ from: startPos, to: endPos })
+        .deleteSelection()
+        .insertContent(mediaTag)
+        .run();
+    } else {
+      // Just insert at cursor
+      editor.chain()
+        .focus()
+        .insertContent(mediaTag)
+        .run();
+    }
+    
+    setShowMediaModal(false);
+    setMediaCursorPosition(null);
+  }, [editor]);
 
   if (!editor) {
     return null;
@@ -766,6 +844,16 @@ export function MarkdownEditor({
         />
       )}
 
+      {/* Media Selection Modal */}
+      {enableMediaTrigger && (
+        <MediaSelectionModal
+          open={showMediaModal}
+          onOpenChange={setShowMediaModal}
+          medias={medias}
+          onSelect={handleMediaSelect}
+        />
+      )}
+
       {/* Styles for placeholder and slash commands */}
       <style>{`
         .is-editor-empty:first-child::before {
@@ -867,6 +955,14 @@ export function MarkdownEditor({
           background-color: hsl(var(--primary) / 0.3);
           border-color: hsl(var(--primary) / 0.6);
         }
+        
+        /* Media tag styling */
+        .media-tag-image { background-color: hsl(210 100% 95%); color: hsl(210 100% 40%); border-color: hsl(210 100% 80%); }
+        .media-tag-video { background-color: hsl(270 100% 95%); color: hsl(270 100% 40%); border-color: hsl(270 100% 80%); }
+        .media-tag-audio { background-color: hsl(140 100% 95%); color: hsl(140 100% 30%); border-color: hsl(140 100% 70%); }
+        .media-tag-document { background-color: hsl(30 100% 95%); color: hsl(30 100% 35%); border-color: hsl(30 100% 75%); }
+        .media-tag-text { background-color: hsl(0 0% 95%); color: hsl(0 0% 40%); border-color: hsl(0 0% 80%); }
+        .media-tag-link { background-color: hsl(190 100% 95%); color: hsl(190 100% 35%); border-color: hsl(190 100% 75%); }
       `}</style>
     </div>
   );

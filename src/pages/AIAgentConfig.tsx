@@ -22,6 +22,7 @@ import {
 } from '@/components/ui/select';
 import { useAIAgents } from '@/hooks/useAIAgents';
 import { useAuth } from '@/contexts/AuthContext';
+import { useAgentMedia } from '@/hooks/useAgentMedia';
 import { AgentRulesTab } from '@/components/ai-agents/config/AgentRulesTab';
 import { AgentScriptTab } from '@/components/ai-agents/config/AgentScriptTab';
 import { AgentFAQTab } from '@/components/ai-agents/config/AgentFAQTab';
@@ -35,7 +36,7 @@ export default function AIAgentConfig() {
   const navigate = useNavigate();
   const { userRole } = useAuth();
   const { agents, updateAgent, loadAgents, setAgentStatus } = useAIAgents();
-  
+  const { medias, loadMedias } = useAgentMedia(agentId || null);
   const [agent, setAgent] = useState<AIAgent | null>(null);
   const [activeTab, setActiveTab] = useState('rules');
   const [isSaving, setIsSaving] = useState(false);
@@ -51,7 +52,7 @@ export default function AIAgentConfig() {
   // Verificar permissão (owner/admin)
   const canManage = userRole?.role === 'owner' || userRole?.role === 'admin';
 
-  // Carregar agente
+  // Carregar agente e mídias
   useEffect(() => {
     if (agentId && agents.length > 0) {
       const found = agents.find(a => a.id === agentId);
@@ -65,6 +66,13 @@ export default function AIAgentConfig() {
       }
     }
   }, [agentId, agents]);
+
+  // Carregar mídias quando o agente muda
+  useEffect(() => {
+    if (agentId) {
+      loadMedias();
+    }
+  }, [agentId, loadMedias]);
 
   // Calcular total de caracteres
   const totalChars = rulesContent.length + scriptContent.length + faqContent.length;
@@ -215,6 +223,7 @@ export default function AIAgentConfig() {
                   <AgentRulesTab
                     content={rulesContent}
                     onChange={(content) => handleContentChange('rules', content)}
+                    medias={medias}
                   />
                 </TabsContent>
                 <TabsContent value="script" className="m-0">

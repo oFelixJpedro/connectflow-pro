@@ -2,10 +2,12 @@ import { Wand2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { MarkdownEditor } from '@/components/ui/markdown-editor';
+import type { AgentMedia } from '@/hooks/useAgentMedia';
 
 interface AgentRulesTabProps {
   content: string;
   onChange: (content: string) => void;
+  medias?: AgentMedia[];
 }
 
 const DEFAULT_RULES_TEMPLATE = `# 📌 PAPEL DO AGENTE
@@ -86,7 +88,7 @@ Use as variáveis do FAQ para dados personalizados (nome da empresa, CNPJ, honor
 - Nunca repita o roteiro se o cliente já tiver respondido
 - Após esclarecer dúvidas, sempre retome o fluxo`;
 
-export function AgentRulesTab({ content, onChange }: AgentRulesTabProps) {
+export function AgentRulesTab({ content, onChange, medias = [] }: AgentRulesTabProps) {
   const handleGenerateTemplate = () => {
     onChange(DEFAULT_RULES_TEMPLATE);
   };
@@ -111,6 +113,8 @@ export function AgentRulesTab({ content, onChange }: AgentRulesTabProps) {
         onChange={onChange}
         placeholder="Digite as regras gerais do agente aqui..."
         minHeight="400px"
+        enableMediaTrigger={true}
+        medias={medias}
       />
     </div>
   );
