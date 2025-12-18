@@ -218,7 +218,7 @@ export function AgentScriptTab({ content, onChange, agentId }: AgentScriptTabPro
         <ul className="text-muted-foreground space-y-1 text-xs">
           <li>• Use <code className="bg-muted px-1 rounded">{"{{imagem:nome}}"}</code> para enviar uma imagem</li>
           <li>• Use <code className="bg-muted px-1 rounded">{"{{video:nome}}"}</code> para enviar um vídeo</li>
-          <li>• Use <code className="bg-muted px-1 rounded">/nome-do-agente</code> para chamar outro agente</li>
+          <li>• Digite <code className="bg-muted px-1 rounded">/</code> para abrir o menu de comandos (etiquetas, transferências, etc.)</li>
           <li>• Use "Se o cliente falar X, faça Y" para criar condicionais</li>
         </ul>
       </div>
@@ -228,6 +228,8 @@ export function AgentScriptTab({ content, onChange, agentId }: AgentScriptTabPro
         onChange={onChange}
         placeholder="Digite o roteiro de atendimento aqui..."
         minHeight="400px"
+        enableSlashCommands={true}
+        agentId={agentId}
       />
     </div>
   );
