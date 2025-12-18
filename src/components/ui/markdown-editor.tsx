@@ -439,7 +439,8 @@ export function MarkdownEditor({
       const fullCommand = `${editingCommand.command.insertText}${value}`;
       editor.chain()
         .focus()
-        .deleteRange({ from: editingCommand.from, to: editingCommand.to })
+        .setTextSelection({ from: editingCommand.from, to: editingCommand.to })
+        .deleteSelection()
         .insertContent({
           type: 'text',
           text: fullCommand,
