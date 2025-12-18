@@ -98,6 +98,10 @@ function markdownToHtml(markdown: string): string {
   html = html.replace(/(\/[a-z_]+:[^\s]+)/g, '<span data-slash-command="true" class="slash-command-badge">$1</span>');
   html = html.replace(/(\/desativar_agente)(?![:\w])/g, '<span data-slash-command="true" class="slash-command-badge">$1</span>');
   
+  // Media tags - wrap with styled span {{type:key}}
+  html = html.replace(/\{\{(image|video|audio|document|text|link):([^}]+)\}\}/g, (match, type, key) => {
+    return `<span data-media-tag="true" data-media-type="${type}" class="media-tag media-tag-${type}">📎 ${type}:${key}</span>`;
+  });
   // Ordered lists (before converting to paragraphs)
   const orderedListPattern = /(?:^|\n)((?:\d+\. .+\n?)+)/g;
   html = html.replace(orderedListPattern, (match, listContent) => {
@@ -168,6 +172,16 @@ function htmlToMarkdown(html: string): string {
   
   // Remove slash command spans (keep content)
   markdown = markdown.replace(/<span[^>]*data-slash-command[^>]*>([^<]+)<\/span>/g, '$1');
+  
+  // Convert media tag spans back to {{type:key}} format
+  markdown = markdown.replace(/<span[^>]*data-media-tag[^>]*data-media-type="([^"]+)"[^>]*>[^<]*<\/span>/g, (match, type) => {
+    // Extract the type:key from the span content
+    const contentMatch = match.match(/📎\s*([^<]+)/);
+    if (contentMatch) {
+      return `{{${contentMatch[1].trim()}}}`;
+    }
+    return match;
+  });
   
   // Unordered lists
   markdown = markdown.replace(/<ul[^>]*>([\s\S]*?)<\/ul>/g, (match, content) => {
@@ -591,40 +605,14 @@ export function MarkdownEditor({
   const handleMediaSelect = useCallback((media: AgentMedia) => {
     if (!editor) return;
     
-    const mediaTag = `{{${media.media_type}:${media.media_key}}}`;
+    // Just the inner content without braces - the editor already has {{ and }}
+    const mediaTagContent = `${media.media_type}:${media.media_key}`;
     
-    // Get current selection/cursor
-    const { from } = editor.state.selection;
-    
-    // Check if we're inside empty {{}} braces and replace them
-    const docText = editor.getText();
-    const cursorPos = from;
-    
-    // Look for {{}} pattern around cursor
-    const textBefore = docText.substring(Math.max(0, cursorPos - 10), cursorPos);
-    const textAfter = docText.substring(cursorPos, Math.min(docText.length, cursorPos + 10));
-    
-    const beforeMatch = textBefore.match(/\{\{$/);
-    const afterMatch = textAfter.match(/^\}\}/);
-    
-    if (beforeMatch && afterMatch) {
-      // We're inside empty {{}} - replace the whole thing
-      const startPos = cursorPos - 2;
-      const endPos = cursorPos + 2;
-      
-      editor.chain()
-        .focus()
-        .setTextSelection({ from: startPos, to: endPos })
-        .deleteSelection()
-        .insertContent(mediaTag)
-        .run();
-    } else {
-      // Just insert at cursor
-      editor.chain()
-        .focus()
-        .insertContent(mediaTag)
-        .run();
-    }
+    // Insert content between the existing braces
+    editor.chain()
+      .focus()
+      .insertContent(mediaTagContent)
+      .run();
     
     setShowMediaModal(false);
     setMediaCursorPosition(null);
@@ -956,13 +944,33 @@ export function MarkdownEditor({
           border-color: hsl(var(--primary) / 0.6);
         }
         
-        /* Media tag styling */
+        /* Media tag base styling */
+        .media-tag {
+          display: inline-flex;
+          align-items: center;
+          padding: 2px 8px;
+          border-radius: 4px;
+          font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+          font-size: 0.85em;
+          border: 1px solid;
+          margin: 0 2px;
+          white-space: nowrap;
+        }
+        
+        /* Media tag type-specific colors */
         .media-tag-image { background-color: hsl(210 100% 95%); color: hsl(210 100% 40%); border-color: hsl(210 100% 80%); }
         .media-tag-video { background-color: hsl(270 100% 95%); color: hsl(270 100% 40%); border-color: hsl(270 100% 80%); }
         .media-tag-audio { background-color: hsl(140 100% 95%); color: hsl(140 100% 30%); border-color: hsl(140 100% 70%); }
         .media-tag-document { background-color: hsl(30 100% 95%); color: hsl(30 100% 35%); border-color: hsl(30 100% 75%); }
         .media-tag-text { background-color: hsl(0 0% 95%); color: hsl(0 0% 40%); border-color: hsl(0 0% 80%); }
         .media-tag-link { background-color: hsl(190 100% 95%); color: hsl(190 100% 35%); border-color: hsl(190 100% 75%); }
+        
+        .dark .media-tag-image { background-color: hsl(210 100% 20%); color: hsl(210 100% 75%); border-color: hsl(210 100% 35%); }
+        .dark .media-tag-video { background-color: hsl(270 100% 20%); color: hsl(270 100% 75%); border-color: hsl(270 100% 35%); }
+        .dark .media-tag-audio { background-color: hsl(140 100% 15%); color: hsl(140 100% 65%); border-color: hsl(140 100% 30%); }
+        .dark .media-tag-document { background-color: hsl(30 100% 15%); color: hsl(30 100% 70%); border-color: hsl(30 100% 30%); }
+        .dark .media-tag-text { background-color: hsl(0 0% 20%); color: hsl(0 0% 75%); border-color: hsl(0 0% 35%); }
+        .dark .media-tag-link { background-color: hsl(190 100% 15%); color: hsl(190 100% 70%); border-color: hsl(190 100% 30%); }
       `}</style>
     </div>
   );
