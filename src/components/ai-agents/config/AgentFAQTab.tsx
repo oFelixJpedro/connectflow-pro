@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import { HelpCircle, Building2, ChevronDown, ChevronUp } from 'lucide-react';
-import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { MarkdownEditor } from '@/components/ui/markdown-editor';
 import type { AIAgentCompanyInfo } from '@/types/ai-agents';
 
 interface AgentFAQTabProps {
@@ -18,17 +18,32 @@ interface AgentFAQTabProps {
 }
 
 const COMPANY_INFO_FIELDS = [
-  { key: 'company_name', label: 'Nome do Escritório/Empresa', placeholder: 'Ex: Terencio Advocacia' },
-  { key: 'agent_name', label: 'Nome do Agente', placeholder: 'Ex: Ana' },
-  { key: 'cnpj', label: 'CNPJ', placeholder: 'Ex: 40.615.986/0001-29' },
-  { key: 'business_area', label: 'Área de Atuação', placeholder: 'Ex: Direito Previdenciário' },
-  { key: 'address', label: 'Endereço', placeholder: 'Ex: Tv. Dona Paula, nº 13, Higienópolis, São Paulo/SP' },
-  { key: 'responsible_person', label: 'Advogado/Responsável', placeholder: 'Ex: Dr. André Luis Sevestrin' },
-  { key: 'oab', label: 'OAB', placeholder: 'Ex: OAB/SP nº 36230' },
-  { key: 'fees', label: 'Honorários', placeholder: 'Ex: 20% do êxito + 4 parcelas de R$ 500,00' },
+  { key: 'company_name', label: 'Nome do Escritório/Empresa', placeholder: 'Ex: Escritório Exemplo' },
+  { key: 'agent_name', label: 'Nome do Agente', placeholder: 'Ex: Maria' },
+  { key: 'cnpj', label: 'CNPJ', placeholder: 'Ex: 00.000.000/0001-00' },
+  { key: 'business_area', label: 'Área de Atuação', placeholder: 'Ex: Direito Civil' },
+  { key: 'address', label: 'Endereço', placeholder: 'Ex: Rua Exemplo, nº 123, Centro, Cidade/UF' },
+  { key: 'responsible_person', label: 'Advogado/Responsável', placeholder: 'Ex: Dr. João da Silva' },
+  { key: 'oab', label: 'OAB', placeholder: 'Ex: OAB/UF nº 00000' },
+  { key: 'fees', label: 'Honorários', placeholder: 'Ex: 20% do êxito + parcelas de R$ 000,00' },
   { key: 'cancellation_fee', label: 'Multa de Desistência', placeholder: 'Ex: R$ 0,00' },
-  { key: 'minimum_wage', label: 'Salário Mínimo Vigente', placeholder: 'Ex: R$ 1.518,00' },
+  { key: 'minimum_wage', label: 'Salário Mínimo Vigente', placeholder: 'Ex: R$ 1.500,00' },
 ];
+
+const FAQ_PLACEHOLDER = `## Perguntas Frequentes
+
+**P: Qual o horário de atendimento?**
+R: Nosso horário de atendimento é de segunda a sexta, das 9h às 18h.
+
+**P: Quanto tempo demora o processo?**
+R: O prazo médio é de 6 a 12 meses, dependendo da complexidade do caso.
+
+**P: Quais documentos são necessários?**
+R: Os documentos básicos são:
+- RG
+- CPF
+- Comprovante de residência
+- Documentação específica do caso`;
 
 export function AgentFAQTab({
   content,
@@ -106,7 +121,7 @@ export function AgentFAQTab({
                     id="contract_link"
                     value={contractLink}
                     onChange={(e) => onContractLinkChange(e.target.value)}
-                    placeholder="Ex: https://app.zapsign.com.br/..."
+                    placeholder="Ex: https://exemplo.com.br/contrato/..."
                   />
                 </div>
               </div>
@@ -139,20 +154,11 @@ export function AgentFAQTab({
                 Adicione perguntas frequentes e suas respostas para o agente consultar durante o atendimento.
               </p>
 
-              <Textarea
+              <MarkdownEditor
                 value={content}
-                onChange={(e) => onChange(e.target.value)}
-                placeholder={`Exemplo:
-
-P: Qual o horário de atendimento?
-R: Nosso horário de atendimento é de segunda a sexta, das 9h às 18h.
-
-P: Quanto tempo demora o processo?
-R: O prazo médio é de 6 a 12 meses, dependendo da complexidade do caso.
-
-P: Quais documentos são necessários?
-R: Os documentos básicos são: RG, CPF, comprovante de residência e documentação específica do caso.`}
-                className="min-h-[300px] resize-none font-mono text-sm"
+                onChange={onChange}
+                placeholder={FAQ_PLACEHOLDER}
+                minHeight="300px"
               />
             </CardContent>
           </CollapsibleContent>

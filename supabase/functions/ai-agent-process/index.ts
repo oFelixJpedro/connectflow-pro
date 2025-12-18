@@ -726,7 +726,314 @@ ${agent.faq_content}
 
     console.log('✅ Resposta gerada:', aiResponse.substring(0, 100) + '...');
 
-    // 7️⃣ Update conversation state
+    // 7️⃣ Parse and execute slash commands from response
+    console.log('\n┌─────────────────────────────────────────────────────────────────┐');
+    console.log('│ 5️⃣  PROCESSAR COMANDOS SLASH NA RESPOSTA                        │');
+    console.log('└─────────────────────────────────────────────────────────────────┘');
+
+    // Get conversation details for command execution
+    const { data: conversationData } = await supabase
+      .from('conversations')
+      .select('contact_id, company_id, whatsapp_connection_id')
+      .eq('id', conversationId)
+      .single();
+
+    const contactId = conversationData?.contact_id;
+    const companyId = conversationData?.company_id;
+
+    // Command handlers
+    const commandHandlers: Record<string, (value: string) => Promise<void>> = {
+      // Add tag to contact
+      'adicionar_etiqueta': async (tagName: string) => {
+        if (!contactId) return;
+        console.log('🏷️ Adicionando etiqueta:', tagName);
+        
+        // Get current tags
+        const { data: contact } = await supabase
+          .from('contacts')
+          .select('tags')
+          .eq('id', contactId)
+          .single();
+        
+        const currentTags = contact?.tags || [];
+        if (!currentTags.includes(tagName)) {
+          await supabase
+            .from('contacts')
+            .update({ tags: [...currentTags, tagName] })
+            .eq('id', contactId);
+          console.log('✅ Etiqueta adicionada');
+        }
+      },
+
+      // Transfer to another AI agent (sub-agent)
+      'transferir_agente': async (agentIdentifier: string) => {
+        console.log('🤖 Transferindo para agente:', agentIdentifier);
+        
+        // Find agent by name or id
+        const { data: targetAgent } = await supabase
+          .from('ai_agents')
+          .select('id, name')
+          .or(`name.ilike.%${agentIdentifier}%,id.eq.${agentIdentifier}`)
+          .eq('company_id', companyId)
+          .eq('status', 'active')
+          .limit(1)
+          .maybeSingle();
+        
+        if (targetAgent) {
+          await supabase
+            .from('ai_conversation_states')
+            .update({ 
+              current_sub_agent_id: targetAgent.id,
+              updated_at: new Date().toISOString()
+            })
+            .eq('conversation_id', conversationId);
+          console.log('✅ Transferido para agente:', targetAgent.name);
+        } else {
+          console.log('⚠️ Agente não encontrado:', agentIdentifier);
+        }
+      },
+
+      // Transfer to human user
+      'transferir_usuario': async (userIdentifier: string) => {
+        console.log('👤 Transferindo para usuário:', userIdentifier);
+        
+        // Find user by name
+        const { data: targetUser } = await supabase
+          .from('profiles')
+          .select('id, full_name')
+          .ilike('full_name', `%${userIdentifier}%`)
+          .eq('company_id', companyId)
+          .eq('active', true)
+          .limit(1)
+          .maybeSingle();
+        
+        if (targetUser) {
+          // Assign conversation to user and deactivate AI
+          await supabase
+            .from('conversations')
+            .update({ 
+              assigned_user_id: targetUser.id,
+              assigned_at: new Date().toISOString()
+            })
+            .eq('id', conversationId);
+          
+          await supabase
+            .from('ai_conversation_states')
+            .update({ 
+              status: 'deactivated_permanently',
+              deactivated_at: new Date().toISOString(),
+              deactivation_reason: `Transferido para ${targetUser.full_name}`
+            })
+            .eq('conversation_id', conversationId);
+          
+          console.log('✅ Transferido para usuário:', targetUser.full_name);
+        } else {
+          console.log('⚠️ Usuário não encontrado:', userIdentifier);
+        }
+      },
+
+      // Set contact origin
+      'atribuir_origem': async (origin: string) => {
+        if (!contactId) return;
+        console.log('📍 Atribuindo origem:', origin);
+        
+        const { data: contact } = await supabase
+          .from('contacts')
+          .select('custom_fields')
+          .eq('id', contactId)
+          .single();
+        
+        const customFields = contact?.custom_fields || {};
+        await supabase
+          .from('contacts')
+          .update({ 
+            custom_fields: { ...customFields, origem: origin }
+          })
+          .eq('id', contactId);
+        console.log('✅ Origem atribuída');
+      },
+
+      // Change CRM stage (Kanban column)
+      'mudar_etapa_crm': async (stageName: string) => {
+        if (!contactId) return;
+        console.log('📊 Mudando etapa CRM:', stageName);
+        
+        // Find the kanban card for this contact
+        const { data: card } = await supabase
+          .from('kanban_cards')
+          .select('id, column_id, kanban_columns!inner(board_id)')
+          .eq('contact_id', contactId)
+          .limit(1)
+          .maybeSingle();
+        
+        if (card) {
+          // Find target column
+          const { data: targetColumn } = await supabase
+            .from('kanban_columns')
+            .select('id')
+            .eq('board_id', (card as any).kanban_columns.board_id)
+            .ilike('name', `%${stageName}%`)
+            .limit(1)
+            .maybeSingle();
+          
+          if (targetColumn) {
+            await supabase
+              .from('kanban_cards')
+              .update({ column_id: targetColumn.id })
+              .eq('id', card.id);
+            console.log('✅ Etapa CRM atualizada');
+          } else {
+            console.log('⚠️ Coluna não encontrada:', stageName);
+          }
+        } else {
+          console.log('⚠️ Card não encontrado para contato');
+        }
+      },
+
+      // Notify team
+      'notificar_equipe': async (message: string) => {
+        console.log('🔔 Notificando equipe:', message);
+        
+        // Create mention notification for all admins/owners
+        const { data: admins } = await supabase
+          .from('user_roles')
+          .select('user_id')
+          .in('role', ['owner', 'admin'])
+          .eq('user_id', companyId); // This needs join with profiles
+        
+        // For now, log the notification - could be expanded to create internal chat message
+        console.log('ℹ️ Notificação de equipe registrada:', message);
+      },
+
+      // Assign department
+      'atribuir_departamento': async (deptName: string) => {
+        console.log('🏢 Atribuindo departamento:', deptName);
+        
+        // Find department by name
+        const { data: dept } = await supabase
+          .from('departments')
+          .select('id')
+          .eq('whatsapp_connection_id', connectionId)
+          .ilike('name', `%${deptName}%`)
+          .eq('active', true)
+          .limit(1)
+          .maybeSingle();
+        
+        if (dept) {
+          await supabase
+            .from('conversations')
+            .update({ department_id: dept.id })
+            .eq('id', conversationId);
+          console.log('✅ Departamento atribuído');
+        } else {
+          console.log('⚠️ Departamento não encontrado:', deptName);
+        }
+      },
+
+      // Deactivate AI agent
+      'desativar_agente': async () => {
+        console.log('🛑 Desativando agente de IA');
+        
+        await supabase
+          .from('ai_conversation_states')
+          .update({ 
+            status: 'deactivated_permanently',
+            deactivated_at: new Date().toISOString(),
+            deactivation_reason: 'Desativado pelo roteiro'
+          })
+          .eq('conversation_id', conversationId);
+        console.log('✅ Agente desativado permanentemente');
+      }
+    };
+
+    // Parse and execute commands
+    const commandPatterns = [
+      { pattern: /\/adicionar_etiqueta:([^\s\n]+)/gi, handler: 'adicionar_etiqueta' },
+      { pattern: /\/transferir_agente:([^\s\n]+)/gi, handler: 'transferir_agente' },
+      { pattern: /\/transferir_usuario:([^\s\n]+)/gi, handler: 'transferir_usuario' },
+      { pattern: /\/atribuir_origem:([^\s\n]+)/gi, handler: 'atribuir_origem' },
+      { pattern: /\/mudar_etapa_crm:([^\s\n]+)/gi, handler: 'mudar_etapa_crm' },
+      { pattern: /\/notificar_equipe:([^\n]+)/gi, handler: 'notificar_equipe' },
+      { pattern: /\/atribuir_departamento:([^\s\n]+)/gi, handler: 'atribuir_departamento' },
+      { pattern: /\/desativar_agente/gi, handler: 'desativar_agente' },
+    ];
+
+    let cleanResponse = aiResponse;
+    const executedCommands: string[] = [];
+
+    for (const { pattern, handler } of commandPatterns) {
+      const matches = [...aiResponse.matchAll(pattern)];
+      for (const match of matches) {
+        const value = match[1] || '';
+        try {
+          await commandHandlers[handler](value);
+          executedCommands.push(`${handler}:${value}`);
+        } catch (err) {
+          console.error(`❌ Erro ao executar comando ${handler}:`, err);
+        }
+        // Remove command from response
+        cleanResponse = cleanResponse.replace(match[0], '').trim();
+      }
+    }
+
+    // Clean up multiple spaces and empty lines
+    cleanResponse = cleanResponse.replace(/\n\s*\n/g, '\n').trim();
+
+    if (executedCommands.length > 0) {
+      console.log('✅ Comandos executados:', executedCommands);
+    } else {
+      console.log('ℹ️ Nenhum comando encontrado na resposta');
+    }
+
+    // 6️⃣ Parse and extract media tags from response
+    console.log('\n┌─────────────────────────────────────────────────────────────────┐');
+    console.log('│ 6️⃣  PROCESSAR TAGS DE MÍDIA NA RESPOSTA                         │');
+    console.log('└─────────────────────────────────────────────────────────────────┘');
+
+    const mediaPattern = /\{\{(image|video|audio|document|text|link):([a-zA-Z0-9_-]+)\}\}/gi;
+    const mediaMatches = [...cleanResponse.matchAll(mediaPattern)];
+    const mediasToSend: Array<{ type: string; key: string; url?: string; content?: string; fileName?: string }> = [];
+
+    for (const match of mediaMatches) {
+      const [fullMatch, mediaType, mediaKey] = match;
+      console.log(`📎 Tag de mídia encontrada: ${mediaType}:${mediaKey}`);
+      
+      // Fetch media from database
+      const { data: media } = await supabase
+        .from('ai_agent_media')
+        .select('*')
+        .eq('agent_id', agent.id)
+        .eq('media_key', mediaKey)
+        .maybeSingle();
+      
+      if (media) {
+        mediasToSend.push({
+          type: media.media_type,
+          key: media.media_key,
+          url: media.media_url || undefined,
+          content: media.media_content || undefined,
+          fileName: media.file_name || undefined
+        });
+        console.log(`✅ Mídia encontrada: ${media.media_type} - ${media.media_key}`);
+      } else {
+        console.log(`⚠️ Mídia não encontrada: ${mediaKey}`);
+      }
+      
+      // Remove tag from response
+      cleanResponse = cleanResponse.replace(fullMatch, '').trim();
+    }
+
+    // Clean up multiple spaces and empty lines again after removing media tags
+    cleanResponse = cleanResponse.replace(/\n\s*\n/g, '\n').trim();
+
+    if (mediasToSend.length > 0) {
+      console.log(`📦 Total de mídias para enviar: ${mediasToSend.length}`);
+    }
+
+    // Use cleaned response
+    aiResponse = cleanResponse;
+
+    // 8️⃣ Update conversation state
     await supabase
       .from('ai_conversation_states')
       .update({
@@ -736,7 +1043,7 @@ ${agent.faq_content}
       })
       .eq('conversation_id', conversationId);
 
-    // 8️⃣ Log the interaction
+    // 9️⃣ Log the interaction
     await supabase.from('ai_agent_logs').insert({
       agent_id: agent.id,
       conversation_id: conversationId,
@@ -751,11 +1058,12 @@ ${agent.faq_content}
         wasAlreadyActive: isConversationActive,
         messageType,
         hasImage: shouldUseMultimodal,
-        wasTranscribed: currentMessageIsAudio
+        wasTranscribed: currentMessageIsAudio,
+        executedCommands: executedCommands.length > 0 ? executedCommands : undefined
       }
     });
 
-    // 9️⃣ Return response with delay info and audio config
+    // 🔟 Return response with delay info and audio config
     // Determine if audio should be generated based on audio settings
     const shouldGenerateAudio = 
       agent.audio_enabled === true && 
@@ -785,7 +1093,8 @@ ${agent.faq_content}
         shouldGenerateAudio,
         speechSpeed: agent.speech_speed || 1.0,
         audioTemperature: agent.audio_temperature || 0.7,
-        languageCode: agent.language_code || 'pt-BR'
+        languageCode: agent.language_code || 'pt-BR',
+        mediasToSend: mediasToSend.length > 0 ? mediasToSend : undefined
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );

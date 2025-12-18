@@ -1,77 +1,156 @@
-import { Wand2, Plus, Image, Video, Mic, FileText, Link, Type } from 'lucide-react';
+import { Wand2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
+import { MarkdownEditor } from '@/components/ui/markdown-editor';
+import type { AgentMedia } from '@/hooks/useAgentMedia';
 
 interface AgentScriptTabProps {
   content: string;
   onChange: (content: string) => void;
   agentId: string;
+  medias?: AgentMedia[];
 }
 
-const DEFAULT_SCRIPT_TEMPLATE = `1. ENTRADA DO LEAD
+const DEFAULT_SCRIPT_TEMPLATE = `# ROTEIRO DE ATENDIMENTO
 
-Assim que o lead responder, o agente deve analisar a mensagem e enviar a saudação inicial.
+---
 
-SAUDAÇÃO:
-"Olá! 👋 Seja bem-vindo(a)! Sou a assistente virtual e estou aqui para ajudar você."
+## 📍 ETAPA 1 - RECEPÇÃO
 
-2. QUALIFICAÇÃO
+🚩 **Situação:** Lead acabou de chegar no WhatsApp
 
-Após a saudação, pergunte o que o cliente precisa:
-"Como posso ajudar você hoje?"
+💬 **Mensagem inicial:**
+"Olá! 👋 Seja bem-vindo(a) ao [[NOME_DA_EMPRESA]]!
+Somos especialistas em [[AREA_DE_ATUACAO]] e atendemos em todo o Brasil.
+Pra eu te atender melhor, qual é o seu primeiro nome?"
 
-3. IDENTIFICAÇÃO DA NECESSIDADE
+→ Se informar nome completo, use apenas o primeiro nome nas próximas interações.
 
-Se o cliente mencionar [área específica]:
-- Colete nome completo
-- Colete telefone de contato
-- Confirme o interesse
+---
 
-4. COLETA DE DADOS
+## 📍 ETAPA 2 - APRESENTAÇÃO
 
-"Para darmos continuidade, preciso de algumas informações:
-📝 Qual o seu nome completo?"
+🚩 **Situação:** Lead informou o nome
 
-Após receber o nome:
-"Obrigado, [NOME]! Agora, qual o seu telefone com DDD?"
+💬 **Mensagem:**
+"Oi, {Primeiro_Nome}! Eu sou [[NOME_DO_AGENTE]], do [[NOME_DA_EMPRESA]].
+[[BREVE_EXPLICACAO_DO_SERVICO]]
+Você gostaria que eu fizesse uma análise gratuita do seu caso?"
 
-5. CONFIRMAÇÃO
+→ Se **aceitar**: siga para Etapa 3
+→ Se **recusar**: "Sem problemas! Se mudar de ideia, estou por aqui 😊"
+→ Se **dúvida fora do escopo**: "Meu papel é analisar se você se enquadra nos nossos critérios. Quer que eu siga com a análise?"
 
-"Perfeito! Vou registrar seus dados:
-👤 Nome: [NOME]
-📞 Telefone: [TELEFONE]
+---
 
-Está tudo certo?"
+## 📍 ETAPA 3 - ANÁLISE / QUALIFICAÇÃO
 
-6. ENCERRAMENTO
+🚩 **Situação:** Lead aceitou a análise
 
-Se confirmado:
-"Excelente! Um de nossos especialistas entrará em contato em breve. Obrigado pelo contato! 🙏"
+💬 **Mensagem:**
+"Perfeito, {Primeiro_Nome}! Vou te fazer algumas perguntas rápidas pra entender melhor o seu caso, tudo bem?"
 
-7. OBJEÇÕES
+**Perguntas (uma por vez, aguardando resposta):**
 
-Se o cliente disser que não tem interesse:
-- Chame o agente /tratar-objecoes
+1. [Primeira pergunta de qualificação]
+2. [Segunda pergunta de qualificação]
+3. [Terceira pergunta de qualificação]
 
-Se o cliente pedir para falar com humano:
-- Informe que um atendente assumirá em breve
-- Desative a IA para essa conversa`;
+⚠️ Certifique-se de ter todas as informações antes de dar o parecer.
 
-export function AgentScriptTab({ content, onChange, agentId }: AgentScriptTabProps) {
+→ Se **qualificado**: siga para Etapa 4
+→ Se **desqualificado**: vá para Etapa 7
+
+---
+
+## 📍 ETAPA 4 - OFERTA / PROPOSTA
+
+🚩 **Situação:** Lead é qualificado
+
+💬 **Mensagem:**
+"Depois de analisar suas respostas, você se enquadra nos nossos critérios! ✅
+Posso te explicar como funciona nosso trabalho?"
+
+💬 **Explicação:**
+"{Primeiro_Nome}, aqui no [[NOME_DA_EMPRESA]] você não paga nada agora.
+[[EXPLICACAO_DOS_HONORARIOS]]
+Faz sentido pra você? Podemos seguir?"
+
+⚠️ Aguardar confirmação explícita antes de avançar.
+
+---
+
+## 📍 ETAPA 5 - CONTRATO
+
+🚩 **Situação:** Lead aceitou a proposta
+
+💬 **Mensagem:**
+"Perfeito! 🙏 O primeiro passo é a assinatura do contrato, que formaliza que vamos representar você.
+É bem simples: basta tocar no link abaixo, preencher os dados e assinar 👇
+👉 [[LINK_CONTRATO]]
+Me avisa aqui quando assinar, por favor."
+
+{{video:tutorial-assinatura}}
+
+**Regras:**
+- Se resposta vaga ("ok", "vou ver"): "Só pra confirmar: você já assinou pelo link?"
+- Se não assinou: reforce a importância e reenvie o link
+- Se objeção: consulte FAQ e retome "Podemos seguir com sua ficha?"
+
+---
+
+## 📍 ETAPA 6 - AGENDAMENTO
+
+🚩 **Situação:** Lead confirmou assinatura do contrato
+
+💬 **Mensagem:**
+"{Primeiro_Nome}, contrato assinado com sucesso! ✅
+Agora precisamos agendar sua reunião com o especialista.
+Pode me confirmar seu melhor e-mail?"
+
+🚩 **Situação:** Lead enviou o e-mail
+
+💬 **Mensagem:**
+"Obrigado! Confirmei seu e-mail: [e-mail] ✅
+Esses são os horários disponíveis, escolha o melhor pra você 👇
+
+📅 **Segunda (00/00):**
+– 10h00
+– 14h00
+– 16h00
+
+📅 **Terça (00/00):**
+– 09h30
+– 13h00
+– 15h30
+
+Qual fica melhor?"
+
+🚩 **Situação:** Lead escolheu horário
+
+💬 **Mensagem:**
+"Perfeito! Sua reunião foi agendada para [dia] às [hora] ✅
+O especialista já foi avisado.
+No dia, você receberá o link da reunião por e-mail.
+Se tiver qualquer dúvida até lá, é só me chamar!"
+
+---
+
+## 📍 ETAPA 7 - DESQUALIFICAÇÃO
+
+🚩 **Situação:** Lead não atende aos critérios
+
+💬 **Mensagem:**
+"{Primeiro_Nome}, analisando suas respostas, infelizmente no momento não conseguimos te atender.
+[[MOTIVO_BREVE]]
+Se sua situação mudar, pode contar com a gente para uma nova análise.
+Desejamos tudo de bom! 🙏"
+
+→ Encerrar fluxo. Não avançar mais até retorno espontâneo do lead.`;
+
+export function AgentScriptTab({ content, onChange, agentId, medias = [] }: AgentScriptTabProps) {
   const handleGenerateTemplate = () => {
     onChange(DEFAULT_SCRIPT_TEMPLATE);
-  };
-
-  const insertPlaceholder = (type: string) => {
-    const placeholder = `{{${type}:nome-do-arquivo}}`;
-    onChange(content + placeholder);
   };
 
   return (
@@ -83,66 +162,32 @@ export function AgentScriptTab({ content, onChange, agentId }: AgentScriptTabPro
             Defina o fluxo de atendimento do agente passo a passo
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="sm">
-                <Plus className="w-4 h-4 mr-2" />
-                Inserir Mídia
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => insertPlaceholder('imagem')}>
-                <Image className="w-4 h-4 mr-2" />
-                Imagem
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => insertPlaceholder('video')}>
-                <Video className="w-4 h-4 mr-2" />
-                Vídeo
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => insertPlaceholder('audio')}>
-                <Mic className="w-4 h-4 mr-2" />
-                Áudio
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => insertPlaceholder('documento')}>
-                <FileText className="w-4 h-4 mr-2" />
-                Documento
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => insertPlaceholder('texto')}>
-                <Type className="w-4 h-4 mr-2" />
-                Texto Fixo
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => insertPlaceholder('link')}>
-                <Link className="w-4 h-4 mr-2" />
-                Link
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-          <Button variant="outline" size="sm" onClick={handleGenerateTemplate}>
-            <Wand2 className="w-4 h-4 mr-2" />
-            Texto Padrão
-          </Button>
-        </div>
+        <Button variant="outline" size="sm" onClick={handleGenerateTemplate}>
+          <Wand2 className="w-4 h-4 mr-2" />
+          Texto Padrão
+        </Button>
       </div>
 
       <div className="bg-muted/50 rounded-lg p-3 text-sm space-y-2">
         <p className="font-medium">💡 Dicas de formatação:</p>
         <ul className="text-muted-foreground space-y-1 text-xs">
-          <li>• Use <code className="bg-muted px-1 rounded">{"{{imagem:nome}}"}</code> para enviar uma imagem</li>
+          <li>• Digite <code className="bg-muted px-1 rounded">{"{{"}</code> para abrir a seleção de mídias</li>
+          <li>• Use <code className="bg-muted px-1 rounded">{"{{image:nome}}"}</code> para enviar uma imagem</li>
           <li>• Use <code className="bg-muted px-1 rounded">{"{{video:nome}}"}</code> para enviar um vídeo</li>
-          <li>• Use <code className="bg-muted px-1 rounded">/nome-do-agente</code> para chamar outro agente</li>
-          <li>• Use "Se o cliente falar X, faça Y" para criar condicionais</li>
+          <li>• Digite <code className="bg-muted px-1 rounded">/</code> para comandos (etiquetas, transferências, etc.)</li>
         </ul>
       </div>
 
-      <div className="relative">
-        <Textarea
-          value={content}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder="Digite o roteiro de atendimento aqui..."
-          className="min-h-[400px] resize-none font-mono text-sm"
-        />
-      </div>
+      <MarkdownEditor
+        value={content}
+        onChange={onChange}
+        placeholder="Digite o roteiro de atendimento aqui..."
+        minHeight="400px"
+        enableSlashCommands={true}
+        enableMediaTrigger={true}
+        agentId={agentId}
+        medias={medias}
+      />
     </div>
   );
 }
