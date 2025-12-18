@@ -4,7 +4,6 @@ import {
   Zap, 
   Volume2, 
   Link2, 
-  Clock,
   Play,
   Pause,
   Plus,
@@ -42,7 +41,7 @@ import {
 import { useAIAgents } from '@/hooks/useAIAgents';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
-import { AI_AGENT_VOICES, AI_AGENT_DELAY_OPTIONS, AI_AGENT_BATCH_OPTIONS, AI_AGENT_SPLIT_DELAY_OPTIONS } from '@/types/ai-agents';
+import { AI_AGENT_VOICES, AI_AGENT_BATCH_OPTIONS, AI_AGENT_SPLIT_DELAY_OPTIONS } from '@/types/ai-agents';
 import type { AIAgent } from '@/types/ai-agents';
 import { toast } from 'sonner';
 
@@ -280,27 +279,6 @@ export function AgentSidebar({ agent, totalChars, charLimit, onAgentUpdate }: Ag
                 />
               </div>
               
-              <div className="space-y-1.5">
-                <div className="flex items-center gap-1">
-                  <Clock className="w-3 h-3 text-muted-foreground" />
-                  <Label className="text-xs">Delay</Label>
-                </div>
-                <Select 
-                  value={String(agent.delay_seconds)} 
-                  onValueChange={(v) => handleUpdateField('delay_seconds', Number(v))}
-                >
-                  <SelectTrigger className="h-8 text-sm">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {AI_AGENT_DELAY_OPTIONS.map((opt) => (
-                      <SelectItem key={opt.value} value={String(opt.value)}>
-                        {opt.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
 
               <div className="space-y-1.5">
                 <div className="flex items-center gap-1">

@@ -418,7 +418,6 @@ async function processAIAgentBatch(
     }
     
     const aiResponse = result.response
-    const delaySeconds = result.delaySeconds || 0
     const voiceName = result.voiceName
     const shouldGenerateAudio = result.shouldGenerateAudio === true
     const speechSpeed = result.speechSpeed || 1.0
@@ -427,13 +426,9 @@ async function processAIAgentBatch(
     const splitResponseEnabled = agentConfig?.split_response_enabled ?? true
     const splitDelaySeconds = agentConfig?.split_message_delay_seconds ?? 2.0
     
-    console.log(`✅ [BATCH-AI] Response generated, waiting ${delaySeconds}s...`)
+    console.log(`✅ [BATCH-AI] Response generated`)
     console.log(`🔊 [BATCH-AI] Audio: shouldGenerate=${shouldGenerateAudio}, voiceName=${voiceName}`)
     console.log(`📝 [BATCH-AI] Split: enabled=${splitResponseEnabled}, delay=${splitDelaySeconds}s`)
-    
-    if (delaySeconds > 0) {
-      await new Promise(resolve => setTimeout(resolve, delaySeconds * 1000))
-    }
     
     // Get contact phone
     const { data: conversation } = await supabase

@@ -244,17 +244,6 @@ export const AI_AGENT_CHAR_LIMITS = {
   total: 15000,
 } as const;
 
-// Delay options
-export const AI_AGENT_DELAY_OPTIONS = [
-  { value: 5, label: '5s' },
-  { value: 10, label: '10s' },
-  { value: 15, label: '15s' },
-  { value: 20, label: '20s ★' },
-  { value: 30, label: '30s' },
-  { value: 45, label: '45s' },
-  { value: 60, label: '60s' },
-] as const;
-
 // Batching options (debounce time for message grouping)
 export const AI_AGENT_BATCH_OPTIONS = [
   { value: 30, label: '30s' },
