@@ -238,11 +238,11 @@ export const AI_AGENT_CHAR_LIMITS = {
 
 // Delay options
 export const AI_AGENT_DELAY_OPTIONS = [
-  { value: 5, label: '5 segundos' },
-  { value: 10, label: '10 segundos' },
-  { value: 15, label: '15 segundos' },
-  { value: 20, label: '20 segundos (recomendado)' },
-  { value: 30, label: '30 segundos' },
-  { value: 45, label: '45 segundos' },
-  { value: 60, label: '1 minuto' },
+  { value: 5, label: '5s' },
+  { value: 10, label: '10s' },
+  { value: 15, label: '15s' },
+  { value: 20, label: '20s ★' },
+  { value: 30, label: '30s' },
+  { value: 45, label: '45s' },
+  { value: 60, label: '60s' },
 ] as const;
