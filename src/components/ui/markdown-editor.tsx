@@ -26,6 +26,15 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
+import { SlashCommandPicker, SlashCommand, SLASH_COMMANDS } from '@/components/ai-agents/SlashCommandPicker';
+import {
+  TagSelector,
+  AIAgentSelector,
+  UserSelector,
+  CRMStageSelector,
+  DepartmentSelector,
+  TextInputSelector,
+} from '@/components/ai-agents/slash-commands';
 
 // Emoji categories for the picker
 const emojiCategories = [
@@ -52,6 +61,9 @@ interface MarkdownEditorProps {
   placeholder?: string;
   minHeight?: string;
   className?: string;
+  enableSlashCommands?: boolean;
+  connectionId?: string;
+  agentId?: string;
 }
 
 // Convert Markdown to HTML for the editor
@@ -221,9 +233,19 @@ export function MarkdownEditor({
   placeholder = 'Digite aqui...',
   minHeight = '300px',
   className,
+  enableSlashCommands = false,
+  connectionId,
+  agentId,
 }: MarkdownEditorProps) {
   const [emojiOpen, setEmojiOpen] = useState(false);
   const isExternalUpdate = useRef(false);
+  const editorContainerRef = useRef<HTMLDivElement>(null);
+  
+  // Slash command state
+  const [showSlashPicker, setShowSlashPicker] = useState(false);
+  const [slashPosition, setSlashPosition] = useState({ x: 0, y: 0 });
+  const [selectedCommand, setSelectedCommand] = useState<SlashCommand | null>(null);
+  const [slashSearchTerm, setSlashSearchTerm] = useState('');
   
   const editor = useEditor({
     extensions: [
@@ -254,12 +276,44 @@ export function MarkdownEditor({
         ),
         style: `min-height: ${minHeight}; padding: 12px;`,
       },
+      handleKeyDown: (view, event) => {
+        // Detect "/" key for slash commands
+        if (enableSlashCommands && event.key === '/') {
+          // Get cursor position in the editor
+          const { from } = view.state.selection;
+          const coords = view.coordsAtPos(from);
+          
+          // Get container position for relative positioning
+          const containerRect = editorContainerRef.current?.getBoundingClientRect();
+          if (containerRect) {
+            setSlashPosition({
+              x: coords.left - containerRect.left,
+              y: coords.bottom - containerRect.top,
+            });
+          }
+          
+          setSlashSearchTerm('');
+          setShowSlashPicker(true);
+          // Don't prevent default - let "/" be typed
+          return false;
+        }
+        return false;
+      },
     },
     onUpdate: ({ editor }) => {
       if (isExternalUpdate.current) return;
       const html = editor.getHTML();
       const markdown = htmlToMarkdown(html);
       onChange(markdown);
+      
+      // Check if we should close slash picker (e.g., user deleted the "/")
+      if (showSlashPicker) {
+        const text = editor.getText();
+        const lastSlashIndex = text.lastIndexOf('/');
+        if (lastSlashIndex === -1) {
+          setShowSlashPicker(false);
+        }
+      }
     },
   });
 
@@ -282,12 +336,41 @@ export function MarkdownEditor({
     }
   }, [editor]);
 
+  // Handle slash command selection
+  const handleCommandSelect = useCallback((command: SlashCommand) => {
+    if (command.needsSelection) {
+      setSelectedCommand(command);
+      setShowSlashPicker(false);
+    } else {
+      // Insert command directly
+      if (editor) {
+        // Remove the "/" that triggered the picker and insert command
+        editor.chain().focus().insertContent(command.insertText).run();
+      }
+      setShowSlashPicker(false);
+    }
+  }, [editor]);
+
+  // Handle submenu value selection
+  const handleSubMenuSelect = useCallback((value: string) => {
+    if (editor && selectedCommand) {
+      const fullCommand = `${selectedCommand.insertText}${value}`;
+      editor.chain().focus().insertContent(fullCommand).run();
+    }
+    setSelectedCommand(null);
+  }, [editor, selectedCommand]);
+
+  const closeAllPickers = useCallback(() => {
+    setShowSlashPicker(false);
+    setSelectedCommand(null);
+  }, []);
+
   if (!editor) {
     return null;
   }
 
   return (
-    <div className={cn('border border-input rounded-lg overflow-hidden bg-background', className)}>
+    <div ref={editorContainerRef} className={cn('relative border border-input rounded-lg overflow-hidden bg-background', className)}>
       {/* Toolbar */}
       <div className="flex items-center gap-0.5 p-1.5 border-b border-input bg-muted/30 flex-wrap">
         {/* Headings */}
@@ -413,6 +496,81 @@ export function MarkdownEditor({
 
       {/* Editor content */}
       <EditorContent editor={editor} />
+
+      {/* Slash Command Picker */}
+      {enableSlashCommands && showSlashPicker && (
+        <SlashCommandPicker
+          position={slashPosition}
+          onSelect={handleCommandSelect}
+          onClose={() => setShowSlashPicker(false)}
+          searchTerm={slashSearchTerm}
+        />
+      )}
+
+      {/* Submenus */}
+      {enableSlashCommands && selectedCommand?.id === 'add_tag' && (
+        <TagSelector
+          position={slashPosition}
+          onSelect={handleSubMenuSelect}
+          onClose={closeAllPickers}
+        />
+      )}
+      
+      {enableSlashCommands && selectedCommand?.id === 'transfer_agent' && (
+        <AIAgentSelector
+          position={slashPosition}
+          onSelect={handleSubMenuSelect}
+          onClose={closeAllPickers}
+          currentAgentId={agentId}
+        />
+      )}
+      
+      {enableSlashCommands && selectedCommand?.id === 'transfer_user' && (
+        <UserSelector
+          position={slashPosition}
+          onSelect={handleSubMenuSelect}
+          onClose={closeAllPickers}
+        />
+      )}
+      
+      {enableSlashCommands && selectedCommand?.id === 'set_origin' && (
+        <TextInputSelector
+          position={slashPosition}
+          onSelect={handleSubMenuSelect}
+          onClose={closeAllPickers}
+          title="Atribuir Origem"
+          placeholder="Ex: Google Ads, Facebook, Indicação..."
+        />
+      )}
+      
+      {enableSlashCommands && selectedCommand?.id === 'change_crm_stage' && (
+        <CRMStageSelector
+          position={slashPosition}
+          onSelect={handleSubMenuSelect}
+          onClose={closeAllPickers}
+          connectionId={connectionId}
+        />
+      )}
+      
+      {enableSlashCommands && selectedCommand?.id === 'notify_team' && (
+        <TextInputSelector
+          position={slashPosition}
+          onSelect={handleSubMenuSelect}
+          onClose={closeAllPickers}
+          title="Notificar Equipe"
+          placeholder="Digite a mensagem de notificação..."
+          multiline
+        />
+      )}
+      
+      {enableSlashCommands && selectedCommand?.id === 'assign_department' && (
+        <DepartmentSelector
+          position={slashPosition}
+          onSelect={handleSubMenuSelect}
+          onClose={closeAllPickers}
+          connectionId={connectionId}
+        />
+      )}
 
       {/* Styles for placeholder */}
       <style>{`
