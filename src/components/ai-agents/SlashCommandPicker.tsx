@@ -3,7 +3,6 @@ import {
   Tag, 
   Bot, 
   User, 
-  FolderOpen, 
   Kanban, 
   Bell, 
   Building2, 
@@ -50,15 +49,6 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     icon: User,
     iconColor: 'text-blue-500',
     insertText: '/transferir_usuario:',
-    needsSelection: true,
-  },
-  {
-    id: 'set_origin',
-    label: 'Atribuir Origem',
-    description: 'Define a origem do lead (ex: Google Ads)',
-    icon: FolderOpen,
-    iconColor: 'text-yellow-500',
-    insertText: '/atribuir_origem:',
     needsSelection: true,
   },
   {
