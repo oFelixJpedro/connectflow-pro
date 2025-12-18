@@ -6,13 +6,14 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-type ActionType = 'assign' | 'transfer' | 'release' | 'close' | 'reopen' | 'move_department' | 'mark_unread' | 'clear_unread_mark'
+type ActionType = 'assign' | 'transfer' | 'release' | 'close' | 'reopen' | 'move_department' | 'mark_unread' | 'clear_unread_mark' | 'ai_start' | 'ai_pause' | 'ai_stop' | 'ai_restart'
 
 interface RequestBody {
   action: ActionType
   conversationId: string
   userId?: string
   departmentId?: string
+  pauseDurationMinutes?: number
 }
 
 serve(async (req) => {
@@ -106,16 +107,17 @@ serve(async (req) => {
     console.log('└─────────────────────────────────────────────────────────────────┘')
     
     const body: RequestBody = await req.json()
-    const { action, conversationId, userId: targetUserId, departmentId } = body
+    const { action, conversationId, userId: targetUserId, departmentId, pauseDurationMinutes } = body
     
     console.log('📋 Request:')
     console.log('   - action:', action)
     console.log('   - conversationId:', conversationId)
     console.log('   - targetUserId:', targetUserId || '(não informado)')
     console.log('   - departmentId:', departmentId || '(não informado)')
+    console.log('   - pauseDurationMinutes:', pauseDurationMinutes || '(não informado)')
     
     // Validar action
-    const validActions: ActionType[] = ['assign', 'transfer', 'release', 'close', 'reopen', 'move_department', 'mark_unread', 'clear_unread_mark']
+    const validActions: ActionType[] = ['assign', 'transfer', 'release', 'close', 'reopen', 'move_department', 'mark_unread', 'clear_unread_mark', 'ai_start', 'ai_pause', 'ai_stop', 'ai_restart']
     if (!validActions.includes(action)) {
       console.log('❌ Ação inválida:', action)
       return new Response(
@@ -446,6 +448,168 @@ serve(async (req) => {
         
         console.log('📝 Removendo marcação de não lida')
         break
+      }
+      
+      // ───────────────────────────────────────────────────────────────────
+      // ACTION: AI_START
+      // ───────────────────────────────────────────────────────────────────
+      case 'ai_start': {
+        console.log('🤖 Iniciando IA para conversa:', conversationId)
+        
+        // Upsert AI conversation state
+        const { error: aiError } = await supabase
+          .from('ai_conversation_states')
+          .upsert({
+            conversation_id: conversationId,
+            status: 'active',
+            activated_at: new Date().toISOString(),
+            paused_until: null,
+            deactivated_at: null,
+            deactivation_reason: null,
+            updated_at: new Date().toISOString(),
+          }, {
+            onConflict: 'conversation_id',
+          })
+        
+        if (aiError) {
+          console.log('❌ Erro ao atualizar estado da IA:', aiError.message)
+          return new Response(
+            JSON.stringify({ success: false, error: 'Erro ao iniciar IA', code: 'AI_START_ERROR', details: aiError.message }),
+            { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
+        }
+        
+        console.log('✅ IA iniciada com sucesso')
+        
+        // Return early - no conversation update needed
+        return new Response(
+          JSON.stringify({ success: true, action: 'ai_start' }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+      
+      // ───────────────────────────────────────────────────────────────────
+      // ACTION: AI_PAUSE
+      // ───────────────────────────────────────────────────────────────────
+      case 'ai_pause': {
+        console.log('🤖 Pausando IA para conversa:', conversationId)
+        
+        if (!pauseDurationMinutes || pauseDurationMinutes <= 0) {
+          console.log('❌ Duração da pausa não informada')
+          return new Response(
+            JSON.stringify({ success: false, error: 'pauseDurationMinutes é obrigatório', code: 'MISSING_PAUSE_DURATION' }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
+        }
+        
+        const pausedUntil = new Date()
+        pausedUntil.setMinutes(pausedUntil.getMinutes() + pauseDurationMinutes)
+        
+        // Upsert AI conversation state
+        const { error: aiError } = await supabase
+          .from('ai_conversation_states')
+          .upsert({
+            conversation_id: conversationId,
+            status: 'paused',
+            paused_until: pausedUntil.toISOString(),
+            updated_at: new Date().toISOString(),
+          }, {
+            onConflict: 'conversation_id',
+          })
+        
+        if (aiError) {
+          console.log('❌ Erro ao pausar IA:', aiError.message)
+          return new Response(
+            JSON.stringify({ success: false, error: 'Erro ao pausar IA', code: 'AI_PAUSE_ERROR', details: aiError.message }),
+            { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
+        }
+        
+        console.log('✅ IA pausada até:', pausedUntil.toISOString())
+        
+        return new Response(
+          JSON.stringify({ success: true, action: 'ai_pause', pausedUntil: pausedUntil.toISOString() }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+      
+      // ───────────────────────────────────────────────────────────────────
+      // ACTION: AI_STOP
+      // ───────────────────────────────────────────────────────────────────
+      case 'ai_stop': {
+        console.log('🤖 Parando IA para conversa:', conversationId)
+        
+        // Upsert AI conversation state
+        const { error: aiError } = await supabase
+          .from('ai_conversation_states')
+          .upsert({
+            conversation_id: conversationId,
+            status: 'deactivated_permanently',
+            deactivated_at: new Date().toISOString(),
+            deactivation_reason: 'manual_stop',
+            paused_until: null,
+            updated_at: new Date().toISOString(),
+          }, {
+            onConflict: 'conversation_id',
+          })
+        
+        if (aiError) {
+          console.log('❌ Erro ao parar IA:', aiError.message)
+          return new Response(
+            JSON.stringify({ success: false, error: 'Erro ao parar IA', code: 'AI_STOP_ERROR', details: aiError.message }),
+            { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
+        }
+        
+        console.log('✅ IA parada permanentemente')
+        
+        return new Response(
+          JSON.stringify({ success: true, action: 'ai_stop' }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+      
+      // ───────────────────────────────────────────────────────────────────
+      // ACTION: AI_RESTART
+      // ───────────────────────────────────────────────────────────────────
+      case 'ai_restart': {
+        console.log('🤖 Reiniciando IA para conversa:', conversationId)
+        
+        // Delete existing AI state (reset memory)
+        const { error: deleteError } = await supabase
+          .from('ai_conversation_states')
+          .delete()
+          .eq('conversation_id', conversationId)
+        
+        if (deleteError) {
+          console.log('⚠️ Erro ao deletar estado anterior (não fatal):', deleteError.message)
+        }
+        
+        // Create fresh AI state
+        const { error: aiError } = await supabase
+          .from('ai_conversation_states')
+          .insert({
+            conversation_id: conversationId,
+            status: 'active',
+            activated_at: new Date().toISOString(),
+            messages_processed: 0,
+            metadata: {},
+          })
+        
+        if (aiError) {
+          console.log('❌ Erro ao reiniciar IA:', aiError.message)
+          return new Response(
+            JSON.stringify({ success: false, error: 'Erro ao reiniciar IA', code: 'AI_RESTART_ERROR', details: aiError.message }),
+            { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
+        }
+        
+        console.log('✅ IA reiniciada com sucesso')
+        
+        return new Response(
+          JSON.stringify({ success: true, action: 'ai_restart' }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
       }
     }
     
