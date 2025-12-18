@@ -90,7 +90,8 @@ function markdownToHtml(markdown: string): string {
   html = html.replace(/~~(.+?)~~/g, '<s>$1</s>');
   
   // Slash commands - wrap with span
-  html = html.replace(/(\/[a-z_]+:[a-z0-9-]+)/g, '<span data-slash-command="true" class="slash-command-badge">$1</span>');
+  // Note: values can include "/" (e.g. tag names like "Auxdlio/Acidente"), so we match until whitespace.
+  html = html.replace(/(\/[a-z_]+:[^\s]+)/g, '<span data-slash-command="true" class="slash-command-badge">$1</span>');
   html = html.replace(/(\/desativar_agente)(?![:\w])/g, '<span data-slash-command="true" class="slash-command-badge">$1</span>');
   
   // Ordered lists (before converting to paragraphs)
@@ -464,27 +465,30 @@ export function MarkdownEditor({
       // Editing existing command - DELETE FIRST, then INSERT
       const fullCommand = `${editing.command.insertText}${value}`;
       const insertPosition = editing.from; // Save position before deleting
+      const ed = editor;
       
       // STEP 1: Delete the old command completely
-      editor.chain()
+      ed.chain()
         .focus()
         .setTextSelection({ from: editing.from, to: editing.to })
         .deleteSelection()
         .run();
-      
-      // STEP 2: Insert new command at the saved position
-      editor.chain()
-        .focus()
-        .setTextSelection(insertPosition)
-        .insertContent({
-          type: 'text',
-          text: fullCommand,
-          marks: [{ type: 'slashCommand' }],
-        })
-        .run();
-      
-      setEditingCommand(null);
-      editingCommandRef.current = null;
+
+      // STEP 2: Insert after deletion commits (tiny delay to avoid ProseMirror timing issues)
+      window.setTimeout(() => {
+        ed.chain()
+          .focus()
+          .setTextSelection(insertPosition)
+          .insertContent({
+            type: 'text',
+            text: fullCommand,
+            marks: [{ type: 'slashCommand' }],
+          })
+          .run();
+
+        setEditingCommand(null);
+        editingCommandRef.current = null;
+      }, 10);
     } else if (selectedCommand) {
       // New command
       const fullCommand = `${selectedCommand.insertText}${value}`;
