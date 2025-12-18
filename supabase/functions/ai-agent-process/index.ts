@@ -151,8 +151,9 @@ serve(async (req) => {
       );
     }
 
-    const agent = agentConnection.ai_agents as any;
-    console.log('✅ Agente encontrado:', agent.name, '| Status:', agent.status);
+    let agent = agentConnection.ai_agents as any;
+    let activeSubAgent: any = null;
+    console.log('✅ Agente primário encontrado:', agent.name, '| Status:', agent.status);
 
     // 2️⃣ Check if agent is active
     if (agent.status !== 'active') {
@@ -189,6 +190,60 @@ serve(async (req) => {
     const isConversationActive = convState?.status === 'active';
     console.log('📋 Estado atual:', convState?.status || 'nenhum');
     console.log('📋 Conversa ativa:', isConversationActive);
+    console.log('📋 Sub-agente atual:', convState?.current_sub_agent_id || 'nenhum');
+
+    // 🔄 CRITICAL: If there's an active sub-agent, load and use its prompts
+    if (convState?.current_sub_agent_id) {
+      console.log('\n┌─────────────────────────────────────────────────────────────────┐');
+      console.log('│ 🔄  CARREGANDO SUB-AGENTE                                       │');
+      console.log('└─────────────────────────────────────────────────────────────────┘');
+      
+      const { data: subAgent, error: subAgentError } = await supabase
+        .from('ai_agents')
+        .select(`
+          id,
+          name,
+          status,
+          agent_type,
+          script_content,
+          rules_content,
+          faq_content,
+          company_info,
+          temperature
+        `)
+        .eq('id', convState.current_sub_agent_id)
+        .maybeSingle();
+      
+      if (subAgentError) {
+        console.log('⚠️ Erro ao buscar sub-agente:', subAgentError.message);
+      } else if (subAgent) {
+        if (subAgent.status === 'active') {
+          activeSubAgent = subAgent;
+          // Use sub-agent prompts while keeping parent agent's audio/delay settings
+          agent = {
+            ...agent,
+            name: subAgent.name,
+            script_content: subAgent.script_content || agent.script_content,
+            rules_content: subAgent.rules_content || agent.rules_content,
+            faq_content: subAgent.faq_content || agent.faq_content,
+            company_info: subAgent.company_info || agent.company_info,
+            temperature: subAgent.temperature ?? agent.temperature
+          };
+          console.log('✅ Sub-agente carregado:', subAgent.name);
+          console.log('📝 Usando prompts do sub-agente');
+        } else {
+          console.log('⚠️ Sub-agente inativo:', subAgent.name, '| Status:', subAgent.status);
+          // Clear the sub-agent reference since it's inactive
+          await supabase
+            .from('ai_conversation_states')
+            .update({ current_sub_agent_id: null })
+            .eq('conversation_id', conversationId);
+          console.log('🔄 Voltando para agente primário');
+        }
+      } else {
+        console.log('⚠️ Sub-agente não encontrado, usando agente primário');
+      }
+    }
 
     if (isConversationActive) {
       console.log('✅ Conversa já ativada - pulando verificação de trigger');
@@ -437,6 +492,9 @@ serve(async (req) => {
 
     // Build system prompt
     const companyInfo = agent.company_info || {};
+    const isFirstInteraction = (convState?.messages_processed || 0) === 0;
+    const isUsingSubAgent = activeSubAgent !== null;
+    
     let systemPrompt = `Você é ${agent.name}, um assistente virtual de atendimento ao cliente.
 
 `;
@@ -475,8 +533,37 @@ ${agent.faq_content}
 - Cliente: ${contactName || 'Cliente'}
 - Telefone: ${contactPhone || 'N/A'}
 - Canal: WhatsApp
+- Mensagens já processadas: ${convState?.messages_processed || 0}
+- É primeira interação: ${isFirstInteraction ? 'Sim' : 'Não'}
+${isUsingSubAgent ? `- Você é o sub-agente especializado: ${activeSubAgent.name}` : ''}
 
-## INSTRUÇÕES
+## COMANDOS DISPONÍVEIS
+Quando apropriado, INCLUA os comandos abaixo NO INÍCIO da sua resposta (eles serão automaticamente removidos antes de enviar ao cliente):
+
+- /adicionar_etiqueta:nome-da-etiqueta → Adiciona uma etiqueta ao contato (use nomes SEM acentos, separados por hífen)
+- /transferir_agente:Nome do Agente → Transfere para outro agente de IA (use o nome EXATO do agente)
+- /transferir_usuario:Nome do Usuário → Transfere para um atendente humano
+- /mudar_etapa_crm:nome-da-etapa → Move o card do cliente no CRM
+- /atribuir_departamento:Nome do Departamento → Atribui a conversa a um departamento
+- /notificar_equipe:mensagem → Notifica a equipe interna
+- /desativar_agente → Desativa a IA permanentemente nesta conversa
+
+IMPORTANTE SOBRE COMANDOS:
+- Coloque os comandos no INÍCIO da resposta, cada um em uma linha separada
+- Use nomes de etiquetas SEM acentos e em minúsculo (ex: salario-maternidade, bpc-loas-pcd)
+- Os comandos serão REMOVIDOS automaticamente antes de enviar a mensagem ao cliente
+- SEMPRE use comandos quando o roteiro indicar (ex: ao identificar o interesse do cliente, adicione a etiqueta correspondente)
+
+## REGRAS CRÍTICAS (OBRIGATÓRIAS)
+1. ${isFirstInteraction ? 'Esta é a primeira interação - você pode se apresentar e cumprimentar' : 'NUNCA repita saudações como "Prazer em te conhecer" ou "Olá, tudo bem?" - a conversa já está em andamento'}
+2. ${isFirstInteraction ? 'Pergunte o nome do cliente se ainda não sabe' : 'NÃO pergunte o nome do cliente novamente - você já sabe que é ' + (contactName || 'Cliente')}
+3. LEIA o histórico da conversa antes de responder - não repita perguntas que já foram respondidas
+4. Continue de onde parou - se fez uma pergunta, aguarde a resposta antes de fazer outra
+5. Se o cliente já respondeu algo, USE essa informação - não pergunte novamente
+6. Use conectores naturais como: "Certo", "Entendi", "Perfeito", "Tudo bem"
+7. Faça apenas UMA pergunta por mensagem - aguarde a resposta antes de prosseguir
+
+## INSTRUÇÕES GERAIS
 1. Responda de forma natural e amigável
 2. Seja objetivo e direto
 3. Use emojis moderadamente para criar conexão
@@ -947,14 +1034,15 @@ ${agent.faq_content}
     };
 
     // Parse and execute commands
+    // Updated patterns to support values with spaces (capture until end of line or next command)
     const commandPatterns = [
-      { pattern: /\/adicionar_etiqueta:([^\s\n]+)/gi, handler: 'adicionar_etiqueta' },
-      { pattern: /\/transferir_agente:([^\s\n]+)/gi, handler: 'transferir_agente' },
-      { pattern: /\/transferir_usuario:([^\s\n]+)/gi, handler: 'transferir_usuario' },
-      { pattern: /\/atribuir_origem:([^\s\n]+)/gi, handler: 'atribuir_origem' },
-      { pattern: /\/mudar_etapa_crm:([^\s\n]+)/gi, handler: 'mudar_etapa_crm' },
+      { pattern: /\/adicionar_etiqueta:([^\n\/]+)/gi, handler: 'adicionar_etiqueta' },
+      { pattern: /\/transferir_agente:([^\n\/]+)/gi, handler: 'transferir_agente' },
+      { pattern: /\/transferir_usuario:([^\n\/]+)/gi, handler: 'transferir_usuario' },
+      { pattern: /\/atribuir_origem:([^\n\/]+)/gi, handler: 'atribuir_origem' },
+      { pattern: /\/mudar_etapa_crm:([^\n\/]+)/gi, handler: 'mudar_etapa_crm' },
       { pattern: /\/notificar_equipe:([^\n]+)/gi, handler: 'notificar_equipe' },
-      { pattern: /\/atribuir_departamento:([^\s\n]+)/gi, handler: 'atribuir_departamento' },
+      { pattern: /\/atribuir_departamento:([^\n\/]+)/gi, handler: 'atribuir_departamento' },
       { pattern: /\/desativar_agente/gi, handler: 'desativar_agente' },
     ];
 
@@ -964,10 +1052,12 @@ ${agent.faq_content}
     for (const { pattern, handler } of commandPatterns) {
       const matches = [...aiResponse.matchAll(pattern)];
       for (const match of matches) {
-        const value = match[1] || '';
+        // Trim the value to handle any trailing whitespace
+        const value = (match[1] || '').trim();
         try {
           await commandHandlers[handler](value);
           executedCommands.push(`${handler}:${value}`);
+          console.log(`✅ Comando executado: ${handler}:${value}`);
         } catch (err) {
           console.error(`❌ Erro ao executar comando ${handler}:`, err);
         }
