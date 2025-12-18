@@ -338,7 +338,264 @@ async function processMediaMessage(
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// PROCESS AI AGENT
+// SPLIT RESPONSE INTO HUMANIZED MESSAGES
+// ═══════════════════════════════════════════════════════════════════
+function splitResponse(text: string): string[] {
+  const parts: string[] = []
+  
+  // Split by sentences first
+  const sentences = text.split(/(?<=[.!?])\s+/)
+  let currentPart = ''
+  
+  for (const sentence of sentences) {
+    // If this sentence contains a question mark, make it a separate message
+    if (sentence.includes('?') && currentPart.length > 0) {
+      parts.push(currentPart.trim())
+      currentPart = sentence
+    }
+    // If adding this sentence would exceed ~300 chars, start new part
+    else if ((currentPart + ' ' + sentence).length > 300 && currentPart.length > 0) {
+      parts.push(currentPart.trim())
+      currentPart = sentence
+    }
+    else {
+      currentPart = currentPart ? currentPart + ' ' + sentence : sentence
+    }
+  }
+  
+  // Add remaining content
+  if (currentPart.trim()) {
+    parts.push(currentPart.trim())
+  }
+  
+  return parts.length > 0 ? parts : [text]
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// PROCESS AI AGENT BATCH
+// ═══════════════════════════════════════════════════════════════════
+async function processAIAgentBatch(
+  supabase: any,
+  batch: any,
+  agentConfig: any
+): Promise<boolean> {
+  const { connectionId, conversationId, messages, contactName, contactPhone, companyId, instanceToken } = batch
+  
+  console.log(`🤖 [BATCH-AI] Processing batch for conversation ${conversationId} (${messages.length} messages)`)
+  
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')!
+  const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+  
+  try {
+    // Call AI agent process function with batch of messages
+    const aiProcessUrl = `${supabaseUrl}/functions/v1/ai-agent-process`
+    
+    const response = await fetch(aiProcessUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${supabaseServiceKey}`,
+      },
+      body: JSON.stringify({
+        connectionId,
+        conversationId,
+        messages, // Send array of messages
+        contactName,
+        contactPhone,
+      }),
+    })
+    
+    const result = await response.json()
+    
+    if (!result.success) {
+      if (result.skip) {
+        console.log(`🤖 [BATCH-AI] Skipping: ${result.reason}`)
+        return true // Not an error, just skipped
+      } else {
+        console.log(`❌ [BATCH-AI] Error: ${result.error}`)
+        return false
+      }
+    }
+    
+    const aiResponse = result.response
+    const voiceName = result.voiceName
+    const shouldGenerateAudio = result.shouldGenerateAudio === true
+    const speechSpeed = result.speechSpeed || 1.0
+    const audioTemperature = result.audioTemperature || 0.7
+    const languageCode = result.languageCode || 'pt-BR'
+    const splitResponseEnabled = agentConfig?.split_response_enabled ?? true
+    const splitDelaySeconds = agentConfig?.split_message_delay_seconds ?? 2.0
+    
+    console.log(`✅ [BATCH-AI] Response generated`)
+    console.log(`🔊 [BATCH-AI] Audio: shouldGenerate=${shouldGenerateAudio}, voiceName=${voiceName}`)
+    console.log(`📝 [BATCH-AI] Split: enabled=${splitResponseEnabled}, delay=${splitDelaySeconds}s`)
+    
+    // Get contact phone
+    const { data: conversation } = await supabase
+      .from('conversations')
+      .select(`contacts!inner (phone_number)`)
+      .eq('id', conversationId)
+      .single()
+    
+    const contactData = conversation?.contacts as any
+    if (!contactData?.phone_number) {
+      console.log('❌ [BATCH-AI] Contact not found')
+      return false
+    }
+    
+    const phoneNumber = contactData.phone_number
+    
+    // Determine if we should split the response
+    const responseParts = splitResponseEnabled && !shouldGenerateAudio 
+      ? splitResponse(aiResponse)
+      : [aiResponse]
+    
+    console.log(`📤 [BATCH-AI] Sending ${responseParts.length} message(s) to ${phoneNumber}`)
+    
+    // Send each part with delay between them
+    for (let i = 0; i < responseParts.length; i++) {
+      const part = responseParts[i]
+      
+      // Add delay between messages (not before the first one)
+      if (i > 0 && splitDelaySeconds > 0) {
+        console.log(`⏳ [BATCH-AI] Waiting ${splitDelaySeconds}s before next message...`)
+        await new Promise(resolve => setTimeout(resolve, splitDelaySeconds * 1000))
+      }
+      
+      let whatsappMessageId: string | null = null
+      let messageType: 'text' | 'audio' = 'text'
+      let mediaUrl: string | null = null
+      
+      // Generate audio only for first message if enabled
+      if (shouldGenerateAudio && voiceName && i === 0) {
+        console.log(`🎵 [BATCH-AI] Generating audio with voice: ${voiceName}`)
+        
+        const ttsUrl = `${supabaseUrl}/functions/v1/ai-agent-tts`
+        
+        const ttsResponse = await fetch(ttsUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${supabaseServiceKey}`,
+          },
+          body: JSON.stringify({
+            text: aiResponse, // Full response for audio
+            voiceName,
+            speed: speechSpeed,
+            temperature: audioTemperature,
+            languageCode
+          }),
+        })
+        
+        if (ttsResponse.ok) {
+          const ttsResult = await ttsResponse.json()
+          const audioUrl = ttsResult.audioUrl
+          
+          if (audioUrl) {
+            console.log(`✅ [BATCH-AI] Audio generated: ${audioUrl}`)
+            
+            const sendMediaUrl = `${UAZAPI_BASE_URL}/send/media`
+            
+            const sendResponse = await fetch(sendMediaUrl, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'token': instanceToken,
+              },
+              body: JSON.stringify({
+                number: phoneNumber,
+                type: 'ptt',
+                file: audioUrl
+              }),
+            })
+            
+            if (sendResponse.ok) {
+              const sendResult = await sendResponse.json()
+              whatsappMessageId = sendResult.key?.id || sendResult.messageId || sendResult.id
+              messageType = 'audio'
+              mediaUrl = audioUrl
+              console.log(`✅ [BATCH-AI] Audio sent! ID: ${whatsappMessageId}`)
+            }
+          }
+        }
+      }
+      
+      // Fallback to text
+      if (!whatsappMessageId) {
+        const sendUrl = `${UAZAPI_BASE_URL}/send/text`
+        
+        const sendResponse = await fetch(sendUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'token': instanceToken,
+          },
+          body: JSON.stringify({
+            number: phoneNumber,
+            text: part
+          }),
+        })
+        
+        if (!sendResponse.ok) {
+          const errorText = await sendResponse.text()
+          console.log(`❌ [BATCH-AI] Send error: ${sendResponse.status} - ${errorText}`)
+          continue // Try to send remaining parts
+        }
+        
+        const sendResult = await sendResponse.json()
+        whatsappMessageId = sendResult.key?.id || sendResult.messageId || sendResult.id
+        messageType = 'text'
+        console.log(`✅ [BATCH-AI] Text part ${i + 1}/${responseParts.length} sent! ID: ${whatsappMessageId}`)
+      }
+      
+      // Save message to database
+      await supabase
+        .from('messages')
+        .insert({
+          conversation_id: conversationId,
+          direction: 'outbound',
+          sender_type: 'bot',
+          sender_id: null,
+          content: part,
+          message_type: messageType,
+          media_url: mediaUrl,
+          media_mime_type: mediaUrl ? 'audio/wav' : null,
+          whatsapp_message_id: whatsappMessageId,
+          status: 'sent',
+          metadata: {
+            sentByAIAgent: true,
+            agentId: result.agentId,
+            agentName: result.agentName,
+            audioGenerated: messageType === 'audio',
+            voiceName: voiceName || null,
+            processedByQueue: true,
+            batchSize: messages.length,
+            partIndex: i,
+            totalParts: responseParts.length
+          }
+        })
+    }
+    
+    // Update conversation
+    await supabase
+      .from('conversations')
+      .update({
+        last_message_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', conversationId)
+    
+    console.log(`🎉 [BATCH-AI] Processing complete! (${responseParts.length} messages sent)`)
+    return true
+    
+  } catch (error) {
+    console.error(`❌ [BATCH-AI] Error:`, error)
+    return false
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// PROCESS AI AGENT (Legacy - single message)
 // ═══════════════════════════════════════════════════════════════════
 async function processAIAgent(
   supabase: any,
@@ -561,17 +818,90 @@ serve(async (req) => {
     mediaFailed: 0,
     aiProcessed: 0,
     aiFailed: 0,
+    batchesProcessed: 0,
     startTime: Date.now()
   }
   
   try {
     // ═══════════════════════════════════════════════════════════════
-    // PROCESS HIGH PRIORITY QUEUE (AI AGENTS) - up to 5 items
+    // PROCESS AI AGENT BATCHES (check for ready batches)
+    // ═══════════════════════════════════════════════════════════════
+    console.log(`📥 [QUEUE] Scanning for ready AI batches...`)
+    
+    // Get all batch keys using scan
+    const batchKeys: string[] = []
+    let cursor = 0
+    do {
+      const result = await redis.scan(cursor, { match: 'ai-batch:*', count: 100 })
+      cursor = result[0]
+      batchKeys.push(...(result[1] as string[]))
+    } while (cursor !== 0)
+    
+    console.log(`📥 [QUEUE] Found ${batchKeys.length} AI batch(es)`)
+    
+    for (const batchKey of batchKeys) {
+      try {
+        const batchRaw = await redis.get(batchKey)
+        if (!batchRaw) continue
+        
+        const batch = typeof batchRaw === 'string' ? JSON.parse(batchRaw) : batchRaw
+        
+        // Get agent config for this connection to get batch delay
+        const { data: agentConnection } = await supabase
+          .from('ai_agent_connections')
+          .select(`
+            ai_agents (
+              id,
+              message_batch_seconds,
+              split_response_enabled,
+              split_message_delay_seconds
+            )
+          `)
+          .eq('connection_id', batch.connectionId)
+          .maybeSingle()
+        
+        const agentConfig = agentConnection?.ai_agents as any
+        const batchSeconds = agentConfig?.message_batch_seconds ?? 75
+        
+        // Check if debounce time has passed
+        const lastUpdated = new Date(batch.lastUpdated).getTime()
+        const now = Date.now()
+        const elapsed = (now - lastUpdated) / 1000
+        
+        console.log(`⏱️ [BATCH] ${batchKey}: elapsed=${elapsed.toFixed(1)}s, threshold=${batchSeconds}s, messages=${batch.messages.length}`)
+        
+        if (elapsed >= batchSeconds) {
+          console.log(`✅ [BATCH] Ready to process: ${batchKey}`)
+          
+          const success = await processAIAgentBatch(supabase, batch, agentConfig)
+          
+          // Always delete the batch key after processing (success or fail)
+          await redis.del(batchKey)
+          
+          if (success) {
+            stats.batchesProcessed++
+            stats.aiProcessed++
+          } else {
+            stats.aiFailed++
+          }
+        } else {
+          console.log(`⏳ [BATCH] Not ready yet: ${batchKey} (${(batchSeconds - elapsed).toFixed(1)}s remaining)`)
+        }
+      } catch (err) {
+        console.error(`❌ [BATCH] Error processing batch ${batchKey}:`, err)
+        // Delete problematic batch to prevent infinite errors
+        await redis.del(batchKey)
+        stats.aiFailed++
+      }
+    }
+    
+    // ═══════════════════════════════════════════════════════════════
+    // PROCESS LEGACY AI QUEUE (direct queue items without batching)
     // ═══════════════════════════════════════════════════════════════
     const aiQueueKey = 'queue:ai-agent'
     const aiItems = await redis.lrange(aiQueueKey, 0, 4)
     
-    console.log(`📥 [QUEUE] Found ${aiItems.length} AI agent items`)
+    console.log(`📥 [QUEUE] Found ${aiItems.length} legacy AI agent items`)
     
     for (const rawItem of aiItems) {
       try {
@@ -653,6 +983,7 @@ serve(async (req) => {
     await redis.hincrby('queue:stats', 'media_failed', stats.mediaFailed)
     await redis.hincrby('queue:stats', 'ai_processed', stats.aiProcessed)
     await redis.hincrby('queue:stats', 'ai_failed', stats.aiFailed)
+    await redis.hincrby('queue:stats', 'batches_processed', stats.batchesProcessed)
     await redis.set('queue:stats:last_run', new Date().toISOString())
     
     const duration = Date.now() - stats.startTime
@@ -660,6 +991,7 @@ serve(async (req) => {
     console.log(`✅ [QUEUE-PROCESSOR] Completed in ${duration}ms`)
     console.log(`   Media: ${stats.mediaProcessed} processed, ${stats.mediaFailed} failed`)
     console.log(`   AI: ${stats.aiProcessed} processed, ${stats.aiFailed} failed`)
+    console.log(`   Batches: ${stats.batchesProcessed} processed`)
     
     return new Response(
       JSON.stringify({ 

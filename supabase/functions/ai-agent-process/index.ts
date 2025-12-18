@@ -64,17 +64,30 @@ serve(async (req) => {
   }
 
   try {
+    const requestBody = await req.json();
+    
+    // Support both single message (legacy) and batch of messages (new)
     const { 
       connectionId, 
       conversationId, 
-      messageContent, 
+      messages, // New: array of messages from batch
+      messageContent, // Legacy: single message content
       contactName,
       contactPhone,
       messageType,
       mediaUrl
-    } = await req.json();
+    } = requestBody;
 
-    console.log('📥 Input:', { connectionId, conversationId, messageType, contactName, hasMediaUrl: !!mediaUrl });
+    // Determine if this is a batch request or legacy single message
+    const isBatchRequest = Array.isArray(messages) && messages.length > 0;
+    
+    console.log('📥 Input:', { 
+      connectionId, 
+      conversationId, 
+      isBatchRequest,
+      messageCount: isBatchRequest ? messages.length : 1,
+      contactName 
+    });
 
     if (!connectionId || !conversationId) {
       return new Response(
@@ -332,11 +345,58 @@ serve(async (req) => {
       .filter(Boolean);
 
     // Check if current message is image/audio that needs special processing
-    const currentMessageIsImage = messageType === 'image';
-    const currentMessageIsAudio = messageType === 'audio';
+    // For batch requests, check the last message type
+    let currentMessageIsImage = messageType === 'image';
+    let currentMessageIsAudio = messageType === 'audio';
+    let actualMediaUrl = mediaUrl;
+    
+    // Process batch messages if this is a batch request
+    let processedMessageContent = messageContent || '';
+    
+    if (isBatchRequest) {
+      // Combine all messages from the batch into context
+      const batchContents: string[] = [];
+      
+      for (const msg of messages) {
+        if (msg.type === 'text' && msg.content) {
+          batchContents.push(msg.content);
+        } else if (msg.type === 'audio') {
+          // Transcribe audio if we have URL
+          if (msg.mediaUrl) {
+            const transcription = await transcribeAudio(msg.mediaUrl, AI_API_KEY);
+            if (transcription) {
+              batchContents.push(`[Áudio transcrito]: ${transcription}`);
+            } else {
+              batchContents.push('[Mensagem de áudio]');
+            }
+          } else {
+            batchContents.push(msg.content || '[Mensagem de áudio]');
+          }
+        } else if (msg.type === 'image') {
+          currentMessageIsImage = true;
+          if (msg.mediaUrl) actualMediaUrl = msg.mediaUrl;
+          batchContents.push(msg.content ? `[Imagem com legenda]: ${msg.content}` : '[Cliente enviou uma imagem]');
+        }
+      }
+      
+      // Join all messages with newline for context
+      processedMessageContent = batchContents.join('\n');
+      
+      // Check last message type for special processing
+      const lastMsg = messages[messages.length - 1];
+      if (lastMsg) {
+        currentMessageIsImage = lastMsg.type === 'image';
+        currentMessageIsAudio = lastMsg.type === 'audio';
+        if (lastMsg.mediaUrl) actualMediaUrl = lastMsg.mediaUrl;
+      }
+      
+      console.log('📦 Batch combined:', processedMessageContent.substring(0, 100) + '...');
+    } else {
+      // Legacy single message processing
+      processedMessageContent = messageContent || '';
+    }
     
     // Get the actual mediaUrl if not provided (media may have been processed in background)
-    let actualMediaUrl = mediaUrl;
     if ((currentMessageIsImage || currentMessageIsAudio) && !actualMediaUrl) {
       // Fetch the most recent message to get the media_url
       const { data: latestMsg } = await supabase
@@ -344,7 +404,7 @@ serve(async (req) => {
         .select('media_url, metadata')
         .eq('conversation_id', conversationId)
         .eq('direction', 'inbound')
-        .eq('message_type', messageType)
+        .eq('message_type', isBatchRequest ? (messages[messages.length - 1]?.type || 'text') : messageType)
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle();
@@ -354,12 +414,9 @@ serve(async (req) => {
         console.log('📎 Media URL obtida do banco:', actualMediaUrl.substring(0, 50) + '...');
       }
     }
-
-    // Process current message content
-    let processedMessageContent = messageContent || '';
     
-    // Handle audio transcription for current message
-    if (currentMessageIsAudio && actualMediaUrl && !processedMessageContent) {
+    // Handle audio transcription for current message (legacy mode)
+    if (!isBatchRequest && currentMessageIsAudio && actualMediaUrl && !processedMessageContent) {
       console.log('🎤 Transcrevendo áudio do cliente...');
       const transcription = await transcribeAudio(actualMediaUrl, AI_API_KEY);
       if (transcription) {
@@ -461,6 +518,8 @@ ${agent.faq_content}
         }
       ];
       
+      const agentTemperature = agent.temperature ?? 0.7;
+      
       const response = await fetch('https://api.openai.com/v1/responses', {
         method: 'POST',
         headers: {
@@ -481,8 +540,8 @@ ${agent.faq_content}
             verbosity: 'medium'
           },
           reasoning: {
-            effort: 'medium',
-            summary: 'auto'
+            effort: 'low',
+            summary: 'concise'
           }
         }),
       });
@@ -510,6 +569,30 @@ ${agent.faq_content}
       console.log('📦 Resposta API (multimodal):', JSON.stringify(aiData, null, 2));
       aiResponse = aiData.output?.find((o: any) => o.type === 'message')?.content?.[0]?.text?.trim() || '';
       
+      // Retry with lower temperature if empty
+      if (!aiResponse) {
+        console.log('⚠️ Resposta multimodal vazia - tentando retry com temperatura 0.5');
+        const retryResponse = await fetch('https://api.openai.com/v1/responses', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${AI_API_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: 'gpt-5-nano',
+            input: [{ type: 'message', role: 'user', content: contentItems }],
+            text: { format: { type: 'text' }, verbosity: 'medium' },
+            reasoning: { effort: 'low', summary: 'concise' }
+          }),
+        });
+        
+        if (retryResponse.ok) {
+          const retryData = await retryResponse.json();
+          console.log('🔄 Retry multimodal result:', JSON.stringify(retryData, null, 2));
+          aiResponse = retryData.output?.find((o: any) => o.type === 'message')?.content?.[0]?.text?.trim() || '';
+        }
+      }
+      
     } else {
       // Use /v1/responses endpoint (compatible with GPT-5 models)
       console.log('📝 Usando endpoint /v1/responses com gpt-5-mini');
@@ -522,6 +605,8 @@ ${agent.faq_content}
         .join('\n');
       
       const fullPrompt = `${systemPrompt}\n\nHistórico da conversa:\n${conversationContext}\n\n[CLIENTE]: ${processedMessageContent || '[Mensagem sem texto]'}\n\nGere a resposta do atendente:`;
+      
+      const agentTemperature = agent.temperature ?? 0.7;
       
       const openaiResponse = await fetch('https://api.openai.com/v1/responses', {
         method: 'POST',
@@ -537,8 +622,8 @@ ${agent.faq_content}
             verbosity: 'medium'
           },
           reasoning: {
-            effort: 'medium',
-            summary: 'auto'
+            effort: 'low',
+            summary: 'concise'
           }
         }),
       });
@@ -565,10 +650,74 @@ ${agent.faq_content}
       const aiData = await openaiResponse.json();
       console.log('📦 Resposta API (texto):', JSON.stringify(aiData, null, 2));
       aiResponse = aiData.output?.find((o: any) => o.type === 'message')?.content?.[0]?.text?.trim() || '';
+      
+      // Retry with lower temperature if empty
+      if (!aiResponse) {
+        console.log('⚠️ Resposta texto vazia - tentando retry com temperatura 0.5');
+        const retryResponse = await fetch('https://api.openai.com/v1/responses', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${AI_API_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: 'gpt-5-mini',
+            input: fullPrompt,
+            text: { format: { type: 'text' }, verbosity: 'medium' },
+            reasoning: { effort: 'low', summary: 'concise' }
+          }),
+        });
+        
+        if (retryResponse.ok) {
+          const retryData = await retryResponse.json();
+          console.log('🔄 Retry texto result:', JSON.stringify(retryData, null, 2));
+          aiResponse = retryData.output?.find((o: any) => o.type === 'message')?.content?.[0]?.text?.trim() || '';
+        }
+      }
+      
+      // Fallback to chat/completions if still empty
+      if (!aiResponse) {
+        console.log('⚠️ Ainda vazio - tentando fallback com chat/completions (gpt-4o-mini)');
+        const fallbackResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${AI_API_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: 'gpt-4o-mini',
+            messages: [
+              { role: 'system', content: systemPrompt },
+              ...conversationHistory.filter(Boolean).map((msg: any) => ({
+                role: msg.role,
+                content: msg.content
+              })),
+              { role: 'user', content: processedMessageContent || '[Mensagem sem texto]' }
+            ],
+            temperature: 0.7,
+            max_tokens: 500
+          }),
+        });
+        
+        if (fallbackResponse.ok) {
+          const fallbackData = await fallbackResponse.json();
+          console.log('✅ Fallback result:', JSON.stringify(fallbackData, null, 2));
+          aiResponse = fallbackData.choices?.[0]?.message?.content?.trim() || '';
+        }
+      }
     }
 
     if (!aiResponse) {
-      console.log('❌ Nenhuma resposta gerada');
+      console.log('❌ Nenhuma resposta gerada após todos os retries');
+      await supabase.from('ai_agent_logs').insert({
+        agent_id: agent.id,
+        conversation_id: conversationId,
+        action_type: 'response_error',
+        input_text: processedMessageContent,
+        error_message: 'No response generated after all retries',
+        metadata: { attemptedRetry: true, attemptedFallback: true }
+      });
+      
       return new Response(
         JSON.stringify({ success: false, error: 'No response generated' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

@@ -4,13 +4,13 @@ import {
   Zap, 
   Volume2, 
   Link2, 
-  Clock,
   Play,
   Pause,
   Plus,
   X,
   Info,
-  Loader2
+  Loader2,
+  MessageSquare
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -41,7 +41,7 @@ import {
 import { useAIAgents } from '@/hooks/useAIAgents';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
-import { AI_AGENT_VOICES, AI_AGENT_DELAY_OPTIONS } from '@/types/ai-agents';
+import { AI_AGENT_VOICES, AI_AGENT_BATCH_OPTIONS, AI_AGENT_SPLIT_DELAY_OPTIONS } from '@/types/ai-agents';
 import type { AIAgent } from '@/types/ai-agents';
 import { toast } from 'sonner';
 
@@ -59,12 +59,34 @@ interface AgentSidebarProps {
   onAgentUpdate: () => void;
 }
 
+// Helper para formatar temperatura com descrição curta
+const formatTemperature = (val: number, type: 'text' | 'audio') => {
+  if (type === 'text') {
+    if (val <= 0.3) return `${val.toFixed(1)} Preciso`;
+    if (val >= 0.8) return `${val.toFixed(1)} Criativo`;
+  } else {
+    if (val <= 0.3) return `${val.toFixed(1)} Neutro`;
+    if (val >= 0.8) return `${val.toFixed(1)} Expressivo`;
+  }
+  return val.toFixed(1);
+};
+
+// Helper para formatar voz com descrição curta
+const formatVoiceName = (voice: { name: string; description: string }) => {
+  const desc = voice.description.toLowerCase();
+  if (desc.includes('feminina')) return `${voice.name} (feminina)`;
+  if (desc.includes('masculina')) return `${voice.name} (masculina)`;
+  if (desc.includes('neutra') || desc.includes('neutro')) return `${voice.name} (neutra)`;
+  return voice.name;
+};
+
 export function AgentSidebar({ agent, totalChars, charLimit, onAgentUpdate }: AgentSidebarProps) {
   const { updateAgent, addConnection, removeConnection } = useAIAgents();
   const { profile } = useAuth();
   
   const [basicOpen, setBasicOpen] = useState(true);
   const [triggersOpen, setTriggersOpen] = useState(true);
+  const [responseOpen, setResponseOpen] = useState(true);
   const [audioOpen, setAudioOpen] = useState(true);
   const [connectionsOpen, setConnectionsOpen] = useState(true);
   
@@ -223,88 +245,51 @@ export function AgentSidebar({ agent, totalChars, charLimit, onAgentUpdate }: Ag
     <div className="w-[40%] border-l bg-muted/30 flex flex-col">
       <ScrollArea className="flex-1">
         <div className="p-4 space-y-4">
-          {/* Total de Caracteres */}
-          <div className="bg-background rounded-lg p-4 space-y-3">
+          {/* Caracteres */}
+          <div className="bg-background rounded-lg p-3 space-y-2">
             <div className="flex items-center justify-between">
-              <span className="text-sm font-medium">Total de Caracteres</span>
-              <span className={`text-sm ${isOverLimit ? 'text-destructive' : 'text-muted-foreground'}`}>
+              <span className="text-xs font-medium text-muted-foreground">Caracteres</span>
+              <span className={`text-xs font-medium ${isOverLimit ? 'text-destructive' : ''}`}>
                 {totalChars.toLocaleString()} / {charLimit.toLocaleString()}
               </span>
             </div>
             <Progress 
               value={charPercentage} 
-              className={isOverLimit ? '[&>div]:bg-destructive' : ''}
+              className={`h-1.5 ${isOverLimit ? '[&>div]:bg-destructive' : ''}`}
             />
-            <p className="text-xs text-muted-foreground">
-              {Math.round(charPercentage)}% do limite recomendado
-            </p>
           </div>
 
           <Separator className="opacity-50" />
 
-          {/* Configurações Básicas */}
+          {/* Básico */}
           <Collapsible open={basicOpen} onOpenChange={setBasicOpen}>
             <CollapsibleTrigger className="flex items-center justify-between w-full p-2 hover:bg-muted rounded-lg transition-colors">
               <div className="flex items-center gap-2">
                 <Settings className="w-4 h-4" />
-                <span className="text-sm font-medium">Configurações Básicas</span>
+                <span className="text-sm font-medium">Básico</span>
               </div>
             </CollapsibleTrigger>
             <CollapsibleContent className="pt-2 space-y-3">
               <div className="space-y-1.5">
-                <Label className="text-xs">Nome do Agente</Label>
+                <Label className="text-xs">Nome</Label>
                 <Input
                   value={agent.name}
                   onChange={(e) => handleUpdateField('name', e.target.value)}
                   className="h-8 text-sm"
                 />
               </div>
-              <div className="space-y-1.5">
-                <div className="flex items-center gap-1">
-                  <Clock className="w-3 h-3" />
-                  <Label className="text-xs">Delay (segundos)</Label>
-                  <Tooltip>
-                    <TooltipTrigger>
-                      <Info className="w-3 h-3 text-muted-foreground" />
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p className="text-xs max-w-[200px]">
-                        Tempo de espera antes de enviar resposta. 
-                        Recomendado: 20 segundos para parecer mais natural.
-                      </p>
-                    </TooltipContent>
-                  </Tooltip>
-                </div>
-                <Select 
-                  value={String(agent.delay_seconds)} 
-                  onValueChange={(v) => handleUpdateField('delay_seconds', Number(v))}
-                >
-                  <SelectTrigger className="h-8 text-sm">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {AI_AGENT_DELAY_OPTIONS.map((opt) => (
-                      <SelectItem key={opt.value} value={String(opt.value)}>
-                        {opt.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+              
 
-              {/* Temperatura da IA */}
               <div className="space-y-1.5">
                 <div className="flex items-center gap-1">
-                  <Label className="text-xs">Temperatura da IA (Texto)</Label>
+                  <Label className="text-xs">Criatividade</Label>
                   <Tooltip>
                     <TooltipTrigger>
                       <Info className="w-3 h-3 text-muted-foreground" />
                     </TooltipTrigger>
                     <TooltipContent>
-                      <p className="text-xs max-w-[200px]">
-                        Controla a criatividade das respostas de texto. 
-                        Valores baixos = mais preciso. 
-                        Valores altos = mais criativo.
+                      <p className="text-xs max-w-[180px]">
+                        Baixo = respostas precisas. Alto = respostas criativas.
                       </p>
                     </TooltipContent>
                   </Tooltip>
@@ -319,7 +304,7 @@ export function AgentSidebar({ agent, totalChars, charLimit, onAgentUpdate }: Ag
                   <SelectContent>
                     {[0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0].map((val) => (
                       <SelectItem key={val} value={String(val)}>
-                        {val.toFixed(1)} {val <= 0.3 ? '(Preciso)' : val >= 0.8 ? '(Criativo)' : ''}
+                        {formatTemperature(val, 'text')}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -330,17 +315,17 @@ export function AgentSidebar({ agent, totalChars, charLimit, onAgentUpdate }: Ag
 
           <Separator className="opacity-50" />
 
-          {/* Gatilhos de Ativação */}
+          {/* Gatilhos */}
           <Collapsible open={triggersOpen} onOpenChange={setTriggersOpen}>
             <CollapsibleTrigger className="flex items-center justify-between w-full p-2 hover:bg-muted rounded-lg transition-colors">
               <div className="flex items-center gap-2">
                 <Zap className="w-4 h-4" />
-                <span className="text-sm font-medium">Gatilhos de Ativação</span>
+                <span className="text-sm font-medium">Gatilhos</span>
               </div>
             </CollapsibleTrigger>
             <CollapsibleContent className="pt-2 space-y-3">
               <div className="flex items-center justify-between">
-                <Label className="text-xs">Exigir gatilho para ativar</Label>
+                <Label className="text-xs">Exigir gatilho</Label>
                 <Switch
                   checked={agent.require_activation_trigger}
                   onCheckedChange={(v) => handleUpdateField('require_activation_trigger', v)}
@@ -353,7 +338,7 @@ export function AgentSidebar({ agent, totalChars, charLimit, onAgentUpdate }: Ag
                     <Input
                       value={newTrigger}
                       onChange={(e) => setNewTrigger(e.target.value)}
-                      placeholder="Digite um gatilho..."
+                      placeholder="Novo gatilho..."
                       className="h-8 text-sm"
                       onKeyDown={(e) => e.key === 'Enter' && handleAddTrigger()}
                     />
@@ -379,7 +364,7 @@ export function AgentSidebar({ agent, totalChars, charLimit, onAgentUpdate }: Ag
               )}
 
               <div className="space-y-1.5">
-                <Label className="text-xs">Desativar quando humano enviar mensagem</Label>
+                <Label className="text-xs">Pausa ao intervir</Label>
                 <Select 
                   value={agent.deactivate_on_human_message} 
                   onValueChange={(v) => handleUpdateField('deactivate_on_human_message', v)}
@@ -390,14 +375,14 @@ export function AgentSidebar({ agent, totalChars, charLimit, onAgentUpdate }: Ag
                   <SelectContent>
                     <SelectItem value="never">Nunca</SelectItem>
                     <SelectItem value="always">Sempre</SelectItem>
-                    <SelectItem value="temporary">Temporariamente</SelectItem>
+                    <SelectItem value="temporary">Temporário</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
 
               {agent.deactivate_on_human_message === 'temporary' && (
                 <div className="space-y-1.5">
-                  <Label className="text-xs">Tempo de desativação (minutos)</Label>
+                  <Label className="text-xs">Duração (min)</Label>
                   <Input
                     type="number"
                     value={agent.deactivate_temporary_minutes}
@@ -413,17 +398,100 @@ export function AgentSidebar({ agent, totalChars, charLimit, onAgentUpdate }: Ag
 
           <Separator className="opacity-50" />
 
-          {/* Configurações de Áudio */}
+          {/* Resposta (Batching & Humanização) */}
+          <Collapsible open={responseOpen} onOpenChange={setResponseOpen}>
+            <CollapsibleTrigger className="flex items-center justify-between w-full p-2 hover:bg-muted rounded-lg transition-colors">
+              <div className="flex items-center gap-2">
+                <MessageSquare className="w-4 h-4" />
+                <span className="text-sm font-medium">Resposta</span>
+              </div>
+            </CollapsibleTrigger>
+            <CollapsibleContent className="pt-2 space-y-3">
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-1">
+                  <Label className="text-xs">Agrupamento</Label>
+                  <Tooltip>
+                    <TooltipTrigger>
+                      <Info className="w-3 h-3 text-muted-foreground" />
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p className="text-xs max-w-[200px]">
+                        Tempo para aguardar mais mensagens do cliente antes de gerar a resposta.
+                      </p>
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+                <Select 
+                  value={String(agent.message_batch_seconds ?? 75)} 
+                  onValueChange={(v) => handleUpdateField('message_batch_seconds', Number(v))}
+                >
+                  <SelectTrigger className="h-8 text-sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {AI_AGENT_BATCH_OPTIONS.map((opt) => (
+                      <SelectItem key={opt.value} value={String(opt.value)}>
+                        {opt.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1">
+                  <Label className="text-xs">Quebrar resposta</Label>
+                  <Tooltip>
+                    <TooltipTrigger>
+                      <Info className="w-3 h-3 text-muted-foreground" />
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p className="text-xs max-w-[200px]">
+                        Dividir resposta em várias mensagens para parecer mais humano.
+                      </p>
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+                <Switch
+                  checked={agent.split_response_enabled ?? true}
+                  onCheckedChange={(v) => handleUpdateField('split_response_enabled', v)}
+                />
+              </div>
+
+              {(agent.split_response_enabled ?? true) && (
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Delay entre msgs</Label>
+                  <Select 
+                    value={String(agent.split_message_delay_seconds ?? 2.0)} 
+                    onValueChange={(v) => handleUpdateField('split_message_delay_seconds', Number(v))}
+                  >
+                    <SelectTrigger className="h-8 text-sm">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {AI_AGENT_SPLIT_DELAY_OPTIONS.map((opt) => (
+                        <SelectItem key={opt.value} value={String(opt.value)}>
+                          {opt.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+            </CollapsibleContent>
+          </Collapsible>
+
+          <Separator className="opacity-50" />
           <Collapsible open={audioOpen} onOpenChange={setAudioOpen}>
             <CollapsibleTrigger className="flex items-center justify-between w-full p-2 hover:bg-muted rounded-lg transition-colors">
               <div className="flex items-center gap-2">
                 <Volume2 className="w-4 h-4" />
-                <span className="text-sm font-medium">Configurações de Áudio</span>
+                <span className="text-sm font-medium">Áudio</span>
               </div>
             </CollapsibleTrigger>
             <CollapsibleContent className="pt-2 space-y-3">
               <div className="flex items-center justify-between">
-                <Label className="text-xs">Gerar Áudio com Agente</Label>
+                <Label className="text-xs">Gerar áudio</Label>
                 <Switch
                   checked={agent.audio_enabled}
                   onCheckedChange={(v) => handleUpdateField('audio_enabled', v)}
@@ -432,16 +500,17 @@ export function AgentSidebar({ agent, totalChars, charLimit, onAgentUpdate }: Ag
 
               {agent.audio_enabled && (
                 <>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="p-2 border rounded-lg flex items-center justify-between">
-                      <Label className="text-xs">Responder Áudio com Áudio</Label>
+                  {/* Audio switches em lista vertical compacta */}
+                  <div className="space-y-2 py-1">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-xs text-muted-foreground">Áudio → Áudio</Label>
                       <Switch
                         checked={agent.audio_respond_with_audio}
                         onCheckedChange={(v) => handleUpdateField('audio_respond_with_audio', v)}
                       />
                     </div>
-                    <div className="p-2 border rounded-lg flex items-center justify-between">
-                      <Label className="text-xs">Sempre Responder com Áudio</Label>
+                    <div className="flex items-center justify-between">
+                      <Label className="text-xs text-muted-foreground">Sempre áudio</Label>
                       <Switch
                         checked={agent.audio_always_respond_audio}
                         onCheckedChange={(v) => handleUpdateField('audio_always_respond_audio', v)}
@@ -450,7 +519,7 @@ export function AgentSidebar({ agent, totalChars, charLimit, onAgentUpdate }: Ag
                   </div>
 
                   <div className="space-y-1.5">
-                    <Label className="text-xs">Voz do Agente</Label>
+                    <Label className="text-xs">Voz</Label>
                     <Select 
                       value={agent.voice_name} 
                       onValueChange={(v) => handleUpdateField('voice_name', v)}
@@ -461,7 +530,7 @@ export function AgentSidebar({ agent, totalChars, charLimit, onAgentUpdate }: Ag
                       <SelectContent>
                         {AI_AGENT_VOICES.map((voice) => (
                           <SelectItem key={voice.name} value={voice.name}>
-                            {voice.name} - {voice.description}
+                            {formatVoiceName(voice)}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -469,19 +538,7 @@ export function AgentSidebar({ agent, totalChars, charLimit, onAgentUpdate }: Ag
                   </div>
 
                   <div className="space-y-1.5">
-                    <div className="flex items-center gap-1">
-                      <Label className="text-xs">Idioma do Áudio</Label>
-                      <Tooltip>
-                        <TooltipTrigger>
-                          <Info className="w-3 h-3 text-muted-foreground" />
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          <p className="text-xs max-w-[200px]">
-                            Definir o idioma melhora sotaque, ritmo e pronúncia.
-                          </p>
-                        </TooltipContent>
-                      </Tooltip>
-                    </div>
+                    <Label className="text-xs">Idioma</Label>
                     <Select 
                       value={agent.language_code || 'pt-BR'} 
                       onValueChange={(v) => handleUpdateField('language_code', v)}
@@ -490,47 +547,43 @@ export function AgentSidebar({ agent, totalChars, charLimit, onAgentUpdate }: Ag
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="pt-BR">🇧🇷 Português (Brasil)</SelectItem>
-                        <SelectItem value="en-US">🇺🇸 English (US)</SelectItem>
-                        <SelectItem value="es-ES">🇪🇸 Español (España)</SelectItem>
+                        <SelectItem value="pt-BR">🇧🇷 Português</SelectItem>
+                        <SelectItem value="en-US">🇺🇸 English</SelectItem>
+                        <SelectItem value="es-ES">🇪🇸 Español</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
 
-                  <div className="space-y-1.5">
-                    <div className="flex items-center justify-between">
-                      <Label className="text-xs">Prévia da Voz</Label>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-7 text-xs"
-                        onClick={handlePlayVoicePreview}
-                        disabled={isPlayingPreview && !audioElement}
-                      >
-                        {isPlayingPreview ? (
-                          audioElement ? (
-                            <>
-                              <Pause className="w-3 h-3 mr-1" />
-                              Parar
-                            </>
-                          ) : (
-                            <>
-                              <Loader2 className="w-3 h-3 mr-1 animate-spin" />
-                              Gerando...
-                            </>
-                          )
-                        ) : (
-                          <>
-                            <Play className="w-3 h-3 mr-1" />
-                            Ouvir
-                          </>
-                        )}
-                      </Button>
-                    </div>
-                  </div>
+                  {/* Preview button inline */}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full h-8 text-xs"
+                    onClick={handlePlayVoicePreview}
+                    disabled={isPlayingPreview && !audioElement}
+                  >
+                    {isPlayingPreview ? (
+                      audioElement ? (
+                        <>
+                          <Pause className="w-3 h-3 mr-1" />
+                          Parar
+                        </>
+                      ) : (
+                        <>
+                          <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                          Gerando...
+                        </>
+                      )
+                    ) : (
+                      <>
+                        <Play className="w-3 h-3 mr-1" />
+                        Ouvir prévia
+                      </>
+                    )}
+                  </Button>
 
                   <div className="space-y-1.5">
-                    <Label className="text-xs">Velocidade de Fala</Label>
+                    <Label className="text-xs">Velocidade</Label>
                     <Select 
                       value={String(agent.speech_speed ?? 1.0)} 
                       onValueChange={(v) => handleUpdateField('speech_speed', Number(v))}
@@ -539,26 +592,23 @@ export function AgentSidebar({ agent, totalChars, charLimit, onAgentUpdate }: Ag
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="0.7">Devagar (0.7x)</SelectItem>
-                        <SelectItem value="1">Normal (1.0x)</SelectItem>
-                        <SelectItem value="1.2">Rápido (1.2x)</SelectItem>
+                        <SelectItem value="0.7">Lenta</SelectItem>
+                        <SelectItem value="1">Normal</SelectItem>
+                        <SelectItem value="1.2">Rápida</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
 
-                  {/* Temperatura do Áudio */}
                   <div className="space-y-1.5">
                     <div className="flex items-center gap-1">
-                      <Label className="text-xs">Temperatura do Áudio</Label>
+                      <Label className="text-xs">Expressividade</Label>
                       <Tooltip>
                         <TooltipTrigger>
                           <Info className="w-3 h-3 text-muted-foreground" />
                         </TooltipTrigger>
                         <TooltipContent>
-                          <p className="text-xs max-w-[200px]">
-                            Controla a variação na geração de voz. 
-                            Valores baixos = mais consistente. 
-                            Valores altos = mais expressivo.
+                          <p className="text-xs max-w-[180px]">
+                            Baixo = voz consistente. Alto = voz expressiva.
                           </p>
                         </TooltipContent>
                       </Tooltip>
@@ -573,7 +623,7 @@ export function AgentSidebar({ agent, totalChars, charLimit, onAgentUpdate }: Ag
                       <SelectContent>
                         {[0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0].map((val) => (
                           <SelectItem key={val} value={String(val)}>
-                            {val.toFixed(1)} {val <= 0.3 ? '(Consistente)' : val >= 0.8 ? '(Expressivo)' : ''}
+                            {formatTemperature(val, 'audio')}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -586,14 +636,14 @@ export function AgentSidebar({ agent, totalChars, charLimit, onAgentUpdate }: Ag
 
           <Separator className="opacity-50" />
 
-          {/* Conexões Vinculadas */}
+          {/* Conexões */}
           <Collapsible open={connectionsOpen} onOpenChange={setConnectionsOpen}>
             <CollapsibleTrigger className="flex items-center justify-between w-full p-2 hover:bg-muted rounded-lg transition-colors">
               <div className="flex items-center gap-2">
                 <Link2 className="w-4 h-4" />
-                <span className="text-sm font-medium">Conexões Vinculadas</span>
+                <span className="text-sm font-medium">Conexões</span>
                 {agent.connections && agent.connections.length > 0 && (
-                  <Badge variant="secondary" className="text-xs">
+                  <Badge variant="secondary" className="text-xs h-5 px-1.5">
                     {agent.connections.length}
                   </Badge>
                 )}
@@ -601,69 +651,66 @@ export function AgentSidebar({ agent, totalChars, charLimit, onAgentUpdate }: Ag
             </CollapsibleTrigger>
             <CollapsibleContent className="pt-2 space-y-2">
               {agent.connections && agent.connections.length > 0 ? (
-                <div className="space-y-2">
+                <div className="space-y-1.5">
                   {agent.connections.map((conn) => (
                     <div 
                       key={conn.id} 
                       className="flex items-center justify-between p-2 bg-background rounded-lg text-sm"
                     >
                       <div className="min-w-0 flex-1">
-                        <p className="font-medium truncate">{conn.connection?.name}</p>
-                        <p className="text-xs text-muted-foreground">
+                        <p className="text-xs font-medium truncate">{conn.connection?.name}</p>
+                        <p className="text-[10px] text-muted-foreground">
                           {conn.connection?.phone_number}
                         </p>
                       </div>
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="h-7 w-7"
+                        className="h-6 w-6"
                         onClick={() => handleRemoveConnection(conn.connection_id)}
                       >
-                        <X className="w-4 h-4" />
+                        <X className="w-3 h-3" />
                       </Button>
                     </div>
                   ))}
                 </div>
               ) : (
                 <p className="text-xs text-muted-foreground text-center py-2">
-                  Nenhuma conexão vinculada
+                  Nenhuma conexão
                 </p>
               )}
               
               <Popover open={connectionPopoverOpen} onOpenChange={setConnectionPopoverOpen}>
                 <PopoverTrigger asChild>
-                  <Button variant="outline" size="sm" className="w-full text-xs">
+                  <Button variant="outline" size="sm" className="w-full h-7 text-xs">
                     <Plus className="w-3 h-3 mr-1" />
-                    Adicionar Conexão
+                    Conexão
                   </Button>
                 </PopoverTrigger>
-                <PopoverContent className="w-72 p-2" align="start">
-                  <div className="space-y-2">
-                    <p className="text-sm font-medium px-2 py-1">Selecione uma conexão</p>
+                <PopoverContent className="w-64 p-2" align="start">
+                  <div className="space-y-1">
                     {isLoadingConnections ? (
-                      <div className="flex items-center justify-center py-4">
-                        <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+                      <div className="flex items-center justify-center py-3">
+                        <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
                       </div>
                     ) : availableConnections.length === 0 ? (
-                      <p className="text-xs text-muted-foreground text-center py-4">
-                        Nenhuma conexão disponível
+                      <p className="text-xs text-muted-foreground text-center py-3">
+                        Nenhuma disponível
                       </p>
                     ) : (
-                      <div className="space-y-1">
-                        {availableConnections.map((conn) => (
-                          <button
-                            key={conn.id}
-                            onClick={() => handleAddConnectionClick(conn.id)}
-                            className="w-full flex items-center gap-2 p-2 rounded-md hover:bg-muted text-left transition-colors"
-                          >
-                            <div className="w-2 h-2 rounded-full bg-emerald-500" />
-                            <div className="min-w-0 flex-1">
-                              <p className="text-sm font-medium truncate">{conn.name}</p>
-                              <p className="text-xs text-muted-foreground">{conn.phone_number}</p>
-                            </div>
-                          </button>
-                        ))}
-                      </div>
+                      availableConnections.map((conn) => (
+                        <button
+                          key={conn.id}
+                          onClick={() => handleAddConnectionClick(conn.id)}
+                          className="w-full flex items-center gap-2 p-2 rounded-md hover:bg-muted text-left transition-colors"
+                        >
+                          <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                          <div className="min-w-0 flex-1">
+                            <p className="text-xs font-medium truncate">{conn.name}</p>
+                            <p className="text-[10px] text-muted-foreground">{conn.phone_number}</p>
+                          </div>
+                        </button>
+                      ))
                     )}
                   </div>
                 </PopoverContent>

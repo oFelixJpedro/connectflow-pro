@@ -84,6 +84,11 @@ export interface AIAgent {
   audio_temperature: number;
   language_code: string;
   
+  // Configurações de resposta (batching e humanização)
+  message_batch_seconds: number;
+  split_response_enabled: boolean;
+  split_message_delay_seconds: number;
+  
   // Metadados
   created_at: string;
   updated_at: string;
@@ -226,6 +231,9 @@ export interface UpdateAIAgentData {
   speech_speed?: number;
   audio_temperature?: number;
   language_code?: string;
+  message_batch_seconds?: number;
+  split_response_enabled?: boolean;
+  split_message_delay_seconds?: number;
 }
 
 // Limite de caracteres
@@ -236,13 +244,21 @@ export const AI_AGENT_CHAR_LIMITS = {
   total: 15000,
 } as const;
 
-// Delay options
-export const AI_AGENT_DELAY_OPTIONS = [
-  { value: 5, label: '5 segundos' },
-  { value: 10, label: '10 segundos' },
-  { value: 15, label: '15 segundos' },
-  { value: 20, label: '20 segundos (recomendado)' },
-  { value: 30, label: '30 segundos' },
-  { value: 45, label: '45 segundos' },
-  { value: 60, label: '1 minuto' },
+// Batching options (debounce time for message grouping)
+export const AI_AGENT_BATCH_OPTIONS = [
+  { value: 30, label: '30s' },
+  { value: 45, label: '45s' },
+  { value: 60, label: '60s' },
+  { value: 75, label: '75s ★' },
+  { value: 90, label: '90s' },
+  { value: 120, label: '2 min' },
+] as const;
+
+// Split message delay options (time between each split message)
+export const AI_AGENT_SPLIT_DELAY_OPTIONS = [
+  { value: 1.0, label: '1.0s' },
+  { value: 1.5, label: '1.5s' },
+  { value: 2.0, label: '2.0s ★' },
+  { value: 2.5, label: '2.5s' },
+  { value: 3.0, label: '3.0s' },
 ] as const;

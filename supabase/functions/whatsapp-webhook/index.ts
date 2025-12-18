@@ -373,7 +373,307 @@ async function processMediaInBackground(params: {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// PROCESSAMENTO ASSÍNCRONO DE AGENTE DE IA (Background Task)
+// PROCESSAMENTO IMEDIATO DE BATCH DE AI (quando debounce completou)
+// ═══════════════════════════════════════════════════════════════════════════════
+async function processAIBatchImmediate(batchData: any, batchKey: string, redisClient: Redis, lockAlreadyHeld: boolean = false) {
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+  const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+  const supabase = createClient(supabaseUrl, supabaseServiceKey);
+  
+  const { connectionId, conversationId, messages, contactName, contactPhone, companyId, instanceToken } = batchData;
+  const lockKey = `lock:${batchKey}`;
+  
+  console.log(`🚀 [IMMEDIATE-BATCH] Attempting to process batch for conversation ${conversationId} (${messages.length} messages)`);
+  
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // 🔒 ACQUIRE LOCK TO PREVENT DUPLICATE PROCESSING (skip if already held)
+  // ═══════════════════════════════════════════════════════════════════════════════
+  if (!lockAlreadyHeld) {
+    try {
+      // Try to acquire atomic lock (returns 1 if set, 0 if already exists)
+      const lockAcquired = await redisClient.setnx(lockKey, Date.now().toString());
+      
+      if (!lockAcquired) {
+        console.log(`🔒 [IMMEDIATE-BATCH] Lock already exists for ${batchKey}, skipping (another process is handling it)`);
+        return;
+      }
+      
+      // Set TTL on lock to prevent deadlocks (2 minutes max)
+      await redisClient.expire(lockKey, 120);
+      console.log(`✅ [IMMEDIATE-BATCH] Lock acquired for ${batchKey}`);
+    } catch (lockError) {
+      console.error(`⚠️ [IMMEDIATE-BATCH] Error acquiring lock:`, lockError);
+      // Continue anyway - better to risk duplicate than miss processing
+    }
+  } else {
+    console.log(`✅ [IMMEDIATE-BATCH] Using pre-acquired lock for ${batchKey}`);
+  }
+  
+  try {
+    // Delete batch from Redis first to prevent duplicate processing
+    await redisClient.del(batchKey);
+    
+    // Get agent config for this connection
+    const { data: agentConnection } = await supabase
+      .from('ai_agent_connections')
+      .select(`
+        ai_agents (
+          id, status, message_batch_seconds, split_response_enabled, split_message_delay_seconds,
+          voice_name, audio_enabled, audio_respond_with_audio, audio_always_respond_audio,
+          speech_speed, audio_temperature, language_code
+        )
+      `)
+      .eq('connection_id', connectionId)
+      .maybeSingle();
+    
+    if (!agentConnection?.ai_agents) {
+      console.log(`⚠️ [IMMEDIATE-BATCH] No agent found for connection ${connectionId}`);
+      return;
+    }
+    
+    const agentConfig = agentConnection.ai_agents as any;
+    
+    if (agentConfig.status !== 'active') {
+      console.log(`⚠️ [IMMEDIATE-BATCH] Agent is not active (${agentConfig.status})`);
+      return;
+    }
+    
+    // Call AI agent process function with batch of messages
+    const aiProcessUrl = `${supabaseUrl}/functions/v1/ai-agent-process`;
+    
+    const response = await fetch(aiProcessUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${supabaseServiceKey}`,
+      },
+      body: JSON.stringify({
+        connectionId,
+        conversationId,
+        messages,
+        contactName,
+        contactPhone,
+      }),
+    });
+    
+    const result = await response.json();
+    
+    if (!result.success) {
+      if (result.skip) {
+        console.log(`🤖 [IMMEDIATE-BATCH] Skipping: ${result.reason}`);
+      } else {
+        console.log(`❌ [IMMEDIATE-BATCH] Error: ${result.error}`);
+      }
+      return;
+    }
+    
+    const aiResponse = result.response;
+    const voiceName = result.voiceName;
+    const shouldGenerateAudio = result.shouldGenerateAudio === true;
+    const speechSpeed = result.speechSpeed || 1.0;
+    const audioTemperature = result.audioTemperature || 0.7;
+    const languageCode = result.languageCode || 'pt-BR';
+    const splitResponseEnabled = agentConfig.split_response_enabled ?? true;
+    const splitDelaySeconds = agentConfig.split_message_delay_seconds ?? 2.0;
+    
+    console.log(`✅ [IMMEDIATE-BATCH] Response generated`);
+    console.log(`🔊 [IMMEDIATE-BATCH] Audio: shouldGenerate=${shouldGenerateAudio}, voiceName=${voiceName}`);
+    
+    // Get contact phone for sending
+    const { data: conversation } = await supabase
+      .from('conversations')
+      .select(`contacts!inner (phone_number)`)
+      .eq('id', conversationId)
+      .single();
+    
+    const contactData = conversation?.contacts as any;
+    if (!contactData?.phone_number) {
+      console.log('❌ [IMMEDIATE-BATCH] Contact not found');
+      return;
+    }
+    
+    const phoneNumber = contactData.phone_number;
+    
+    // Split response if enabled and not audio
+    const responseParts = splitResponseEnabled && !shouldGenerateAudio 
+      ? splitResponse(aiResponse)
+      : [aiResponse];
+    
+    console.log(`📤 [IMMEDIATE-BATCH] Sending ${responseParts.length} message(s) to ${phoneNumber}`);
+    
+    // Send each part with delay between them
+    for (let i = 0; i < responseParts.length; i++) {
+      const part = responseParts[i];
+      
+      // Add delay between messages (not before the first one)
+      if (i > 0 && splitDelaySeconds > 0) {
+        await new Promise(resolve => setTimeout(resolve, splitDelaySeconds * 1000));
+      }
+      
+      let whatsappMessageId: string | null = null;
+      let messageType: 'text' | 'audio' = 'text';
+      let mediaUrl: string | null = null;
+      
+      // Generate audio only for first message if enabled
+      if (shouldGenerateAudio && voiceName && i === 0) {
+        console.log(`🎵 [IMMEDIATE-BATCH] Generating audio with voice: ${voiceName}`);
+        
+        const ttsUrl = `${supabaseUrl}/functions/v1/ai-agent-tts`;
+        
+        const ttsResponse = await fetch(ttsUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${supabaseServiceKey}`,
+          },
+          body: JSON.stringify({
+            text: aiResponse,
+            voiceName,
+            speed: speechSpeed,
+            temperature: audioTemperature,
+            languageCode,
+          }),
+        });
+        
+        if (ttsResponse.ok) {
+          const ttsResult = await ttsResponse.json();
+          const audioUrl = ttsResult.audioUrl;
+          
+          if (audioUrl) {
+            const sendMediaUrl = `${UAZAPI_BASE_URL}/send/media`;
+            
+            const sendResponse = await fetch(sendMediaUrl, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'token': instanceToken,
+              },
+              body: JSON.stringify({
+                number: phoneNumber,
+                type: 'ptt',
+                media: audioUrl,
+                text: '',
+              }),
+            });
+            
+            if (sendResponse.ok) {
+              const sendResult = await sendResponse.json();
+              whatsappMessageId = sendResult.key?.id || sendResult.messageId || null;
+              messageType = 'audio';
+              mediaUrl = audioUrl;
+              console.log(`✅ [IMMEDIATE-BATCH] Audio sent: ${whatsappMessageId}`);
+            }
+          }
+        }
+      }
+      
+      // Send text if not audio or audio failed
+      if (messageType === 'text') {
+        const sendTextUrl = `${UAZAPI_BASE_URL}/send/text`;
+        
+        const sendResponse = await fetch(sendTextUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'token': instanceToken,
+          },
+          body: JSON.stringify({
+            number: phoneNumber,
+            text: part,
+          }),
+        });
+        
+        if (sendResponse.ok) {
+          const sendResult = await sendResponse.json();
+          whatsappMessageId = sendResult.key?.id || sendResult.messageId || null;
+          console.log(`✅ [IMMEDIATE-BATCH] Text sent (part ${i + 1}/${responseParts.length}): ${whatsappMessageId}`);
+        }
+      }
+      
+      // Save to database
+      if (whatsappMessageId) {
+        await supabase
+          .from('messages')
+          .insert({
+            conversation_id: conversationId,
+            direction: 'outbound',
+            sender_type: 'bot',
+            sender_id: null,
+            content: messageType === 'audio' ? aiResponse : part,
+            message_type: messageType,
+            media_url: mediaUrl,
+            whatsapp_message_id: whatsappMessageId,
+            status: 'sent',
+            metadata: {
+              aiGenerated: true,
+              batchProcessed: true,
+              partIndex: i + 1,
+              totalParts: responseParts.length,
+              immediateProcessing: true,
+            },
+          });
+      }
+    }
+    
+    // Update conversation
+    await supabase
+      .from('conversations')
+      .update({
+        last_message_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', conversationId);
+    
+    console.log(`🎉 [IMMEDIATE-BATCH] Batch processed successfully!`);
+    
+  } catch (error) {
+    console.error(`❌ [IMMEDIATE-BATCH] Error:`, error);
+    // Re-enqueue on failure
+    try {
+      await redisClient.setex(batchKey, 300, JSON.stringify(batchData));
+    } catch (e) {
+      console.error(`❌ [IMMEDIATE-BATCH] Failed to re-enqueue batch`);
+    }
+  } finally {
+    // ═══════════════════════════════════════════════════════════════════════════════
+    // 🔓 RELEASE LOCK
+    // ═══════════════════════════════════════════════════════════════════════════════
+    try {
+      await redisClient.del(lockKey);
+      console.log(`🔓 [IMMEDIATE-BATCH] Lock released for ${batchKey}`);
+    } catch (unlockError) {
+      console.error(`⚠️ [IMMEDIATE-BATCH] Error releasing lock:`, unlockError);
+    }
+  }
+}
+
+// Helper to split response into humanized messages
+function splitResponse(text: string): string[] {
+  const parts: string[] = [];
+  const sentences = text.split(/(?<=[.!?])\s+/);
+  let currentPart = '';
+  
+  for (const sentence of sentences) {
+    if (sentence.includes('?') && currentPart.length > 0) {
+      parts.push(currentPart.trim());
+      currentPart = sentence;
+    } else if ((currentPart + ' ' + sentence).length > 300 && currentPart.length > 0) {
+      parts.push(currentPart.trim());
+      currentPart = sentence;
+    } else {
+      currentPart = currentPart ? currentPart + ' ' + sentence : sentence;
+    }
+  }
+  
+  if (currentPart.trim()) {
+    parts.push(currentPart.trim());
+  }
+  
+  return parts.length > 0 ? parts : [text];
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PROCESSAMENTO ASSÍNCRONO DE AGENTE DE IA (Background Task - Legacy)
 // ═══════════════════════════════════════════════════════════════════════════════
 async function processAIAgentResponse(params: {
   connectionId: string;
@@ -427,19 +727,10 @@ async function processAIAgentResponse(params: {
     }
     
     const aiResponse = result.response;
-    const delaySeconds = result.delaySeconds || 0;
     const voiceName = result.voiceName;
     const speechSpeed = result.speechSpeed || 1.0;
     const audioTemperature = result.audioTemperature || 0.7;
     const languageCode = result.languageCode || 'pt-BR';
-    
-    console.log(`✅ [AI AGENT] Resposta gerada, aguardando ${delaySeconds}s antes de enviar...`);
-    console.log(`🎤 [AI AGENT] Voice config: ${voiceName ? `${voiceName} (speed: ${speechSpeed}, temp: ${audioTemperature}, lang: ${languageCode})` : 'TEXTO'}`);
-    
-    // Wait for configured delay
-    if (delaySeconds > 0) {
-      await new Promise(resolve => setTimeout(resolve, delaySeconds * 1000));
-    }
     
     // Get contact phone for sending
     const { data: conversation } = await supabase
@@ -1457,41 +1748,208 @@ serve(async (req) => {
     }
     
     // ═══════════════════════════════════════════════════════════════════
-    // 🤖 PROCESS AI AGENT (QUEUE or BACKGROUND)
+    // 🤖 PROCESS AI AGENT (BATCH SYSTEM)
     // ═══════════════════════════════════════════════════════════════════
     // Process AI agent for text, audio and image messages (not stickers, documents, videos)
     const aiSupportedTypes = ['text', 'audio', 'image'];
     if (!isFromMe && aiSupportedTypes.includes(dbMessageType)) {
-      const aiQueueData = {
-        connectionId: whatsappConnectionId,
-        conversationId,
-        messageContent: messageContent || '',
-        contactName,
-        contactPhone: phoneNumber,
-        companyId,
-        instanceToken,
-        msgType: dbMessageType,
-        msgMediaUrl: undefined
+      const messageData = {
+        content: messageContent || '',
+        type: dbMessageType,
+        mediaUrl: undefined as string | undefined,
+        timestamp: new Date().toISOString()
       }
       
-      // Use Redis queue if available, otherwise fallback to EdgeRuntime.waitUntil
+      // Use Redis batching if available
       if (redis) {
-        console.log(`📤 [QUEUE] Enqueuing AI agent task to Redis queue`)
+        const batchKey = `ai-batch:${conversationId}`
+        console.log(`📤 [BATCH] Checking batch for conversation ${conversationId}`)
+        
         try {
+          const existingBatchRaw = await redis.get(batchKey)
+          
+          if (existingBatchRaw) {
+            // Add message to existing batch
+            const existingBatch = typeof existingBatchRaw === 'string' 
+              ? JSON.parse(existingBatchRaw) 
+              : existingBatchRaw
+            
+            existingBatch.messages.push(messageData)
+            existingBatch.lastUpdated = new Date().toISOString()
+            
+            await redis.setex(batchKey, 300, JSON.stringify(existingBatch)) // TTL 5 min
+            console.log(`✅ [BATCH] Message added to existing batch (${existingBatch.messages.length} msgs)`)
+          } else {
+            // Create new batch
+            const newBatch = {
+              connectionId: whatsappConnectionId,
+              conversationId,
+              contactName,
+              contactPhone: phoneNumber,
+              companyId,
+              instanceToken,
+              messages: [messageData],
+              createdAt: new Date().toISOString(),
+              lastUpdated: new Date().toISOString()
+            }
+            
+            await redis.setex(batchKey, 300, JSON.stringify(newBatch))
+            console.log(`✅ [BATCH] New batch created for conversation`)
+          }
+          
+          // ═══════════════════════════════════════════════════════════════
+          // ⏰ SCHEDULE SELF-BATCH PROCESSING TIMER
+          // ═══════════════════════════════════════════════════════════════
+          // Get agent config to know the debounce time for THIS batch
+          const { data: selfAgentConn } = await supabase
+            .from('ai_agent_connections')
+            .select('ai_agents(message_batch_seconds, status)')
+            .eq('connection_id', whatsappConnectionId)
+            .maybeSingle()
+          
+          if (selfAgentConn?.ai_agents) {
+            const selfAgentConfig = selfAgentConn.ai_agents as any
+            if (selfAgentConfig.status === 'active') {
+              const selfBatchSeconds = selfAgentConfig.message_batch_seconds ?? 75
+              const timerDelay = (selfBatchSeconds + 5) * 1000 // +5s safety margin
+              
+              console.log(`⏰ [TIMER] Scheduling self-batch processing in ${selfBatchSeconds + 5}s for ${batchKey}`)
+              
+              // Schedule timer to process THIS batch after debounce expires
+              EdgeRuntime.waitUntil(
+                (async () => {
+                  // Wait for debounce + safety margin
+                  await new Promise(resolve => setTimeout(resolve, timerDelay))
+                  
+                  console.log(`⏰ [TIMER] Timer fired for ${batchKey}, attempting to process...`)
+                  
+                  // Try to acquire lock atomically
+                  const lockKey = `lock:${batchKey}`
+                  try {
+                    const lockAcquired = await redis.setnx(lockKey, Date.now().toString())
+                    
+                    if (!lockAcquired) {
+                      console.log(`🔒 [TIMER] Lock exists for ${batchKey}, batch already being processed`)
+                      return
+                    }
+                    
+                    // Set TTL on lock
+                    await redis.expire(lockKey, 120)
+                    
+                    // Check if batch still exists (might have been processed by other means)
+                    const currentBatchRaw = await redis.get(batchKey)
+                    if (!currentBatchRaw) {
+                      console.log(`✅ [TIMER] Batch ${batchKey} no longer exists, already processed`)
+                      await redis.del(lockKey)
+                      return
+                    }
+                    
+                    const currentBatch = typeof currentBatchRaw === 'string'
+                      ? JSON.parse(currentBatchRaw)
+                      : currentBatchRaw
+                    
+                    console.log(`🚀 [TIMER] Processing self-batch ${batchKey} (${currentBatch.messages?.length || 0} messages)`)
+                    
+                    // Process using existing function (pass lockAlreadyHeld=true)
+                    // Function will handle batch deletion and lock cleanup in finally block
+                    await processAIBatchImmediate(currentBatch, batchKey, redis, true)
+                    
+                  } catch (timerError) {
+                    console.error(`⚠️ [TIMER] Error processing self-batch:`, timerError)
+                    // Clean up lock on error (only if we acquired it)
+                    try {
+                      await redis.del(lockKey)
+                    } catch (e) {}
+                  }
+                })()
+              )
+            }
+          }
+
+          // ═══════════════════════════════════════════════════════════════
+          // 🚀 CHECK FOR MATURE BATCHES AND PROCESS IMMEDIATELY
+          // ═══════════════════════════════════════════════════════════════
+          // Scan for OTHER batches that have completed their debounce time
+          // This eliminates the pg_cron wait time (up to 60s)
+          const allBatchKeys = await redis.keys('ai-batch:*')
+          console.log(`🔍 [BATCH] Found ${allBatchKeys.length} batches to check for maturity`)
+          
+          for (const otherBatchKey of allBatchKeys) {
+            // Skip the current batch (just updated, not ready yet)
+            if (otherBatchKey === batchKey) continue
+            
+            try {
+              const otherBatchRaw = await redis.get(otherBatchKey)
+              if (!otherBatchRaw) continue
+              
+              const otherBatch = typeof otherBatchRaw === 'string'
+                ? JSON.parse(otherBatchRaw)
+                : otherBatchRaw
+              
+              // Get agent config to know the debounce time
+              const { data: agentConn } = await supabase
+                .from('ai_agent_connections')
+                .select('ai_agents(message_batch_seconds, status)')
+                .eq('connection_id', otherBatch.connectionId)
+                .maybeSingle()
+              
+              if (!agentConn?.ai_agents) continue
+              
+              const agentConfig = agentConn.ai_agents as any
+              if (agentConfig.status !== 'active') continue
+              
+              const batchSeconds = agentConfig.message_batch_seconds ?? 75
+              const lastUpdated = new Date(otherBatch.lastUpdated).getTime()
+              const elapsed = (Date.now() - lastUpdated) / 1000
+              
+              if (elapsed >= batchSeconds) {
+                console.log(`🚀 [BATCH] Batch ${otherBatchKey} is mature (${elapsed.toFixed(1)}s >= ${batchSeconds}s), processing immediately!`)
+                
+                // Process this mature batch in background
+                EdgeRuntime.waitUntil(
+                  processAIBatchImmediate(otherBatch, otherBatchKey, redis)
+                )
+              } else {
+                console.log(`⏳ [BATCH] Batch ${otherBatchKey} not ready yet (${elapsed.toFixed(1)}s < ${batchSeconds}s)`)
+              }
+            } catch (batchCheckError) {
+              console.log(`⚠️ [BATCH] Error checking batch ${otherBatchKey}:`, batchCheckError)
+            }
+          }
+          
+        } catch (batchError) {
+          console.log(`⚠️ [BATCH] Redis error, falling back to direct queue:`, batchError)
+          // Fallback to direct queue
+          const aiQueueData = {
+            connectionId: whatsappConnectionId,
+            conversationId,
+            messageContent: messageContent || '',
+            contactName,
+            contactPhone: phoneNumber,
+            companyId,
+            instanceToken,
+            msgType: dbMessageType,
+            msgMediaUrl: undefined
+          }
           await redis.rpush('queue:ai-agent', JSON.stringify({
             data: aiQueueData,
             attempts: 0,
             enqueuedAt: new Date().toISOString()
           }))
-          console.log(`✅ [QUEUE] AI agent task enqueued successfully`)
-        } catch (queueError) {
-          console.log(`⚠️ [QUEUE] Redis error, falling back to waitUntil:`, queueError)
-          EdgeRuntime.waitUntil(
-            processAIAgentResponse(aiQueueData)
-          )
         }
       } else {
         console.log(`🤖 Checking AI agent for this connection... (type: ${dbMessageType}, no Redis)`)
+        const aiQueueData = {
+          connectionId: whatsappConnectionId,
+          conversationId,
+          messageContent: messageContent || '',
+          contactName,
+          contactPhone: phoneNumber,
+          companyId,
+          instanceToken,
+          msgType: dbMessageType,
+          msgMediaUrl: undefined
+        }
         EdgeRuntime.waitUntil(
           processAIAgentResponse(aiQueueData)
         )
