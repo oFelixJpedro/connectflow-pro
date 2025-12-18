@@ -1,7 +1,7 @@
 import { Wand2, Plus, Image, Video, Mic, FileText, Link, Type } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
+import { MarkdownEditor } from '@/components/ui/markdown-editor';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -15,26 +15,26 @@ interface AgentScriptTabProps {
   agentId: string;
 }
 
-const DEFAULT_SCRIPT_TEMPLATE = `1. ENTRADA DO LEAD
+const DEFAULT_SCRIPT_TEMPLATE = `# 1. ENTRADA DO LEAD
 
 Assim que o lead responder, o agente deve analisar a mensagem e enviar a saudação inicial.
 
-SAUDAÇÃO:
+**SAUDAÇÃO:**
 "Olá! 👋 Seja bem-vindo(a)! Sou a assistente virtual e estou aqui para ajudar você."
 
-2. QUALIFICAÇÃO
+## 2. QUALIFICAÇÃO
 
 Após a saudação, pergunte o que o cliente precisa:
 "Como posso ajudar você hoje?"
 
-3. IDENTIFICAÇÃO DA NECESSIDADE
+## 3. IDENTIFICAÇÃO DA NECESSIDADE
 
 Se o cliente mencionar [área específica]:
 - Colete nome completo
 - Colete telefone de contato
 - Confirme o interesse
 
-4. COLETA DE DADOS
+## 4. COLETA DE DADOS
 
 "Para darmos continuidade, preciso de algumas informações:
 📝 Qual o seu nome completo?"
@@ -42,7 +42,7 @@ Se o cliente mencionar [área específica]:
 Após receber o nome:
 "Obrigado, [NOME]! Agora, qual o seu telefone com DDD?"
 
-5. CONFIRMAÇÃO
+## 5. CONFIRMAÇÃO
 
 "Perfeito! Vou registrar seus dados:
 👤 Nome: [NOME]
@@ -50,12 +50,12 @@ Após receber o nome:
 
 Está tudo certo?"
 
-6. ENCERRAMENTO
+## 6. ENCERRAMENTO
 
 Se confirmado:
 "Excelente! Um de nossos especialistas entrará em contato em breve. Obrigado pelo contato! 🙏"
 
-7. OBJEÇÕES
+## 7. OBJEÇÕES
 
 Se o cliente disser que não tem interesse:
 - Chame o agente /tratar-objecoes
@@ -135,14 +135,12 @@ export function AgentScriptTab({ content, onChange, agentId }: AgentScriptTabPro
         </ul>
       </div>
 
-      <div className="relative">
-        <Textarea
-          value={content}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder="Digite o roteiro de atendimento aqui..."
-          className="min-h-[400px] resize-none font-mono text-sm"
-        />
-      </div>
+      <MarkdownEditor
+        value={content}
+        onChange={onChange}
+        placeholder="Digite o roteiro de atendimento aqui..."
+        minHeight="400px"
+      />
     </div>
   );
 }

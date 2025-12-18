@@ -1,14 +1,14 @@
 import { Wand2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
+import { MarkdownEditor } from '@/components/ui/markdown-editor';
 
 interface AgentRulesTabProps {
   content: string;
   onChange: (content: string) => void;
 }
 
-const DEFAULT_RULES_TEMPLATE = `FUNÇÃO DO AGENTE
+const DEFAULT_RULES_TEMPLATE = `# FUNÇÃO DO AGENTE
 
 O agente somente pode enviar as mensagens previstas neste roteiro.
 Não pode conversar, orientar, explicar, repetir mensagens, pedir documentos ou agradecer fora do roteiro.
@@ -18,7 +18,7 @@ Não pode escrever nada após a confirmação do lead.
 Não envie nenhuma mensagem em itálico.
 É permanentemente proibido repetir perguntas desnecessárias a não ser que estejam previstas no roteiro de atendimento.
 
-REGRAS DE COMPORTAMENTO
+## REGRAS DE COMPORTAMENTO
 
 1. Sempre seja educado e profissional
 2. Não invente informações - use apenas o que está no roteiro e FAQ
@@ -26,7 +26,7 @@ REGRAS DE COMPORTAMENTO
 4. Mantenha respostas concisas e diretas
 5. Não faça promessas que não possa cumprir
 
-RESTRIÇÕES
+## RESTRIÇÕES
 
 - Nunca compartilhe informações pessoais de outros clientes
 - Nunca forneça consultoria jurídica/médica/financeira específica
@@ -53,14 +53,12 @@ export function AgentRulesTab({ content, onChange }: AgentRulesTabProps) {
         </Button>
       </div>
 
-      <div className="relative">
-        <Textarea
-          value={content}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder="Digite as regras gerais do agente aqui..."
-          className="min-h-[400px] resize-none font-mono text-sm"
-        />
-      </div>
+      <MarkdownEditor
+        value={content}
+        onChange={onChange}
+        placeholder="Digite as regras gerais do agente aqui..."
+        minHeight="400px"
+      />
     </div>
   );
 }
