@@ -466,11 +466,6 @@ export function ContactPanel({ conversation, onClose, onContactUpdated, onScroll
 
       <ScrollArea className="flex-1">
         <div className="p-4 space-y-6">
-          {/* AI Agent Actions */}
-          <AIAgentActions conversationId={conversation.id} />
-
-          <Separator />
-
           {/* Contact Info */}
           <div className="flex flex-col items-center text-center">
             <ContactAvatar
@@ -493,6 +488,11 @@ export function ContactPanel({ conversation, onClose, onContactUpdated, onScroll
               </Button>
             </div>
           </div>
+
+          <Separator />
+
+          {/* AI Agent Actions */}
+          <AIAgentActions conversationId={conversation.id} />
 
           <Separator />
 
