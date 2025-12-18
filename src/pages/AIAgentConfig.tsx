@@ -7,7 +7,8 @@ import {
   List, 
   HelpCircle,
   Settings,
-  Info
+  Info,
+  Users
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -26,6 +27,7 @@ import { useAgentMedia } from '@/hooks/useAgentMedia';
 import { AgentRulesTab } from '@/components/ai-agents/config/AgentRulesTab';
 import { AgentScriptTab } from '@/components/ai-agents/config/AgentScriptTab';
 import { AgentFAQTab } from '@/components/ai-agents/config/AgentFAQTab';
+import { AgentSubAgentsTab } from '@/components/ai-agents/config/AgentSubAgentsTab';
 import { AgentSidebar } from '@/components/ai-agents/config/AgentSidebar';
 import { AI_AGENT_CHAR_LIMITS } from '@/types/ai-agents';
 import type { AIAgent, UpdateAIAgentData } from '@/types/ai-agents';
@@ -35,7 +37,7 @@ export default function AIAgentConfig() {
   const { agentId } = useParams<{ agentId: string }>();
   const navigate = useNavigate();
   const { userRole } = useAuth();
-  const { agents, updateAgent, loadAgents, setAgentStatus } = useAIAgents();
+  const { agents, updateAgent, loadAgents, setAgentStatus, getParentAgent } = useAIAgents();
   const { medias, loadMedias } = useAgentMedia(agentId || null);
   const [agent, setAgent] = useState<AIAgent | null>(null);
   const [activeTab, setActiveTab] = useState('rules');
@@ -152,6 +154,9 @@ export default function AIAgentConfig() {
     }
   };
 
+  // Obter agente pai se for sub-agente
+  const parentAgent = getParentAgent(agent.id);
+
   return (
     <div className="flex h-full">
       {/* Main Content */}
@@ -159,12 +164,39 @@ export default function AIAgentConfig() {
         {/* Header */}
         <div className="h-16 border-b flex items-center justify-between px-6">
           <div className="flex items-center gap-4">
-            <Button variant="ghost" size="icon" onClick={() => navigate('/ai-agents')}>
+            <Button variant="ghost" size="icon" onClick={() => {
+              // Se for sub-agente, voltar para o pai; senão, voltar para listagem
+              if (parentAgent) {
+                navigate(`/ai-agents/${parentAgent.id}`);
+              } else {
+                navigate('/ai-agents');
+              }
+            }}>
               <ArrowLeft className="w-5 h-5" />
             </Button>
             <div>
-              <h1 className="font-semibold">{agent.name}</h1>
-              <p className="text-xs text-muted-foreground">Configuração do agente</p>
+              {parentAgent ? (
+                <>
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground mb-0.5">
+                    <span 
+                      className="hover:text-foreground cursor-pointer"
+                      onClick={() => navigate(`/ai-agents/${parentAgent.id}`)}
+                    >
+                      {parentAgent.name}
+                    </span>
+                    <span>/</span>
+                    <span className="text-foreground">Sub-agente</span>
+                  </div>
+                  <h1 className="font-semibold">{agent.name}</h1>
+                </>
+              ) : (
+                <>
+                  <h1 className="font-semibold">{agent.name}</h1>
+                  <p className="text-xs text-muted-foreground">
+                    {agent.agent_type === 'multi' ? 'Agente Multiagente' : 'Configuração do agente'}
+                  </p>
+                </>
+              )}
             </div>
           </div>
           <div className="flex items-center gap-3">
@@ -191,28 +223,38 @@ export default function AIAgentConfig() {
         {/* Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col overflow-hidden">
           <div className="border-b px-6">
-            <TabsList className="h-12 bg-transparent p-0 gap-4">
+            <TabsList className="h-12 w-full bg-transparent p-0">
               <TabsTrigger 
                 value="rules" 
-                className="data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none px-0 pb-3"
+                className="flex-1 data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none pb-3 justify-center"
               >
                 <FileText className="w-4 h-4 mr-2" />
                 Regras Gerais
               </TabsTrigger>
               <TabsTrigger 
                 value="script"
-                className="data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none px-0 pb-3"
+                className="flex-1 data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none pb-3 justify-center"
               >
                 <List className="w-4 h-4 mr-2" />
                 Roteiro de Atendimento
               </TabsTrigger>
               <TabsTrigger 
                 value="faq"
-                className="data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none px-0 pb-3"
+                className="flex-1 data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none pb-3 justify-center"
               >
                 <HelpCircle className="w-4 h-4 mr-2" />
                 Perguntas Frequentes
               </TabsTrigger>
+              {/* Aba Sub-agentes - apenas para agentes do tipo multi */}
+              {agent.agent_type === 'multi' && (
+                <TabsTrigger 
+                  value="subagents"
+                  className="flex-1 data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none pb-3 justify-center"
+                >
+                  <Users className="w-4 h-4 mr-2" />
+                  Sub-agentes
+                </TabsTrigger>
+              )}
             </TabsList>
           </div>
 
@@ -244,6 +286,14 @@ export default function AIAgentConfig() {
                     onContractLinkChange={setContractLink}
                   />
                 </TabsContent>
+                {agent.agent_type === 'multi' && (
+                  <TabsContent value="subagents" className="m-0">
+                    <AgentSubAgentsTab
+                      agent={agent}
+                      onUpdate={loadAgents}
+                    />
+                  </TabsContent>
+                )}
               </div>
             </ScrollArea>
           </div>

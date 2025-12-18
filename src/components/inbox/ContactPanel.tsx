@@ -47,6 +47,7 @@ import { ScheduledMessagesList } from './ScheduledMessagesList';
 import { useScheduledMessagesCount } from './ScheduledMessagesList';
 import { logConversationEvent } from '@/lib/conversationHistory';
 import { useAuth } from '@/contexts/AuthContext';
+import { AIAgentActions } from './AIAgentActions';
 
 interface ContactPanelProps {
   conversation: Conversation | null;
@@ -487,6 +488,11 @@ export function ContactPanel({ conversation, onClose, onContactUpdated, onScroll
               </Button>
             </div>
           </div>
+
+          <Separator />
+
+          {/* AI Agent Actions */}
+          <AIAgentActions conversationId={conversation.id} whatsappConnectionId={conversation.whatsappConnectionId} />
 
           <Separator />
 

@@ -138,9 +138,49 @@ export function useAIAgents() {
     }
   }, [loadAgents]);
 
-  // Excluir agente
+  // Excluir agente (com limpeza completa de arquivos e registros)
   const deleteAgent = useCallback(async (agentId: string): Promise<boolean> => {
     try {
+      // 1. Buscar todas as mídias do agente para excluir do storage
+      const { data: mediaRecords } = await supabase
+        .from('ai_agent_media')
+        .select('id, media_url')
+        .eq('agent_id', agentId);
+
+      // 2. Excluir arquivos do storage
+      if (mediaRecords && mediaRecords.length > 0) {
+        const filePaths = mediaRecords
+          .filter(m => m.media_url)
+          .map(m => {
+            // Extrair o path do arquivo da URL
+            const url = m.media_url as string;
+            const match = url.match(/ai-agent-media\/(.+)$/);
+            return match ? match[1] : null;
+          })
+          .filter(Boolean) as string[];
+
+        if (filePaths.length > 0) {
+          const { error: storageError } = await supabase.storage
+            .from('ai-agent-media')
+            .remove(filePaths);
+
+          if (storageError) {
+            console.warn('Aviso: Alguns arquivos não puderam ser excluídos do storage:', storageError);
+          }
+        }
+      }
+
+      // 3. Limpar registros órfãos de ai_conversation_states
+      const { error: statesError } = await supabase
+        .from('ai_conversation_states')
+        .delete()
+        .eq('agent_id', agentId);
+
+      if (statesError) {
+        console.warn('Aviso: Erro ao limpar estados de conversação:', statesError);
+      }
+
+      // 4. Excluir o agente (CASCADE vai limpar ai_agent_connections, ai_agent_media, ai_agent_logs)
       const { error: deleteError } = await supabase
         .from('ai_agents')
         .delete()
@@ -306,6 +346,18 @@ export function useAIAgents() {
   const primaryAgents = agents.filter(a => a.is_primary && !a.parent_agent_id);
   const secondaryAgents = agents.filter(a => !a.is_primary || a.parent_agent_id);
 
+  // Função para obter sub-agentes de um agente pai
+  const getSubAgents = useCallback((parentId: string): AIAgent[] => {
+    return agents.filter(a => a.parent_agent_id === parentId);
+  }, [agents]);
+
+  // Função para obter o agente pai de um sub-agente
+  const getParentAgent = useCallback((agentId: string): AIAgent | null => {
+    const agent = agents.find(a => a.id === agentId);
+    if (!agent?.parent_agent_id) return null;
+    return agents.find(a => a.id === agent.parent_agent_id) || null;
+  }, [agents]);
+
   return {
     agents,
     primaryAgents,
@@ -322,5 +374,7 @@ export function useAIAgents() {
     addConnection,
     removeConnection,
     createFromTemplate,
+    getSubAgents,
+    getParentAgent,
   };
 }
