@@ -375,14 +375,39 @@ async function processMediaInBackground(params: {
 // ═══════════════════════════════════════════════════════════════════════════════
 // PROCESSAMENTO IMEDIATO DE BATCH DE AI (quando debounce completou)
 // ═══════════════════════════════════════════════════════════════════════════════
-async function processAIBatchImmediate(batchData: any, batchKey: string, redisClient: Redis) {
+async function processAIBatchImmediate(batchData: any, batchKey: string, redisClient: Redis, lockAlreadyHeld: boolean = false) {
   const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
   const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
   const supabase = createClient(supabaseUrl, supabaseServiceKey);
   
   const { connectionId, conversationId, messages, contactName, contactPhone, companyId, instanceToken } = batchData;
+  const lockKey = `lock:${batchKey}`;
   
-  console.log(`🚀 [IMMEDIATE-BATCH] Processing batch for conversation ${conversationId} (${messages.length} messages)`);
+  console.log(`🚀 [IMMEDIATE-BATCH] Attempting to process batch for conversation ${conversationId} (${messages.length} messages)`);
+  
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // 🔒 ACQUIRE LOCK TO PREVENT DUPLICATE PROCESSING (skip if already held)
+  // ═══════════════════════════════════════════════════════════════════════════════
+  if (!lockAlreadyHeld) {
+    try {
+      // Try to acquire atomic lock (returns 1 if set, 0 if already exists)
+      const lockAcquired = await redisClient.setnx(lockKey, Date.now().toString());
+      
+      if (!lockAcquired) {
+        console.log(`🔒 [IMMEDIATE-BATCH] Lock already exists for ${batchKey}, skipping (another process is handling it)`);
+        return;
+      }
+      
+      // Set TTL on lock to prevent deadlocks (2 minutes max)
+      await redisClient.expire(lockKey, 120);
+      console.log(`✅ [IMMEDIATE-BATCH] Lock acquired for ${batchKey}`);
+    } catch (lockError) {
+      console.error(`⚠️ [IMMEDIATE-BATCH] Error acquiring lock:`, lockError);
+      // Continue anyway - better to risk duplicate than miss processing
+    }
+  } else {
+    console.log(`✅ [IMMEDIATE-BATCH] Using pre-acquired lock for ${batchKey}`);
+  }
   
   try {
     // Delete batch from Redis first to prevent duplicate processing
@@ -608,6 +633,16 @@ async function processAIBatchImmediate(batchData: any, batchKey: string, redisCl
       await redisClient.setex(batchKey, 300, JSON.stringify(batchData));
     } catch (e) {
       console.error(`❌ [IMMEDIATE-BATCH] Failed to re-enqueue batch`);
+    }
+  } finally {
+    // ═══════════════════════════════════════════════════════════════════════════════
+    // 🔓 RELEASE LOCK
+    // ═══════════════════════════════════════════════════════════════════════════════
+    try {
+      await redisClient.del(lockKey);
+      console.log(`🔓 [IMMEDIATE-BATCH] Lock released for ${batchKey}`);
+    } catch (unlockError) {
+      console.error(`⚠️ [IMMEDIATE-BATCH] Error releasing lock:`, unlockError);
     }
   }
 }
@@ -1762,6 +1797,75 @@ serve(async (req) => {
             console.log(`✅ [BATCH] New batch created for conversation`)
           }
           
+          // ═══════════════════════════════════════════════════════════════
+          // ⏰ SCHEDULE SELF-BATCH PROCESSING TIMER
+          // ═══════════════════════════════════════════════════════════════
+          // Get agent config to know the debounce time for THIS batch
+          const { data: selfAgentConn } = await supabase
+            .from('ai_agent_connections')
+            .select('ai_agents(message_batch_seconds, status)')
+            .eq('connection_id', whatsappConnectionId)
+            .maybeSingle()
+          
+          if (selfAgentConn?.ai_agents) {
+            const selfAgentConfig = selfAgentConn.ai_agents as any
+            if (selfAgentConfig.status === 'active') {
+              const selfBatchSeconds = selfAgentConfig.message_batch_seconds ?? 75
+              const timerDelay = (selfBatchSeconds + 5) * 1000 // +5s safety margin
+              
+              console.log(`⏰ [TIMER] Scheduling self-batch processing in ${selfBatchSeconds + 5}s for ${batchKey}`)
+              
+              // Schedule timer to process THIS batch after debounce expires
+              EdgeRuntime.waitUntil(
+                (async () => {
+                  // Wait for debounce + safety margin
+                  await new Promise(resolve => setTimeout(resolve, timerDelay))
+                  
+                  console.log(`⏰ [TIMER] Timer fired for ${batchKey}, attempting to process...`)
+                  
+                  // Try to acquire lock atomically
+                  const lockKey = `lock:${batchKey}`
+                  try {
+                    const lockAcquired = await redis.setnx(lockKey, Date.now().toString())
+                    
+                    if (!lockAcquired) {
+                      console.log(`🔒 [TIMER] Lock exists for ${batchKey}, batch already being processed`)
+                      return
+                    }
+                    
+                    // Set TTL on lock
+                    await redis.expire(lockKey, 120)
+                    
+                    // Check if batch still exists (might have been processed by other means)
+                    const currentBatchRaw = await redis.get(batchKey)
+                    if (!currentBatchRaw) {
+                      console.log(`✅ [TIMER] Batch ${batchKey} no longer exists, already processed`)
+                      await redis.del(lockKey)
+                      return
+                    }
+                    
+                    const currentBatch = typeof currentBatchRaw === 'string'
+                      ? JSON.parse(currentBatchRaw)
+                      : currentBatchRaw
+                    
+                    console.log(`🚀 [TIMER] Processing self-batch ${batchKey} (${currentBatch.messages?.length || 0} messages)`)
+                    
+                    // Process using existing function (pass lockAlreadyHeld=true)
+                    // Function will handle batch deletion and lock cleanup in finally block
+                    await processAIBatchImmediate(currentBatch, batchKey, redis, true)
+                    
+                  } catch (timerError) {
+                    console.error(`⚠️ [TIMER] Error processing self-batch:`, timerError)
+                    // Clean up lock on error (only if we acquired it)
+                    try {
+                      await redis.del(lockKey)
+                    } catch (e) {}
+                  }
+                })()
+              )
+            }
+          }
+
           // ═══════════════════════════════════════════════════════════════
           // 🚀 CHECK FOR MATURE BATCHES AND PROCESS IMMEDIATELY
           // ═══════════════════════════════════════════════════════════════
