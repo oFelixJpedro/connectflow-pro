@@ -346,6 +346,18 @@ export function useAIAgents() {
   const primaryAgents = agents.filter(a => a.is_primary && !a.parent_agent_id);
   const secondaryAgents = agents.filter(a => !a.is_primary || a.parent_agent_id);
 
+  // Função para obter sub-agentes de um agente pai
+  const getSubAgents = useCallback((parentId: string): AIAgent[] => {
+    return agents.filter(a => a.parent_agent_id === parentId);
+  }, [agents]);
+
+  // Função para obter o agente pai de um sub-agente
+  const getParentAgent = useCallback((agentId: string): AIAgent | null => {
+    const agent = agents.find(a => a.id === agentId);
+    if (!agent?.parent_agent_id) return null;
+    return agents.find(a => a.id === agent.parent_agent_id) || null;
+  }, [agents]);
+
   return {
     agents,
     primaryAgents,
@@ -362,5 +374,7 @@ export function useAIAgents() {
     addConnection,
     removeConnection,
     createFromTemplate,
+    getSubAgents,
+    getParentAgent,
   };
 }
