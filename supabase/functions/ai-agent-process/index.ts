@@ -535,14 +535,13 @@ ${agent.faq_content}
               content: contentItems
             }
           ],
-          temperature: agentTemperature,
           text: {
             format: { type: 'text' },
             verbosity: 'medium'
           },
           reasoning: {
             effort: 'low',
-            summary: 'brief'
+            summary: 'concise'
           }
         }),
       });
@@ -582,9 +581,8 @@ ${agent.faq_content}
           body: JSON.stringify({
             model: 'gpt-5-nano',
             input: [{ type: 'message', role: 'user', content: contentItems }],
-            temperature: 0.5,
             text: { format: { type: 'text' }, verbosity: 'medium' },
-            reasoning: { effort: 'low', summary: 'brief' }
+            reasoning: { effort: 'low', summary: 'concise' }
           }),
         });
         
@@ -619,14 +617,13 @@ ${agent.faq_content}
         body: JSON.stringify({
           model: 'gpt-5-mini',
           input: fullPrompt,
-          temperature: agentTemperature,
           text: {
             format: { type: 'text' },
             verbosity: 'medium'
           },
           reasoning: {
             effort: 'low',
-            summary: 'brief'
+            summary: 'concise'
           }
         }),
       });
@@ -666,9 +663,8 @@ ${agent.faq_content}
           body: JSON.stringify({
             model: 'gpt-5-mini',
             input: fullPrompt,
-            temperature: 0.5,
             text: { format: { type: 'text' }, verbosity: 'medium' },
-            reasoning: { effort: 'low', summary: 'brief' }
+            reasoning: { effort: 'low', summary: 'concise' }
           }),
         });
         
