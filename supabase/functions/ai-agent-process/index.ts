@@ -985,6 +985,51 @@ ${agent.faq_content}
       console.log('ℹ️ Nenhum comando encontrado na resposta');
     }
 
+    // 6️⃣ Parse and extract media tags from response
+    console.log('\n┌─────────────────────────────────────────────────────────────────┐');
+    console.log('│ 6️⃣  PROCESSAR TAGS DE MÍDIA NA RESPOSTA                         │');
+    console.log('└─────────────────────────────────────────────────────────────────┘');
+
+    const mediaPattern = /\{\{(image|video|audio|document|text|link):([a-zA-Z0-9_-]+)\}\}/gi;
+    const mediaMatches = [...cleanResponse.matchAll(mediaPattern)];
+    const mediasToSend: Array<{ type: string; key: string; url?: string; content?: string; fileName?: string }> = [];
+
+    for (const match of mediaMatches) {
+      const [fullMatch, mediaType, mediaKey] = match;
+      console.log(`📎 Tag de mídia encontrada: ${mediaType}:${mediaKey}`);
+      
+      // Fetch media from database
+      const { data: media } = await supabase
+        .from('ai_agent_media')
+        .select('*')
+        .eq('agent_id', agent.id)
+        .eq('media_key', mediaKey)
+        .maybeSingle();
+      
+      if (media) {
+        mediasToSend.push({
+          type: media.media_type,
+          key: media.media_key,
+          url: media.media_url || undefined,
+          content: media.media_content || undefined,
+          fileName: media.file_name || undefined
+        });
+        console.log(`✅ Mídia encontrada: ${media.media_type} - ${media.media_key}`);
+      } else {
+        console.log(`⚠️ Mídia não encontrada: ${mediaKey}`);
+      }
+      
+      // Remove tag from response
+      cleanResponse = cleanResponse.replace(fullMatch, '').trim();
+    }
+
+    // Clean up multiple spaces and empty lines again after removing media tags
+    cleanResponse = cleanResponse.replace(/\n\s*\n/g, '\n').trim();
+
+    if (mediasToSend.length > 0) {
+      console.log(`📦 Total de mídias para enviar: ${mediasToSend.length}`);
+    }
+
     // Use cleaned response
     aiResponse = cleanResponse;
 
@@ -1048,7 +1093,8 @@ ${agent.faq_content}
         shouldGenerateAudio,
         speechSpeed: agent.speech_speed || 1.0,
         audioTemperature: agent.audio_temperature || 0.7,
-        languageCode: agent.language_code || 'pt-BR'
+        languageCode: agent.language_code || 'pt-BR',
+        mediasToSend: mediasToSend.length > 0 ? mediasToSend : undefined
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );

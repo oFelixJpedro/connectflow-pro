@@ -576,6 +576,44 @@ async function processAIAgentBatch(
         })
     }
     
+    // Send medias from agent response ({{type:key}} tags)
+    const mediasToSend = result.mediasToSend as Array<{ type: string; key: string; url?: string; content?: string; fileName?: string }> | undefined;
+    if (mediasToSend && mediasToSend.length > 0) {
+      console.log(`📦 [BATCH-AI] Sending ${mediasToSend.length} medias...`);
+      
+      for (const media of mediasToSend) {
+        await new Promise(resolve => setTimeout(resolve, 1000)); // Delay between medias
+        
+        if (media.type === 'text' || media.type === 'link') {
+          // Send as text message
+          const sendUrl = `${UAZAPI_BASE_URL}/send/text`;
+          await fetch(sendUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'token': instanceToken },
+            body: JSON.stringify({ number: phoneNumber, text: media.content || '' }),
+          });
+          console.log(`✅ [BATCH-AI] Text/Link sent: ${media.key}`);
+        } else if (media.url) {
+          // Send media via UAZAPI
+          const sendMediaUrl = `${UAZAPI_BASE_URL}/send/media`;
+          const mediaTypeMap: Record<string, string> = {
+            image: 'image', video: 'video', audio: 'audio', document: 'document'
+          };
+          
+          await fetch(sendMediaUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'token': instanceToken },
+            body: JSON.stringify({
+              number: phoneNumber,
+              type: mediaTypeMap[media.type] || 'document',
+              file: media.url
+            }),
+          });
+          console.log(`✅ [BATCH-AI] Media sent: ${media.type} - ${media.key}`);
+        }
+      }
+    }
+    
     // Update conversation
     await supabase
       .from('conversations')

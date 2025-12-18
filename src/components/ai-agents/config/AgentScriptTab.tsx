@@ -1,18 +1,14 @@
-import { Wand2, Plus, Image, Video, Mic, FileText, Link, Type } from 'lucide-react';
+import { Wand2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { MarkdownEditor } from '@/components/ui/markdown-editor';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
+import type { AgentMedia } from '@/hooks/useAgentMedia';
 
 interface AgentScriptTabProps {
   content: string;
   onChange: (content: string) => void;
   agentId: string;
+  medias?: AgentMedia[];
 }
 
 const DEFAULT_SCRIPT_TEMPLATE = `# ROTEIRO DE ATENDIMENTO
@@ -152,14 +148,9 @@ Desejamos tudo de bom! 🙏"
 
 → Encerrar fluxo. Não avançar mais até retorno espontâneo do lead.`;
 
-export function AgentScriptTab({ content, onChange, agentId }: AgentScriptTabProps) {
+export function AgentScriptTab({ content, onChange, agentId, medias = [] }: AgentScriptTabProps) {
   const handleGenerateTemplate = () => {
     onChange(DEFAULT_SCRIPT_TEMPLATE);
-  };
-
-  const insertPlaceholder = (type: string) => {
-    const placeholder = `{{${type}:nome-do-arquivo}}`;
-    onChange(content + placeholder);
   };
 
   return (
@@ -171,55 +162,19 @@ export function AgentScriptTab({ content, onChange, agentId }: AgentScriptTabPro
             Defina o fluxo de atendimento do agente passo a passo
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="sm">
-                <Plus className="w-4 h-4 mr-2" />
-                Inserir Mídia
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => insertPlaceholder('imagem')}>
-                <Image className="w-4 h-4 mr-2" />
-                Imagem
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => insertPlaceholder('video')}>
-                <Video className="w-4 h-4 mr-2" />
-                Vídeo
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => insertPlaceholder('audio')}>
-                <Mic className="w-4 h-4 mr-2" />
-                Áudio
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => insertPlaceholder('documento')}>
-                <FileText className="w-4 h-4 mr-2" />
-                Documento
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => insertPlaceholder('texto')}>
-                <Type className="w-4 h-4 mr-2" />
-                Texto Fixo
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => insertPlaceholder('link')}>
-                <Link className="w-4 h-4 mr-2" />
-                Link
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-          <Button variant="outline" size="sm" onClick={handleGenerateTemplate}>
-            <Wand2 className="w-4 h-4 mr-2" />
-            Texto Padrão
-          </Button>
-        </div>
+        <Button variant="outline" size="sm" onClick={handleGenerateTemplate}>
+          <Wand2 className="w-4 h-4 mr-2" />
+          Texto Padrão
+        </Button>
       </div>
 
       <div className="bg-muted/50 rounded-lg p-3 text-sm space-y-2">
         <p className="font-medium">💡 Dicas de formatação:</p>
         <ul className="text-muted-foreground space-y-1 text-xs">
-          <li>• Use <code className="bg-muted px-1 rounded">{"{{imagem:nome}}"}</code> para enviar uma imagem</li>
+          <li>• Digite <code className="bg-muted px-1 rounded">{"{{"}</code> para abrir a seleção de mídias</li>
+          <li>• Use <code className="bg-muted px-1 rounded">{"{{image:nome}}"}</code> para enviar uma imagem</li>
           <li>• Use <code className="bg-muted px-1 rounded">{"{{video:nome}}"}</code> para enviar um vídeo</li>
-          <li>• Digite <code className="bg-muted px-1 rounded">/</code> para abrir o menu de comandos (etiquetas, transferências, etc.)</li>
-          <li>• Use "Se o cliente falar X, faça Y" para criar condicionais</li>
+          <li>• Digite <code className="bg-muted px-1 rounded">/</code> para comandos (etiquetas, transferências, etc.)</li>
         </ul>
       </div>
 
@@ -229,7 +184,9 @@ export function AgentScriptTab({ content, onChange, agentId }: AgentScriptTabPro
         placeholder="Digite o roteiro de atendimento aqui..."
         minHeight="400px"
         enableSlashCommands={true}
+        enableMediaTrigger={true}
         agentId={agentId}
+        medias={medias}
       />
     </div>
   );
