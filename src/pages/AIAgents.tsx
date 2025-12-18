@@ -264,37 +264,65 @@ export default function AIAgents() {
               {/* Agentes Secundários */}
               <Collapsible open={secondaryExpanded} onOpenChange={setSecondaryExpanded}>
                 <CollapsibleTrigger className="flex items-center gap-2 text-sm font-semibold text-muted-foreground uppercase tracking-wide hover:text-foreground transition-colors">
-                  <span>Agentes Secundários ({filteredSecondary.length})</span>
+                  <span>Agentes Secundários / Sub-agentes ({filteredSecondary.length})</span>
                 </CollapsibleTrigger>
                 <CollapsibleContent className="mt-4">
                   {filteredSecondary.length === 0 ? (
                     <p className="text-sm text-muted-foreground">
-                      Agentes secundários são criados dentro de um sistema de multiagentes.
+                      Sub-agentes são criados dentro de um agente do tipo "Multiagente".
+                      Acesse a configuração de um agente multiagente para adicionar sub-agentes.
                     </p>
                   ) : (
-                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                      {filteredSecondary.map((agent) => (
-                        <Card 
-                          key={agent.id}
-                          className="cursor-pointer hover:border-primary/50 transition-colors relative"
-                          onClick={() => navigate(`/ai-agents/${agent.id}`)}
-                        >
-                          <CardContent className="p-4 flex flex-col items-center text-center">
-                            <div className="w-10 h-10 rounded-full bg-secondary flex items-center justify-center mb-2">
-                              <Bot className="w-5 h-5 text-secondary-foreground" />
-                            </div>
-                            <p className="font-medium text-sm line-clamp-1">{agent.name}</p>
-                            {getStatusBadge(agent.status)}
-                            <button
-                              onClick={(e) => handleDeleteClick(agent, e)}
-                              className="absolute bottom-2 right-2 p-1.5 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors group"
-                              title="Excluir agente"
-                            >
-                              <Trash2 className="w-4 h-4 text-red-500 group-hover:text-red-600" />
-                            </button>
-                          </CardContent>
-                        </Card>
-                      ))}
+                    <div className="space-y-3">
+                      {filteredSecondary.map((agent) => {
+                        // Encontrar o agente pai
+                        const parentAgent = primaryAgents.find(p => p.id === agent.parent_agent_id);
+                        
+                        return (
+                          <Card 
+                            key={agent.id}
+                            className="cursor-pointer hover:border-primary/50 transition-colors relative"
+                            onClick={() => navigate(`/ai-agents/${agent.id}`)}
+                          >
+                            <CardContent className="p-4">
+                              <div className="flex items-center gap-4">
+                                <div className="w-10 h-10 rounded-full bg-secondary flex items-center justify-center shrink-0">
+                                  <Bot className="w-5 h-5 text-secondary-foreground" />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2">
+                                    <p className="font-medium truncate">{agent.name}</p>
+                                    {getStatusBadge(agent.status)}
+                                  </div>
+                                  {parentAgent && (
+                                    <p className="text-xs text-muted-foreground mt-0.5">
+                                      Sub-agente de <span className="font-medium">{parentAgent.name}</span>
+                                    </p>
+                                  )}
+                                  {agent.description && !parentAgent && (
+                                    <p className="text-xs text-muted-foreground truncate mt-0.5">
+                                      {agent.description}
+                                    </p>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0">
+                                  <Switch
+                                    checked={agent.status === 'active'}
+                                    onClick={(e) => handleToggleStatus(agent, e)}
+                                  />
+                                  <button
+                                    onClick={(e) => handleDeleteClick(agent, e)}
+                                    className="p-2 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors"
+                                    title="Excluir agente"
+                                  >
+                                    <Trash2 className="w-4 h-4 text-red-500" />
+                                  </button>
+                                </div>
+                              </div>
+                            </CardContent>
+                          </Card>
+                        );
+                      })}
                     </div>
                   )}
                 </CollapsibleContent>
