@@ -231,6 +231,7 @@ export default function AIAgentConfig() {
                     content={scriptContent}
                     onChange={(content) => handleContentChange('script', content)}
                     agentId={agent.id}
+                    medias={medias}
                   />
                 </TabsContent>
                 <TabsContent value="faq" className="m-0">
