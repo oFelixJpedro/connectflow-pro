@@ -275,6 +275,7 @@ export function MarkdownEditor({
   const [emojiOpen, setEmojiOpen] = useState(false);
   const isExternalUpdate = useRef(false);
   const editorContainerRef = useRef<HTMLDivElement>(null);
+  const editorRef = useRef<ReturnType<typeof useEditor>>(null);
   
   // Slash command state
   const [showSlashPicker, setShowSlashPicker] = useState(false);
@@ -289,6 +290,18 @@ export function MarkdownEditor({
     command: SlashCommand;
     currentValue: string;
   } | null>(null);
+
+  // Handle delete command via X button (uses ref to avoid circular dependency)
+  const handleCommandDelete = useCallback((from: number, to: number) => {
+    const ed = editorRef.current;
+    if (!ed) return;
+    
+    ed.chain()
+      .focus()
+      .setTextSelection({ from, to })
+      .deleteSelection()
+      .run();
+  }, []);
 
   // Handle click on existing command
   const handleCommandClick = useCallback((commandText: string, from: number, to: number) => {
@@ -316,7 +329,7 @@ export function MarkdownEditor({
     });
     setSelectedCommand(command);
   }, []);
-  
+
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
@@ -331,6 +344,7 @@ export function MarkdownEditor({
       }),
       SlashCommandMark.configure({
         onCommandClick: enableSlashCommands ? handleCommandClick : undefined,
+        onCommandDelete: enableSlashCommands ? handleCommandDelete : undefined,
       }),
     ],
     content: markdownToHtml(value),
@@ -389,6 +403,9 @@ export function MarkdownEditor({
       }
     },
   });
+
+  // Store editor in ref for callbacks that need it before declaration
+  editorRef.current = editor;
 
   // Sync external value changes (e.g., "Texto Padrão" button)
   useEffect(() => {
@@ -739,9 +756,10 @@ export function MarkdownEditor({
         .slash-command-badge {
           display: inline-flex;
           align-items: center;
+          position: relative;
           background-color: hsl(var(--primary) / 0.15);
           color: hsl(var(--primary));
-          padding: 2px 8px;
+          padding: 2px 24px 2px 8px;
           border-radius: 4px;
           font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
           font-size: 0.85em;
@@ -749,6 +767,31 @@ export function MarkdownEditor({
           border: 1px solid hsl(var(--primary) / 0.3);
           transition: all 0.15s ease;
           margin: 0 2px;
+        }
+        
+        .slash-command-badge::after {
+          content: '×';
+          position: absolute;
+          right: 4px;
+          top: 50%;
+          transform: translateY(-50%);
+          font-size: 14px;
+          font-weight: bold;
+          color: hsl(var(--muted-foreground));
+          opacity: 0.5;
+          width: 16px;
+          height: 16px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          border-radius: 50%;
+          transition: all 0.15s ease;
+        }
+        
+        .slash-command-badge:hover::after {
+          opacity: 1;
+          color: hsl(var(--destructive));
+          background-color: hsl(var(--destructive) / 0.15);
         }
         
         .slash-command-badge:hover {
