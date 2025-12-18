@@ -290,6 +290,9 @@ export function MarkdownEditor({
     command: SlashCommand;
     currentValue: string;
   } | null>(null);
+  
+  // Ref to always have the latest editingCommand value (avoids stale closure)
+  const editingCommandRef = useRef<typeof editingCommand>(null);
 
   // Handle delete command via X button (uses ref to avoid circular dependency)
   const handleCommandDelete = useCallback((from: number, to: number) => {
@@ -321,12 +324,15 @@ export function MarkdownEditor({
       });
     }
     
-    setEditingCommand({
+    const editingData = {
       from,
       to,
       command,
       currentValue: parsed.value,
-    });
+    };
+    
+    setEditingCommand(editingData);
+    editingCommandRef.current = editingData; // Update ref immediately
     setSelectedCommand(command);
   }, []);
 
@@ -451,15 +457,18 @@ export function MarkdownEditor({
   const handleSubMenuSelect = useCallback((value: string) => {
     if (!editor) return;
     
-    if (editingCommand) {
+    // Use ref to get the latest value (avoids stale closure issue)
+    const editing = editingCommandRef.current;
+    
+    if (editing) {
       // Editing existing command - DELETE FIRST, then INSERT
-      const fullCommand = `${editingCommand.command.insertText}${value}`;
-      const insertPosition = editingCommand.from; // Save position before deleting
+      const fullCommand = `${editing.command.insertText}${value}`;
+      const insertPosition = editing.from; // Save position before deleting
       
       // STEP 1: Delete the old command completely
       editor.chain()
         .focus()
-        .setTextSelection({ from: editingCommand.from, to: editingCommand.to })
+        .setTextSelection({ from: editing.from, to: editing.to })
         .deleteSelection()
         .run();
       
@@ -475,6 +484,7 @@ export function MarkdownEditor({
         .run();
       
       setEditingCommand(null);
+      editingCommandRef.current = null;
     } else if (selectedCommand) {
       // New command
       const fullCommand = `${selectedCommand.insertText}${value}`;
@@ -488,18 +498,20 @@ export function MarkdownEditor({
         .run();
     }
     setSelectedCommand(null);
-  }, [editor, selectedCommand, editingCommand]);
+  }, [editor, selectedCommand]); // Removed editingCommand from deps - using ref instead
 
   const closeAllPickers = useCallback(() => {
     setShowSlashPicker(false);
     setSelectedCommand(null);
     setEditingCommand(null);
+    editingCommandRef.current = null;
   }, []);
 
   // Handle back button - return to main picker
   const handleBackToMainPicker = useCallback(() => {
     setSelectedCommand(null);
     setEditingCommand(null);
+    editingCommandRef.current = null;
     setShowSlashPicker(true);
   }, []);
 
