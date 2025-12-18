@@ -111,6 +111,9 @@ serve(async (req) => {
           voice_name,
           speech_speed,
           audio_temperature,
+          audio_enabled,
+          audio_respond_with_audio,
+          audio_always_respond_audio,
           language_code,
           paused_until,
           temperature
@@ -604,6 +607,24 @@ ${agent.faq_content}
     });
 
     // 9️⃣ Return response with delay info and audio config
+    // Determine if audio should be generated based on audio settings
+    const shouldGenerateAudio = 
+      agent.audio_enabled === true && 
+      agent.voice_name && 
+      (
+        agent.audio_always_respond_audio === true ||
+        (agent.audio_respond_with_audio === true && messageType === 'audio')
+      );
+
+    console.log('🔊 Audio config:', {
+      audio_enabled: agent.audio_enabled,
+      audio_always_respond_audio: agent.audio_always_respond_audio,
+      audio_respond_with_audio: agent.audio_respond_with_audio,
+      voice_name: agent.voice_name,
+      messageType,
+      shouldGenerateAudio
+    });
+
     return new Response(
       JSON.stringify({
         success: true,
@@ -611,7 +632,8 @@ ${agent.faq_content}
         agentId: agent.id,
         agentName: agent.name,
         delaySeconds: agent.delay_seconds || 0,
-        voiceName: agent.voice_name || null,
+        voiceName: shouldGenerateAudio ? agent.voice_name : null,
+        shouldGenerateAudio,
         speechSpeed: agent.speech_speed || 1.0,
         audioTemperature: agent.audio_temperature || 0.7,
         languageCode: agent.language_code || 'pt-BR'

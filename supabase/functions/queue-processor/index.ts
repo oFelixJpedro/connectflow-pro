@@ -387,11 +387,13 @@ async function processAIAgent(
     const aiResponse = result.response
     const delaySeconds = result.delaySeconds || 0
     const voiceName = result.voiceName
+    const shouldGenerateAudio = result.shouldGenerateAudio === true
     const speechSpeed = result.speechSpeed || 1.0
     const audioTemperature = result.audioTemperature || 0.7
     const languageCode = result.languageCode || 'pt-BR'
     
     console.log(`✅ [QUEUE-AI] Response generated, waiting ${delaySeconds}s...`)
+    console.log(`🔊 [QUEUE-AI] Audio: shouldGenerate=${shouldGenerateAudio}, voiceName=${voiceName}`)
     
     if (delaySeconds > 0) {
       await new Promise(resolve => setTimeout(resolve, delaySeconds * 1000))
@@ -416,8 +418,8 @@ async function processAIAgent(
     let messageType: 'text' | 'audio' = 'text'
     let mediaUrl: string | null = null
     
-    // Generate audio if voice configured
-    if (voiceName) {
+    // Generate audio only if shouldGenerateAudio is true and voiceName is configured
+    if (shouldGenerateAudio && voiceName) {
       console.log(`🎵 [QUEUE-AI] Generating audio with voice: ${voiceName}`)
       
       const ttsUrl = `${supabaseUrl}/functions/v1/ai-agent-tts`
