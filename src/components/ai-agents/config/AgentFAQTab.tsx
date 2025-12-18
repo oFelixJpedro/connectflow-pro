@@ -18,16 +18,16 @@ interface AgentFAQTabProps {
 }
 
 const COMPANY_INFO_FIELDS = [
-  { key: 'company_name', label: 'Nome do Escritório/Empresa', placeholder: 'Ex: Terencio Advocacia' },
-  { key: 'agent_name', label: 'Nome do Agente', placeholder: 'Ex: Ana' },
-  { key: 'cnpj', label: 'CNPJ', placeholder: 'Ex: 40.615.986/0001-29' },
-  { key: 'business_area', label: 'Área de Atuação', placeholder: 'Ex: Direito Previdenciário' },
-  { key: 'address', label: 'Endereço', placeholder: 'Ex: Tv. Dona Paula, nº 13, Higienópolis, São Paulo/SP' },
-  { key: 'responsible_person', label: 'Advogado/Responsável', placeholder: 'Ex: Dr. André Luis Sevestrin' },
-  { key: 'oab', label: 'OAB', placeholder: 'Ex: OAB/SP nº 36230' },
-  { key: 'fees', label: 'Honorários', placeholder: 'Ex: 20% do êxito + 4 parcelas de R$ 500,00' },
+  { key: 'company_name', label: 'Nome do Escritório/Empresa', placeholder: 'Ex: Escritório Exemplo' },
+  { key: 'agent_name', label: 'Nome do Agente', placeholder: 'Ex: Maria' },
+  { key: 'cnpj', label: 'CNPJ', placeholder: 'Ex: 00.000.000/0001-00' },
+  { key: 'business_area', label: 'Área de Atuação', placeholder: 'Ex: Direito Civil' },
+  { key: 'address', label: 'Endereço', placeholder: 'Ex: Rua Exemplo, nº 123, Centro, Cidade/UF' },
+  { key: 'responsible_person', label: 'Advogado/Responsável', placeholder: 'Ex: Dr. João da Silva' },
+  { key: 'oab', label: 'OAB', placeholder: 'Ex: OAB/UF nº 00000' },
+  { key: 'fees', label: 'Honorários', placeholder: 'Ex: 20% do êxito + parcelas de R$ 000,00' },
   { key: 'cancellation_fee', label: 'Multa de Desistência', placeholder: 'Ex: R$ 0,00' },
-  { key: 'minimum_wage', label: 'Salário Mínimo Vigente', placeholder: 'Ex: R$ 1.518,00' },
+  { key: 'minimum_wage', label: 'Salário Mínimo Vigente', placeholder: 'Ex: R$ 1.500,00' },
 ];
 
 const FAQ_PLACEHOLDER = `## Perguntas Frequentes
@@ -121,7 +121,7 @@ export function AgentFAQTab({
                     id="contract_link"
                     value={contractLink}
                     onChange={(e) => onContractLinkChange(e.target.value)}
-                    placeholder="Ex: https://app.zapsign.com.br/..."
+                    placeholder="Ex: https://exemplo.com.br/contrato/..."
                   />
                 </div>
               </div>
