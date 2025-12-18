@@ -426,22 +426,11 @@ export function MarkdownEditor({
           
           // Check if previous character is also "{"
           if (textBefore === '{') {
-            // Insert closing braces and open media modal
-            setMediaCursorPosition(from + 1); // Position after the second "{"
+            // Save position (before the first "{") and open modal
+            setMediaCursorPosition(from - 1);
             setShowMediaModal(true);
-            
-            // Insert closing "}}" after a small delay
-            setTimeout(() => {
-              const ed = editorRef.current;
-              if (ed) {
-                ed.chain().focus().insertContent('}}').run();
-                // Move cursor back between the braces
-                const newPos = from + 1;
-                ed.chain().setTextSelection(newPos).run();
-              }
-            }, 10);
-            
-            return false;
+            // Prevent the second "{" from being inserted
+            return true;
           }
         }
         
@@ -606,18 +595,37 @@ export function MarkdownEditor({
   const handleMediaSelect = useCallback((media: AgentMedia) => {
     if (!editor) return;
     
-    // Just the inner content without braces - the editor already has {{ and }}
-    const mediaTagContent = `${media.media_type}:${media.media_key}`;
+    const { from } = editor.state.selection;
     
-    // Insert content between the existing braces
+    // Delete the "{" that was typed (mediaCursorPosition points to it)
+    if (mediaCursorPosition !== null) {
+      editor.chain()
+        .focus()
+        .deleteRange({ from: mediaCursorPosition, to: from })
+        .run();
+    }
+    
+    // Insert the media tag as plain markdown text
+    const mediaTag = `{{${media.media_type}:${media.media_key}}}`;
     editor.chain()
       .focus()
-      .insertContent(mediaTagContent)
+      .insertContent(mediaTag)
       .run();
+    
+    // Force refresh to apply styling via markdownToHtml
+    setTimeout(() => {
+      if (editor && !editor.isDestroyed) {
+        const currentHtml = editor.getHTML();
+        const markdown = htmlToMarkdown(currentHtml);
+        isExternalUpdate.current = true;
+        editor.commands.setContent(markdownToHtml(markdown));
+        isExternalUpdate.current = false;
+      }
+    }, 10);
     
     setShowMediaModal(false);
     setMediaCursorPosition(null);
-  }, [editor]);
+  }, [editor, mediaCursorPosition]);
 
   if (!editor) {
     return null;
