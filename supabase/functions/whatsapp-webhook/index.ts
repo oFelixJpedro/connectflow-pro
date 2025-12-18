@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
+import { Redis } from "https://esm.sh/@upstash/redis@1.28.0"
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -9,11 +10,22 @@ const corsHeaders = {
 // Get base URL from secrets (REQUIRED - no fallback)
 const UAZAPI_BASE_URL = Deno.env.get('UAZAPI_BASE_URL')?.trim() || ''
 
-// Declare EdgeRuntime for TypeScript
+// Initialize Redis client for queue operations
+let redis: Redis | null = null
+try {
+  const redisUrl = Deno.env.get('UPSTASH_REDIS_URL')
+  const redisToken = Deno.env.get('UPSTASH_REDIS_TOKEN')
+  if (redisUrl && redisToken) {
+    redis = new Redis({ url: redisUrl, token: redisToken })
+  }
+} catch (e) {
+  console.log('⚠️ Redis not configured, falling back to EdgeRuntime.waitUntil')
+}
+
+// Declare EdgeRuntime for TypeScript (fallback when Redis unavailable)
 declare const EdgeRuntime: {
   waitUntil: (promise: Promise<any>) => void;
 };
-
 // Helper to extract phone number from WhatsApp JID
 function extractPhoneNumber(jid: string): string {
   if (!jid) return ''
@@ -1382,61 +1394,108 @@ serve(async (req) => {
     console.log(`✅ Message saved: ${savedMessage.id} (${dbMessageType})`)
     
     // ═══════════════════════════════════════════════════════════════════
-    // 🚀 PROCESS MEDIA IN BACKGROUND (EdgeRuntime.waitUntil)
+    // 🚀 PROCESS MEDIA (QUEUE or BACKGROUND)
     // ═══════════════════════════════════════════════════════════════════
     if (isMediaMessage && instanceToken) {
-      const mediaTypeMap: Record<string, 'audio' | 'image' | 'video' | 'document' | 'sticker'> = {
-        'audio': 'audio',
-        'image': 'image',
-        'video': 'video',
-        'document': 'document',
-        'sticker': 'sticker'
-      }
-      
       const detectedMediaType = isAudioMessage ? 'audio' 
         : isImageMessage ? 'image' 
         : isVideoMessage ? 'video' 
         : isDocumentMessage ? 'document' 
         : 'sticker'
       
-      console.log(`🚀 Scheduling background processing for ${detectedMediaType}`)
+      const mediaQueueData = {
+        messageDbId: savedMessage.id,
+        whatsappMessageId: messageId,
+        mediaType: detectedMediaType,
+        companyId,
+        whatsappConnectionId,
+        instanceToken,
+        mediaMetadata,
+        contentData
+      }
       
-      // Use EdgeRuntime.waitUntil for background processing
-      EdgeRuntime.waitUntil(
-        processMediaInBackground({
-          messageId,
-          messageDbId: savedMessage.id,
-          mediaType: detectedMediaType,
-          companyId,
-          whatsappConnectionId,
-          instanceToken,
-          mediaMetadata,
-          contentData
-        })
-      )
+      // Use Redis queue if available, otherwise fallback to EdgeRuntime.waitUntil
+      if (redis) {
+        console.log(`📤 [QUEUE] Enqueuing ${detectedMediaType} to Redis queue`)
+        try {
+          await redis.rpush('queue:media', JSON.stringify({
+            data: mediaQueueData,
+            attempts: 0,
+            enqueuedAt: new Date().toISOString()
+          }))
+          console.log(`✅ [QUEUE] Media enqueued successfully`)
+        } catch (queueError) {
+          console.log(`⚠️ [QUEUE] Redis error, falling back to waitUntil:`, queueError)
+          EdgeRuntime.waitUntil(
+            processMediaInBackground({
+              messageId,
+              messageDbId: savedMessage.id,
+              mediaType: detectedMediaType,
+              companyId,
+              whatsappConnectionId,
+              instanceToken,
+              mediaMetadata,
+              contentData
+            })
+          )
+        }
+      } else {
+        console.log(`🚀 Scheduling background processing for ${detectedMediaType} (no Redis)`)
+        EdgeRuntime.waitUntil(
+          processMediaInBackground({
+            messageId,
+            messageDbId: savedMessage.id,
+            mediaType: detectedMediaType,
+            companyId,
+            whatsappConnectionId,
+            instanceToken,
+            mediaMetadata,
+            contentData
+          })
+        )
+      }
     }
     
     // ═══════════════════════════════════════════════════════════════════
-    // 🤖 PROCESS AI AGENT RESPONSE (Background Task)
+    // 🤖 PROCESS AI AGENT (QUEUE or BACKGROUND)
     // ═══════════════════════════════════════════════════════════════════
     // Process AI agent for text, audio and image messages (not stickers, documents, videos)
     const aiSupportedTypes = ['text', 'audio', 'image'];
     if (!isFromMe && aiSupportedTypes.includes(dbMessageType)) {
-      console.log(`🤖 Checking AI agent for this connection... (type: ${dbMessageType})`);
+      const aiQueueData = {
+        connectionId: whatsappConnectionId,
+        conversationId,
+        messageContent: messageContent || '',
+        contactName,
+        contactPhone: phoneNumber,
+        companyId,
+        instanceToken,
+        msgType: dbMessageType,
+        msgMediaUrl: undefined
+      }
       
-      EdgeRuntime.waitUntil(
-        processAIAgentResponse({
-          connectionId: whatsappConnectionId,
-          conversationId,
-          messageContent: messageContent || '',
-          contactName,
-          contactPhone: phoneNumber,
-          companyId,
-          instanceToken,
-          msgType: dbMessageType,
-          msgMediaUrl: undefined // Media URL will be fetched from DB after background processing
-        })
-      );
+      // Use Redis queue if available, otherwise fallback to EdgeRuntime.waitUntil
+      if (redis) {
+        console.log(`📤 [QUEUE] Enqueuing AI agent task to Redis queue`)
+        try {
+          await redis.rpush('queue:ai-agent', JSON.stringify({
+            data: aiQueueData,
+            attempts: 0,
+            enqueuedAt: new Date().toISOString()
+          }))
+          console.log(`✅ [QUEUE] AI agent task enqueued successfully`)
+        } catch (queueError) {
+          console.log(`⚠️ [QUEUE] Redis error, falling back to waitUntil:`, queueError)
+          EdgeRuntime.waitUntil(
+            processAIAgentResponse(aiQueueData)
+          )
+        }
+      } else {
+        console.log(`🤖 Checking AI agent for this connection... (type: ${dbMessageType}, no Redis)`)
+        EdgeRuntime.waitUntil(
+          processAIAgentResponse(aiQueueData)
+        )
+      }
     }
     
     // ═══════════════════════════════════════════════════════════════════
