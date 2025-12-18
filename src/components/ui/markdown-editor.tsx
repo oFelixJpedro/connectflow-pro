@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useState, useEffect, useRef } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Underline from '@tiptap/extension-underline';
@@ -223,6 +223,7 @@ export function MarkdownEditor({
   className,
 }: MarkdownEditorProps) {
   const [emojiOpen, setEmojiOpen] = useState(false);
+  const isExternalUpdate = useRef(false);
   
   const editor = useEditor({
     extensions: [
@@ -255,11 +256,24 @@ export function MarkdownEditor({
       },
     },
     onUpdate: ({ editor }) => {
+      if (isExternalUpdate.current) return;
       const html = editor.getHTML();
       const markdown = htmlToMarkdown(html);
       onChange(markdown);
     },
   });
+
+  // Sync external value changes (e.g., "Texto Padrão" button)
+  useEffect(() => {
+    if (editor && !editor.isDestroyed) {
+      const currentMarkdown = htmlToMarkdown(editor.getHTML());
+      if (value !== currentMarkdown) {
+        isExternalUpdate.current = true;
+        editor.commands.setContent(markdownToHtml(value));
+        isExternalUpdate.current = false;
+      }
+    }
+  }, [value, editor]);
 
   const insertEmoji = useCallback((emoji: string) => {
     if (editor) {
@@ -427,13 +441,19 @@ export function MarkdownEditor({
         .ProseMirror p {
           margin: 0.375rem 0;
         }
-        .ProseMirror ul,
+        .ProseMirror ul {
+          padding-left: 1.5rem;
+          margin: 0.5rem 0;
+          list-style-type: disc;
+        }
         .ProseMirror ol {
           padding-left: 1.5rem;
           margin: 0.5rem 0;
+          list-style-type: decimal;
         }
         .ProseMirror li {
           margin: 0.25rem 0;
+          display: list-item;
         }
         .ProseMirror u {
           text-decoration: underline;
