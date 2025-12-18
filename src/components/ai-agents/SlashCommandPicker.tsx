@@ -192,7 +192,17 @@ export function SlashCommandPicker({
           <Input
             ref={inputRef}
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => {
+              // Remove "/" do valor para não interferir na busca
+              const cleanValue = e.target.value.replace(/\//g, '');
+              setSearch(cleanValue);
+            }}
+            onKeyDown={(e) => {
+              // Previne "/" de ser digitada no campo de busca
+              if (e.key === '/') {
+                e.preventDefault();
+              }
+            }}
             placeholder="Buscar comando..."
             className="pl-8 h-8 text-sm"
           />
@@ -200,7 +210,7 @@ export function SlashCommandPicker({
       </div>
 
       {/* Commands List */}
-      <ScrollArea className="max-h-72">
+      <ScrollArea className="h-auto max-h-[280px]">
         <div className="p-1">
           {filteredCommands.length === 0 ? (
             <div className="p-4 text-center text-muted-foreground text-sm">
