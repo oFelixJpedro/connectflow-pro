@@ -173,7 +173,8 @@ export function AgentSidebar({ agent, totalChars, charLimit, onAgentUpdate }: Ag
           body: JSON.stringify({ 
             voiceName: agent.voice_name,
             speed: agent.speech_speed || 1.0,
-            languageCode: agent.language_code || 'pt-BR'
+            languageCode: agent.language_code || 'pt-BR',
+            temperature: agent.audio_temperature ?? 0.7
           }),
         }
       );
