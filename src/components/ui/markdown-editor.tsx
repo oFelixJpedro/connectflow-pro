@@ -268,7 +268,6 @@ function parseCommand(commandText: string): { commandId: string; value: string }
     'adicionar_etiqueta': 'add_tag',
     'transferir_agente': 'transfer_agent',
     'transferir_usuario': 'transfer_user',
-    'atribuir_origem': 'set_origin',
     'mudar_etapa_crm': 'change_crm_stage',
     'notificar_equipe': 'notify_team',
     'atribuir_departamento': 'assign_department',
