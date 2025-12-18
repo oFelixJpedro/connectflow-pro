@@ -395,6 +395,7 @@ export function MarkdownEditor({
           'prose-li:my-0.5'
         ),
         style: `min-height: ${minHeight}; padding: 12px;`,
+        spellcheck: 'false',
       },
       handleKeyDown: (view, event) => {
         // Detect "/" key for slash commands

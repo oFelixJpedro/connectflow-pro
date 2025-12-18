@@ -49,7 +49,7 @@ export function useAgentMedia(agentId: string | null) {
     }
   }, [agentId]);
 
-  // Real-time subscription for media changes
+  // Real-time subscription for media changes (when available)
   useEffect(() => {
     if (!agentId) return;
 
@@ -64,13 +64,20 @@ export function useAgentMedia(agentId: string | null) {
           filter: `agent_id=eq.${agentId}`,
         },
         () => {
-          // Reload medias when any change happens
           loadMedias();
         }
       )
       .subscribe();
 
+    const onLocalUpdate = (e: Event) => {
+      const detail = (e as CustomEvent<{ agentId?: string }>).detail;
+      if (detail?.agentId && detail.agentId !== agentId) return;
+      loadMedias();
+    };
+    window.addEventListener('ai-agent-media-updated', onLocalUpdate);
+
     return () => {
+      window.removeEventListener('ai-agent-media-updated', onLocalUpdate);
       supabase.removeChannel(channel);
     };
   }, [agentId, loadMedias]);
@@ -114,6 +121,9 @@ export function useAgentMedia(agentId: string | null) {
       const result = await response.json();
       if (result.success) {
         toast.success('Mídia enviada com sucesso!');
+        // Fallback: update immediately (realtime may not be enabled in all environments)
+        await loadMedias();
+        window.dispatchEvent(new CustomEvent('ai-agent-media-updated', { detail: { agentId } }));
         return result.media;
       } else {
         toast.error(result.error || 'Erro ao enviar mídia');
@@ -124,7 +134,7 @@ export function useAgentMedia(agentId: string | null) {
       toast.error('Erro ao enviar mídia');
       return null;
     }
-  }, [agentId]);
+  }, [agentId, loadMedias]);
 
   const createTextOrLink = useCallback(async (
     mediaType: 'text' | 'link',
@@ -155,6 +165,9 @@ export function useAgentMedia(agentId: string | null) {
       const result = await response.json();
       if (result.success) {
         toast.success(mediaType === 'text' ? 'Texto criado!' : 'Link criado!');
+        // Fallback: update immediately (realtime may not be enabled in all environments)
+        await loadMedias();
+        window.dispatchEvent(new CustomEvent('ai-agent-media-updated', { detail: { agentId } }));
         return result.media;
       } else {
         toast.error(result.error || 'Erro ao criar');
@@ -165,7 +178,7 @@ export function useAgentMedia(agentId: string | null) {
       toast.error('Erro ao criar');
       return null;
     }
-  }, [agentId]);
+  }, [agentId, loadMedias]);
 
   const deleteMedia = useCallback(async (mediaId: string): Promise<boolean> => {
     try {
@@ -185,6 +198,7 @@ export function useAgentMedia(agentId: string | null) {
       if (result.success) {
         toast.success('Mídia excluída!');
         setMedias(prev => prev.filter(m => m.id !== mediaId));
+        window.dispatchEvent(new CustomEvent('ai-agent-media-updated', { detail: { agentId } }));
         return true;
       } else {
         toast.error(result.error || 'Erro ao excluir');
@@ -195,7 +209,7 @@ export function useAgentMedia(agentId: string | null) {
       toast.error('Erro ao excluir');
       return false;
     }
-  }, []);
+  }, [agentId]);
 
   const getMediasByType = useCallback((type: AgentMedia['media_type']) => {
     return medias.filter(m => m.media_type === type);
