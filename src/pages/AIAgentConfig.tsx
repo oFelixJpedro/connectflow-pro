@@ -223,24 +223,24 @@ export default function AIAgentConfig() {
         {/* Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col overflow-hidden">
           <div className="border-b px-6">
-            <TabsList className="h-12 bg-transparent p-0 gap-4">
+            <TabsList className="h-12 w-full bg-transparent p-0">
               <TabsTrigger 
                 value="rules" 
-                className="data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none px-0 pb-3"
+                className="flex-1 data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none pb-3 justify-center"
               >
                 <FileText className="w-4 h-4 mr-2" />
                 Regras Gerais
               </TabsTrigger>
               <TabsTrigger 
                 value="script"
-                className="data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none px-0 pb-3"
+                className="flex-1 data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none pb-3 justify-center"
               >
                 <List className="w-4 h-4 mr-2" />
                 Roteiro de Atendimento
               </TabsTrigger>
               <TabsTrigger 
                 value="faq"
-                className="data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none px-0 pb-3"
+                className="flex-1 data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none pb-3 justify-center"
               >
                 <HelpCircle className="w-4 h-4 mr-2" />
                 Perguntas Frequentes
@@ -249,7 +249,7 @@ export default function AIAgentConfig() {
               {agent.agent_type === 'multi' && (
                 <TabsTrigger 
                   value="subagents"
-                  className="data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none px-0 pb-3"
+                  className="flex-1 data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none pb-3 justify-center"
                 >
                   <Users className="w-4 h-4 mr-2" />
                   Sub-agentes

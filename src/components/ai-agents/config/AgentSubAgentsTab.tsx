@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Bot, Plus, Users, Info } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -16,6 +16,7 @@ import {
 import { useAIAgents } from '@/hooks/useAIAgents';
 import { SubAgentCard } from '../SubAgentCard';
 import { CreateSubAgentModal } from '../CreateSubAgentModal';
+import { supabase } from '@/integrations/supabase/client';
 import type { AIAgent } from '@/types/ai-agents';
 
 interface AgentSubAgentsTabProps {
@@ -28,6 +29,33 @@ export function AgentSubAgentsTab({ agent, onUpdate }: AgentSubAgentsTabProps) {
   const { agents, setAgentStatus, deleteAgent } = useAIAgents();
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [agentToDelete, setAgentToDelete] = useState<AIAgent | null>(null);
+
+  // Memoize onUpdate para evitar loops infinitos
+  const stableOnUpdate = useCallback(onUpdate, []);
+
+  // Listener Supabase Realtime para sub-agentes
+  useEffect(() => {
+    const channel = supabase
+      .channel(`sub-agents-${agent.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'ai_agents',
+          filter: `parent_agent_id=eq.${agent.id}`,
+        },
+        (payload) => {
+          console.log('Sub-agent realtime change:', payload);
+          stableOnUpdate();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [agent.id, stableOnUpdate]);
 
   // Filtrar sub-agentes deste agente pai
   const subAgents = agents.filter(a => a.parent_agent_id === agent.id);
