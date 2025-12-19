@@ -1,10 +1,12 @@
 import { useMemo } from 'react';
+import * as linkify from 'linkifyjs';
 import { cn } from '@/lib/utils';
 
 interface MentionTextProps {
   text: string;
   className?: string;
   mentionClassName?: string;
+  linkClassName?: string;
   variant?: 'default' | 'internal-note' | 'internal-chat';
   /** Optional list of exact names to highlight (from mentions field). If not provided, uses heuristic matching. */
   knownMentionNames?: string[];
@@ -18,7 +20,8 @@ function escapeRegex(str: string): string {
 export function MentionText({ 
   text, 
   className, 
-  mentionClassName, 
+  mentionClassName,
+  linkClassName,
   variant = 'default',
   knownMentionNames 
 }: MentionTextProps) {
@@ -32,6 +35,31 @@ export function MentionText({
       'internal-chat': 'text-violet-700 dark:text-violet-300 bg-violet-200/80 dark:bg-violet-800/50',
     };
 
+    // Helper function to linkify a text segment
+    const linkifySegment = (segment: string, baseKey: string): (string | JSX.Element)[] => {
+      const tokens = linkify.tokenize(segment);
+      return tokens.map((token, idx) => {
+        if (token.isLink) {
+          return (
+            <a
+              key={`${baseKey}-link-${idx}`}
+              href={token.toHref()}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={cn(
+                "text-blue-600 dark:text-blue-400 underline hover:text-blue-800 dark:hover:text-blue-300 transition-colors",
+                linkClassName
+              )}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {token.toString()}
+            </a>
+          );
+        }
+        return token.toString();
+      });
+    };
+
     // If we have known mention names, use exact matching
     if (knownMentionNames && knownMentionNames.length > 0) {
       // Sort by length descending to match longer names first
@@ -43,14 +71,15 @@ export function MentionText({
       
       const parts = text.split(regex);
       
-      return parts.map((part, index) => {
+      const result: (string | JSX.Element)[] = [];
+      parts.forEach((part, index) => {
         // Check if this part matches any known mention
         const isMatch = sortedNames.some(name => 
           part.toLowerCase() === `@${name.toLowerCase()}`
         );
         
         if (isMatch) {
-          return (
+          result.push(
             <span
               key={`mention-${index}`}
               className={cn(
@@ -62,10 +91,13 @@ export function MentionText({
               {part}
             </span>
           );
+        } else if (part) {
+          // Linkify non-mention text
+          result.push(...linkifySegment(part, `part-${index}`));
         }
-        
-        return part;
       });
+      
+      return result;
     }
 
     // Fallback: heuristic matching (limited to max 4 words to prevent over-matching)
@@ -80,9 +112,10 @@ export function MentionText({
     mentionRegex.lastIndex = 0;
 
     while ((match = mentionRegex.exec(text)) !== null) {
-      // Add text before mention
+      // Add text before mention (with linkification)
       if (match.index > lastIndex) {
-        parts.push(text.slice(lastIndex, match.index));
+        const beforeText = text.slice(lastIndex, match.index);
+        parts.push(...linkifySegment(beforeText, `before-${match.index}`));
       }
 
       const fullMatch = match[0];
@@ -104,13 +137,14 @@ export function MentionText({
       lastIndex = match.index + fullMatch.length;
     }
 
-    // Add remaining text
+    // Add remaining text (with linkification)
     if (lastIndex < text.length) {
-      parts.push(text.slice(lastIndex));
+      const remainingText = text.slice(lastIndex);
+      parts.push(...linkifySegment(remainingText, 'remaining'));
     }
 
     return parts.length > 0 ? parts : text;
-  }, [text, mentionClassName, variant, knownMentionNames]);
+  }, [text, mentionClassName, linkClassName, variant, knownMentionNames]);
 
   return (
     <span className={cn("whitespace-pre-wrap break-words", className)}>
