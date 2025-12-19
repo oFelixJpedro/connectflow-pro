@@ -52,16 +52,28 @@ export const MediaTagMark = Mark.create<MediaTagMarkOptions>({
     return [
       {
         tag: 'span[data-media-tag]',
+        getAttrs: (element: HTMLElement) => {
+          const type = element.getAttribute('data-media-type');
+          const key = element.getAttribute('data-media-key');
+          if (!type || !key) return false;
+          return {
+            'data-media-type': type,
+            'data-media-key': key,
+          };
+        },
       },
     ];
   },
 
   renderHTML({ HTMLAttributes }) {
     const mediaType = HTMLAttributes['data-media-type'] || '';
+    const mediaKey = HTMLAttributes['data-media-key'] || '';
     return [
       'span',
-      mergeAttributes(this.options.HTMLAttributes, HTMLAttributes, {
+      mergeAttributes(this.options.HTMLAttributes, {
         'data-media-tag': 'true',
+        'data-media-type': mediaType,
+        'data-media-key': mediaKey,
         class: `media-tag-badge media-tag-${mediaType}`,
       }),
       0,
