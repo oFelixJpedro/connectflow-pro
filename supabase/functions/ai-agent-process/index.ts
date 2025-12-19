@@ -2331,14 +2331,15 @@ CRÍTICO SOBRE COMANDOS:
     console.log('└─────────────────────────────────────────────────────────────────┘');
 
     // Parse and execute commands (fallback for slash commands in text)
+    // Supports both bracketed [Value With Spaces] and simple values
     const commandPatterns = [
-      { pattern: /\/adicionar_etiqueta:([^\n\/]+)/gi, handler: 'adicionar_etiqueta' },
-      { pattern: /\/transferir_agente:([^\n\/]+)/gi, handler: 'transferir_agente' },
-      { pattern: /\/transferir_usuario:([^\n\/]+)/gi, handler: 'transferir_usuario' },
-      { pattern: /\/atribuir_origem:([^\n\/]+)/gi, handler: 'atribuir_origem' },
-      { pattern: /\/mudar_etapa_crm:([^\n\/]+)/gi, handler: 'mudar_etapa_crm' },
-      { pattern: /\/notificar_equipe:([^\n]+)/gi, handler: 'notificar_equipe' },
-      { pattern: /\/atribuir_departamento:([^\n\/]+)/gi, handler: 'atribuir_departamento' },
+      { pattern: /\/adicionar_etiqueta:(?:\[([^\]]+)\]|([^\n\/\s]+))/gi, handler: 'adicionar_etiqueta' },
+      { pattern: /\/transferir_agente:(?:\[([^\]]+)\]|([^\n\/\s]+))/gi, handler: 'transferir_agente' },
+      { pattern: /\/transferir_usuario:(?:\[([^\]]+)\]|([^\n\/\s]+))/gi, handler: 'transferir_usuario' },
+      { pattern: /\/atribuir_origem:(?:\[([^\]]+)\]|([^\n\/\s]+))/gi, handler: 'atribuir_origem' },
+      { pattern: /\/mudar_etapa_crm:(?:\[([^\]]+)\]|([^\n\/\s]+))/gi, handler: 'mudar_etapa_crm' },
+      { pattern: /\/notificar_equipe:(?:\[([^\]]+)\]|([^\n]+))/gi, handler: 'notificar_equipe' },
+      { pattern: /\/atribuir_departamento:(?:\[([^\]]+)\]|([^\n\/\s]+))/gi, handler: 'atribuir_departamento' },
       { pattern: /\/desativar_agente/gi, handler: 'desativar_agente' },
     ];
 
@@ -2347,7 +2348,8 @@ CRÍTICO SOBRE COMANDOS:
       const matches = [...aiResponse.matchAll(pattern)];
       for (const match of matches) {
         slashCommandsFound++;
-        const value = (match[1] || '').trim();
+        // Extract value from bracketed group (match[1]) or simple group (match[2])
+        const value = (match[1] || match[2] || '').trim();
         
         // Check if this command was already executed via tool call
         const alreadyExecuted = executedCommands.some(cmd => 
@@ -2373,8 +2375,8 @@ CRÍTICO SOBRE COMANDOS:
     }
 
     // 🧹 LIMPEZA DE COMANDOS INVÁLIDOS
-    // Remove any remaining slash commands that weren't recognized
-    const invalidCommandPattern = /\/[a-z_]+(?::[^\n]+)?/gi;
+    // Remove any remaining slash commands that weren't recognized (supports bracketed values)
+    const invalidCommandPattern = /\/[a-z_]+(?::(?:\[[^\]]+\]|[^\n]+))?/gi;
     const invalidCommands = [...cleanResponse.matchAll(invalidCommandPattern)];
     if (invalidCommands.length > 0) {
       console.log(`⚠️ Removendo ${invalidCommands.length} comando(s) inválido(s):`);

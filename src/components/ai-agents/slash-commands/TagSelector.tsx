@@ -63,9 +63,9 @@ export function TagSelector({ position, onSelect, onClose, onBack }: TagSelector
         case 'Enter':
           e.preventDefault();
           if (canCreateNew && selectedIndex === filteredTags.length) {
-            onSelect(search.trim());
+            onSelect(`[${search.trim()}]`);
           } else if (filteredTags[selectedIndex]) {
-            onSelect(filteredTags[selectedIndex].name);
+            onSelect(`[${filteredTags[selectedIndex].name}]`);
           }
           break;
         case 'Escape':
@@ -79,8 +79,8 @@ export function TagSelector({ position, onSelect, onClose, onBack }: TagSelector
   }, [filteredTags, selectedIndex, canCreateNew, search, onSelect, onClose]);
 
   const handleSelect = (tagName: string) => {
-    // Usar nome exato da etiqueta para corresponder às existentes
-    onSelect(tagName);
+    // Envolver em colchetes para suportar espaços
+    onSelect(`[${tagName}]`);
   };
 
   return (

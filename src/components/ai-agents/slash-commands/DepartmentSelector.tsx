@@ -125,7 +125,7 @@ export function DepartmentSelector({ position, onSelect, onClose, onBack, connec
   }, [filteredDepartments, selectedIndex, onClose]);
 
   const handleSelect = (deptName: string) => {
-    onSelect(deptName);
+    onSelect(`[${deptName}]`);
   };
 
   return (

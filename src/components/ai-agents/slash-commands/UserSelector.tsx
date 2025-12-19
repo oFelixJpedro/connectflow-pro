@@ -107,7 +107,7 @@ export function UserSelector({ position, onSelect, onClose, onBack }: UserSelect
   }, [filteredUsers, selectedIndex, onClose]);
 
   const handleSelect = (userName: string) => {
-    onSelect(userName);
+    onSelect(`[${userName}]`);
   };
 
   return (
