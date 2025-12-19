@@ -865,6 +865,22 @@ serve(async (req) => {
     }
     console.log('🏢 Departamentos disponíveis:', availableDepartments.length);
 
+    // Load available media for this agent
+    let availableMedias: { type: string; key: string; description?: string }[] = [];
+    const { data: agentMedias } = await supabase
+      .from('ai_agent_media')
+      .select('media_type, media_key, file_name, media_content')
+      .eq('agent_id', agent.id);
+    
+    if (agentMedias) {
+      availableMedias = agentMedias.map(m => ({
+        type: m.media_type,
+        key: m.media_key,
+        description: m.file_name || m.media_content?.substring(0, 50) || undefined
+      }));
+    }
+    console.log('📎 Mídias disponíveis:', availableMedias.length);
+
     // ═══════════════════════════════════════════════════════════════════
     // BUILD DYNAMIC TOOLS DEFINITION FOR TOOL CALLING
     // ═══════════════════════════════════════════════════════════════════
@@ -1119,6 +1135,19 @@ ${availableAgents.length > 0
 ${availableDepartments.length > 0 
   ? availableDepartments.map(d => `- "${d.name}"`).join('\n')
   : '- (Nenhum departamento configurado)'}
+
+### 📎 MÍDIAS DISPONÍVEIS (para enviar ao cliente):
+${availableMedias.length > 0 
+  ? availableMedias.map(m => `- {{${m.type}:${m.key}}}${m.description ? ` → ${m.description}` : ''}`).join('\n')
+  : '- (Nenhuma mídia cadastrada)'}
+
+⚠️ REGRAS PARA MÍDIAS (CRÍTICO):
+- Para enviar uma mídia ao cliente, use EXATAMENTE a tag: {{tipo:chave}}
+- NUNCA use placeholders como [LINK], [LINK_CONTRATO], [LINK_DO_VÍDEO], [VÍDEO], etc.
+- Se o roteiro mencionar "enviar vídeo", "enviar contrato" ou similar, USE A TAG DA MÍDIA CORRESPONDENTE
+- Exemplo: Se há {{video:tutorial-assinatura}}, use exatamente essa tag quando for enviar o vídeo
+- A mídia será enviada AUTOMATICAMENTE como um arquivo separado para o cliente
+- NUNCA descreva ou comente sobre o arquivo - apenas inclua a tag na sua resposta
 
 CRÍTICO SOBRE COMANDOS:
 - Use APENAS os nomes listados acima - eles existem no sistema
