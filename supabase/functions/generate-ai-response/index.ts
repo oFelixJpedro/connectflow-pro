@@ -1,7 +1,4 @@
-import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-
-const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -118,10 +115,20 @@ interface RequestBody {
   tags?: string[];
 }
 
-// Helper function to transcribe audio
+// Helper function to convert ArrayBuffer to base64
+function arrayBufferToBase64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  for (let i = 0; i < bytes.byteLength; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+}
+
+// Helper function to transcribe audio using Gemini
 async function transcribeAudio(audioUrl: string, apiKey: string): Promise<string | null> {
   try {
-    console.log('🎤 Transcrevendo áudio:', audioUrl.substring(0, 80) + '...');
+    console.log('🎤 Transcrevendo áudio com Gemini:', audioUrl.substring(0, 80) + '...');
     
     const audioResponse = await fetch(audioUrl);
     if (!audioResponse.ok) {
@@ -129,38 +136,89 @@ async function transcribeAudio(audioUrl: string, apiKey: string): Promise<string
       return null;
     }
     
-    const audioBlob = await audioResponse.blob();
+    const audioBuffer = await audioResponse.arrayBuffer();
+    const base64Audio = arrayBufferToBase64(audioBuffer);
     const contentType = audioResponse.headers.get('content-type') || 'audio/ogg';
     
-    let extension = 'ogg';
-    if (contentType.includes('mp3')) extension = 'mp3';
-    else if (contentType.includes('wav')) extension = 'wav';
-    else if (contentType.includes('webm')) extension = 'webm';
-    else if (contentType.includes('m4a')) extension = 'm4a';
-    else if (contentType.includes('mpeg')) extension = 'mp3';
+    // Determine mime type
+    let mimeType = 'audio/ogg';
+    if (contentType.includes('mp3') || contentType.includes('mpeg')) mimeType = 'audio/mp3';
+    else if (contentType.includes('wav')) mimeType = 'audio/wav';
+    else if (contentType.includes('webm')) mimeType = 'audio/webm';
+    else if (contentType.includes('m4a')) mimeType = 'audio/mp4';
+    else if (contentType.includes('ogg')) mimeType = 'audio/ogg';
     
-    const formData = new FormData();
-    formData.append('file', audioBlob, `audio.${extension}`);
-    formData.append('model', 'gpt-4o-transcribe');
-    formData.append('language', 'pt');
+    const geminiResponse = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{
+            parts: [
+              { text: 'Transcreva este áudio em português brasileiro. Retorne APENAS o texto transcrito, sem explicações ou comentários adicionais.' },
+              {
+                inline_data: {
+                  mime_type: mimeType,
+                  data: base64Audio
+                }
+              }
+            ]
+          }],
+          generationConfig: {
+            temperature: 0.1,
+            maxOutputTokens: 4000
+          }
+        }),
+      }
+    );
     
-    const transcriptionResponse = await fetch('https://api.openai.com/v1/audio/transcriptions', {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${apiKey}` },
-      body: formData,
-    });
-    
-    if (!transcriptionResponse.ok) {
-      const errorText = await transcriptionResponse.text();
-      console.log('❌ Erro na transcrição:', transcriptionResponse.status, errorText);
+    if (!geminiResponse.ok) {
+      const errorText = await geminiResponse.text();
+      console.log('❌ Erro Gemini transcrição:', geminiResponse.status, errorText);
       return null;
     }
     
-    const result = await transcriptionResponse.json();
-    console.log('✅ Áudio transcrito:', result.text?.substring(0, 50) + '...');
-    return result.text || null;
+    const result = await geminiResponse.json();
+    const transcription = result.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+    
+    if (transcription) {
+      console.log('✅ Áudio transcrito:', transcription.substring(0, 50) + '...');
+      return transcription;
+    }
+    
+    return null;
   } catch (error) {
     console.error('❌ Erro ao transcrever áudio:', error);
+    return null;
+  }
+}
+
+// Helper function to fetch image and convert to base64
+async function fetchImageAsBase64(imageUrl: string): Promise<{ data: string; mimeType: string } | null> {
+  try {
+    console.log('🖼️ Baixando imagem:', imageUrl.substring(0, 80) + '...');
+    
+    const response = await fetch(imageUrl);
+    if (!response.ok) {
+      console.log('❌ Falha ao baixar imagem:', response.status);
+      return null;
+    }
+    
+    const buffer = await response.arrayBuffer();
+    const base64 = arrayBufferToBase64(buffer);
+    const contentType = response.headers.get('content-type') || 'image/jpeg';
+    
+    // Normalize mime type
+    let mimeType = 'image/jpeg';
+    if (contentType.includes('png')) mimeType = 'image/png';
+    else if (contentType.includes('gif')) mimeType = 'image/gif';
+    else if (contentType.includes('webp')) mimeType = 'image/webp';
+    
+    console.log('✅ Imagem convertida para base64, tipo:', mimeType);
+    return { data: base64, mimeType };
+  } catch (error) {
+    console.error('❌ Erro ao baixar imagem:', error);
     return null;
   }
 }
@@ -180,8 +238,9 @@ serve(async (req) => {
       );
     }
 
-    if (!openAIApiKey) {
-      console.error('OPENAI_API_KEY not configured');
+    const geminiApiKey = Deno.env.get('GEMINI_API_KEY');
+    if (!geminiApiKey) {
+      console.error('❌ GEMINI_API_KEY not configured');
       return new Response(
         JSON.stringify({ error: 'API key not configured' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -207,7 +266,7 @@ serve(async (req) => {
         if (metadata?.transcription) {
           content = `[Áudio transcrito]: ${metadata.transcription}`;
         } else if (msg.mediaUrl) {
-          const transcription = await transcribeAudio(msg.mediaUrl, openAIApiKey);
+          const transcription = await transcribeAudio(msg.mediaUrl, geminiApiKey);
           content = transcription 
             ? `[Áudio transcrito]: ${transcription}`
             : '[Áudio sem transcrição disponível]';
@@ -267,113 +326,71 @@ serve(async (req) => {
       enrichedSystemPrompt += `\n\n## CONTEXTO DESTA CONVERSA\n${contextParts.join('\n')}`;
     }
 
-    console.log('🤖 Gerando resposta com IA para', contactName);
+    console.log('🤖 Gerando resposta com Gemini para', contactName);
     console.log('📊 Total de mensagens:', recentMessages.length);
     console.log('🖼️ Imagens para analisar:', imageUrls.length);
     console.log('👤 Atendente:', agentName || 'N/A');
 
-    let generatedResponse: string;
+    // Build the prompt
+    const fullPrompt = `${enrichedSystemPrompt}\n\nAnalise esta conversa e gere a próxima resposta imitando o estilo do atendente:\n\n${formattedMessages}`;
 
+    // Build parts array for Gemini
+    const parts: any[] = [{ text: fullPrompt }];
+
+    // If there are images, fetch and add them as inline_data
     if (imageUrls.length > 0) {
-      // Use multimodal endpoint with gpt-5-nano for image analysis
-      console.log('🖼️ Usando endpoint multimodal /v1/responses com gpt-5-nano');
+      console.log('🖼️ Processando imagens para análise multimodal...');
       
-      const contentItems: any[] = [
-        { 
-          type: 'input_text', 
-          text: `${enrichedSystemPrompt}\n\nAnalise esta conversa e gere a próxima resposta imitando o estilo do atendente. Considere o conteúdo das imagens enviadas na sua análise:\n\n${formattedMessages}` 
-        }
-      ];
-      
-      // Add all images (limit to last 5 to avoid token limits)
+      // Limit to last 5 images to avoid token limits
       const imagesToAnalyze = imageUrls.slice(-5);
+      
       for (const imageUrl of imagesToAnalyze) {
-        contentItems.push({
-          type: 'input_image',
-          image_url: imageUrl
-        });
-      }
-      
-      const response = await fetch('https://api.openai.com/v1/responses', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${openAIApiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: 'gpt-5-nano',
-          input: [
-            {
-              type: 'message',
-              role: 'user',
-              content: contentItems
+        const imageData = await fetchImageAsBase64(imageUrl);
+        if (imageData) {
+          parts.push({
+            inline_data: {
+              mime_type: imageData.mimeType,
+              data: imageData.data
             }
-          ],
-          text: {
-            format: { type: 'text' },
-            verbosity: 'medium'
-          },
-          reasoning: {
-            effort: 'medium',
-            summary: 'auto'
-          }
-        }),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('OpenAI /v1/responses API error:', response.status, errorText);
-        return new Response(
-          JSON.stringify({ error: 'Erro ao gerar resposta com análise de imagem' }),
-          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
+          });
+        }
       }
-
-      const data = await response.json();
-      console.log('📦 Resposta API (multimodal):', JSON.stringify(data, null, 2));
-      generatedResponse = data.output?.find((o: any) => o.type === 'message')?.content?.[0]?.text?.trim() || '';
       
-    } else {
-      // No images - use /v1/responses endpoint (compatible with GPT-5 models)
-      console.log('📝 Usando endpoint /v1/responses com gpt-5-nano');
-      
-      const userPrompt = `${enrichedSystemPrompt}\n\nAnalise esta conversa e gere a próxima resposta imitando o estilo do atendente:\n\n${formattedMessages}`;
-      
-      const response = await fetch('https://api.openai.com/v1/responses', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${openAIApiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: 'gpt-5-nano',
-          input: userPrompt,
-          text: {
-            format: { type: 'text' },
-            verbosity: 'medium'
-          },
-          reasoning: {
-            effort: 'medium',
-            summary: 'auto'
-          }
-        }),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('OpenAI API error:', response.status, errorText);
-        return new Response(
-          JSON.stringify({ error: 'Erro ao gerar resposta' }),
-          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-
-      const data = await response.json();
-      console.log('📦 Resposta API (texto):', JSON.stringify(data, null, 2));
-      generatedResponse = data.output?.find((o: any) => o.type === 'message')?.content?.[0]?.text?.trim() || '';
+      console.log('✅ Imagens processadas:', parts.length - 1);
     }
 
+    // Call Gemini API
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiApiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts }],
+          generationConfig: {
+            temperature: 0.4,
+            maxOutputTokens: 4000
+          }
+        }),
+      }
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('❌ Gemini API error:', response.status, errorText);
+      return new Response(
+        JSON.stringify({ error: 'Erro ao gerar resposta' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    const data = await response.json();
+    console.log('📦 Gemini response received');
+    
+    const generatedResponse = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+
     if (!generatedResponse) {
+      console.error('❌ No content in response:', JSON.stringify(data, null, 2));
       return new Response(
         JSON.stringify({ error: 'Nenhuma resposta gerada' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -388,7 +405,7 @@ serve(async (req) => {
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   } catch (error) {
-    console.error('Error in generate-ai-response function:', error);
+    console.error('❌ Error in generate-ai-response function:', error);
     return new Response(
       JSON.stringify({ error: error instanceof Error ? error.message : 'Unknown error' }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
