@@ -284,7 +284,7 @@ export default function AIAgentConfig() {
                 <HelpCircle className="w-4 h-4 mr-2" />
                 Perguntas Frequentes
               </TabsTrigger>
-              {/* Aba Especialidade - para configurar redirecionamento inteligente */}
+              {/* Aba Especialidade - para configurar redirecionamento inteligente entre agentes */}
               <TabsTrigger 
                 value="specialty"
                 className="flex-1 data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none pb-3 justify-center"
