@@ -375,6 +375,7 @@ serve(async (req) => {
           rules_content,
           faq_content,
           company_info,
+          contract_link,
           activation_triggers,
           require_activation_trigger,
           delay_seconds,
@@ -466,6 +467,7 @@ serve(async (req) => {
           rules_content,
           faq_content,
           company_info,
+          contract_link,
           temperature
         `)
         .eq('id', convState.current_sub_agent_id)
@@ -484,6 +486,7 @@ serve(async (req) => {
             rules_content: subAgent.rules_content || agent.rules_content,
             faq_content: subAgent.faq_content || agent.faq_content,
             company_info: subAgent.company_info || agent.company_info,
+            contract_link: subAgent.contract_link || agent.contract_link,
             temperature: subAgent.temperature ?? agent.temperature
           };
           console.log('✅ Sub-agente carregado:', subAgent.name);
@@ -1080,6 +1083,21 @@ ${agent.faq_content}
         if (value) systemPrompt += `- ${key}: ${value}\n`;
       }
       systemPrompt += '\n';
+    }
+
+    // Inject contract link with clear instructions
+    const contractLink = agent.contract_link;
+    if (contractLink) {
+      systemPrompt += `## 📄 LINK DO CONTRATO
+O link do contrato para enviar ao cliente é: ${contractLink}
+
+⚠️ INSTRUÇÕES IMPORTANTES:
+- Quando o cliente pedir o contrato, modelo de contrato, ou quando for apropriado enviar o link do contrato, envie EXATAMENTE este link: ${contractLink}
+- NÃO use placeholders como [LINK], [LINK_CONTRATO], [LINK_DO_CONTRATO], etc.
+- Envie o link diretamente na sua mensagem para o cliente poder clicar.
+- Você pode apresentar o link de forma natural, como: "Aqui está o link do contrato: ${contractLink}"
+
+`;
     }
 
     // INJECT STRUCTURED CONTEXT INTO PROMPT
