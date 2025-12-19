@@ -79,9 +79,8 @@ export function TagSelector({ position, onSelect, onClose, onBack }: TagSelector
   }, [filteredTags, selectedIndex, canCreateNew, search, onSelect, onClose]);
 
   const handleSelect = (tagName: string) => {
-    // Convert to slug format
-    const slug = tagName.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
-    onSelect(slug);
+    // Usar nome exato da etiqueta para corresponder às existentes
+    onSelect(tagName);
   };
 
   return (
