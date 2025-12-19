@@ -125,8 +125,7 @@ export function DepartmentSelector({ position, onSelect, onClose, onBack, connec
   }, [filteredDepartments, selectedIndex, onClose]);
 
   const handleSelect = (deptName: string) => {
-    const slug = deptName.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
-    onSelect(slug);
+    onSelect(deptName);
   };
 
   return (

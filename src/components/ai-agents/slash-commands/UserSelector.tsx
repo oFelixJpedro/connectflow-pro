@@ -107,8 +107,7 @@ export function UserSelector({ position, onSelect, onClose, onBack }: UserSelect
   }, [filteredUsers, selectedIndex, onClose]);
 
   const handleSelect = (userName: string) => {
-    const slug = userName.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
-    onSelect(slug);
+    onSelect(userName);
   };
 
   return (
