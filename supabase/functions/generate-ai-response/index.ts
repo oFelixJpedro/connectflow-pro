@@ -223,6 +223,129 @@ async function fetchImageAsBase64(imageUrl: string): Promise<{ data: string; mim
   }
 }
 
+// Supported video MIME types by Gemini
+const SUPPORTED_VIDEO_MIMES = [
+  'video/mp4', 'video/mpeg', 'video/mov', 'video/avi', 'video/x-flv',
+  'video/mpg', 'video/webm', 'video/wmv', 'video/3gpp', 'video/quicktime',
+  'video/x-msvideo', 'video/x-matroska'
+];
+
+// Supported document MIME types by Gemini
+const SUPPORTED_DOCUMENT_MIMES = [
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.ms-powerpoint',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'text/plain', 'text/csv', 'text/html', 'text/markdown', 'text/rtf',
+  'application/rtf', 'application/x-javascript', 'text/javascript',
+  'application/json', 'text/xml', 'application/xml'
+];
+
+// Helper function to fetch video as base64 (max 20MB for inline_data)
+async function fetchVideoAsBase64(videoUrl: string): Promise<{ data: string; mimeType: string } | null> {
+  try {
+    console.log('🎬 Baixando vídeo:', videoUrl.substring(0, 80) + '...');
+    
+    const response = await fetch(videoUrl);
+    if (!response.ok) {
+      console.log('❌ Falha ao baixar vídeo:', response.status);
+      return null;
+    }
+    
+    const buffer = await response.arrayBuffer();
+    
+    // Check size limit (20MB for inline_data)
+    if (buffer.byteLength > 20 * 1024 * 1024) {
+      console.log('⚠️ Vídeo muito grande para análise:', (buffer.byteLength / 1024 / 1024).toFixed(2), 'MB');
+      return null;
+    }
+    
+    const base64 = arrayBufferToBase64(buffer);
+    const contentType = response.headers.get('content-type') || 'video/mp4';
+    
+    // Normalize mime type
+    let mimeType = 'video/mp4';
+    if (contentType.includes('webm')) mimeType = 'video/webm';
+    else if (contentType.includes('quicktime') || contentType.includes('mov')) mimeType = 'video/quicktime';
+    else if (contentType.includes('avi') || contentType.includes('x-msvideo')) mimeType = 'video/x-msvideo';
+    else if (contentType.includes('3gpp')) mimeType = 'video/3gpp';
+    else if (contentType.includes('mpeg')) mimeType = 'video/mpeg';
+    else if (contentType.includes('matroska') || contentType.includes('mkv')) mimeType = 'video/x-matroska';
+    
+    console.log('✅ Vídeo convertido para base64, tipo:', mimeType, 'tamanho:', (buffer.byteLength / 1024 / 1024).toFixed(2), 'MB');
+    return { data: base64, mimeType };
+  } catch (error) {
+    console.error('❌ Erro ao baixar vídeo:', error);
+    return null;
+  }
+}
+
+// Helper function to fetch document as base64 (max 20MB for inline_data)
+async function fetchDocumentAsBase64(docUrl: string, fileName?: string): Promise<{ data: string; mimeType: string } | null> {
+  try {
+    console.log('📄 Baixando documento:', docUrl.substring(0, 80) + '...');
+    
+    const response = await fetch(docUrl);
+    if (!response.ok) {
+      console.log('❌ Falha ao baixar documento:', response.status);
+      return null;
+    }
+    
+    const buffer = await response.arrayBuffer();
+    
+    // Check size limit (20MB for inline_data)
+    if (buffer.byteLength > 20 * 1024 * 1024) {
+      console.log('⚠️ Documento muito grande para análise:', (buffer.byteLength / 1024 / 1024).toFixed(2), 'MB');
+      return null;
+    }
+    
+    const base64 = arrayBufferToBase64(buffer);
+    let contentType = response.headers.get('content-type') || 'application/octet-stream';
+    
+    // Try to infer mime type from filename if content-type is generic
+    if (contentType === 'application/octet-stream' && fileName) {
+      const ext = fileName.split('.').pop()?.toLowerCase();
+      const mimeMap: Record<string, string> = {
+        'pdf': 'application/pdf',
+        'doc': 'application/msword',
+        'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'xls': 'application/vnd.ms-excel',
+        'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'ppt': 'application/vnd.ms-powerpoint',
+        'pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        'txt': 'text/plain',
+        'csv': 'text/csv',
+        'html': 'text/html',
+        'htm': 'text/html',
+        'md': 'text/markdown',
+        'rtf': 'application/rtf',
+        'json': 'application/json',
+        'xml': 'application/xml',
+        'js': 'application/x-javascript'
+      };
+      if (ext && mimeMap[ext]) {
+        contentType = mimeMap[ext];
+      }
+    }
+    
+    // Verify it's a supported mime type
+    const isSupported = SUPPORTED_DOCUMENT_MIMES.some(m => contentType.includes(m.split('/')[1]) || contentType === m);
+    if (!isSupported) {
+      console.log('⚠️ Tipo de documento não suportado:', contentType);
+      return null;
+    }
+    
+    console.log('✅ Documento convertido para base64, tipo:', contentType, 'tamanho:', (buffer.byteLength / 1024 / 1024).toFixed(2), 'MB');
+    return { data: base64, mimeType: contentType };
+  } catch (error) {
+    console.error('❌ Erro ao baixar documento:', error);
+    return null;
+  }
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -250,8 +373,10 @@ serve(async (req) => {
     // Limit to last 100 messages
     const recentMessages = messages.slice(-100);
     
-    // Collect images for multimodal analysis
+    // Collect media for multimodal analysis
     const imageUrls: string[] = [];
+    const videoUrls: string[] = [];
+    const documentData: { url: string; fileName: string }[] = [];
     
     // Process messages and collect media
     const processedMessages: string[] = [];
@@ -275,7 +400,7 @@ serve(async (req) => {
         }
       } else if (msg.messageType === 'image') {
         // Collect image URL for multimodal analysis
-        if (msg.mediaUrl) {
+        if (msg.mediaUrl && msg.direction === 'inbound') {
           imageUrls.push(msg.mediaUrl);
           content = msg.content 
             ? `[Imagem com legenda: ${msg.content}] (imagem será analisada)`
@@ -286,14 +411,30 @@ serve(async (req) => {
             : '[Cliente enviou uma imagem]';
         }
       } else if (msg.messageType === 'video') {
-        content = msg.content 
-          ? `[Vídeo com legenda]: ${msg.content}`
-          : '[Cliente enviou um vídeo]';
+        // Collect video URL for multimodal analysis
+        if (msg.mediaUrl && msg.direction === 'inbound') {
+          videoUrls.push(msg.mediaUrl);
+          content = msg.content 
+            ? `[Vídeo com legenda: ${msg.content}] (vídeo será analisado)`
+            : '[Cliente enviou um vídeo] (vídeo será analisado)';
+        } else {
+          content = msg.content 
+            ? `[Vídeo com legenda]: ${msg.content}`
+            : '[Cliente enviou um vídeo]';
+        }
       } else if (msg.messageType === 'document') {
         const fileName = metadata?.fileName || metadata?.file_name || 'documento';
-        content = msg.content 
-          ? `[Documento "${fileName}"]: ${msg.content}`
-          : `[Cliente enviou documento: ${fileName}]`;
+        // Collect document data for multimodal analysis
+        if (msg.mediaUrl && msg.direction === 'inbound') {
+          documentData.push({ url: msg.mediaUrl, fileName });
+          content = msg.content 
+            ? `[Documento "${fileName}": ${msg.content}] (documento será analisado)`
+            : `[Cliente enviou documento: ${fileName}] (documento será analisado)`;
+        } else {
+          content = msg.content 
+            ? `[Documento "${fileName}"]: ${msg.content}`
+            : `[Cliente enviou documento: ${fileName}]`;
+        }
       } else if (msg.messageType === 'sticker') {
         content = '[Cliente enviou um sticker]';
       } else if (!content || content.trim() === '') {
@@ -329,6 +470,8 @@ serve(async (req) => {
     console.log('🤖 Gerando resposta com Gemini para', contactName);
     console.log('📊 Total de mensagens:', recentMessages.length);
     console.log('🖼️ Imagens para analisar:', imageUrls.length);
+    console.log('🎬 Vídeos para analisar:', videoUrls.length);
+    console.log('📄 Documentos para analisar:', documentData.length);
     console.log('👤 Atendente:', agentName || 'N/A');
 
     // Build the prompt
@@ -356,8 +499,54 @@ serve(async (req) => {
         }
       }
       
-      console.log('✅ Imagens processadas:', parts.length - 1);
+      console.log('✅ Imagens processadas:', imagesToAnalyze.length);
     }
+
+    // If there are videos, fetch and add them as inline_data
+    if (videoUrls.length > 0) {
+      console.log('🎬 Processando vídeos para análise multimodal...');
+      
+      // Limit to last 3 videos (they consume more tokens)
+      const videosToAnalyze = videoUrls.slice(-3);
+      
+      for (const videoUrl of videosToAnalyze) {
+        const videoData = await fetchVideoAsBase64(videoUrl);
+        if (videoData) {
+          parts.push({
+            inline_data: {
+              mime_type: videoData.mimeType,
+              data: videoData.data
+            }
+          });
+        }
+      }
+      
+      console.log('✅ Vídeos processados:', videosToAnalyze.length);
+    }
+
+    // If there are documents, fetch and add them as inline_data
+    if (documentData.length > 0) {
+      console.log('📄 Processando documentos para análise multimodal...');
+      
+      // Limit to last 5 documents
+      const docsToAnalyze = documentData.slice(-5);
+      
+      for (const doc of docsToAnalyze) {
+        const docData = await fetchDocumentAsBase64(doc.url, doc.fileName);
+        if (docData) {
+          parts.push({
+            inline_data: {
+              mime_type: docData.mimeType,
+              data: docData.data
+            }
+          });
+        }
+      }
+      
+      console.log('✅ Documentos processados:', docsToAnalyze.length);
+    }
+
+    console.log('📦 Total de partes para Gemini:', parts.length);
 
     // Call Gemini API
     const response = await fetch(

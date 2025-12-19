@@ -316,6 +316,131 @@ async function fetchImageAsBase64(imageUrl: string): Promise<{ base64: string; m
   }
 }
 
+// Supported video MIME types by Gemini
+const SUPPORTED_VIDEO_MIMES = [
+  'video/mp4', 'video/mpeg', 'video/mov', 'video/avi', 'video/x-flv',
+  'video/mpg', 'video/webm', 'video/wmv', 'video/3gpp', 'video/quicktime',
+  'video/x-msvideo', 'video/x-matroska'
+];
+
+// Supported document MIME types by Gemini
+const SUPPORTED_DOCUMENT_MIMES = [
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.ms-powerpoint',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'text/plain', 'text/csv', 'text/html', 'text/markdown', 'text/rtf',
+  'application/rtf', 'application/x-javascript', 'text/javascript',
+  'application/json', 'text/xml', 'application/xml'
+];
+
+// Helper function to fetch video as base64 (max 20MB for inline_data)
+async function fetchVideoAsBase64(videoUrl: string): Promise<{ base64: string; mimeType: string } | null> {
+  try {
+    console.log('🎬 Baixando vídeo:', videoUrl.substring(0, 80) + '...');
+    
+    const response = await fetch(videoUrl);
+    if (!response.ok) {
+      console.log('❌ Falha ao baixar vídeo:', response.status);
+      return null;
+    }
+    
+    const arrayBuffer = await response.arrayBuffer();
+    
+    // Check size limit (20MB for inline_data)
+    if (arrayBuffer.byteLength > 20 * 1024 * 1024) {
+      console.log('⚠️ Vídeo muito grande para análise inline:', (arrayBuffer.byteLength / 1024 / 1024).toFixed(2), 'MB');
+      return null;
+    }
+    
+    const base64 = arrayBufferToBase64(arrayBuffer);
+    const contentType = response.headers.get('content-type') || 'video/mp4';
+    
+    // Normalize mime type
+    let mimeType = 'video/mp4';
+    if (contentType.includes('webm')) mimeType = 'video/webm';
+    else if (contentType.includes('quicktime') || contentType.includes('mov')) mimeType = 'video/quicktime';
+    else if (contentType.includes('avi') || contentType.includes('x-msvideo')) mimeType = 'video/x-msvideo';
+    else if (contentType.includes('3gpp')) mimeType = 'video/3gpp';
+    else if (contentType.includes('mpeg')) mimeType = 'video/mpeg';
+    else if (contentType.includes('matroska') || contentType.includes('mkv')) mimeType = 'video/x-matroska';
+    else if (contentType.includes('wmv')) mimeType = 'video/x-ms-wmv';
+    else if (contentType.includes('flv')) mimeType = 'video/x-flv';
+    else if (contentType.includes('mp4')) mimeType = 'video/mp4';
+    
+    console.log('✅ Vídeo convertido para base64, tipo:', mimeType, 'tamanho:', (arrayBuffer.byteLength / 1024 / 1024).toFixed(2), 'MB');
+    return { base64, mimeType };
+  } catch (error) {
+    console.error('❌ Erro ao baixar vídeo:', error);
+    return null;
+  }
+}
+
+// Helper function to fetch document as base64 (max 20MB for inline_data)
+async function fetchDocumentAsBase64(docUrl: string, fileName?: string): Promise<{ base64: string; mimeType: string } | null> {
+  try {
+    console.log('📄 Baixando documento:', docUrl.substring(0, 80) + '...');
+    
+    const response = await fetch(docUrl);
+    if (!response.ok) {
+      console.log('❌ Falha ao baixar documento:', response.status);
+      return null;
+    }
+    
+    const arrayBuffer = await response.arrayBuffer();
+    
+    // Check size limit (20MB for inline_data)
+    if (arrayBuffer.byteLength > 20 * 1024 * 1024) {
+      console.log('⚠️ Documento muito grande para análise inline:', (arrayBuffer.byteLength / 1024 / 1024).toFixed(2), 'MB');
+      return null;
+    }
+    
+    const base64 = arrayBufferToBase64(arrayBuffer);
+    let contentType = response.headers.get('content-type') || 'application/octet-stream';
+    
+    // Try to infer mime type from filename if content-type is generic
+    if (contentType === 'application/octet-stream' && fileName) {
+      const ext = fileName.split('.').pop()?.toLowerCase();
+      const mimeMap: Record<string, string> = {
+        'pdf': 'application/pdf',
+        'doc': 'application/msword',
+        'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'xls': 'application/vnd.ms-excel',
+        'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'ppt': 'application/vnd.ms-powerpoint',
+        'pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        'txt': 'text/plain',
+        'csv': 'text/csv',
+        'html': 'text/html',
+        'htm': 'text/html',
+        'md': 'text/markdown',
+        'rtf': 'application/rtf',
+        'json': 'application/json',
+        'xml': 'application/xml',
+        'js': 'application/x-javascript'
+      };
+      if (ext && mimeMap[ext]) {
+        contentType = mimeMap[ext];
+      }
+    }
+    
+    // Verify it's a supported mime type
+    if (!SUPPORTED_DOCUMENT_MIMES.some(m => contentType.includes(m.split('/')[1]))) {
+      console.log('⚠️ Tipo de documento não suportado:', contentType);
+      return null;
+    }
+    
+    console.log('✅ Documento convertido para base64, tipo:', contentType, 'tamanho:', (arrayBuffer.byteLength / 1024 / 1024).toFixed(2), 'MB');
+    return { base64, mimeType: contentType };
+  } catch (error) {
+    console.error('❌ Erro ao baixar documento:', error);
+    return null;
+  }
+}
+
 // Helper function to transcribe audio using Gemini 3 Flash Preview
 async function transcribeAudio(audioUrl: string, apiKey: string): Promise<string | null> {
   try {
@@ -715,8 +840,10 @@ serve(async (req) => {
       .order('created_at', { ascending: false })
       .limit(30);
 
-    // Collect images for potential multimodal analysis
+    // Collect media URLs for potential multimodal analysis
     const imageUrls: string[] = [];
+    const videoUrls: string[] = [];
+    const documentData: { url: string; fileName: string }[] = [];
 
     const conversationHistory = (recentMessages || [])
       .reverse()
@@ -743,11 +870,19 @@ serve(async (req) => {
             ? `[Imagem com legenda]: ${m.content}` 
             : '[Cliente enviou uma imagem]';
         } else if (m.message_type === 'video') {
+          // Collect video URLs for multimodal analysis
+          if (m.media_url && m.direction === 'inbound') {
+            videoUrls.push(m.media_url);
+          }
           messageText = m.content 
             ? `[Vídeo com legenda]: ${m.content}` 
             : '[Cliente enviou um vídeo]';
         } else if (m.message_type === 'document') {
           const fileName = metadata?.fileName || metadata?.file_name || 'documento';
+          // Collect document data for multimodal analysis
+          if (m.media_url && m.direction === 'inbound') {
+            documentData.push({ url: m.media_url, fileName });
+          }
           messageText = m.content 
             ? `[Documento "${fileName}"]: ${m.content}` 
             : `[Cliente enviou documento: ${fileName}]`;
@@ -764,11 +899,14 @@ serve(async (req) => {
       })
       .filter(Boolean);
 
-    // Check if current message is image/audio that needs special processing
+    // Check if current message is image/audio/video/document that needs special processing
     // For batch requests, check the last message type
     let currentMessageIsImage = messageType === 'image';
     let currentMessageIsAudio = messageType === 'audio';
+    let currentMessageIsVideo = messageType === 'video';
+    let currentMessageIsDocument = messageType === 'document';
     let actualMediaUrl = mediaUrl;
+    let currentDocumentFileName = '';
     
     // Process batch messages if this is a batch request
     let processedMessageContent = messageContent || '';
@@ -796,6 +934,15 @@ serve(async (req) => {
           currentMessageIsImage = true;
           if (msg.mediaUrl) actualMediaUrl = msg.mediaUrl;
           batchContents.push(msg.content ? `[Imagem com legenda]: ${msg.content}` : '[Cliente enviou uma imagem]');
+        } else if (msg.type === 'video') {
+          currentMessageIsVideo = true;
+          if (msg.mediaUrl) actualMediaUrl = msg.mediaUrl;
+          batchContents.push(msg.content ? `[Vídeo com legenda]: ${msg.content}` : '[Cliente enviou um vídeo]');
+        } else if (msg.type === 'document') {
+          currentMessageIsDocument = true;
+          if (msg.mediaUrl) actualMediaUrl = msg.mediaUrl;
+          currentDocumentFileName = msg.fileName || 'documento';
+          batchContents.push(msg.content ? `[Documento "${currentDocumentFileName}"]: ${msg.content}` : `[Cliente enviou documento: ${currentDocumentFileName}]`);
         }
       }
       
@@ -807,7 +954,10 @@ serve(async (req) => {
       if (lastMsg) {
         currentMessageIsImage = lastMsg.type === 'image';
         currentMessageIsAudio = lastMsg.type === 'audio';
+        currentMessageIsVideo = lastMsg.type === 'video';
+        currentMessageIsDocument = lastMsg.type === 'document';
         if (lastMsg.mediaUrl) actualMediaUrl = lastMsg.mediaUrl;
+        if (lastMsg.fileName) currentDocumentFileName = lastMsg.fileName;
       }
       
       console.log('📦 Batch combined:', processedMessageContent.substring(0, 100) + '...');
@@ -817,7 +967,8 @@ serve(async (req) => {
     }
     
     // Get the actual mediaUrl if not provided (media may have been processed in background)
-    if ((currentMessageIsImage || currentMessageIsAudio) && !actualMediaUrl) {
+    const needsMediaUrl = currentMessageIsImage || currentMessageIsAudio || currentMessageIsVideo || currentMessageIsDocument;
+    if (needsMediaUrl && !actualMediaUrl) {
       // Fetch the most recent message to get the media_url
       const { data: latestMsg } = await supabase
         .from('messages')
@@ -832,6 +983,11 @@ serve(async (req) => {
       if (latestMsg?.media_url) {
         actualMediaUrl = latestMsg.media_url;
         console.log('📎 Media URL obtida do banco:', actualMediaUrl.substring(0, 50) + '...');
+        // Get document filename from metadata if applicable
+        if (currentMessageIsDocument && latestMsg.metadata) {
+          const meta = latestMsg.metadata as any;
+          currentDocumentFileName = meta?.fileName || meta?.file_name || 'documento';
+        }
       }
     }
     
@@ -1314,105 +1470,83 @@ CRÍTICO SOBRE COMANDOS:
 4. Se não souber responder algo específico, direcione para um atendente humano
 5. Nunca invente informações - use apenas o que está no roteiro, regras e FAQ
 6. Mantenha o tom profissional mas acolhedor
-7. Se o cliente enviar uma imagem, ANALISE o conteúdo visual e responda de forma contextualizada
+7. Se o cliente enviar uma imagem, vídeo ou documento, ANALISE o conteúdo e responda de forma contextualizada
 8. VARIE seu vocabulário - não use as mesmas palavras repetidamente`;
 
     console.log('📝 System prompt criado (' + systemPrompt.length + ' chars)');
     console.log('📝 Histórico:', conversationHistory.length, 'mensagens');
     console.log('🖼️ Imagens para análise:', imageUrls.length);
+    console.log('🎬 Vídeos para análise:', videoUrls.length);
+    console.log('📄 Documentos para análise:', documentData.length);
 
     const agentTemperature = agent.temperature ?? 0.7;
     console.log('🌡️ Temperatura configurada:', agentTemperature);
 
     let aiResponse: string = '';
-    let modelUsed: string;
+    let modelUsed: string = 'gemini-3-flash-preview';
     let toolCallsFromApi: any[] = []; // Store tool calls from API response
 
-    // Determine if we should use multimodal (image analysis)
-    const shouldUseMultimodal = currentMessageIsImage && actualMediaUrl;
+    // Determine if we should use multimodal analysis (image, video or document)
+    const shouldUseMultimodalImage = currentMessageIsImage && actualMediaUrl;
+    const shouldUseMultimodalVideo = currentMessageIsVideo && actualMediaUrl;
+    const shouldUseMultimodalDocument = currentMessageIsDocument && actualMediaUrl;
+    const shouldUseMultimodal = shouldUseMultimodalImage || shouldUseMultimodalVideo || shouldUseMultimodalDocument;
 
     if (shouldUseMultimodal) {
-      // Use Gemini 3.0 Flash for image analysis with inline_data
-      console.log('🖼️ Usando Gemini 3 Flash Preview para análise de imagem');
       modelUsed = 'gemini-3-flash-preview';
       
       const historyText = conversationHistory.map((m: any) => 
         `${m.role === 'user' ? '[CLIENTE]' : '[AGENTE]'}: ${m.content}`
       ).join('\n');
       
-      // Fetch image as base64
-      const imageData = await fetchImageAsBase64(actualMediaUrl);
-      if (!imageData) {
-        console.log('❌ Não foi possível baixar a imagem');
-        await supabase.from('ai_agent_logs').insert({
-          agent_id: agent.id,
-          conversation_id: conversationId,
-          action_type: 'response_error',
-          input_text: processedMessageContent,
-          error_message: 'Failed to fetch image',
-          metadata: { messageType, hasImage: true }
-        });
-        return new Response(
-          JSON.stringify({ success: false, error: 'Failed to process image' }),
-          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
+      let mediaData: { base64: string; mimeType: string } | null = null;
+      let mediaPrompt: string;
       
-      const agentTemperature = agent.temperature ?? 0.7;
-      const imagePrompt = `${systemPrompt}\n\nHistórico da conversa:\n${historyText}\n\nO cliente acabou de enviar esta imagem${processedMessageContent ? ` com a seguinte mensagem: "${processedMessageContent}"` : ''}. Analise a imagem e responda de forma adequada ao contexto.`;
-      
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${GEMINI_API_KEY}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{
-              parts: [
-                {
-                  inline_data: {
-                    mime_type: imageData.mimeType,
-                    data: imageData.base64
-                  }
-                },
-                { text: imagePrompt }
-              ]
-            }],
-            generationConfig: {
-              temperature: agentTemperature,
-              maxOutputTokens: 1500
-            }
-          })
-        }
-      );
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.log('❌ Gemini multimodal error:', response.status, errorText);
+      if (shouldUseMultimodalImage) {
+        // Image analysis
+        console.log('🖼️ Usando Gemini 3 Flash Preview para análise de imagem');
+        mediaData = await fetchImageAsBase64(actualMediaUrl);
+        mediaPrompt = `${systemPrompt}\n\nHistórico da conversa:\n${historyText}\n\nO cliente acabou de enviar esta imagem${processedMessageContent ? ` com a seguinte mensagem: "${processedMessageContent}"` : ''}. Analise a imagem e responda de forma adequada ao contexto.`;
         
+      } else if (shouldUseMultimodalVideo) {
+        // Video analysis
+        console.log('🎬 Usando Gemini 3 Flash Preview para análise de vídeo');
+        mediaData = await fetchVideoAsBase64(actualMediaUrl);
+        mediaPrompt = `${systemPrompt}\n\nHistórico da conversa:\n${historyText}\n\nO cliente acabou de enviar este vídeo${processedMessageContent ? ` com a seguinte mensagem: "${processedMessageContent}"` : ''}. Analise o conteúdo visual e de áudio do vídeo e responda de forma adequada ao contexto. Descreva o que você vê e ouve no vídeo se for relevante para a conversa.`;
+        
+      } else if (shouldUseMultimodalDocument) {
+        // Document analysis
+        console.log('📄 Usando Gemini 3 Flash Preview para análise de documento');
+        mediaData = await fetchDocumentAsBase64(actualMediaUrl, currentDocumentFileName);
+        const docName = currentDocumentFileName || 'documento';
+        mediaPrompt = `${systemPrompt}\n\nHistórico da conversa:\n${historyText}\n\nO cliente acabou de enviar o documento "${docName}"${processedMessageContent ? ` com a seguinte mensagem: "${processedMessageContent}"` : ''}. Analise o conteúdo do documento e responda de forma adequada ao contexto. Extraia informações relevantes do documento se necessário.`;
+        
+      } else {
+        mediaPrompt = '';
+      }
+      
+      if (!mediaData) {
+        const mediaType = shouldUseMultimodalImage ? 'imagem' : shouldUseMultimodalVideo ? 'vídeo' : 'documento';
+        console.log(`❌ Não foi possível baixar o ${mediaType}`);
         await supabase.from('ai_agent_logs').insert({
           agent_id: agent.id,
           conversation_id: conversationId,
           action_type: 'response_error',
           input_text: processedMessageContent,
-          error_message: `Gemini multimodal error: ${response.status}`,
-          metadata: { errorDetails: errorText, messageType, hasImage: true }
+          error_message: `Failed to fetch ${mediaType}`,
+          metadata: { messageType, hasMedia: true, mediaType }
         });
-
-        return new Response(
-          JSON.stringify({ success: false, error: 'AI API error' }),
-          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-
-      const aiData = await response.json();
-      console.log('📦 Resposta Gemini (multimodal):', JSON.stringify(aiData, null, 2).substring(0, 500) + '...');
-      aiResponse = aiData.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
-      
-      // Retry with lower temperature if empty
-      if (!aiResponse) {
-        console.log('⚠️ Resposta multimodal vazia - tentando retry com temperatura 0.5');
-        const retryResponse = await fetch(
+        
+        // Fallback: continue without multimodal analysis
+        console.log(`⚠️ Continuando sem análise multimodal - usando texto como fallback`);
+        const fallbackContent = shouldUseMultimodalImage ? '[Cliente enviou uma imagem que não pôde ser analisada]' :
+                               shouldUseMultimodalVideo ? '[Cliente enviou um vídeo que não pôde ser analisado]' :
+                               `[Cliente enviou documento "${currentDocumentFileName}" que não pôde ser analisado]`;
+        processedMessageContent = fallbackContent + (processedMessageContent ? ` - Mensagem do cliente: ${processedMessageContent}` : '');
+        // Continue to text-only processing below
+      } else {
+        // Process with multimodal
+        const response = await fetch(
           `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${GEMINI_API_KEY}`,
           {
             method: 'POST',
@@ -1420,23 +1554,79 @@ CRÍTICO SOBRE COMANDOS:
             body: JSON.stringify({
               contents: [{
                 parts: [
-                  { inline_data: { mime_type: imageData.mimeType, data: imageData.base64 } },
-                  { text: imagePrompt }
+                  {
+                    inline_data: {
+                      mime_type: mediaData.mimeType,
+                      data: mediaData.base64
+                    }
+                  },
+                  { text: mediaPrompt }
                 ]
               }],
-              generationConfig: { temperature: 0.5, maxOutputTokens: 1500 }
+              generationConfig: {
+                temperature: agentTemperature,
+                maxOutputTokens: 1500
+              }
             })
           }
         );
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          const mediaType = shouldUseMultimodalImage ? 'image' : shouldUseMultimodalVideo ? 'video' : 'document';
+          console.log(`❌ Gemini multimodal error (${mediaType}):`, response.status, errorText);
+          
+          await supabase.from('ai_agent_logs').insert({
+            agent_id: agent.id,
+            conversation_id: conversationId,
+            action_type: 'response_error',
+            input_text: processedMessageContent,
+            error_message: `Gemini multimodal error: ${response.status}`,
+            metadata: { errorDetails: errorText, messageType, mediaType }
+          });
+
+          return new Response(
+            JSON.stringify({ success: false, error: 'AI API error' }),
+            { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        const aiData = await response.json();
+        const mediaType = shouldUseMultimodalImage ? 'imagem' : shouldUseMultimodalVideo ? 'vídeo' : 'documento';
+        console.log(`📦 Resposta Gemini (${mediaType}):`, JSON.stringify(aiData, null, 2).substring(0, 500) + '...');
+        aiResponse = aiData.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
         
-        if (retryResponse.ok) {
-          const retryData = await retryResponse.json();
-          console.log('🔄 Retry multimodal result:', JSON.stringify(retryData, null, 2).substring(0, 500) + '...');
-          aiResponse = retryData.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
+        // Retry with lower temperature if empty
+        if (!aiResponse) {
+          console.log('⚠️ Resposta multimodal vazia - tentando retry com temperatura 0.5');
+          const retryResponse = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${GEMINI_API_KEY}`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                contents: [{
+                  parts: [
+                    { inline_data: { mime_type: mediaData.mimeType, data: mediaData.base64 } },
+                    { text: mediaPrompt }
+                  ]
+                }],
+                generationConfig: { temperature: 0.5, maxOutputTokens: 1500 }
+              })
+            }
+          );
+          
+          if (retryResponse.ok) {
+            const retryData = await retryResponse.json();
+            console.log('🔄 Retry multimodal result:', JSON.stringify(retryData, null, 2).substring(0, 500) + '...');
+            aiResponse = retryData.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
+          }
         }
       }
-      
-    } else {
+    }
+    
+    // If multimodal didn't produce a response (either not multimodal or fallback), use text-only
+    if (!aiResponse) {
       // Use Gemini 3 Flash Preview with Function Calling
       console.log('📝 Usando Gemini 3 Flash Preview com Function Calling');
       console.log('🔧 Tools disponíveis:', dynamicTools.length);

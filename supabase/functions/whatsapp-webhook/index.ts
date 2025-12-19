@@ -1935,7 +1935,7 @@ serve(async (req) => {
     // 🤖 PROCESS AI AGENT (BATCH SYSTEM)
     // ═══════════════════════════════════════════════════════════════════
     // Process AI agent for text, audio and image messages (not stickers, documents, videos)
-    const aiSupportedTypes = ['text', 'audio', 'image'];
+    const aiSupportedTypes = ['text', 'audio', 'image', 'video', 'document'];
     if (!isFromMe && aiSupportedTypes.includes(dbMessageType)) {
       const messageData = {
         content: messageContent || '',
