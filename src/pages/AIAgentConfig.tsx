@@ -8,7 +8,8 @@ import {
   HelpCircle,
   Settings,
   Info,
-  Users
+  Users,
+  Target
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -28,6 +29,7 @@ import { AgentRulesTab } from '@/components/ai-agents/config/AgentRulesTab';
 import { AgentScriptTab } from '@/components/ai-agents/config/AgentScriptTab';
 import { AgentFAQTab } from '@/components/ai-agents/config/AgentFAQTab';
 import { AgentSubAgentsTab } from '@/components/ai-agents/config/AgentSubAgentsTab';
+import { AgentSpecialtyTab } from '@/components/ai-agents/config/AgentSpecialtyTab';
 import { AgentSidebar } from '@/components/ai-agents/config/AgentSidebar';
 import { AI_AGENT_CHAR_LIMITS } from '@/types/ai-agents';
 import type { AIAgent, UpdateAIAgentData } from '@/types/ai-agents';
@@ -50,6 +52,11 @@ export default function AIAgentConfig() {
   const [faqContent, setFaqContent] = useState('');
   const [companyInfo, setCompanyInfo] = useState<Record<string, string>>({});
   const [contractLink, setContractLink] = useState('');
+  
+  // Specialty metadata state
+  const [specialtyKeywords, setSpecialtyKeywords] = useState<string[]>([]);
+  const [qualificationSummary, setQualificationSummary] = useState('');
+  const [disqualificationSigns, setDisqualificationSigns] = useState('');
 
   // Verificar permissão (owner/admin)
   const canManage = userRole?.role === 'owner' || userRole?.role === 'admin';
@@ -65,6 +72,10 @@ export default function AIAgentConfig() {
         setFaqContent(found.faq_content || '');
         setCompanyInfo(found.company_info || {});
         setContractLink(found.contract_link || '');
+        // Load specialty metadata
+        setSpecialtyKeywords(found.specialty_keywords || []);
+        setQualificationSummary(found.qualification_summary || '');
+        setDisqualificationSigns(found.disqualification_signs || '');
       }
     }
   }, [agentId, agents]);
@@ -91,6 +102,9 @@ export default function AIAgentConfig() {
         faq_content: faqContent,
         company_info: companyInfo,
         contract_link: contractLink,
+        specialty_keywords: specialtyKeywords,
+        qualification_summary: qualificationSummary,
+        disqualification_signs: disqualificationSigns,
       });
 
       if (success) {
@@ -131,6 +145,21 @@ export default function AIAgentConfig() {
   const handleContractLinkChange = (link: string) => {
     setHasChanges(true);
     setContractLink(link);
+  };
+
+  const handleSpecialtyKeywordsChange = (keywords: string[]) => {
+    setHasChanges(true);
+    setSpecialtyKeywords(keywords);
+  };
+
+  const handleQualificationChange = (summary: string) => {
+    setHasChanges(true);
+    setQualificationSummary(summary);
+  };
+
+  const handleDisqualificationChange = (signs: string) => {
+    setHasChanges(true);
+    setDisqualificationSigns(signs);
   };
 
   if (!canManage) {
@@ -233,39 +262,49 @@ export default function AIAgentConfig() {
         {/* Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col overflow-hidden">
           <div className="border-b px-6">
-            <TabsList className="h-12 w-full bg-transparent p-0">
-              <TabsTrigger 
-                value="rules" 
-                className="flex-1 data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none pb-3 justify-center"
-              >
-                <FileText className="w-4 h-4 mr-2" />
-                Regras Gerais
-              </TabsTrigger>
-              <TabsTrigger 
-                value="script"
-                className="flex-1 data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none pb-3 justify-center"
-              >
-                <List className="w-4 h-4 mr-2" />
-                Roteiro de Atendimento
-              </TabsTrigger>
-              <TabsTrigger 
-                value="faq"
-                className="flex-1 data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none pb-3 justify-center"
-              >
-                <HelpCircle className="w-4 h-4 mr-2" />
-                Perguntas Frequentes
-              </TabsTrigger>
-              {/* Aba Sub-agentes - apenas para agentes do tipo multi */}
-              {agent.agent_type === 'multi' && (
+            <div className="-mx-6 px-6 overflow-x-auto">
+              <TabsList className="h-12 w-max min-w-full bg-transparent p-0 inline-flex gap-1">
                 <TabsTrigger 
-                  value="subagents"
-                  className="flex-1 data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none pb-3 justify-center"
+                  value="rules" 
+                  className="flex-none data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none pb-3 justify-center px-4"
                 >
-                  <Users className="w-4 h-4 mr-2" />
-                  Sub-agentes
+                  <FileText className="w-4 h-4 mr-2" />
+                  Regras Gerais
                 </TabsTrigger>
-              )}
-            </TabsList>
+                <TabsTrigger 
+                  value="script"
+                  className="flex-none data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none pb-3 justify-center px-4"
+                >
+                  <List className="w-4 h-4 mr-2" />
+                  Roteiro de Atendimento
+                </TabsTrigger>
+                <TabsTrigger 
+                  value="faq"
+                  className="flex-none data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none pb-3 justify-center px-4"
+                >
+                  <HelpCircle className="w-4 h-4 mr-2" />
+                  Perguntas Frequentes
+                </TabsTrigger>
+                {/* Aba Especialidade - para configurar redirecionamento inteligente entre agentes */}
+                <TabsTrigger 
+                  value="specialty"
+                  className="flex-none data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none pb-3 justify-center px-4"
+                >
+                  <Target className="w-4 h-4 mr-2" />
+                  Especialidade
+                </TabsTrigger>
+                {/* Aba Sub-agentes - apenas para agentes do tipo multi */}
+                {agent.agent_type === 'multi' && (
+                  <TabsTrigger 
+                    value="subagents"
+                    className="flex-none data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none pb-3 justify-center px-4"
+                  >
+                    <Users className="w-4 h-4 mr-2" />
+                    Sub-agentes
+                  </TabsTrigger>
+                )}
+              </TabsList>
+            </div>
           </div>
 
           <div className="flex-1 overflow-hidden">
@@ -294,6 +333,16 @@ export default function AIAgentConfig() {
                     onCompanyInfoChange={handleCompanyInfoChange}
                     contractLink={contractLink}
                     onContractLinkChange={handleContractLinkChange}
+                  />
+                </TabsContent>
+                <TabsContent value="specialty" className="m-0">
+                  <AgentSpecialtyTab
+                    specialtyKeywords={specialtyKeywords}
+                    qualificationSummary={qualificationSummary}
+                    disqualificationSigns={disqualificationSigns}
+                    onKeywordsChange={handleSpecialtyKeywordsChange}
+                    onQualificationChange={handleQualificationChange}
+                    onDisqualificationChange={handleDisqualificationChange}
                   />
                 </TabsContent>
                 {agent.agent_type === 'multi' && (

@@ -78,8 +78,7 @@ export function AIAgentSelector({ position, onSelect, onClose, onBack, currentAg
   }, [filteredAgents, selectedIndex, onClose]);
 
   const handleSelect = (agentName: string) => {
-    const slug = agentName.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
-    onSelect(slug);
+    onSelect(`[${agentName}]`);
   };
 
   return (

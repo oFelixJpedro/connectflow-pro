@@ -399,7 +399,7 @@ async function processAIBatchImmediate(batchData: any, batchKey: string, redisCl
       }
       
       // Set TTL on lock to prevent deadlocks (2 minutes max)
-      await redisClient.expire(lockKey, 120);
+      await redisClient.expire(lockKey, 300); // 5 minutes for slow OpenAI + media processing
       console.log(`✅ [IMMEDIATE-BATCH] Lock acquired for ${batchKey}`);
     } catch (lockError) {
       console.error(`⚠️ [IMMEDIATE-BATCH] Error acquiring lock:`, lockError);
@@ -501,9 +501,27 @@ async function processAIBatchImmediate(batchData: any, batchKey: string, redisCl
     
     console.log(`📤 [IMMEDIATE-BATCH] Sending ${responseParts.length} message(s) to ${phoneNumber}`);
     
+    // Generate unique response ID for split tracking
+    const responseId = `response:${conversationId}:${Date.now()}`;
+    
     // Send each part with delay between them
     for (let i = 0; i < responseParts.length; i++) {
       const part = responseParts[i];
+      const partKey = `${responseId}:part:${i}`;
+      
+      // ═══════════════════════════════════════════════════════════════════════════════
+      // 🔒 SPLIT TRACKING - Prevent duplicate sending of same part
+      // ═══════════════════════════════════════════════════════════════════════════════
+      try {
+        const partAlreadySent = await redisClient.get(partKey);
+        if (partAlreadySent) {
+          console.log(`🔒 [SPLIT-TRACK] Part ${i + 1}/${responseParts.length} already sent, skipping`);
+          continue;
+        }
+      } catch (trackError) {
+        console.log('⚠️ [SPLIT-TRACK] Redis error checking part:', trackError);
+        // Continue anyway - better to risk duplicate than miss sending
+      }
       
       // Add delay between messages (not before the first one)
       if (i > 0 && splitDelaySeconds > 0) {
@@ -612,6 +630,16 @@ async function processAIBatchImmediate(batchData: any, batchKey: string, redisCl
               immediateProcessing: true,
             },
           });
+        
+        // ═══════════════════════════════════════════════════════════════════════════════
+        // ✅ MARK PART AS SENT in Redis to prevent duplicate sends
+        // ═══════════════════════════════════════════════════════════════════════════════
+        try {
+          await redisClient.setex(partKey, 300, 'sent'); // TTL 5 minutes
+          console.log(`✅ [SPLIT-TRACK] Part ${i + 1}/${responseParts.length} marked as sent`);
+        } catch (trackError) {
+          console.log('⚠️ [SPLIT-TRACK] Redis error marking part as sent:', trackError);
+        }
       }
     }
     
@@ -1907,7 +1935,7 @@ serve(async (req) => {
     // 🤖 PROCESS AI AGENT (BATCH SYSTEM)
     // ═══════════════════════════════════════════════════════════════════
     // Process AI agent for text, audio and image messages (not stickers, documents, videos)
-    const aiSupportedTypes = ['text', 'audio', 'image'];
+    const aiSupportedTypes = ['text', 'audio', 'image', 'video', 'document'];
     if (!isFromMe && aiSupportedTypes.includes(dbMessageType)) {
       const messageData = {
         content: messageContent || '',
@@ -1990,7 +2018,7 @@ serve(async (req) => {
                     }
                     
                     // Set TTL on lock
-                    await redis.expire(lockKey, 120)
+                    await redis.expire(lockKey, 300) // 5 minutes for slow OpenAI + media processing
                     
                     // Check if batch still exists (might have been processed by other means)
                     const currentBatchRaw = await redis.get(batchKey)

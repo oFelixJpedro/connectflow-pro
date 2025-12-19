@@ -1,4 +1,3 @@
-import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
 const corsHeaders = {
@@ -95,7 +94,6 @@ Confirme que o texto corrigido:
 Retorne APENAS o texto corrigido, sem explicações.`;
 
 serve(async (req) => {
-  // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
@@ -110,9 +108,9 @@ serve(async (req) => {
       );
     }
 
-    const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
-    if (!openAIApiKey) {
-      console.error('OPENAI_API_KEY não configurada');
+    const geminiApiKey = Deno.env.get('GEMINI_API_KEY');
+    if (!geminiApiKey) {
+      console.error('GEMINI_API_KEY não configurada');
       return new Response(
         JSON.stringify({ error: 'Configuração de API inválida' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -121,29 +119,26 @@ serve(async (req) => {
 
     console.log('📝 Corrigindo texto:', text.substring(0, 100) + (text.length > 100 ? '...' : ''));
 
-    const response = await fetch('https://api.openai.com/v1/responses', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${openAIApiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'gpt-5-nano',
-        input: `${SYSTEM_PROMPT}\n\nTexto para corrigir:\n${text}`,
-        text: {
-          format: { type: 'text' },
-          verbosity: 'medium'
-        },
-        reasoning: {
-          effort: 'low',
-          summary: 'auto'
-        }
-      }),
-    });
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${geminiApiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{
+            parts: [{ text: `${SYSTEM_PROMPT}\n\nTexto para corrigir:\n${text}` }]
+          }],
+          generationConfig: {
+            temperature: 0.2,
+            maxOutputTokens: 2000
+          }
+        }),
+      }
+    );
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('❌ Erro na API OpenAI:', response.status, errorText);
+      console.error('❌ Erro na API Gemini:', response.status, errorText);
       return new Response(
         JSON.stringify({ error: 'Erro ao processar correção' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -151,8 +146,8 @@ serve(async (req) => {
     }
 
     const data = await response.json();
-    console.log('📦 Resposta API:', JSON.stringify(data, null, 2));
-    const correctedText = data.output?.find((o: any) => o.type === 'message')?.content?.[0]?.text?.trim();
+    console.log('📦 Resposta Gemini:', JSON.stringify(data, null, 2));
+    const correctedText = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
 
     if (!correctedText) {
       console.error('❌ Resposta vazia da API');
@@ -162,7 +157,6 @@ serve(async (req) => {
       );
     }
 
-    // Check if there were changes
     const hasChanges = correctedText !== text;
 
     console.log('✅ Correção concluída. Mudanças:', hasChanges);

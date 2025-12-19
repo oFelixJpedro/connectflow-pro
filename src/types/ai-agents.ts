@@ -89,6 +89,11 @@ export interface AIAgent {
   split_response_enabled: boolean;
   split_message_delay_seconds: number;
   
+  // Metadados de especialidade (para redirecionamento inteligente)
+  specialty_keywords: string[];
+  qualification_summary: string | null;
+  disqualification_signs: string | null;
+  
   // Metadados
   created_at: string;
   updated_at: string;
@@ -234,6 +239,9 @@ export interface UpdateAIAgentData {
   message_batch_seconds?: number;
   split_response_enabled?: boolean;
   split_message_delay_seconds?: number;
+  specialty_keywords?: string[];
+  qualification_summary?: string;
+  disqualification_signs?: string;
 }
 
 // Limite de caracteres

@@ -17,11 +17,11 @@ function escapeRegex(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-// Remove slash commands from text (e.g., /mudar_etapa_crm:value, /pausar_agente)
+// Remove slash commands from text (e.g., /mudar_etapa_crm:[Value], /pausar_agente)
 function removeSlashCommands(text: string): string {
   return text
     .split('\n')
-    .filter(line => !line.trim().match(/^\/[a-z_]+(?::[^\s]*)?$/i))
+    .filter(line => !line.trim().match(/^\/[a-z_]+(?::(?:\[[^\]]+\]|[^\s]*))?$/i))
     .join('\n')
     .trim();
 }

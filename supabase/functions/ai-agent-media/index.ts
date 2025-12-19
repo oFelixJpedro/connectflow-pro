@@ -222,8 +222,36 @@ serve(async (req) => {
           );
         }
 
+        // Generate signed URLs for media items with storage URLs (private bucket)
+        const mediasWithSignedUrls = await Promise.all(
+          (medias || []).map(async (media) => {
+            if (media.media_url && media.media_url.includes('/ai-agent-media/')) {
+              try {
+                // Extract storage path from URL
+                const urlParts = media.media_url.split('/ai-agent-media/');
+                if (urlParts.length > 1) {
+                  const storagePath = decodeURIComponent(urlParts[1].split('?')[0]);
+                  const { data: signedUrlData, error: signedUrlError } = await supabase.storage
+                    .from('ai-agent-media')
+                    .createSignedUrl(storagePath, 3600); // 1 hour validity
+                  
+                  if (signedUrlData?.signedUrl) {
+                    console.log('✅ Signed URL generated for:', media.media_key);
+                    return { ...media, media_url: signedUrlData.signedUrl };
+                  } else if (signedUrlError) {
+                    console.log('⚠️ Signed URL error:', signedUrlError.message);
+                  }
+                }
+              } catch (e) {
+                console.log('⚠️ Error generating signed URL for', media.media_key, e);
+              }
+            }
+            return media;
+          })
+        );
+
         return new Response(
-          JSON.stringify({ success: true, medias }),
+          JSON.stringify({ success: true, medias: mediasWithSignedUrls }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }

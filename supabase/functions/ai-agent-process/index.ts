@@ -1,10 +1,36 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { Redis } from "https://esm.sh/@upstash/redis@1.28.0";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
+
+// Initialize Redis client for idempotency
+let redis: Redis | null = null;
+try {
+  const redisUrl = Deno.env.get('UPSTASH_REDIS_URL');
+  const redisToken = Deno.env.get('UPSTASH_REDIS_TOKEN');
+  if (redisUrl && redisToken) {
+    redis = new Redis({ url: redisUrl, token: redisToken });
+  }
+} catch (e) {
+  console.log('⚠️ Redis not configured for ai-agent-process');
+}
+
+// Helper to create idempotency key from batch
+function createBatchHash(conversationId: string, messages: any[]): string {
+  const content = messages.map(m => `${m.type}:${m.content || m.mediaUrl || ''}`).join('|');
+  // Simple hash for deduplication
+  let hash = 0;
+  for (let i = 0; i < content.length; i++) {
+    const char = content.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash; // Convert to 32bit integer
+  }
+  return `ai-process:${conversationId}:${Math.abs(hash).toString(36)}`;
+}
 
 // ═══════════════════════════════════════════════════════════════════
 // STRUCTURED CONTEXT TYPES
@@ -263,10 +289,162 @@ REGRAS:
 Retorne APENAS o JSON, sem explicações.`;
 }
 
-// Helper function to transcribe audio
+// Helper function to convert ArrayBuffer to base64
+function arrayBufferToBase64(buffer: ArrayBuffer): string {
+  let binary = '';
+  const bytes = new Uint8Array(buffer);
+  for (let i = 0; i < bytes.byteLength; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+}
+
+// Helper function to fetch image as base64
+async function fetchImageAsBase64(imageUrl: string): Promise<{ base64: string; mimeType: string } | null> {
+  try {
+    const response = await fetch(imageUrl);
+    if (!response.ok) return null;
+    
+    const arrayBuffer = await response.arrayBuffer();
+    const base64 = arrayBufferToBase64(arrayBuffer);
+    const contentType = response.headers.get('content-type') || 'image/jpeg';
+    
+    return { base64, mimeType: contentType };
+  } catch (error) {
+    console.error('❌ Erro ao baixar imagem:', error);
+    return null;
+  }
+}
+
+// Supported video MIME types by Gemini
+const SUPPORTED_VIDEO_MIMES = [
+  'video/mp4', 'video/mpeg', 'video/mov', 'video/avi', 'video/x-flv',
+  'video/mpg', 'video/webm', 'video/wmv', 'video/3gpp', 'video/quicktime',
+  'video/x-msvideo', 'video/x-matroska'
+];
+
+// Supported document MIME types by Gemini
+const SUPPORTED_DOCUMENT_MIMES = [
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.ms-powerpoint',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'text/plain', 'text/csv', 'text/html', 'text/markdown', 'text/rtf',
+  'application/rtf', 'application/x-javascript', 'text/javascript',
+  'application/json', 'text/xml', 'application/xml'
+];
+
+// Helper function to fetch video as base64 (max 20MB for inline_data)
+async function fetchVideoAsBase64(videoUrl: string): Promise<{ base64: string; mimeType: string } | null> {
+  try {
+    console.log('🎬 Baixando vídeo:', videoUrl.substring(0, 80) + '...');
+    
+    const response = await fetch(videoUrl);
+    if (!response.ok) {
+      console.log('❌ Falha ao baixar vídeo:', response.status);
+      return null;
+    }
+    
+    const arrayBuffer = await response.arrayBuffer();
+    
+    // Check size limit (20MB for inline_data)
+    if (arrayBuffer.byteLength > 20 * 1024 * 1024) {
+      console.log('⚠️ Vídeo muito grande para análise inline:', (arrayBuffer.byteLength / 1024 / 1024).toFixed(2), 'MB');
+      return null;
+    }
+    
+    const base64 = arrayBufferToBase64(arrayBuffer);
+    const contentType = response.headers.get('content-type') || 'video/mp4';
+    
+    // Normalize mime type
+    let mimeType = 'video/mp4';
+    if (contentType.includes('webm')) mimeType = 'video/webm';
+    else if (contentType.includes('quicktime') || contentType.includes('mov')) mimeType = 'video/quicktime';
+    else if (contentType.includes('avi') || contentType.includes('x-msvideo')) mimeType = 'video/x-msvideo';
+    else if (contentType.includes('3gpp')) mimeType = 'video/3gpp';
+    else if (contentType.includes('mpeg')) mimeType = 'video/mpeg';
+    else if (contentType.includes('matroska') || contentType.includes('mkv')) mimeType = 'video/x-matroska';
+    else if (contentType.includes('wmv')) mimeType = 'video/x-ms-wmv';
+    else if (contentType.includes('flv')) mimeType = 'video/x-flv';
+    else if (contentType.includes('mp4')) mimeType = 'video/mp4';
+    
+    console.log('✅ Vídeo convertido para base64, tipo:', mimeType, 'tamanho:', (arrayBuffer.byteLength / 1024 / 1024).toFixed(2), 'MB');
+    return { base64, mimeType };
+  } catch (error) {
+    console.error('❌ Erro ao baixar vídeo:', error);
+    return null;
+  }
+}
+
+// Helper function to fetch document as base64 (max 20MB for inline_data)
+async function fetchDocumentAsBase64(docUrl: string, fileName?: string): Promise<{ base64: string; mimeType: string } | null> {
+  try {
+    console.log('📄 Baixando documento:', docUrl.substring(0, 80) + '...');
+    
+    const response = await fetch(docUrl);
+    if (!response.ok) {
+      console.log('❌ Falha ao baixar documento:', response.status);
+      return null;
+    }
+    
+    const arrayBuffer = await response.arrayBuffer();
+    
+    // Check size limit (20MB for inline_data)
+    if (arrayBuffer.byteLength > 20 * 1024 * 1024) {
+      console.log('⚠️ Documento muito grande para análise inline:', (arrayBuffer.byteLength / 1024 / 1024).toFixed(2), 'MB');
+      return null;
+    }
+    
+    const base64 = arrayBufferToBase64(arrayBuffer);
+    let contentType = response.headers.get('content-type') || 'application/octet-stream';
+    
+    // Try to infer mime type from filename if content-type is generic
+    if (contentType === 'application/octet-stream' && fileName) {
+      const ext = fileName.split('.').pop()?.toLowerCase();
+      const mimeMap: Record<string, string> = {
+        'pdf': 'application/pdf',
+        'doc': 'application/msword',
+        'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'xls': 'application/vnd.ms-excel',
+        'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'ppt': 'application/vnd.ms-powerpoint',
+        'pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        'txt': 'text/plain',
+        'csv': 'text/csv',
+        'html': 'text/html',
+        'htm': 'text/html',
+        'md': 'text/markdown',
+        'rtf': 'application/rtf',
+        'json': 'application/json',
+        'xml': 'application/xml',
+        'js': 'application/x-javascript'
+      };
+      if (ext && mimeMap[ext]) {
+        contentType = mimeMap[ext];
+      }
+    }
+    
+    // Verify it's a supported mime type
+    if (!SUPPORTED_DOCUMENT_MIMES.some(m => contentType.includes(m.split('/')[1]))) {
+      console.log('⚠️ Tipo de documento não suportado:', contentType);
+      return null;
+    }
+    
+    console.log('✅ Documento convertido para base64, tipo:', contentType, 'tamanho:', (arrayBuffer.byteLength / 1024 / 1024).toFixed(2), 'MB');
+    return { base64, mimeType: contentType };
+  } catch (error) {
+    console.error('❌ Erro ao baixar documento:', error);
+    return null;
+  }
+}
+
+// Helper function to transcribe audio using Gemini 3 Flash Preview
 async function transcribeAudio(audioUrl: string, apiKey: string): Promise<string | null> {
   try {
-    console.log('🎤 Transcrevendo áudio:', audioUrl.substring(0, 80) + '...');
+    console.log('🎤 Transcrevendo áudio com Gemini 3 Flash Preview:', audioUrl.substring(0, 80) + '...');
     
     const audioResponse = await fetch(audioUrl);
     if (!audioResponse.ok) {
@@ -274,36 +452,60 @@ async function transcribeAudio(audioUrl: string, apiKey: string): Promise<string
       return null;
     }
     
-    const audioBlob = await audioResponse.blob();
+    const audioBuffer = await audioResponse.arrayBuffer();
+    const audioBase64 = arrayBufferToBase64(audioBuffer);
     const contentType = audioResponse.headers.get('content-type') || 'audio/ogg';
     
-    let extension = 'ogg';
-    if (contentType.includes('mp3')) extension = 'mp3';
-    else if (contentType.includes('wav')) extension = 'wav';
-    else if (contentType.includes('webm')) extension = 'webm';
-    else if (contentType.includes('m4a')) extension = 'm4a';
-    else if (contentType.includes('mpeg')) extension = 'mp3';
+    // Map content type to Gemini's expected MIME types
+    let mimeType = 'audio/ogg';
+    if (contentType.includes('mp3') || contentType.includes('mpeg')) mimeType = 'audio/mp3';
+    else if (contentType.includes('wav')) mimeType = 'audio/wav';
+    else if (contentType.includes('webm')) mimeType = 'audio/webm';
+    else if (contentType.includes('m4a') || contentType.includes('mp4')) mimeType = 'audio/mp4';
+    else if (contentType.includes('ogg')) mimeType = 'audio/ogg';
     
-    const formData = new FormData();
-    formData.append('file', audioBlob, `audio.${extension}`);
-    formData.append('model', 'gpt-4o-transcribe');
-    formData.append('language', 'pt');
+    const geminiResponse = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{
+            parts: [
+              {
+                inline_data: {
+                  mime_type: mimeType,
+                  data: audioBase64
+                }
+              },
+              {
+                text: "Transcreva o áudio em português brasileiro. Retorne APENAS o texto transcrito, sem formatação, explicações ou comentários adicionais."
+              }
+            ]
+          }],
+          generationConfig: {
+            temperature: 0.1,
+            maxOutputTokens: 2000
+          }
+        })
+      }
+    );
     
-    const transcriptionResponse = await fetch('https://api.openai.com/v1/audio/transcriptions', {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${apiKey}` },
-      body: formData,
-    });
-    
-    if (!transcriptionResponse.ok) {
-      const errorText = await transcriptionResponse.text();
-      console.log('❌ Erro na transcrição:', transcriptionResponse.status, errorText);
+    if (!geminiResponse.ok) {
+      const errorText = await geminiResponse.text();
+      console.log('❌ Erro na transcrição Gemini:', geminiResponse.status, errorText);
       return null;
     }
     
-    const result = await transcriptionResponse.json();
-    console.log('✅ Áudio transcrito:', result.text?.substring(0, 50) + '...');
-    return result.text || null;
+    const result = await geminiResponse.json();
+    const transcription = result.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+    
+    if (transcription) {
+      console.log('✅ Áudio transcrito:', transcription.substring(0, 50) + '...');
+      return transcription;
+    }
+    
+    return null;
   } catch (error) {
     console.error('❌ Erro ao transcrever áudio:', error);
     return null;
@@ -351,6 +553,31 @@ serve(async (req) => {
         JSON.stringify({ success: false, error: 'connectionId and conversationId required' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════════
+    // 🔒 IDEMPOTENCY CHECK - Prevent duplicate processing of same batch
+    // ═══════════════════════════════════════════════════════════════════════════════
+    const messagesToProcess = isBatchRequest ? messages : [{ type: messageType || 'text', content: messageContent, mediaUrl }];
+    const idempotencyKey = createBatchHash(conversationId, messagesToProcess);
+    
+    if (redis) {
+      try {
+        const alreadyProcessing = await redis.get(idempotencyKey);
+        if (alreadyProcessing) {
+          console.log(`🔒 [IDEMPOTENCY] Batch already being processed: ${idempotencyKey}`);
+          return new Response(
+            JSON.stringify({ success: true, skip: true, reason: 'Already processing this batch' }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+        
+        // Mark as processing with 5 minute TTL
+        await redis.setex(idempotencyKey, 300, 'processing');
+        console.log(`✅ [IDEMPOTENCY] Marked batch as processing: ${idempotencyKey}`);
+      } catch (redisError) {
+        console.log('⚠️ [IDEMPOTENCY] Redis error, continuing anyway:', redisError);
+      }
     }
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
@@ -479,8 +706,10 @@ serve(async (req) => {
         if (subAgent.status === 'active') {
           activeSubAgent = subAgent;
           // Use sub-agent prompts while keeping parent agent's audio/delay settings
+          // CRÍTICO: Incluir ID do sub-agente para que busca de mídia funcione corretamente
           agent = {
             ...agent,
+            id: subAgent.id,  // ← ID do sub-agente para buscar mídia corretamente
             name: subAgent.name,
             script_content: subAgent.script_content || agent.script_content,
             rules_content: subAgent.rules_content || agent.rules_content,
@@ -490,6 +719,7 @@ serve(async (req) => {
             temperature: subAgent.temperature ?? agent.temperature
           };
           console.log('✅ Sub-agente carregado:', subAgent.name);
+          console.log('🆔 Agent ID atualizado para sub-agente:', agent.id);
           console.log('📝 Usando prompts do sub-agente');
         } else {
           console.log('⚠️ Sub-agente inativo:', subAgent.name, '| Status:', subAgent.status);
@@ -592,11 +822,11 @@ serve(async (req) => {
     console.log('│ 4️⃣  GERAR RESPOSTA COM IA                                       │');
     console.log('└─────────────────────────────────────────────────────────────────┘');
 
-    const AI_API_KEY = Deno.env.get('AI_AGENTS_OPENAI_API_KEY');
-    if (!AI_API_KEY) {
-      console.log('❌ AI_AGENTS_OPENAI_API_KEY não configurada');
+    const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY');
+    if (!GEMINI_API_KEY) {
+      console.log('❌ GEMINI_API_KEY não configurada');
       return new Response(
-        JSON.stringify({ success: false, error: 'AI API key not configured' }),
+        JSON.stringify({ success: false, error: 'Gemini API key not configured' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -610,8 +840,10 @@ serve(async (req) => {
       .order('created_at', { ascending: false })
       .limit(30);
 
-    // Collect images for potential multimodal analysis
+    // Collect media URLs for potential multimodal analysis
     const imageUrls: string[] = [];
+    const videoUrls: string[] = [];
+    const documentData: { url: string; fileName: string }[] = [];
 
     const conversationHistory = (recentMessages || [])
       .reverse()
@@ -638,11 +870,19 @@ serve(async (req) => {
             ? `[Imagem com legenda]: ${m.content}` 
             : '[Cliente enviou uma imagem]';
         } else if (m.message_type === 'video') {
+          // Collect video URLs for multimodal analysis
+          if (m.media_url && m.direction === 'inbound') {
+            videoUrls.push(m.media_url);
+          }
           messageText = m.content 
             ? `[Vídeo com legenda]: ${m.content}` 
             : '[Cliente enviou um vídeo]';
         } else if (m.message_type === 'document') {
           const fileName = metadata?.fileName || metadata?.file_name || 'documento';
+          // Collect document data for multimodal analysis
+          if (m.media_url && m.direction === 'inbound') {
+            documentData.push({ url: m.media_url, fileName });
+          }
           messageText = m.content 
             ? `[Documento "${fileName}"]: ${m.content}` 
             : `[Cliente enviou documento: ${fileName}]`;
@@ -659,11 +899,14 @@ serve(async (req) => {
       })
       .filter(Boolean);
 
-    // Check if current message is image/audio that needs special processing
+    // Check if current message is image/audio/video/document that needs special processing
     // For batch requests, check the last message type
     let currentMessageIsImage = messageType === 'image';
     let currentMessageIsAudio = messageType === 'audio';
+    let currentMessageIsVideo = messageType === 'video';
+    let currentMessageIsDocument = messageType === 'document';
     let actualMediaUrl = mediaUrl;
+    let currentDocumentFileName = '';
     
     // Process batch messages if this is a batch request
     let processedMessageContent = messageContent || '';
@@ -678,7 +921,7 @@ serve(async (req) => {
         } else if (msg.type === 'audio') {
           // Transcribe audio if we have URL
           if (msg.mediaUrl) {
-            const transcription = await transcribeAudio(msg.mediaUrl, AI_API_KEY);
+            const transcription = await transcribeAudio(msg.mediaUrl, GEMINI_API_KEY);
             if (transcription) {
               batchContents.push(`[Áudio transcrito]: ${transcription}`);
             } else {
@@ -691,6 +934,15 @@ serve(async (req) => {
           currentMessageIsImage = true;
           if (msg.mediaUrl) actualMediaUrl = msg.mediaUrl;
           batchContents.push(msg.content ? `[Imagem com legenda]: ${msg.content}` : '[Cliente enviou uma imagem]');
+        } else if (msg.type === 'video') {
+          currentMessageIsVideo = true;
+          if (msg.mediaUrl) actualMediaUrl = msg.mediaUrl;
+          batchContents.push(msg.content ? `[Vídeo com legenda]: ${msg.content}` : '[Cliente enviou um vídeo]');
+        } else if (msg.type === 'document') {
+          currentMessageIsDocument = true;
+          if (msg.mediaUrl) actualMediaUrl = msg.mediaUrl;
+          currentDocumentFileName = msg.fileName || 'documento';
+          batchContents.push(msg.content ? `[Documento "${currentDocumentFileName}"]: ${msg.content}` : `[Cliente enviou documento: ${currentDocumentFileName}]`);
         }
       }
       
@@ -702,7 +954,10 @@ serve(async (req) => {
       if (lastMsg) {
         currentMessageIsImage = lastMsg.type === 'image';
         currentMessageIsAudio = lastMsg.type === 'audio';
+        currentMessageIsVideo = lastMsg.type === 'video';
+        currentMessageIsDocument = lastMsg.type === 'document';
         if (lastMsg.mediaUrl) actualMediaUrl = lastMsg.mediaUrl;
+        if (lastMsg.fileName) currentDocumentFileName = lastMsg.fileName;
       }
       
       console.log('📦 Batch combined:', processedMessageContent.substring(0, 100) + '...');
@@ -712,7 +967,8 @@ serve(async (req) => {
     }
     
     // Get the actual mediaUrl if not provided (media may have been processed in background)
-    if ((currentMessageIsImage || currentMessageIsAudio) && !actualMediaUrl) {
+    const needsMediaUrl = currentMessageIsImage || currentMessageIsAudio || currentMessageIsVideo || currentMessageIsDocument;
+    if (needsMediaUrl && !actualMediaUrl) {
       // Fetch the most recent message to get the media_url
       const { data: latestMsg } = await supabase
         .from('messages')
@@ -727,13 +983,18 @@ serve(async (req) => {
       if (latestMsg?.media_url) {
         actualMediaUrl = latestMsg.media_url;
         console.log('📎 Media URL obtida do banco:', actualMediaUrl.substring(0, 50) + '...');
+        // Get document filename from metadata if applicable
+        if (currentMessageIsDocument && latestMsg.metadata) {
+          const meta = latestMsg.metadata as any;
+          currentDocumentFileName = meta?.fileName || meta?.file_name || 'documento';
+        }
       }
     }
     
     // Handle audio transcription for current message (legacy mode)
     if (!isBatchRequest && currentMessageIsAudio && actualMediaUrl && !processedMessageContent) {
       console.log('🎤 Transcrevendo áudio do cliente...');
-      const transcription = await transcribeAudio(actualMediaUrl, AI_API_KEY);
+      const transcription = await transcribeAudio(actualMediaUrl, GEMINI_API_KEY);
       if (transcription) {
         processedMessageContent = transcription;
         console.log('✅ Transcrição obtida:', transcription.substring(0, 50) + '...');
@@ -784,7 +1045,7 @@ serve(async (req) => {
     console.log('└─────────────────────────────────────────────────────────────────┘');
 
     // Load CRM stages (Kanban columns) for this connection
-    let availableCrmStages: { name: string; slug: string }[] = [];
+    let availableCrmStages: { id: string; name: string; normalized: string }[] = [];
     const { data: kanbanBoard } = await supabase
       .from('kanban_boards')
       .select('id')
@@ -794,14 +1055,15 @@ serve(async (req) => {
     if (kanbanBoard) {
       const { data: columns } = await supabase
         .from('kanban_columns')
-        .select('name, position')
+        .select('id, name, position')
         .eq('board_id', kanbanBoard.id)
         .order('position', { ascending: true });
       
       if (columns) {
         availableCrmStages = columns.map(col => ({
+          id: col.id,
           name: col.name,
-          slug: col.name.toLowerCase()
+          normalized: col.name.toLowerCase()
             .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
             .replace(/\s+/g, '-')
         }));
@@ -819,38 +1081,44 @@ serve(async (req) => {
     const connectionCompanyId = companyData?.company_id;
     let availableTags: string[] = [];
     if (connectionCompanyId) {
-      const { data: contacts } = await supabase
-        .from('contacts')
-        .select('tags')
-        .eq('company_id', connectionCompanyId)
-        .not('tags', 'is', null);
+      // Load tags from tags table (not from contacts)
+      const { data: tagsData, error: tagsError } = await supabase
+        .from('tags')
+        .select('name')
+        .eq('company_id', connectionCompanyId);
       
-      if (contacts) {
-        const allTags = new Set<string>();
-        for (const contact of contacts) {
-          if (Array.isArray(contact.tags)) {
-            for (const tag of contact.tags) {
-              if (tag) allTags.add(tag);
-            }
-          }
-        }
-        availableTags = Array.from(allTags).sort();
+      if (tagsData && !tagsError) {
+        availableTags = tagsData.map(t => t.name).sort();
+      } else {
+        console.log('⚠️ Erro ao carregar tags:', tagsError?.message);
       }
     }
     console.log('🏷️ Etiquetas disponíveis:', availableTags.length);
 
-    // Load active AI agents (sub-agents) for this company
-    let availableAgents: { name: string; description: string | null }[] = [];
+    // Load active AI agents (sub-agents) for this company WITH specialty metadata
+    let availableAgents: { 
+      name: string; 
+      description: string | null;
+      specialty_keywords: string[];
+      qualification_summary: string | null;
+      disqualification_signs: string | null;
+    }[] = [];
     if (connectionCompanyId) {
       const { data: agents } = await supabase
         .from('ai_agents')
-        .select('name, description')
+        .select('name, description, specialty_keywords, qualification_summary, disqualification_signs')
         .eq('company_id', connectionCompanyId)
         .eq('status', 'active')
         .neq('id', agent.id); // Exclude current agent
       
       if (agents) {
-        availableAgents = agents.map(a => ({ name: a.name, description: a.description }));
+        availableAgents = agents.map(a => ({ 
+          name: a.name, 
+          description: a.description,
+          specialty_keywords: a.specialty_keywords || [],
+          qualification_summary: a.qualification_summary,
+          disqualification_signs: a.disqualification_signs
+        }));
       }
     }
     console.log('🤖 Agentes disponíveis:', availableAgents.length);
@@ -902,14 +1170,13 @@ serve(async (req) => {
         parameters: {
           type: "object",
           properties: {
-            stage_slug: {
+            stage_name: {
               type: "string",
-              enum: availableCrmStages.map(s => s.slug),
-              description: `Slug da etapa destino. Opções: ${availableCrmStages.map(s => `"${s.slug}" (${s.name})`).join(', ')}`
+              enum: availableCrmStages.map(s => s.name),
+              description: `Nome EXATO da etapa destino. Opções disponíveis: ${availableCrmStages.map(s => `"${s.name}"`).join(', ')}. Use o nome EXATAMENTE como mostrado.`
             }
           },
-          required: ["stage_slug"],
-          additionalProperties: false
+          required: ["stage_name"]
         }
       });
     }
@@ -930,28 +1197,37 @@ serve(async (req) => {
               : "Nome da etiqueta (use nomes sem acentos e em minúsculo, separados por hífen)"
           }
         },
-        required: ["tag_name"],
-        additionalProperties: false
+        required: ["tag_name"]
       }
     });
 
     // Tool: transferir_agente - Only if there are other agents
     if (availableAgents.length > 0) {
+      // Build enhanced agent descriptions with specialty info
+      const agentDescriptions = availableAgents.map(a => {
+        let desc = `"${a.name}"`;
+        if (a.qualification_summary) {
+          desc += ` - Especializado em: ${a.qualification_summary.substring(0, 100)}${a.qualification_summary.length > 100 ? '...' : ''}`;
+        } else if (a.description) {
+          desc += ` - ${a.description}`;
+        }
+        return desc;
+      }).join('; ');
+
       dynamicTools.push({
         type: "function",
         name: "transferir_agente",
-        description: "Transfere a conversa para outro agente de IA especializado.",
+        description: "Transfere a conversa para outro agente de IA especializado. Use quando o lead se encaixa melhor no perfil de outro agente.",
         parameters: {
           type: "object",
           properties: {
             agent_name: {
               type: "string",
               enum: availableAgents.map(a => a.name),
-              description: `Nome do agente destino. Opções: ${availableAgents.map(a => `"${a.name}"${a.description ? ` - ${a.description}` : ''}`).join('; ')}`
+              description: `Nome do agente destino. Opções: ${agentDescriptions}`
             }
           },
-          required: ["agent_name"],
-          additionalProperties: false
+          required: ["agent_name"]
         }
       });
     }
@@ -971,8 +1247,7 @@ serve(async (req) => {
               description: `Nome do departamento. Opções: ${availableDepartments.map(d => `"${d.name}"`).join(', ')}`
             }
           },
-          required: ["department_name"],
-          additionalProperties: false
+          required: ["department_name"]
         }
       });
     }
@@ -990,8 +1265,7 @@ serve(async (req) => {
             description: "Nome do atendente para transferir a conversa"
           }
         },
-        required: ["user_name"],
-        additionalProperties: false
+        required: ["user_name"]
       }
     });
 
@@ -1008,8 +1282,7 @@ serve(async (req) => {
             description: "Mensagem de notificação para a equipe"
           }
         },
-        required: ["message"],
-        additionalProperties: false
+        required: ["message"]
       }
     });
 
@@ -1020,8 +1293,7 @@ serve(async (req) => {
       description: "Desativa o agente de IA permanentemente nesta conversa. Use quando a conversa precisar continuar apenas com humanos.",
       parameters: {
         type: "object",
-        properties: {},
-        additionalProperties: false
+        properties: {}
       }
     });
 
@@ -1038,8 +1310,7 @@ serve(async (req) => {
             description: "Nome da origem do lead"
           }
         },
-        required: ["origin"],
-        additionalProperties: false
+        required: ["origin"]
       }
     });
 
@@ -1136,7 +1407,7 @@ Quando apropriado, INCLUA os comandos abaixo NO INÍCIO da sua resposta (eles se
 
 ### ETAPAS DO CRM (para /mudar_etapa_crm):
 ${availableCrmStages.length > 0 
-  ? availableCrmStages.map(s => `- "${s.name}" → /mudar_etapa_crm:${s.slug}`).join('\n')
+  ? availableCrmStages.map(s => `- "${s.name}" → /mudar_etapa_crm:${s.name}`).join('\n')
   : '- (Nenhuma etapa configurada no CRM)'}
 
 ### ETIQUETAS (para /adicionar_etiqueta):
@@ -1148,6 +1419,31 @@ ${availableTags.length > 0
 ${availableAgents.length > 0 
   ? availableAgents.map(a => `- "${a.name}"${a.description ? ` - ${a.description}` : ''}`).join('\n')
   : '- (Nenhum outro agente disponível)'}
+
+${availableAgents.length > 0 && availableAgents.some(a => a.qualification_summary || a.disqualification_signs) ? `
+## 🎯 ESPECIALIDADES DOS AGENTES (para transferência inteligente)
+Use estas informações para identificar quando transferir o lead para outro agente especializado:
+
+${availableAgents.filter(a => a.qualification_summary || a.disqualification_signs || a.specialty_keywords?.length > 0).map(a => {
+  const parts = [`### ${a.name}`];
+  if (a.specialty_keywords?.length > 0) {
+    parts.push(`- **Palavras-chave**: ${a.specialty_keywords.join(', ')}`);
+  }
+  if (a.qualification_summary) {
+    parts.push(`- **Perfil ideal**: ${a.qualification_summary}`);
+  }
+  if (a.disqualification_signs) {
+    parts.push(`- **NÃO se encaixa se**: ${a.disqualification_signs}`);
+  }
+  return parts.join('\n');
+}).join('\n\n')}
+
+⚠️ REGRAS DE REDIRECIONAMENTO INTELIGENTE:
+1. Se o lead mencionar palavras-chave de outro agente, considere transferir
+2. Se o lead NÃO se encaixa no seu perfil mas se encaixa em outro, transfira com: /transferir_agente:Nome do Agente
+3. Antes de transferir, confirme com o lead se ele tem interesse no outro serviço
+4. Ao transferir, explique brevemente ao lead que há um especialista para o caso dele
+` : ''}
 
 ### DEPARTAMENTOS (para /atribuir_departamento):
 ${availableDepartments.length > 0 
@@ -1209,123 +1505,167 @@ CRÍTICO SOBRE COMANDOS:
 4. Se não souber responder algo específico, direcione para um atendente humano
 5. Nunca invente informações - use apenas o que está no roteiro, regras e FAQ
 6. Mantenha o tom profissional mas acolhedor
-7. Se o cliente enviar uma imagem, ANALISE o conteúdo visual e responda de forma contextualizada
+7. Se o cliente enviar uma imagem, vídeo ou documento, ANALISE o conteúdo e responda de forma contextualizada
 8. VARIE seu vocabulário - não use as mesmas palavras repetidamente`;
 
     console.log('📝 System prompt criado (' + systemPrompt.length + ' chars)');
     console.log('📝 Histórico:', conversationHistory.length, 'mensagens');
     console.log('🖼️ Imagens para análise:', imageUrls.length);
+    console.log('🎬 Vídeos para análise:', videoUrls.length);
+    console.log('📄 Documentos para análise:', documentData.length);
 
-    const agentTemperature = agent.temperature ?? 0.7;
+    const agentTemperature = agent.temperature ?? 1.0;
     console.log('🌡️ Temperatura configurada:', agentTemperature);
 
-    let aiResponse: string;
-    let modelUsed: string;
+    let aiResponse: string = '';
+    let modelUsed: string = 'gemini-3-flash-preview';
     let toolCallsFromApi: any[] = []; // Store tool calls from API response
 
-    // Determine if we should use multimodal (image analysis)
-    const shouldUseMultimodal = currentMessageIsImage && actualMediaUrl;
+    // Determine if we should use multimodal analysis (image, video or document)
+    const shouldUseMultimodalImage = currentMessageIsImage && actualMediaUrl;
+    const shouldUseMultimodalVideo = currentMessageIsVideo && actualMediaUrl;
+    const shouldUseMultimodalDocument = currentMessageIsDocument && actualMediaUrl;
+    const shouldUseMultimodal = shouldUseMultimodalImage || shouldUseMultimodalVideo || shouldUseMultimodalDocument;
 
     if (shouldUseMultimodal) {
-      // Use multimodal endpoint with gpt-5-nano for image analysis (no tools for now - vision model)
-      console.log('🖼️ Usando endpoint multimodal /v1/responses com gpt-5-nano');
-      modelUsed = 'gpt-5-nano';
+      modelUsed = 'gemini-3-flash-preview';
       
       const historyText = conversationHistory.map((m: any) => 
         `${m.role === 'user' ? '[CLIENTE]' : '[AGENTE]'}: ${m.content}`
       ).join('\n');
       
-      const contentItems = [
-        { 
-          type: 'input_text', 
-          text: `${systemPrompt}\n\nHistórico da conversa:\n${historyText}\n\nO cliente acabou de enviar esta imagem${processedMessageContent ? ` com a seguinte mensagem: "${processedMessageContent}"` : ''}. Analise a imagem e responda de forma adequada ao contexto.`
-        },
-        {
-          type: 'input_image',
-          image_url: actualMediaUrl
-        }
-      ];
+      let mediaData: { base64: string; mimeType: string } | null = null;
+      let mediaPrompt: string;
       
-      const agentTemperature = agent.temperature ?? 0.7;
-      
-      const response = await fetch('https://api.openai.com/v1/responses', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${AI_API_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: 'gpt-5-nano',
-          input: [
-            {
-              type: 'message',
-              role: 'user',
-              content: contentItems
-            }
-          ],
-          text: {
-            format: { type: 'text' },
-            verbosity: 'medium'
-          },
-          reasoning: {
-            effort: 'low',
-            summary: 'concise'
-          }
-        }),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.log('❌ OpenAI /v1/responses error:', response.status, errorText);
+      if (shouldUseMultimodalImage) {
+        // Image analysis
+        console.log('🖼️ Usando Gemini 3 Flash Preview para análise de imagem');
+        mediaData = await fetchImageAsBase64(actualMediaUrl);
+        mediaPrompt = `${systemPrompt}\n\nHistórico da conversa:\n${historyText}\n\nO cliente acabou de enviar esta imagem${processedMessageContent ? ` com a seguinte mensagem: "${processedMessageContent}"` : ''}. Analise a imagem e responda de forma adequada ao contexto.`;
         
+      } else if (shouldUseMultimodalVideo) {
+        // Video analysis
+        console.log('🎬 Usando Gemini 3 Flash Preview para análise de vídeo');
+        mediaData = await fetchVideoAsBase64(actualMediaUrl);
+        mediaPrompt = `${systemPrompt}\n\nHistórico da conversa:\n${historyText}\n\nO cliente acabou de enviar este vídeo${processedMessageContent ? ` com a seguinte mensagem: "${processedMessageContent}"` : ''}. Analise o conteúdo visual e de áudio do vídeo e responda de forma adequada ao contexto. Descreva o que você vê e ouve no vídeo se for relevante para a conversa.`;
+        
+      } else if (shouldUseMultimodalDocument) {
+        // Document analysis
+        console.log('📄 Usando Gemini 3 Flash Preview para análise de documento');
+        mediaData = await fetchDocumentAsBase64(actualMediaUrl, currentDocumentFileName);
+        const docName = currentDocumentFileName || 'documento';
+        mediaPrompt = `${systemPrompt}\n\nHistórico da conversa:\n${historyText}\n\nO cliente acabou de enviar o documento "${docName}"${processedMessageContent ? ` com a seguinte mensagem: "${processedMessageContent}"` : ''}. Analise o conteúdo do documento e responda de forma adequada ao contexto. Extraia informações relevantes do documento se necessário.`;
+        
+      } else {
+        mediaPrompt = '';
+      }
+      
+      if (!mediaData) {
+        const mediaType = shouldUseMultimodalImage ? 'imagem' : shouldUseMultimodalVideo ? 'vídeo' : 'documento';
+        console.log(`❌ Não foi possível baixar o ${mediaType}`);
         await supabase.from('ai_agent_logs').insert({
           agent_id: agent.id,
           conversation_id: conversationId,
           action_type: 'response_error',
           input_text: processedMessageContent,
-          error_message: `OpenAI /v1/responses error: ${response.status}`,
-          metadata: { errorDetails: errorText, messageType, hasImage: true }
-        });
-
-        return new Response(
-          JSON.stringify({ success: false, error: 'AI API error' }),
-          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-
-      const aiData = await response.json();
-      console.log('📦 Resposta API (multimodal):', JSON.stringify(aiData, null, 2));
-      aiResponse = aiData.output?.find((o: any) => o.type === 'message')?.content?.[0]?.text?.trim() || '';
-      
-      // Retry with lower temperature if empty
-      if (!aiResponse) {
-        console.log('⚠️ Resposta multimodal vazia - tentando retry com temperatura 0.5');
-        const retryResponse = await fetch('https://api.openai.com/v1/responses', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${AI_API_KEY}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            model: 'gpt-5-nano',
-            input: [{ type: 'message', role: 'user', content: contentItems }],
-            text: { format: { type: 'text' }, verbosity: 'medium' },
-            reasoning: { effort: 'low', summary: 'concise' }
-          }),
+          error_message: `Failed to fetch ${mediaType}`,
+          metadata: { messageType, hasMedia: true, mediaType }
         });
         
-        if (retryResponse.ok) {
-          const retryData = await retryResponse.json();
-          console.log('🔄 Retry multimodal result:', JSON.stringify(retryData, null, 2));
-          aiResponse = retryData.output?.find((o: any) => o.type === 'message')?.content?.[0]?.text?.trim() || '';
+        // Fallback: continue without multimodal analysis
+        console.log(`⚠️ Continuando sem análise multimodal - usando texto como fallback`);
+        const fallbackContent = shouldUseMultimodalImage ? '[Cliente enviou uma imagem que não pôde ser analisada]' :
+                               shouldUseMultimodalVideo ? '[Cliente enviou um vídeo que não pôde ser analisado]' :
+                               `[Cliente enviou documento "${currentDocumentFileName}" que não pôde ser analisado]`;
+        processedMessageContent = fallbackContent + (processedMessageContent ? ` - Mensagem do cliente: ${processedMessageContent}` : '');
+        // Continue to text-only processing below
+      } else {
+        // Process with multimodal
+        const response = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${GEMINI_API_KEY}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [{
+                parts: [
+                  {
+                    inline_data: {
+                      mime_type: mediaData.mimeType,
+                      data: mediaData.base64
+                    }
+                  },
+                  { text: mediaPrompt }
+                ]
+              }],
+              generationConfig: {
+                temperature: agentTemperature,
+                maxOutputTokens: 1500
+              }
+            })
+          }
+        );
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          const mediaType = shouldUseMultimodalImage ? 'image' : shouldUseMultimodalVideo ? 'video' : 'document';
+          console.log(`❌ Gemini multimodal error (${mediaType}):`, response.status, errorText);
+          
+          await supabase.from('ai_agent_logs').insert({
+            agent_id: agent.id,
+            conversation_id: conversationId,
+            action_type: 'response_error',
+            input_text: processedMessageContent,
+            error_message: `Gemini multimodal error: ${response.status}`,
+            metadata: { errorDetails: errorText, messageType, mediaType }
+          });
+
+          return new Response(
+            JSON.stringify({ success: false, error: 'AI API error' }),
+            { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        const aiData = await response.json();
+        const mediaType = shouldUseMultimodalImage ? 'imagem' : shouldUseMultimodalVideo ? 'vídeo' : 'documento';
+        console.log(`📦 Resposta Gemini (${mediaType}):`, JSON.stringify(aiData, null, 2).substring(0, 500) + '...');
+        aiResponse = aiData.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
+        
+        // Retry with lower temperature if empty
+        if (!aiResponse) {
+          console.log('⚠️ Resposta multimodal vazia - tentando retry com temperatura 0.5');
+          const retryResponse = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${GEMINI_API_KEY}`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                contents: [{
+                  parts: [
+                    { inline_data: { mime_type: mediaData.mimeType, data: mediaData.base64 } },
+                    { text: mediaPrompt }
+                  ]
+                }],
+                generationConfig: { temperature: 0.5, maxOutputTokens: 1500 }
+              })
+            }
+          );
+          
+          if (retryResponse.ok) {
+            const retryData = await retryResponse.json();
+            console.log('🔄 Retry multimodal result:', JSON.stringify(retryData, null, 2).substring(0, 500) + '...');
+            aiResponse = retryData.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
+          }
         }
       }
-      
-    } else {
-      // Use /v1/responses endpoint with Tool Calling (compatible with GPT-5 models)
-      console.log('📝 Usando endpoint /v1/responses com gpt-5-mini + Tool Calling');
+    }
+    
+    // If multimodal didn't produce a response (either not multimodal or fallback), use text-only
+    if (!aiResponse) {
+      // Use Gemini 3 Flash Preview with Function Calling
+      console.log('📝 Usando Gemini 3 Flash Preview com Function Calling');
       console.log('🔧 Tools disponíveis:', dynamicTools.length);
-      modelUsed = 'gpt-5-mini';
+      modelUsed = 'gemini-3-flash-preview';
       
       // Build conversation context as single prompt
       const conversationContextForPrompt = conversationHistory
@@ -1335,47 +1675,53 @@ CRÍTICO SOBRE COMANDOS:
       
       const fullPrompt = `${systemPrompt}\n\nHistórico da conversa:\n${conversationContextForPrompt}\n\n[CLIENTE]: ${processedMessageContent || '[Mensagem sem texto]'}\n\nGere a resposta do atendente. Se precisar executar ações (mover no CRM, adicionar etiqueta, etc), use as ferramentas disponíveis:`;
       
-      const agentTemperature = agent.temperature ?? 0.7;
+      const agentTemperature = agent.temperature ?? 1.0;
       
-      // Build request body with tools
+      // Convert OpenAI tool format to Gemini function_declarations format
+      const geminiTools = dynamicTools.length > 0 ? [{
+        function_declarations: dynamicTools.map(tool => ({
+          name: tool.name,
+          description: tool.description,
+          parameters: tool.parameters
+        }))
+      }] : undefined;
+      
+      // Build request body
       const requestBody: any = {
-        model: 'gpt-5-mini',
-        input: fullPrompt,
-        text: {
-          format: { type: 'text' },
-          verbosity: 'medium'
-        },
-        reasoning: {
-          effort: 'low',
-          summary: 'concise'
+        contents: [{
+          parts: [{ text: fullPrompt }]
+        }],
+        generationConfig: {
+          temperature: agentTemperature,
+          maxOutputTokens: 1500
         }
       };
 
       // Add tools if available
-      if (dynamicTools.length > 0) {
-        requestBody.tools = dynamicTools;
-        requestBody.tool_choice = 'auto'; // Let the model decide when to use tools
+      if (geminiTools) {
+        requestBody.tools = geminiTools;
+        requestBody.tool_config = { function_calling_config: { mode: 'AUTO' } };
       }
       
-      const openaiResponse = await fetch('https://api.openai.com/v1/responses', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${AI_API_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(requestBody),
-      });
+      const geminiResponse = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${GEMINI_API_KEY}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(requestBody)
+        }
+      );
 
-      if (!openaiResponse.ok) {
-        const errorText = await openaiResponse.text();
-        console.log('❌ OpenAI error:', openaiResponse.status, errorText);
+      if (!geminiResponse.ok) {
+        const errorText = await geminiResponse.text();
+        console.log('❌ Gemini error:', geminiResponse.status, errorText);
         
         await supabase.from('ai_agent_logs').insert({
           agent_id: agent.id,
           conversation_id: conversationId,
           action_type: 'response_error',
           input_text: processedMessageContent,
-          error_message: `OpenAI API error: ${openaiResponse.status}`,
+          error_message: `Gemini API error: ${geminiResponse.status}`,
           metadata: { errorDetails: errorText, toolsCount: dynamicTools.length }
         });
 
@@ -1385,77 +1731,71 @@ CRÍTICO SOBRE COMANDOS:
         );
       }
 
-      const aiData = await openaiResponse.json();
-      console.log('📦 Resposta API (texto + tools):', JSON.stringify(aiData, null, 2));
+      const aiData = await geminiResponse.json();
+      console.log('📦 Resposta Gemini (texto + tools):', JSON.stringify(aiData, null, 2).substring(0, 500) + '...');
       
-      // Extract text response
-      aiResponse = aiData.output?.find((o: any) => o.type === 'message')?.content?.[0]?.text?.trim() || '';
+      // Extract text response and function calls from Gemini response
+      const candidate = aiData.candidates?.[0];
+      const parts = candidate?.content?.parts || [];
       
-      // Extract tool calls from the response
-      const functionCalls = aiData.output?.filter((o: any) => o.type === 'function_call') || [];
-      if (functionCalls.length > 0) {
-        console.log('🔧 Tool calls encontrados:', functionCalls.length);
-        for (const fc of functionCalls) {
-          console.log(`   - ${fc.name}:`, fc.arguments);
+      for (const part of parts) {
+        if (part.text) {
+          aiResponse = part.text.trim();
+        }
+        if (part.functionCall) {
+          console.log(`🔧 Function call encontrado: ${part.functionCall.name}`, part.functionCall.args);
           toolCallsFromApi.push({
-            name: fc.name,
-            arguments: typeof fc.arguments === 'string' ? JSON.parse(fc.arguments) : fc.arguments
+            name: part.functionCall.name,
+            arguments: part.functionCall.args || {}
           });
         }
+      }
+      
+      if (toolCallsFromApi.length > 0) {
+        console.log('🔧 Tool calls encontrados:', toolCallsFromApi.length);
       }
       
       // Retry with lower temperature if empty
       if (!aiResponse) {
         console.log('⚠️ Resposta texto vazia - tentando retry com temperatura 0.5');
-        const retryResponse = await fetch('https://api.openai.com/v1/responses', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${AI_API_KEY}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            model: 'gpt-5-mini',
-            input: fullPrompt,
-            text: { format: { type: 'text' }, verbosity: 'medium' },
-            reasoning: { effort: 'low', summary: 'concise' }
-          }),
-        });
+        const retryResponse = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${GEMINI_API_KEY}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [{ parts: [{ text: fullPrompt }] }],
+              generationConfig: { temperature: 0.5, maxOutputTokens: 1500 }
+            })
+          }
+        );
         
         if (retryResponse.ok) {
           const retryData = await retryResponse.json();
-          console.log('🔄 Retry texto result:', JSON.stringify(retryData, null, 2));
-          aiResponse = retryData.output?.find((o: any) => o.type === 'message')?.content?.[0]?.text?.trim() || '';
+          console.log('🔄 Retry texto result:', JSON.stringify(retryData, null, 2).substring(0, 500) + '...');
+          aiResponse = retryData.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
         }
       }
       
-      // Fallback to chat/completions if still empty
+      // Fallback with even lower temperature if still empty
       if (!aiResponse) {
-        console.log('⚠️ Ainda vazio - tentando fallback com chat/completions (gpt-4o-mini)');
-        const fallbackResponse = await fetch('https://api.openai.com/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${AI_API_KEY}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            model: 'gpt-4o-mini',
-            messages: [
-              { role: 'system', content: systemPrompt },
-              ...conversationHistory.filter(Boolean).map((msg: any) => ({
-                role: msg.role,
-                content: msg.content
-              })),
-              { role: 'user', content: processedMessageContent || '[Mensagem sem texto]' }
-            ],
-            temperature: 0.7,
-            max_tokens: 500
-          }),
-        });
+        console.log('⚠️ Ainda vazio - tentando fallback com temperatura 0.3');
+        const fallbackResponse = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${GEMINI_API_KEY}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [{ parts: [{ text: fullPrompt }] }],
+              generationConfig: { temperature: 0.3, maxOutputTokens: 1500 }
+            })
+          }
+        );
         
         if (fallbackResponse.ok) {
           const fallbackData = await fallbackResponse.json();
-          console.log('✅ Fallback result:', JSON.stringify(fallbackData, null, 2));
-          aiResponse = fallbackData.choices?.[0]?.message?.content?.trim() || '';
+          console.log('✅ Fallback result:', JSON.stringify(fallbackData, null, 2).substring(0, 500) + '...');
+          aiResponse = fallbackData.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
         }
       }
     }
@@ -1494,12 +1834,47 @@ CRÍTICO SOBRE COMANDOS:
     const contactId = conversationData?.contact_id;
     const companyId = conversationData?.company_id;
 
+    // 🚀 FLAGS PARA RESPOSTA IMEDIATA APÓS TRANSFERÊNCIA DE AGENTE
+    let agentTransferOccurred = false;
+    let transferredToAgentId: string | null = null;
+    let transferredToAgentName: string | null = null;
+
     // Command handlers
     const commandHandlers: Record<string, (value: string) => Promise<void>> = {
-      // Add tag to contact
+      // Add tag to contact - with validation against tags table
       'adicionar_etiqueta': async (tagName: string) => {
-        if (!contactId) return;
-        console.log('🏷️ Adicionando etiqueta:', tagName);
+        if (!contactId || !companyId) return;
+        console.log('🏷️ Tentando adicionar etiqueta:', tagName);
+        
+        // Validate tag exists in the tags table
+        const { data: existingTag, error: tagError } = await supabase
+          .from('tags')
+          .select('name')
+          .eq('company_id', companyId)
+          .ilike('name', tagName)
+          .maybeSingle();
+        
+        if (tagError) {
+          console.log('⚠️ Erro ao buscar etiqueta:', tagError.message);
+          return;
+        }
+        
+        if (!existingTag) {
+          // Tag doesn't exist - log warning and DO NOT add
+          console.log(`⚠️ [TAG] Etiqueta "${tagName}" não existe na tabela tags. Ignorando.`);
+          
+          // Debug: list available tags for this company
+          const { data: availableTags } = await supabase
+            .from('tags')
+            .select('name')
+            .eq('company_id', companyId);
+          console.log('📋 [TAG] Etiquetas disponíveis:', availableTags?.map(t => t.name).join(', ') || 'nenhuma');
+          return;
+        }
+        
+        // Use the exact name from the database
+        const validTagName = existingTag.name;
+        console.log('✅ [TAG] Etiqueta válida encontrada:', validTagName);
         
         // Get current tags
         const { data: contact } = await supabase
@@ -1509,40 +1884,92 @@ CRÍTICO SOBRE COMANDOS:
           .single();
         
         const currentTags = contact?.tags || [];
-        if (!currentTags.includes(tagName)) {
+        if (!currentTags.includes(validTagName)) {
           await supabase
             .from('contacts')
-            .update({ tags: [...currentTags, tagName] })
+            .update({ tags: [...currentTags, validTagName] })
             .eq('id', contactId);
-          console.log('✅ Etiqueta adicionada');
+          console.log('✅ Etiqueta adicionada com sucesso:', validTagName);
+        } else {
+          console.log('ℹ️ Contato já possui esta etiqueta:', validTagName);
         }
       },
 
       // Transfer to another AI agent (sub-agent)
       'transferir_agente': async (agentIdentifier: string) => {
-        console.log('🤖 Transferindo para agente:', agentIdentifier);
+        console.log('🤖 [TRANSFER] Iniciando transferência para agente:', agentIdentifier);
+        console.log('🔍 [TRANSFER] Company ID:', companyId);
         
-        // Find agent by name or id
-        const { data: targetAgent } = await supabase
-          .from('ai_agents')
-          .select('id, name')
-          .or(`name.ilike.%${agentIdentifier}%,id.eq.${agentIdentifier}`)
-          .eq('company_id', companyId)
-          .eq('status', 'active')
-          .limit(1)
-          .maybeSingle();
+        // Validate if identifier is a UUID
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        const isUuid = uuidRegex.test(agentIdentifier);
+        
+        let targetAgent = null;
+        let agentError = null;
+        
+        if (isUuid) {
+          // Search by exact UUID
+          console.log('🔍 [TRANSFER] Buscando por UUID:', agentIdentifier);
+          const result = await supabase
+            .from('ai_agents')
+            .select('id, name, parent_agent_id')
+            .eq('id', agentIdentifier)
+            .eq('company_id', companyId)
+            .eq('status', 'active')
+            .maybeSingle();
+          targetAgent = result.data;
+          agentError = result.error;
+        } else {
+          // Search by name using ILIKE with % wildcard (PostgreSQL standard)
+          console.log('🔍 [TRANSFER] Buscando por nome:', agentIdentifier);
+          const result = await supabase
+            .from('ai_agents')
+            .select('id, name, parent_agent_id')
+            .ilike('name', `%${agentIdentifier}%`)
+            .eq('company_id', companyId)
+            .eq('status', 'active')
+            .limit(1)
+            .maybeSingle();
+          targetAgent = result.data;
+          agentError = result.error;
+        }
+        
+        if (agentError) {
+          console.log('❌ [TRANSFER] Erro na busca de agente:', agentError.message);
+        }
+        
+        console.log('📋 [TRANSFER] Resultado da busca:', targetAgent ? `${targetAgent.name} (${targetAgent.id})` : 'NULL');
         
         if (targetAgent) {
-          await supabase
+          const { error: updateError } = await supabase
             .from('ai_conversation_states')
             .update({ 
               current_sub_agent_id: targetAgent.id,
               updated_at: new Date().toISOString()
             })
             .eq('conversation_id', conversationId);
-          console.log('✅ Transferido para agente:', targetAgent.name);
+          
+          if (updateError) {
+            console.log('❌ [TRANSFER] Erro ao atualizar estado:', updateError.message);
+          } else {
+            console.log('✅ [TRANSFER] Transferido com sucesso para:', targetAgent.name, '| ID:', targetAgent.id);
+            
+            // 🚀 MARCAR FLAG PARA RESPOSTA IMEDIATA DO NOVO AGENTE
+            agentTransferOccurred = true;
+            transferredToAgentId = targetAgent.id;
+            transferredToAgentName = targetAgent.name;
+            console.log('🚀 [TRANSFER] Flag de transferência ativado para resposta imediata');
+          }
         } else {
-          console.log('⚠️ Agente não encontrado:', agentIdentifier);
+          console.log('⚠️ [TRANSFER] Agente não encontrado:', agentIdentifier);
+          
+          // Debug: list all active agents for this company
+          const { data: allAgents } = await supabase
+            .from('ai_agents')
+            .select('id, name, status')
+            .eq('company_id', companyId)
+            .eq('status', 'active');
+          console.log('📋 [TRANSFER] Agentes ativos disponíveis:', allAgents?.map(a => a.name).join(', ') || 'nenhum');
         }
       },
 
@@ -1620,23 +2047,88 @@ CRÍTICO SOBRE COMANDOS:
           .maybeSingle();
         
         if (card) {
-          // Find target column
-          const { data: targetColumn } = await supabase
+          const boardId = (card as any).kanban_columns.board_id;
+          
+          // Normalize input for comparison
+          const normalizedInput = stageName.toLowerCase()
+            .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+            .replace(/\s+/g, '-');
+          
+          // First try exact match, then try normalized match, then ilike
+          let targetColumn = null;
+          
+          // 1. Try exact match by name
+          const { data: exactMatch } = await supabase
             .from('kanban_columns')
-            .select('id')
-            .eq('board_id', (card as any).kanban_columns.board_id)
-            .ilike('name', `%${stageName}%`)
+            .select('id, name')
+            .eq('board_id', boardId)
+            .eq('name', stageName)
             .limit(1)
             .maybeSingle();
+          
+          if (exactMatch) {
+            targetColumn = exactMatch;
+            console.log('✅ Match exato encontrado:', exactMatch.name);
+          } else {
+            // 2. Try case-insensitive ilike match
+            const { data: ilikeMatch } = await supabase
+              .from('kanban_columns')
+              .select('id, name')
+              .eq('board_id', boardId)
+              .ilike('name', stageName)
+              .limit(1)
+              .maybeSingle();
+            
+            if (ilikeMatch) {
+              targetColumn = ilikeMatch;
+              console.log('✅ Match ilike encontrado:', ilikeMatch.name);
+            } else {
+              // 3. Try partial match
+              const { data: partialMatch } = await supabase
+                .from('kanban_columns')
+                .select('id, name')
+                .eq('board_id', boardId)
+                .ilike('name', `%${stageName}%`)
+                .limit(1)
+                .maybeSingle();
+              
+              if (partialMatch) {
+                targetColumn = partialMatch;
+                console.log('✅ Match parcial encontrado:', partialMatch.name);
+              } else {
+                // 4. Load all columns and try normalized comparison
+                const { data: allColumns } = await supabase
+                  .from('kanban_columns')
+                  .select('id, name')
+                  .eq('board_id', boardId);
+                
+                if (allColumns) {
+                  for (const col of allColumns) {
+                    const normalizedColName = col.name.toLowerCase()
+                      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+                      .replace(/\s+/g, '-');
+                    
+                    if (normalizedColName === normalizedInput || 
+                        normalizedColName.includes(normalizedInput) ||
+                        normalizedInput.includes(normalizedColName)) {
+                      targetColumn = col;
+                      console.log('✅ Match normalizado encontrado:', col.name);
+                      break;
+                    }
+                  }
+                }
+              }
+            }
+          }
           
           if (targetColumn) {
             await supabase
               .from('kanban_cards')
               .update({ column_id: targetColumn.id })
               .eq('id', card.id);
-            console.log('✅ Etapa CRM atualizada');
+            console.log('✅ Etapa CRM atualizada para:', targetColumn.name);
           } else {
-            console.log('⚠️ Coluna não encontrada:', stageName);
+            console.log('⚠️ Coluna não encontrada:', stageName, '- Input normalizado:', normalizedInput);
           }
         } else {
           console.log('⚠️ Card não encontrado para contato');
@@ -1891,14 +2383,15 @@ CRÍTICO SOBRE COMANDOS:
     console.log('└─────────────────────────────────────────────────────────────────┘');
 
     // Parse and execute commands (fallback for slash commands in text)
+    // Supports both bracketed [Value With Spaces] and simple values
     const commandPatterns = [
-      { pattern: /\/adicionar_etiqueta:([^\n\/]+)/gi, handler: 'adicionar_etiqueta' },
-      { pattern: /\/transferir_agente:([^\n\/]+)/gi, handler: 'transferir_agente' },
-      { pattern: /\/transferir_usuario:([^\n\/]+)/gi, handler: 'transferir_usuario' },
-      { pattern: /\/atribuir_origem:([^\n\/]+)/gi, handler: 'atribuir_origem' },
-      { pattern: /\/mudar_etapa_crm:([^\n\/]+)/gi, handler: 'mudar_etapa_crm' },
-      { pattern: /\/notificar_equipe:([^\n]+)/gi, handler: 'notificar_equipe' },
-      { pattern: /\/atribuir_departamento:([^\n\/]+)/gi, handler: 'atribuir_departamento' },
+      { pattern: /\/adicionar_etiqueta:(?:\[([^\]]+)\]|([^\n\/\s]+))/gi, handler: 'adicionar_etiqueta' },
+      { pattern: /\/transferir_agente:(?:\[([^\]]+)\]|([^\n\/\s]+))/gi, handler: 'transferir_agente' },
+      { pattern: /\/transferir_usuario:(?:\[([^\]]+)\]|([^\n\/\s]+))/gi, handler: 'transferir_usuario' },
+      { pattern: /\/atribuir_origem:(?:\[([^\]]+)\]|([^\n\/\s]+))/gi, handler: 'atribuir_origem' },
+      { pattern: /\/mudar_etapa_crm:(?:\[([^\]]+)\]|([^\n\/\s]+))/gi, handler: 'mudar_etapa_crm' },
+      { pattern: /\/notificar_equipe:(?:\[([^\]]+)\]|([^\n]+))/gi, handler: 'notificar_equipe' },
+      { pattern: /\/atribuir_departamento:(?:\[([^\]]+)\]|([^\n\/\s]+))/gi, handler: 'atribuir_departamento' },
       { pattern: /\/desativar_agente/gi, handler: 'desativar_agente' },
     ];
 
@@ -1907,7 +2400,8 @@ CRÍTICO SOBRE COMANDOS:
       const matches = [...aiResponse.matchAll(pattern)];
       for (const match of matches) {
         slashCommandsFound++;
-        const value = (match[1] || '').trim();
+        // Extract value from bracketed group (match[1]) or simple group (match[2])
+        const value = (match[1] || match[2] || '').trim();
         
         // Check if this command was already executed via tool call
         const alreadyExecuted = executedCommands.some(cmd => 
@@ -1933,8 +2427,8 @@ CRÍTICO SOBRE COMANDOS:
     }
 
     // 🧹 LIMPEZA DE COMANDOS INVÁLIDOS
-    // Remove any remaining slash commands that weren't recognized
-    const invalidCommandPattern = /\/[a-z_]+(?::[^\n]+)?/gi;
+    // Remove any remaining slash commands that weren't recognized (supports bracketed values)
+    const invalidCommandPattern = /\/[a-z_]+(?::(?:\[[^\]]+\]|[^\n]+))?/gi;
     const invalidCommands = [...cleanResponse.matchAll(invalidCommandPattern)];
     if (invalidCommands.length > 0) {
       console.log(`⚠️ Removendo ${invalidCommands.length} comando(s) inválido(s):`);
@@ -1961,6 +2455,183 @@ CRÍTICO SOBRE COMANDOS:
       }
     } else {
       console.log('ℹ️ Nenhum comando executado nesta resposta');
+    }
+
+    // 🚀 RESPOSTA IMEDIATA APÓS TRANSFERÊNCIA DE AGENTE
+    if (agentTransferOccurred && transferredToAgentId) {
+      console.log('\n┌─────────────────────────────────────────────────────────────────┐');
+      console.log('│ 🔄 GERANDO RESPOSTA IMEDIATA DO NOVO AGENTE                     │');
+      console.log('└─────────────────────────────────────────────────────────────────┘');
+      console.log('🤖 Novo agente:', transferredToAgentName, '| ID:', transferredToAgentId);
+      
+      // Carregar dados completos do novo agente
+      const { data: newAgent, error: newAgentError } = await supabase
+        .from('ai_agents')
+        .select(`
+          id, name, status, agent_type, description,
+          script_content, rules_content, faq_content,
+          company_info, contract_link, temperature,
+          delay_seconds, audio_enabled, voice_name,
+          audio_always_respond_audio, audio_respond_with_audio,
+          speech_speed, audio_temperature, language_code
+        `)
+        .eq('id', transferredToAgentId)
+        .single();
+      
+      if (newAgent && !newAgentError) {
+        console.log('✅ Dados do novo agente carregados');
+        
+        // Construir prompt simplificado para o novo agente
+        const newAgentCompanyInfo = newAgent.company_info || {};
+        let newAgentSystemPrompt = `Você é ${newAgent.name}, um assistente virtual especializado.
+
+`;
+        
+        if (newAgent.script_content) {
+          newAgentSystemPrompt += `## ROTEIRO DE ATENDIMENTO
+${newAgent.script_content}
+
+`;
+        }
+        
+        if (newAgent.rules_content) {
+          newAgentSystemPrompt += `## REGRAS DE COMPORTAMENTO
+${newAgent.rules_content}
+
+`;
+        }
+        
+        if (newAgent.faq_content) {
+          newAgentSystemPrompt += `## PERGUNTAS FREQUENTES (FAQ)
+${newAgent.faq_content}
+
+`;
+        }
+        
+        if (Object.keys(newAgentCompanyInfo).length > 0) {
+          newAgentSystemPrompt += `## INFORMAÇÕES DA EMPRESA
+`;
+          for (const [key, value] of Object.entries(newAgentCompanyInfo)) {
+            if (value) newAgentSystemPrompt += `- ${key}: ${value}\n`;
+          }
+          newAgentSystemPrompt += '\n';
+        }
+        
+        if (newAgent.contract_link) {
+          newAgentSystemPrompt += `## 📄 LINK DO CONTRATO
+O link do contrato para enviar ao cliente é: ${newAgent.contract_link}
+
+`;
+        }
+        
+        // Adicionar contexto da conversa
+        if (contextSummary) {
+          newAgentSystemPrompt += `## 🧠 MEMÓRIA DA CONVERSA (INFORMAÇÕES JÁ COLETADAS)
+${contextSummary}
+
+`;
+        }
+        
+        newAgentSystemPrompt += `## CONTEXTO DA TRANSFERÊNCIA
+- Cliente: ${conversationContext.lead.nome || contactName || 'Cliente'}
+- O cliente foi transferido para você pelo agente anterior (${agent.name})
+- Contexto da última mensagem do cliente: ${processedMessageContent || messageContent || '(sem texto)'}
+- Resposta do agente anterior (que mencionou a transferência): ${cleanResponse.substring(0, 300)}
+
+## INSTRUÇÕES PARA ESTA RESPOSTA
+1. Apresente-se brevemente como ${newAgent.name}
+2. Mostre que você entendeu o contexto da conversa
+3. Continue o atendimento de forma natural
+4. NÃO repita saudações extensas - seja objetivo
+5. NÃO use comandos/ações nesta primeira resposta após transferência
+6. Responda de forma concisa (máximo 2-3 frases)`;
+
+        console.log('📝 Prompt do novo agente criado (' + newAgentSystemPrompt.length + ' chars)');
+        
+        // Gerar resposta do novo agente
+        const newAgentTemperature = newAgent.temperature ?? 1.0;
+        const newAgentApiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${GEMINI_API_KEY}`;
+        
+        try {
+          const newAgentApiResponse = await fetch(newAgentApiUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [{
+                role: 'user',
+                parts: [{ text: newAgentSystemPrompt }]
+              }],
+              generationConfig: {
+                temperature: newAgentTemperature,
+                maxOutputTokens: 1024
+              }
+            })
+          });
+          
+          const newAgentResult = await newAgentApiResponse.json();
+          const newAiResponse = newAgentResult.candidates?.[0]?.content?.parts?.[0]?.text || '';
+          
+          if (newAiResponse) {
+            console.log('✅ Resposta do novo agente gerada');
+            console.log('📝 Preview:', newAiResponse.substring(0, 100) + '...');
+            
+            // Combinar resposta: mensagem de transferência + resposta do novo agente
+            // Limpar a resposta do agente anterior (remover texto após menção de transferência se necessário)
+            const transferPatterns = [
+              /vou\s+te\s+transferir/gi,
+              /transferindo\s+para/gi,
+              /vou\s+transferir\s+você/gi,
+              /deixa\s+eu\s+te\s+transferir/gi,
+              /encaminhando\s+para/gi
+            ];
+            
+            let previousAgentMessage = cleanResponse;
+            for (const pattern of transferPatterns) {
+              const match = previousAgentMessage.match(pattern);
+              if (match) {
+                // Encontrar onde a mensagem de transferência termina
+                const idx = previousAgentMessage.search(pattern);
+                // Pegar apenas até o fim da frase que menciona a transferência
+                const afterPattern = previousAgentMessage.substring(idx);
+                const sentenceEnd = afterPattern.search(/[.!?]\s*$/);
+                if (sentenceEnd > 0) {
+                  previousAgentMessage = previousAgentMessage.substring(0, idx + sentenceEnd + 1);
+                }
+                break;
+              }
+            }
+            
+            // Usar apenas a resposta do novo agente (não concatenar com separador)
+            // O agente anterior já indicou a transferência, a mensagem do novo agente é a continuação natural
+            cleanResponse = newAiResponse.trim();
+            
+            // Atualizar referência do agente para o return
+            agent = {
+              ...agent,
+              id: newAgent.id,
+              name: newAgent.name,
+              delay_seconds: newAgent.delay_seconds,
+              audio_enabled: newAgent.audio_enabled,
+              voice_name: newAgent.voice_name,
+              audio_always_respond_audio: newAgent.audio_always_respond_audio,
+              audio_respond_with_audio: newAgent.audio_respond_with_audio,
+              speech_speed: newAgent.speech_speed,
+              audio_temperature: newAgent.audio_temperature,
+              language_code: newAgent.language_code
+            };
+            
+            console.log('✅ Resposta combinada gerada com sucesso');
+            console.log('🤖 Agente atualizado para:', agent.name);
+          } else {
+            console.log('⚠️ Resposta do novo agente vazia, mantendo resposta original');
+          }
+        } catch (newAgentError) {
+          console.error('❌ Erro ao gerar resposta do novo agente:', newAgentError);
+          // Manter a resposta original em caso de erro
+        }
+      } else {
+        console.log('⚠️ Não foi possível carregar dados do novo agente:', newAgentError?.message);
+      }
     }
 
     // 6️⃣ Parse and extract media tags from response
@@ -2057,25 +2728,26 @@ CRÍTICO SOBRE COMANDOS:
       
       console.log('🔍 Fazendo chamada de extração de contexto...');
       
-      const extractionResponse = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${AI_API_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: 'gpt-4o-mini',
-          messages: [
-            { role: 'user', content: extractionPrompt }
-          ],
-          temperature: 0.1, // Low temperature for consistent extraction
-          max_tokens: 1000
-        }),
-      });
+      const extractionResponse = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${GEMINI_API_KEY}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{
+              parts: [{ text: extractionPrompt }]
+            }],
+            generationConfig: {
+              temperature: 0.1, // Low temperature for consistent extraction
+              maxOutputTokens: 1000
+            }
+          })
+        }
+      );
       
       if (extractionResponse.ok) {
         const extractionData = await extractionResponse.json();
-        const extractedText = extractionData.choices?.[0]?.message?.content?.trim() || '';
+        const extractedText = extractionData.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
         
         console.log('📝 Resposta da extração:', extractedText.substring(0, 200) + '...');
         
@@ -2152,7 +2824,10 @@ CRÍTICO SOBRE COMANDOS:
         executedCommands: executedCommands.length > 0 ? executedCommands : undefined,
         toolCallsCount: toolCallsFromApi.length,
         toolCallsUsed: toolCallsFromApi.length > 0,
-        contextUpdated: true
+        contextUpdated: true,
+        agentTransferOccurred,
+        transferredToAgentId: agentTransferOccurred ? transferredToAgentId : undefined,
+        transferredToAgentName: agentTransferOccurred ? transferredToAgentName : undefined
       }
     });
 

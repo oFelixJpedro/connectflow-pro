@@ -126,8 +126,7 @@ export function CRMStageSelector({ position, onSelect, onClose, onBack, connecti
   }, [filteredColumns, selectedIndex, onClose]);
 
   const handleSelect = (columnName: string) => {
-    const slug = columnName.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
-    onSelect(slug);
+    onSelect(`[${columnName}]`);
   };
 
   return (
