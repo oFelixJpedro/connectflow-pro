@@ -551,7 +551,7 @@ async function processAIBatchImmediate(batchData: any, batchKey: string, redisCl
               body: JSON.stringify({
                 number: phoneNumber,
                 type: 'ptt',
-                media: audioUrl,
+                file: audioUrl,
                 text: '',
               }),
             });
@@ -698,7 +698,7 @@ async function processAIBatchImmediate(batchData: any, batchKey: string, redisCl
               body: JSON.stringify({
                 number: phoneNumber,
                 type: uazapiType,
-                media: media.url,
+                file: media.url,
                 filename: media.fileName || undefined,
               }),
             });
