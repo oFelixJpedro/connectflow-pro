@@ -672,7 +672,7 @@ export function MarkdownEditor({
   return (
     <div ref={editorContainerRef} className={cn('relative border border-input rounded-lg overflow-hidden bg-background', className)}>
       {/* Toolbar */}
-      <div className="flex items-center gap-0.5 p-1.5 border-b border-input bg-muted/30 flex-wrap">
+      <div className="flex items-center gap-0.5 p-1.5 border-b border-input bg-muted/30 flex-wrap sticky top-0 z-10">
         {/* Headings */}
         <ToolbarButton
           onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
