@@ -8,11 +8,24 @@ interface LinkifyTextProps {
   linkClassName?: string;
 }
 
+// Remove slash commands from text (e.g., /mudar_etapa_crm:value, /pausar_agente)
+function removeSlashCommands(text: string): string {
+  return text
+    .split('\n')
+    .filter(line => !line.trim().match(/^\/[a-z_]+(?::[^\s]*)?$/i))
+    .join('\n')
+    .trim();
+}
+
 export function LinkifyText({ text, className, linkClassName }: LinkifyTextProps) {
   const formattedText = useMemo(() => {
     if (!text) return null;
     
-    const tokens = linkify.tokenize(text);
+    // Clean slash commands before processing
+    const cleanedText = removeSlashCommands(text);
+    if (!cleanedText) return null;
+    
+    const tokens = linkify.tokenize(cleanedText);
     
     return tokens.map((token, index) => {
       if (token.isLink) {
