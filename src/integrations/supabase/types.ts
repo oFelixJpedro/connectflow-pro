@@ -44,7 +44,7 @@ export type Database = {
           {
             foreignKeyName: "ai_agent_connections_connection_id_fkey"
             columns: ["connection_id"]
-            isOneToOne: false
+            isOneToOne: true
             referencedRelation: "whatsapp_connections"
             referencedColumns: ["id"]
           },
