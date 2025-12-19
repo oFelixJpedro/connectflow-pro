@@ -1137,14 +1137,33 @@ CRÍTICO SOBRE COMANDOS:
 6. Use conectores naturais como: "Certo", "Entendi", "Perfeito", "Tudo bem"
 7. Faça apenas UMA pergunta por mensagem - aguarde a resposta antes de prosseguir
 
+## 🚫 REGRAS ANTI-REPETIÇÃO (CRÍTICO - VOCÊ SERÁ AVALIADO NISSO)
+1. NUNCA use "Perfeito" mais de 2 vezes na mesma conversa - VARIE suas confirmações
+2. Alternativas para "Perfeito": "Certo", "Entendi", "Anotei", "Combinado", "Ótimo", "Tudo certo", "Beleza"
+3. NUNCA confirme informações que o cliente ACABOU de dar claramente - é redundante e irritante
+4. Se o cliente diz "Félix" quando você pergunta o nome, NÃO responda "Félix, certo?" - apenas prossiga
+5. Mantenha respostas em UMA ÚNICA mensagem - não fragmente em múltiplas mensagens curtas
+6. NUNCA repita a mesma estrutura de frase em mensagens consecutivas
+7. Seja CONCISO - evite verbosidade desnecessária
+8. Quando o cliente confirmar algo ("sim", "ok", "pode ser"), PROSSIGA para o próximo passo imediatamente
+9. Evite frases genéricas como "Fico feliz em ajudar" repetidamente
+
+## 🛑 REGRAS DE ENCERRAMENTO (CRÍTICO)
+1. Quando o cliente CONFIRMAR o agendamento/contrato/ação final, ENCERRE a conversa
+2. Após confirmação final: agradeça brevemente e diga que a equipe entrará em contato
+3. EXECUTE /desativar_agente IMEDIATAMENTE após a despedida final
+4. NÃO faça perguntas adicionais após o cliente confirmar que pode encerrar
+5. Se o cliente disser "ok, pode encerrar" ou similar, ENCERRE IMEDIATAMENTE
+
 ## INSTRUÇÕES GERAIS
-1. Responda de forma natural e amigável
-2. Seja objetivo e direto
-3. Use emojis moderadamente para criar conexão
+1. Responda de forma natural e humana - evite parecer robótico ou repetitivo
+2. Seja objetivo e direto - vá direto ao ponto
+3. Use emojis com MODERAÇÃO (máximo 2-3 por mensagem)
 4. Se não souber responder algo específico, direcione para um atendente humano
 5. Nunca invente informações - use apenas o que está no roteiro, regras e FAQ
 6. Mantenha o tom profissional mas acolhedor
-7. Se o cliente enviar uma imagem, ANALISE o conteúdo visual e responda de forma contextualizada`;
+7. Se o cliente enviar uma imagem, ANALISE o conteúdo visual e responda de forma contextualizada
+8. VARIE seu vocabulário - não use as mesmas palavras repetidamente`;
 
     console.log('📝 System prompt criado (' + systemPrompt.length + ' chars)');
     console.log('📝 Histórico:', conversationHistory.length, 'mensagens');
@@ -1577,19 +1596,76 @@ CRÍTICO SOBRE COMANDOS:
         }
       },
 
-      // Notify team
+      // Notify team - Creates real notifications for admins/owners
       'notificar_equipe': async (message: string) => {
         console.log('🔔 Notificando equipe:', message);
         
-        // Create mention notification for all admins/owners
-        const { data: admins } = await supabase
-          .from('user_roles')
-          .select('user_id')
-          .in('role', ['owner', 'admin'])
-          .eq('user_id', companyId); // This needs join with profiles
-        
-        // For now, log the notification - could be expanded to create internal chat message
-        console.log('ℹ️ Notificação de equipe registrada:', message);
+        try {
+          // Get company ID from connection
+          const { data: connData } = await supabase
+            .from('whatsapp_connections')
+            .select('company_id')
+            .eq('id', connectionId)
+            .single();
+          
+          if (!connData?.company_id) {
+            console.log('⚠️ Company não encontrada para notificação');
+            return;
+          }
+          
+          // Get all admins and owners from this company
+          const { data: adminUsers } = await supabase
+            .from('user_roles')
+            .select('user_id, profiles!inner(company_id)')
+            .in('role', ['owner', 'admin']);
+          
+          // Filter by company
+          const companyAdmins = adminUsers?.filter(u => 
+            (u.profiles as any)?.company_id === connData.company_id
+          ) || [];
+          
+          console.log(`📢 Encontrados ${companyAdmins.length} admins/owners para notificar`);
+          
+          // Get contact info for context
+          const { data: convData } = await supabase
+            .from('conversations')
+            .select('contact_id, contacts(name, phone_number)')
+            .eq('id', conversationId)
+            .single();
+          
+          const contactInfo = convData?.contacts as any;
+          const notificationMessage = `🤖 Notificação do Agente IA: ${message}${
+            contactInfo ? `\n👤 Cliente: ${contactInfo.name || contactInfo.phone_number}` : ''
+          }`;
+          
+          // Create mention notifications for each admin
+          for (const admin of companyAdmins) {
+            await supabase.from('mention_notifications').insert({
+              mentioned_user_id: admin.user_id,
+              mentioner_user_id: admin.user_id, // Self-mention for system notification
+              message_id: crypto.randomUUID(), // Placeholder since this is a system notification
+              source_type: 'ai_agent_notification',
+              conversation_id: conversationId,
+              has_access: true,
+              is_read: false
+            });
+          }
+          
+          // Also create an internal note in the conversation for audit trail
+          await supabase.from('messages').insert({
+            conversation_id: conversationId,
+            content: notificationMessage,
+            direction: 'outbound',
+            sender_type: 'agent',
+            message_type: 'text',
+            is_internal_note: true,
+            status: 'sent'
+          });
+          
+          console.log('✅ Notificações criadas para', companyAdmins.length, 'usuários');
+        } catch (notifyError) {
+          console.error('❌ Erro ao criar notificações:', notifyError);
+        }
       },
 
       // Assign department
@@ -1749,6 +1825,18 @@ CRÍTICO SOBRE COMANDOS:
         }
         
         // Always remove command from response text
+        cleanResponse = cleanResponse.replace(match[0], '').trim();
+      }
+    }
+
+    // 🧹 LIMPEZA DE COMANDOS INVÁLIDOS
+    // Remove any remaining slash commands that weren't recognized
+    const invalidCommandPattern = /\/[a-z_]+(?::[^\n]+)?/gi;
+    const invalidCommands = [...cleanResponse.matchAll(invalidCommandPattern)];
+    if (invalidCommands.length > 0) {
+      console.log(`⚠️ Removendo ${invalidCommands.length} comando(s) inválido(s):`);
+      for (const match of invalidCommands) {
+        console.log(`   - "${match[0]}"`);
         cleanResponse = cleanResponse.replace(match[0], '').trim();
       }
     }
