@@ -865,6 +865,184 @@ serve(async (req) => {
     }
     console.log('🏢 Departamentos disponíveis:', availableDepartments.length);
 
+    // ═══════════════════════════════════════════════════════════════════
+    // BUILD DYNAMIC TOOLS DEFINITION FOR TOOL CALLING
+    // ═══════════════════════════════════════════════════════════════════
+    console.log('\n┌─────────────────────────────────────────────────────────────────┐');
+    console.log('│ 🔧 CONSTRUIR DEFINIÇÕES DE TOOLS                                │');
+    console.log('└─────────────────────────────────────────────────────────────────┘');
+
+    const dynamicTools: any[] = [];
+
+    // Tool: mudar_etapa_crm - Only if there are CRM stages
+    if (availableCrmStages.length > 0) {
+      dynamicTools.push({
+        type: "function",
+        function: {
+          name: "mudar_etapa_crm",
+          description: "Move o card do cliente para outra etapa no CRM/Kanban. Use quando o lead avançar no funil de vendas.",
+          parameters: {
+            type: "object",
+            properties: {
+              stage_slug: {
+                type: "string",
+                enum: availableCrmStages.map(s => s.slug),
+                description: `Slug da etapa destino. Opções: ${availableCrmStages.map(s => `"${s.slug}" (${s.name})`).join(', ')}`
+              }
+            },
+            required: ["stage_slug"],
+            additionalProperties: false
+          }
+        }
+      });
+    }
+
+    // Tool: adicionar_etiqueta - With enum if tags exist, otherwise string
+    dynamicTools.push({
+      type: "function",
+      function: {
+        name: "adicionar_etiqueta",
+        description: "Adiciona uma etiqueta ao contato para categorização. Use para marcar o interesse do lead ou status.",
+        parameters: {
+          type: "object",
+          properties: {
+            tag_name: {
+              type: "string",
+              ...(availableTags.length > 0 ? { enum: availableTags } : {}),
+              description: availableTags.length > 0 
+                ? `Nome da etiqueta. Opções disponíveis: ${availableTags.join(', ')}`
+                : "Nome da etiqueta (use nomes sem acentos e em minúsculo, separados por hífen)"
+            }
+          },
+          required: ["tag_name"],
+          additionalProperties: false
+        }
+      }
+    });
+
+    // Tool: transferir_agente - Only if there are other agents
+    if (availableAgents.length > 0) {
+      dynamicTools.push({
+        type: "function",
+        function: {
+          name: "transferir_agente",
+          description: "Transfere a conversa para outro agente de IA especializado.",
+          parameters: {
+            type: "object",
+            properties: {
+              agent_name: {
+                type: "string",
+                enum: availableAgents.map(a => a.name),
+                description: `Nome do agente destino. Opções: ${availableAgents.map(a => `"${a.name}"${a.description ? ` - ${a.description}` : ''}`).join('; ')}`
+              }
+            },
+            required: ["agent_name"],
+            additionalProperties: false
+          }
+        }
+      });
+    }
+
+    // Tool: atribuir_departamento - Only if there are departments
+    if (availableDepartments.length > 0) {
+      dynamicTools.push({
+        type: "function",
+        function: {
+          name: "atribuir_departamento",
+          description: "Atribui a conversa a um departamento específico.",
+          parameters: {
+            type: "object",
+            properties: {
+              department_name: {
+                type: "string",
+                enum: availableDepartments.map(d => d.name),
+                description: `Nome do departamento. Opções: ${availableDepartments.map(d => `"${d.name}"`).join(', ')}`
+              }
+            },
+            required: ["department_name"],
+            additionalProperties: false
+          }
+        }
+      });
+    }
+
+    // Tool: transferir_usuario - Free text (search by name)
+    dynamicTools.push({
+      type: "function",
+      function: {
+        name: "transferir_usuario",
+        description: "Transfere a conversa para um atendente humano. Use quando o lead precisar de atendimento personalizado ou a IA não puder resolver.",
+        parameters: {
+          type: "object",
+          properties: {
+            user_name: {
+              type: "string",
+              description: "Nome do atendente para transferir a conversa"
+            }
+          },
+          required: ["user_name"],
+          additionalProperties: false
+        }
+      }
+    });
+
+    // Tool: notificar_equipe - Free text message
+    dynamicTools.push({
+      type: "function",
+      function: {
+        name: "notificar_equipe",
+        description: "Envia uma notificação para a equipe sobre algo importante na conversa.",
+        parameters: {
+          type: "object",
+          properties: {
+            message: {
+              type: "string",
+              description: "Mensagem de notificação para a equipe"
+            }
+          },
+          required: ["message"],
+          additionalProperties: false
+        }
+      }
+    });
+
+    // Tool: desativar_agente - No parameters
+    dynamicTools.push({
+      type: "function",
+      function: {
+        name: "desativar_agente",
+        description: "Desativa o agente de IA permanentemente nesta conversa. Use quando a conversa precisar continuar apenas com humanos.",
+        parameters: {
+          type: "object",
+          properties: {},
+          additionalProperties: false
+        }
+      }
+    });
+
+    // Tool: atribuir_origem - Free text
+    dynamicTools.push({
+      type: "function",
+      function: {
+        name: "atribuir_origem",
+        description: "Define a origem/canal de onde veio o lead (ex: Instagram, Google, Indicação).",
+        parameters: {
+          type: "object",
+          properties: {
+            origin: {
+              type: "string",
+              description: "Nome da origem do lead"
+            }
+          },
+          required: ["origin"],
+          additionalProperties: false
+        }
+      }
+    });
+
+    console.log('🔧 Tools definidas:', dynamicTools.length);
+    console.log('   - Ferramentas:', dynamicTools.map(t => t.function.name).join(', '));
+
     // Build system prompt
     const companyInfo = agent.company_info || {};
     const isFirstInteraction = (convState?.messages_processed || 0) === 0;
@@ -993,12 +1171,13 @@ CRÍTICO SOBRE COMANDOS:
 
     let aiResponse: string;
     let modelUsed: string;
+    let toolCallsFromApi: any[] = []; // Store tool calls from API response
 
     // Determine if we should use multimodal (image analysis)
     const shouldUseMultimodal = currentMessageIsImage && actualMediaUrl;
 
     if (shouldUseMultimodal) {
-      // Use multimodal endpoint with gpt-5-nano for image analysis
+      // Use multimodal endpoint with gpt-5-nano for image analysis (no tools for now - vision model)
       console.log('🖼️ Usando endpoint multimodal /v1/responses com gpt-5-nano');
       modelUsed = 'gpt-5-nano';
       
@@ -1093,19 +1272,40 @@ CRÍTICO SOBRE COMANDOS:
       }
       
     } else {
-      // Use /v1/responses endpoint (compatible with GPT-5 models)
-      console.log('📝 Usando endpoint /v1/responses com gpt-5-mini');
+      // Use /v1/responses endpoint with Tool Calling (compatible with GPT-5 models)
+      console.log('📝 Usando endpoint /v1/responses com gpt-5-mini + Tool Calling');
+      console.log('🔧 Tools disponíveis:', dynamicTools.length);
       modelUsed = 'gpt-5-mini';
       
       // Build conversation context as single prompt
-      const conversationContext = conversationHistory
+      const conversationContextForPrompt = conversationHistory
         .filter(msg => msg !== null)
         .map(msg => `${msg!.role === 'assistant' ? '[ATENDENTE]' : '[CLIENTE]'}: ${msg!.content}`)
         .join('\n');
       
-      const fullPrompt = `${systemPrompt}\n\nHistórico da conversa:\n${conversationContext}\n\n[CLIENTE]: ${processedMessageContent || '[Mensagem sem texto]'}\n\nGere a resposta do atendente:`;
+      const fullPrompt = `${systemPrompt}\n\nHistórico da conversa:\n${conversationContextForPrompt}\n\n[CLIENTE]: ${processedMessageContent || '[Mensagem sem texto]'}\n\nGere a resposta do atendente. Se precisar executar ações (mover no CRM, adicionar etiqueta, etc), use as ferramentas disponíveis:`;
       
       const agentTemperature = agent.temperature ?? 0.7;
+      
+      // Build request body with tools
+      const requestBody: any = {
+        model: 'gpt-5-mini',
+        input: fullPrompt,
+        text: {
+          format: { type: 'text' },
+          verbosity: 'medium'
+        },
+        reasoning: {
+          effort: 'low',
+          summary: 'concise'
+        }
+      };
+
+      // Add tools if available
+      if (dynamicTools.length > 0) {
+        requestBody.tools = dynamicTools;
+        requestBody.tool_choice = 'auto'; // Let the model decide when to use tools
+      }
       
       const openaiResponse = await fetch('https://api.openai.com/v1/responses', {
         method: 'POST',
@@ -1113,18 +1313,7 @@ CRÍTICO SOBRE COMANDOS:
           'Authorization': `Bearer ${AI_API_KEY}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          model: 'gpt-5-mini',
-          input: fullPrompt,
-          text: {
-            format: { type: 'text' },
-            verbosity: 'medium'
-          },
-          reasoning: {
-            effort: 'low',
-            summary: 'concise'
-          }
-        }),
+        body: JSON.stringify(requestBody),
       });
 
       if (!openaiResponse.ok) {
@@ -1137,7 +1326,7 @@ CRÍTICO SOBRE COMANDOS:
           action_type: 'response_error',
           input_text: processedMessageContent,
           error_message: `OpenAI API error: ${openaiResponse.status}`,
-          metadata: { errorDetails: errorText }
+          metadata: { errorDetails: errorText, toolsCount: dynamicTools.length }
         });
 
         return new Response(
@@ -1147,8 +1336,23 @@ CRÍTICO SOBRE COMANDOS:
       }
 
       const aiData = await openaiResponse.json();
-      console.log('📦 Resposta API (texto):', JSON.stringify(aiData, null, 2));
+      console.log('📦 Resposta API (texto + tools):', JSON.stringify(aiData, null, 2));
+      
+      // Extract text response
       aiResponse = aiData.output?.find((o: any) => o.type === 'message')?.content?.[0]?.text?.trim() || '';
+      
+      // Extract tool calls from the response
+      const functionCalls = aiData.output?.filter((o: any) => o.type === 'function_call') || [];
+      if (functionCalls.length > 0) {
+        console.log('🔧 Tool calls encontrados:', functionCalls.length);
+        for (const fc of functionCalls) {
+          console.log(`   - ${fc.name}:`, fc.arguments);
+          toolCallsFromApi.push({
+            name: fc.name,
+            arguments: typeof fc.arguments === 'string' ? JSON.parse(fc.arguments) : fc.arguments
+          });
+        }
+      }
       
       // Retry with lower temperature if empty
       if (!aiResponse) {
@@ -1445,8 +1649,85 @@ CRÍTICO SOBRE COMANDOS:
       }
     };
 
-    // Parse and execute commands
-    // Updated patterns to support values with spaces (capture until end of line or next command)
+    // ═══════════════════════════════════════════════════════════════════
+    // PROCESS TOOL CALLS FROM API (PRIMARY METHOD)
+    // ═══════════════════════════════════════════════════════════════════
+    console.log('\n┌─────────────────────────────────────────────────────────────────┐');
+    console.log('│ 🔧 PROCESSAR TOOL CALLS DA API                                  │');
+    console.log('└─────────────────────────────────────────────────────────────────┘');
+
+    let cleanResponse = aiResponse;
+    const executedCommands: string[] = [];
+
+    // Execute tool calls from API response FIRST (structured, validated)
+    if (toolCallsFromApi.length > 0) {
+      console.log(`🔧 Executando ${toolCallsFromApi.length} tool calls da API:`);
+      
+      for (const toolCall of toolCallsFromApi) {
+        const { name, arguments: args } = toolCall;
+        console.log(`   📌 Tool: ${name}`, args);
+        
+        try {
+          switch (name) {
+            case 'mudar_etapa_crm':
+              await commandHandlers['mudar_etapa_crm'](args.stage_slug);
+              executedCommands.push(`mudar_etapa_crm:${args.stage_slug} (tool)`);
+              break;
+              
+            case 'adicionar_etiqueta':
+              await commandHandlers['adicionar_etiqueta'](args.tag_name);
+              executedCommands.push(`adicionar_etiqueta:${args.tag_name} (tool)`);
+              break;
+              
+            case 'transferir_agente':
+              await commandHandlers['transferir_agente'](args.agent_name);
+              executedCommands.push(`transferir_agente:${args.agent_name} (tool)`);
+              break;
+              
+            case 'atribuir_departamento':
+              await commandHandlers['atribuir_departamento'](args.department_name);
+              executedCommands.push(`atribuir_departamento:${args.department_name} (tool)`);
+              break;
+              
+            case 'transferir_usuario':
+              await commandHandlers['transferir_usuario'](args.user_name);
+              executedCommands.push(`transferir_usuario:${args.user_name} (tool)`);
+              break;
+              
+            case 'notificar_equipe':
+              await commandHandlers['notificar_equipe'](args.message);
+              executedCommands.push(`notificar_equipe:${args.message} (tool)`);
+              break;
+              
+            case 'desativar_agente':
+              await commandHandlers['desativar_agente']('');
+              executedCommands.push('desativar_agente (tool)');
+              break;
+              
+            case 'atribuir_origem':
+              await commandHandlers['atribuir_origem'](args.origin);
+              executedCommands.push(`atribuir_origem:${args.origin} (tool)`);
+              break;
+              
+            default:
+              console.log(`⚠️ Tool desconhecida: ${name}`);
+          }
+        } catch (err) {
+          console.error(`❌ Erro ao executar tool ${name}:`, err);
+        }
+      }
+    } else {
+      console.log('ℹ️ Nenhum tool call da API');
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // FALLBACK: PROCESS SLASH COMMANDS IN TEXT (LEGACY/BACKUP)
+    // ═══════════════════════════════════════════════════════════════════
+    console.log('\n┌─────────────────────────────────────────────────────────────────┐');
+    console.log('│ 📝 FALLBACK: COMANDOS SLASH NO TEXTO                           │');
+    console.log('└─────────────────────────────────────────────────────────────────┘');
+
+    // Parse and execute commands (fallback for slash commands in text)
     const commandPatterns = [
       { pattern: /\/adicionar_etiqueta:([^\n\/]+)/gi, handler: 'adicionar_etiqueta' },
       { pattern: /\/transferir_agente:([^\n\/]+)/gi, handler: 'transferir_agente' },
@@ -1458,22 +1739,32 @@ CRÍTICO SOBRE COMANDOS:
       { pattern: /\/desativar_agente/gi, handler: 'desativar_agente' },
     ];
 
-    let cleanResponse = aiResponse;
-    const executedCommands: string[] = [];
-
+    let slashCommandsFound = 0;
     for (const { pattern, handler } of commandPatterns) {
       const matches = [...aiResponse.matchAll(pattern)];
       for (const match of matches) {
-        // Trim the value to handle any trailing whitespace
+        slashCommandsFound++;
         const value = (match[1] || '').trim();
-        try {
-          await commandHandlers[handler](value);
-          executedCommands.push(`${handler}:${value}`);
-          console.log(`✅ Comando executado: ${handler}:${value}`);
-        } catch (err) {
-          console.error(`❌ Erro ao executar comando ${handler}:`, err);
+        
+        // Check if this command was already executed via tool call
+        const alreadyExecuted = executedCommands.some(cmd => 
+          cmd.startsWith(`${handler}:${value}`) || 
+          (handler === 'desativar_agente' && cmd.includes('desativar_agente'))
+        );
+        
+        if (!alreadyExecuted) {
+          try {
+            await commandHandlers[handler](value);
+            executedCommands.push(`${handler}:${value} (regex)`);
+            console.log(`✅ Comando regex executado: ${handler}:${value}`);
+          } catch (err) {
+            console.error(`❌ Erro ao executar comando ${handler}:`, err);
+          }
+        } else {
+          console.log(`⏭️ Comando já executado via tool: ${handler}:${value}`);
         }
-        // Remove command from response
+        
+        // Always remove command from response text
         cleanResponse = cleanResponse.replace(match[0], '').trim();
       }
     }
@@ -1481,10 +1772,20 @@ CRÍTICO SOBRE COMANDOS:
     // Clean up multiple spaces and empty lines
     cleanResponse = cleanResponse.replace(/\n\s*\n/g, '\n').trim();
 
-    if (executedCommands.length > 0) {
-      console.log('✅ Comandos executados:', executedCommands);
+    if (slashCommandsFound > 0) {
+      console.log(`📝 Slash commands no texto: ${slashCommandsFound}`);
     } else {
-      console.log('ℹ️ Nenhum comando encontrado na resposta');
+      console.log('ℹ️ Nenhum slash command no texto');
+    }
+
+    // Summary
+    if (executedCommands.length > 0) {
+      console.log('\n✅ TOTAL de comandos executados:', executedCommands.length);
+      for (const cmd of executedCommands) {
+        console.log(`   - ${cmd}`);
+      }
+    } else {
+      console.log('ℹ️ Nenhum comando executado nesta resposta');
     }
 
     // 6️⃣ Parse and extract media tags from response
@@ -1647,6 +1948,8 @@ CRÍTICO SOBRE COMANDOS:
         hasImage: shouldUseMultimodal,
         wasTranscribed: currentMessageIsAudio,
         executedCommands: executedCommands.length > 0 ? executedCommands : undefined,
+        toolCallsCount: toolCallsFromApi.length,
+        toolCallsUsed: toolCallsFromApi.length > 0,
         contextUpdated: true
       }
     });
