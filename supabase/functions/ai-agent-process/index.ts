@@ -878,21 +878,19 @@ serve(async (req) => {
     if (availableCrmStages.length > 0) {
       dynamicTools.push({
         type: "function",
-        function: {
-          name: "mudar_etapa_crm",
-          description: "Move o card do cliente para outra etapa no CRM/Kanban. Use quando o lead avançar no funil de vendas.",
-          parameters: {
-            type: "object",
-            properties: {
-              stage_slug: {
-                type: "string",
-                enum: availableCrmStages.map(s => s.slug),
-                description: `Slug da etapa destino. Opções: ${availableCrmStages.map(s => `"${s.slug}" (${s.name})`).join(', ')}`
-              }
-            },
-            required: ["stage_slug"],
-            additionalProperties: false
-          }
+        name: "mudar_etapa_crm",
+        description: "Move o card do cliente para outra etapa no CRM/Kanban. Use quando o lead avançar no funil de vendas.",
+        parameters: {
+          type: "object",
+          properties: {
+            stage_slug: {
+              type: "string",
+              enum: availableCrmStages.map(s => s.slug),
+              description: `Slug da etapa destino. Opções: ${availableCrmStages.map(s => `"${s.slug}" (${s.name})`).join(', ')}`
+            }
+          },
+          required: ["stage_slug"],
+          additionalProperties: false
         }
       });
     }
@@ -900,23 +898,21 @@ serve(async (req) => {
     // Tool: adicionar_etiqueta - With enum if tags exist, otherwise string
     dynamicTools.push({
       type: "function",
-      function: {
-        name: "adicionar_etiqueta",
-        description: "Adiciona uma etiqueta ao contato para categorização. Use para marcar o interesse do lead ou status.",
-        parameters: {
-          type: "object",
-          properties: {
-            tag_name: {
-              type: "string",
-              ...(availableTags.length > 0 ? { enum: availableTags } : {}),
-              description: availableTags.length > 0 
-                ? `Nome da etiqueta. Opções disponíveis: ${availableTags.join(', ')}`
-                : "Nome da etiqueta (use nomes sem acentos e em minúsculo, separados por hífen)"
-            }
-          },
-          required: ["tag_name"],
-          additionalProperties: false
-        }
+      name: "adicionar_etiqueta",
+      description: "Adiciona uma etiqueta ao contato para categorização. Use para marcar o interesse do lead ou status.",
+      parameters: {
+        type: "object",
+        properties: {
+          tag_name: {
+            type: "string",
+            ...(availableTags.length > 0 ? { enum: availableTags } : {}),
+            description: availableTags.length > 0 
+              ? `Nome da etiqueta. Opções disponíveis: ${availableTags.join(', ')}`
+              : "Nome da etiqueta (use nomes sem acentos e em minúsculo, separados por hífen)"
+          }
+        },
+        required: ["tag_name"],
+        additionalProperties: false
       }
     });
 
@@ -924,21 +920,19 @@ serve(async (req) => {
     if (availableAgents.length > 0) {
       dynamicTools.push({
         type: "function",
-        function: {
-          name: "transferir_agente",
-          description: "Transfere a conversa para outro agente de IA especializado.",
-          parameters: {
-            type: "object",
-            properties: {
-              agent_name: {
-                type: "string",
-                enum: availableAgents.map(a => a.name),
-                description: `Nome do agente destino. Opções: ${availableAgents.map(a => `"${a.name}"${a.description ? ` - ${a.description}` : ''}`).join('; ')}`
-              }
-            },
-            required: ["agent_name"],
-            additionalProperties: false
-          }
+        name: "transferir_agente",
+        description: "Transfere a conversa para outro agente de IA especializado.",
+        parameters: {
+          type: "object",
+          properties: {
+            agent_name: {
+              type: "string",
+              enum: availableAgents.map(a => a.name),
+              description: `Nome do agente destino. Opções: ${availableAgents.map(a => `"${a.name}"${a.description ? ` - ${a.description}` : ''}`).join('; ')}`
+            }
+          },
+          required: ["agent_name"],
+          additionalProperties: false
         }
       });
     }
@@ -947,21 +941,19 @@ serve(async (req) => {
     if (availableDepartments.length > 0) {
       dynamicTools.push({
         type: "function",
-        function: {
-          name: "atribuir_departamento",
-          description: "Atribui a conversa a um departamento específico.",
-          parameters: {
-            type: "object",
-            properties: {
-              department_name: {
-                type: "string",
-                enum: availableDepartments.map(d => d.name),
-                description: `Nome do departamento. Opções: ${availableDepartments.map(d => `"${d.name}"`).join(', ')}`
-              }
-            },
-            required: ["department_name"],
-            additionalProperties: false
-          }
+        name: "atribuir_departamento",
+        description: "Atribui a conversa a um departamento específico.",
+        parameters: {
+          type: "object",
+          properties: {
+            department_name: {
+              type: "string",
+              enum: availableDepartments.map(d => d.name),
+              description: `Nome do departamento. Opções: ${availableDepartments.map(d => `"${d.name}"`).join(', ')}`
+            }
+          },
+          required: ["department_name"],
+          additionalProperties: false
         }
       });
     }
@@ -969,79 +961,71 @@ serve(async (req) => {
     // Tool: transferir_usuario - Free text (search by name)
     dynamicTools.push({
       type: "function",
-      function: {
-        name: "transferir_usuario",
-        description: "Transfere a conversa para um atendente humano. Use quando o lead precisar de atendimento personalizado ou a IA não puder resolver.",
-        parameters: {
-          type: "object",
-          properties: {
-            user_name: {
-              type: "string",
-              description: "Nome do atendente para transferir a conversa"
-            }
-          },
-          required: ["user_name"],
-          additionalProperties: false
-        }
+      name: "transferir_usuario",
+      description: "Transfere a conversa para um atendente humano. Use quando o lead precisar de atendimento personalizado ou a IA não puder resolver.",
+      parameters: {
+        type: "object",
+        properties: {
+          user_name: {
+            type: "string",
+            description: "Nome do atendente para transferir a conversa"
+          }
+        },
+        required: ["user_name"],
+        additionalProperties: false
       }
     });
 
     // Tool: notificar_equipe - Free text message
     dynamicTools.push({
       type: "function",
-      function: {
-        name: "notificar_equipe",
-        description: "Envia uma notificação para a equipe sobre algo importante na conversa.",
-        parameters: {
-          type: "object",
-          properties: {
-            message: {
-              type: "string",
-              description: "Mensagem de notificação para a equipe"
-            }
-          },
-          required: ["message"],
-          additionalProperties: false
-        }
+      name: "notificar_equipe",
+      description: "Envia uma notificação para a equipe sobre algo importante na conversa.",
+      parameters: {
+        type: "object",
+        properties: {
+          message: {
+            type: "string",
+            description: "Mensagem de notificação para a equipe"
+          }
+        },
+        required: ["message"],
+        additionalProperties: false
       }
     });
 
     // Tool: desativar_agente - No parameters
     dynamicTools.push({
       type: "function",
-      function: {
-        name: "desativar_agente",
-        description: "Desativa o agente de IA permanentemente nesta conversa. Use quando a conversa precisar continuar apenas com humanos.",
-        parameters: {
-          type: "object",
-          properties: {},
-          additionalProperties: false
-        }
+      name: "desativar_agente",
+      description: "Desativa o agente de IA permanentemente nesta conversa. Use quando a conversa precisar continuar apenas com humanos.",
+      parameters: {
+        type: "object",
+        properties: {},
+        additionalProperties: false
       }
     });
 
     // Tool: atribuir_origem - Free text
     dynamicTools.push({
       type: "function",
-      function: {
-        name: "atribuir_origem",
-        description: "Define a origem/canal de onde veio o lead (ex: Instagram, Google, Indicação).",
-        parameters: {
-          type: "object",
-          properties: {
-            origin: {
-              type: "string",
-              description: "Nome da origem do lead"
-            }
-          },
-          required: ["origin"],
-          additionalProperties: false
-        }
+      name: "atribuir_origem",
+      description: "Define a origem/canal de onde veio o lead (ex: Instagram, Google, Indicação).",
+      parameters: {
+        type: "object",
+        properties: {
+          origin: {
+            type: "string",
+            description: "Nome da origem do lead"
+          }
+        },
+        required: ["origin"],
+        additionalProperties: false
       }
     });
 
     console.log('🔧 Tools definidas:', dynamicTools.length);
-    console.log('   - Ferramentas:', dynamicTools.map(t => t.function.name).join(', '));
+    console.log('   - Ferramentas:', dynamicTools.map(t => t.name).join(', '));
 
     // Build system prompt
     const companyInfo = agent.company_info || {};
