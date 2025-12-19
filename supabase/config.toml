@@ -86,3 +86,6 @@ verify_jwt = true
 
 [functions.ai-agent-media]
 verify_jwt = true
+
+[functions.format-prompt]
+verify_jwt = true
