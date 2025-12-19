@@ -231,6 +231,7 @@ export type Database = {
           deactivate_temporary_minutes: number | null
           delay_seconds: number | null
           description: string | null
+          disqualification_signs: string | null
           faq_content: string | null
           id: string
           is_primary: boolean | null
@@ -239,9 +240,11 @@ export type Database = {
           name: string
           parent_agent_id: string | null
           paused_until: string | null
+          qualification_summary: string | null
           require_activation_trigger: boolean | null
           rules_content: string | null
           script_content: string | null
+          specialty_keywords: string[] | null
           speech_speed: number | null
           split_message_delay_seconds: number | null
           split_response_enabled: boolean | null
@@ -266,6 +269,7 @@ export type Database = {
           deactivate_temporary_minutes?: number | null
           delay_seconds?: number | null
           description?: string | null
+          disqualification_signs?: string | null
           faq_content?: string | null
           id?: string
           is_primary?: boolean | null
@@ -274,9 +278,11 @@ export type Database = {
           name: string
           parent_agent_id?: string | null
           paused_until?: string | null
+          qualification_summary?: string | null
           require_activation_trigger?: boolean | null
           rules_content?: string | null
           script_content?: string | null
+          specialty_keywords?: string[] | null
           speech_speed?: number | null
           split_message_delay_seconds?: number | null
           split_response_enabled?: boolean | null
@@ -301,6 +307,7 @@ export type Database = {
           deactivate_temporary_minutes?: number | null
           delay_seconds?: number | null
           description?: string | null
+          disqualification_signs?: string | null
           faq_content?: string | null
           id?: string
           is_primary?: boolean | null
@@ -309,9 +316,11 @@ export type Database = {
           name?: string
           parent_agent_id?: string | null
           paused_until?: string | null
+          qualification_summary?: string | null
           require_activation_trigger?: boolean | null
           rules_content?: string | null
           script_content?: string | null
+          specialty_keywords?: string[] | null
           speech_speed?: number | null
           split_message_delay_seconds?: number | null
           split_response_enabled?: boolean | null

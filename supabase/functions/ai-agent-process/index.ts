@@ -1100,18 +1100,30 @@ serve(async (req) => {
     }
     console.log('🏷️ Etiquetas disponíveis:', availableTags.length);
 
-    // Load active AI agents (sub-agents) for this company
-    let availableAgents: { name: string; description: string | null }[] = [];
+    // Load active AI agents (sub-agents) for this company WITH specialty metadata
+    let availableAgents: { 
+      name: string; 
+      description: string | null;
+      specialty_keywords: string[];
+      qualification_summary: string | null;
+      disqualification_signs: string | null;
+    }[] = [];
     if (connectionCompanyId) {
       const { data: agents } = await supabase
         .from('ai_agents')
-        .select('name, description')
+        .select('name, description, specialty_keywords, qualification_summary, disqualification_signs')
         .eq('company_id', connectionCompanyId)
         .eq('status', 'active')
         .neq('id', agent.id); // Exclude current agent
       
       if (agents) {
-        availableAgents = agents.map(a => ({ name: a.name, description: a.description }));
+        availableAgents = agents.map(a => ({ 
+          name: a.name, 
+          description: a.description,
+          specialty_keywords: a.specialty_keywords || [],
+          qualification_summary: a.qualification_summary,
+          disqualification_signs: a.disqualification_signs
+        }));
       }
     }
     console.log('🤖 Agentes disponíveis:', availableAgents.length);
@@ -1198,17 +1210,28 @@ serve(async (req) => {
 
     // Tool: transferir_agente - Only if there are other agents
     if (availableAgents.length > 0) {
+      // Build enhanced agent descriptions with specialty info
+      const agentDescriptions = availableAgents.map(a => {
+        let desc = `"${a.name}"`;
+        if (a.qualification_summary) {
+          desc += ` - Especializado em: ${a.qualification_summary.substring(0, 100)}${a.qualification_summary.length > 100 ? '...' : ''}`;
+        } else if (a.description) {
+          desc += ` - ${a.description}`;
+        }
+        return desc;
+      }).join('; ');
+
       dynamicTools.push({
         type: "function",
         name: "transferir_agente",
-        description: "Transfere a conversa para outro agente de IA especializado.",
+        description: "Transfere a conversa para outro agente de IA especializado. Use quando o lead se encaixa melhor no perfil de outro agente.",
         parameters: {
           type: "object",
           properties: {
             agent_name: {
               type: "string",
               enum: availableAgents.map(a => a.name),
-              description: `Nome do agente destino. Opções: ${availableAgents.map(a => `"${a.name}"${a.description ? ` - ${a.description}` : ''}`).join('; ')}`
+              description: `Nome do agente destino. Opções: ${agentDescriptions}`
             }
           },
           required: ["agent_name"],
@@ -1409,6 +1432,31 @@ ${availableTags.length > 0
 ${availableAgents.length > 0 
   ? availableAgents.map(a => `- "${a.name}"${a.description ? ` - ${a.description}` : ''}`).join('\n')
   : '- (Nenhum outro agente disponível)'}
+
+${availableAgents.length > 0 && availableAgents.some(a => a.qualification_summary || a.disqualification_signs) ? `
+## 🎯 ESPECIALIDADES DOS AGENTES (para transferência inteligente)
+Use estas informações para identificar quando transferir o lead para outro agente especializado:
+
+${availableAgents.filter(a => a.qualification_summary || a.disqualification_signs || a.specialty_keywords?.length > 0).map(a => {
+  const parts = [`### ${a.name}`];
+  if (a.specialty_keywords?.length > 0) {
+    parts.push(`- **Palavras-chave**: ${a.specialty_keywords.join(', ')}`);
+  }
+  if (a.qualification_summary) {
+    parts.push(`- **Perfil ideal**: ${a.qualification_summary}`);
+  }
+  if (a.disqualification_signs) {
+    parts.push(`- **NÃO se encaixa se**: ${a.disqualification_signs}`);
+  }
+  return parts.join('\n');
+}).join('\n\n')}
+
+⚠️ REGRAS DE REDIRECIONAMENTO INTELIGENTE:
+1. Se o lead mencionar palavras-chave de outro agente, considere transferir
+2. Se o lead NÃO se encaixa no seu perfil mas se encaixa em outro, transfira com: /transferir_agente:Nome do Agente
+3. Antes de transferir, confirme com o lead se ele tem interesse no outro serviço
+4. Ao transferir, explique brevemente ao lead que há um especialista para o caso dele
+` : ''}
 
 ### DEPARTAMENTOS (para /atribuir_departamento):
 ${availableDepartments.length > 0 
