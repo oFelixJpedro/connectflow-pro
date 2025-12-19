@@ -692,13 +692,38 @@ async function processAIBatchImmediate(batchData: any, batchKey: string, redisCl
             let uazapiType = media.type;
             if (media.type === 'audio') uazapiType = 'audio'; // or 'ptt' for voice note
             
+            // Generate signed URL if it's from private bucket and not already signed
+            let mediaFileUrl = media.url;
+            if (mediaFileUrl && mediaFileUrl.includes('/ai-agent-media/') && !mediaFileUrl.includes('token=')) {
+              try {
+                const urlParts = mediaFileUrl.split('/ai-agent-media/');
+                if (urlParts.length > 1) {
+                  const storagePath = decodeURIComponent(urlParts[1].split('?')[0]);
+                  console.log(`🔑 [WEBHOOK] Gerando signed URL para: ${storagePath}`);
+                  
+                  const { data: signedUrlData, error: signedUrlError } = await supabase.storage
+                    .from('ai-agent-media')
+                    .createSignedUrl(storagePath, 3600); // 1 hour validity
+                  
+                  if (signedUrlData?.signedUrl) {
+                    mediaFileUrl = signedUrlData.signedUrl;
+                    console.log(`✅ [WEBHOOK] Signed URL gerada com sucesso`);
+                  } else if (signedUrlError) {
+                    console.log(`⚠️ [WEBHOOK] Erro ao gerar signed URL: ${signedUrlError.message}`);
+                  }
+                }
+              } catch (signedUrlErr) {
+                console.log(`⚠️ [WEBHOOK] Erro ao processar signed URL:`, signedUrlErr);
+              }
+            }
+            
             const mediaResponse = await fetch(sendMediaUrl, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', 'token': instanceToken },
               body: JSON.stringify({
                 number: phoneNumber,
                 type: uazapiType,
-                file: media.url,
+                file: mediaFileUrl,
                 filename: media.fileName || undefined,
               }),
             });

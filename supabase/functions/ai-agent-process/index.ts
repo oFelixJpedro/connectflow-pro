@@ -1911,10 +1911,37 @@ CRÍTICO SOBRE COMANDOS:
         .maybeSingle();
       
       if (media) {
+        let mediaUrl = media.media_url || undefined;
+        
+        // Generate signed URL for private bucket storage
+        if (mediaUrl && mediaUrl.includes('/ai-agent-media/')) {
+          try {
+            // Extract storage path from full URL
+            const urlParts = mediaUrl.split('/ai-agent-media/');
+            if (urlParts.length > 1) {
+              const storagePath = decodeURIComponent(urlParts[1].split('?')[0]); // Remove any query params
+              console.log(`🔑 Gerando signed URL para: ${storagePath}`);
+              
+              const { data: signedUrlData, error: signedUrlError } = await supabase.storage
+                .from('ai-agent-media')
+                .createSignedUrl(storagePath, 3600); // 1 hour validity
+              
+              if (signedUrlData?.signedUrl) {
+                mediaUrl = signedUrlData.signedUrl;
+                console.log(`✅ Signed URL gerada com sucesso`);
+              } else if (signedUrlError) {
+                console.log(`⚠️ Erro ao gerar signed URL: ${signedUrlError.message}`);
+              }
+            }
+          } catch (signedUrlErr) {
+            console.log(`⚠️ Erro ao processar signed URL:`, signedUrlErr);
+          }
+        }
+        
         mediasToSend.push({
           type: media.media_type,
           key: media.media_key,
-          url: media.media_url || undefined,
+          url: mediaUrl,
           content: media.media_content || undefined,
           fileName: media.file_name || undefined
         });
