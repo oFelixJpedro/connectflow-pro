@@ -78,7 +78,7 @@ export function AIAgentSelector({ position, onSelect, onClose, onBack, currentAg
   }, [filteredAgents, selectedIndex, onClose]);
 
   const handleSelect = (agentName: string) => {
-    onSelect(agentName);
+    onSelect(`[${agentName}]`);
   };
 
   return (

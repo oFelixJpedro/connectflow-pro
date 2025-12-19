@@ -59,8 +59,8 @@ export function TextInputSelector({
 
   const handleSubmit = () => {
     if (!value.trim()) return;
-    const slug = value.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
-    onSelect(slug);
+    // Envolver em colchetes para suportar espaços
+    onSelect(`[${value.trim()}]`);
   };
 
   return (

@@ -126,7 +126,7 @@ export function CRMStageSelector({ position, onSelect, onClose, onBack, connecti
   }, [filteredColumns, selectedIndex, onClose]);
 
   const handleSelect = (columnName: string) => {
-    onSelect(columnName);
+    onSelect(`[${columnName}]`);
   };
 
   return (

@@ -96,7 +96,7 @@ function markdownToHtml(markdown: string): string {
   
   // Slash commands - wrap with span
   // Note: values can include "/" (e.g. tag names like "Auxdlio/Acidente"), so we match until whitespace.
-  html = html.replace(/(\/[a-z_]+:[^\s]+)/g, '<span data-slash-command="true" class="slash-command-badge">$1</span>');
+  html = html.replace(/(\/[a-z_]+:(?:\[[^\]]+\]|[^\s]+))/g, '<span data-slash-command="true" class="slash-command-badge">$1</span>');
   html = html.replace(/(\/desativar_agente)(?![:\w])/g, '<span data-slash-command="true" class="slash-command-badge">$1</span>');
   
   // Media tags - wrap with styled span {{type:key}} including data-media-key for editing
