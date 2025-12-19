@@ -1598,10 +1598,10 @@ CRÍTICO SOBRE COMANDOS:
                   { text: mediaPrompt }
                 ]
               }],
-              generationConfig: {
-                temperature: agentTemperature,
-                maxOutputTokens: 1500
-              }
+        generationConfig: {
+          temperature: agentTemperature,
+          maxOutputTokens: 8192
+        }
             })
           }
         );
@@ -1646,7 +1646,7 @@ CRÍTICO SOBRE COMANDOS:
                     { text: mediaPrompt }
                   ]
                 }],
-                generationConfig: { temperature: 0.5, maxOutputTokens: 1500 }
+              generationConfig: { temperature: 0.5, maxOutputTokens: 8192 }
               })
             }
           );
@@ -1691,9 +1691,9 @@ CRÍTICO SOBRE COMANDOS:
         contents: [{
           parts: [{ text: fullPrompt }]
         }],
-        generationConfig: {
+      generationConfig: {
           temperature: agentTemperature,
-          maxOutputTokens: 1500
+          maxOutputTokens: 8192
         }
       };
 
@@ -2384,14 +2384,15 @@ CRÍTICO SOBRE COMANDOS:
 
     // Parse and execute commands (fallback for slash commands in text)
     // Supports both bracketed [Value With Spaces] and simple values
+    // Regex patterns updated to capture values with spaces until newline or next command
     const commandPatterns = [
-      { pattern: /\/adicionar_etiqueta:(?:\[([^\]]+)\]|([^\n\/\s]+))/gi, handler: 'adicionar_etiqueta' },
-      { pattern: /\/transferir_agente:(?:\[([^\]]+)\]|([^\n\/\s]+))/gi, handler: 'transferir_agente' },
-      { pattern: /\/transferir_usuario:(?:\[([^\]]+)\]|([^\n\/\s]+))/gi, handler: 'transferir_usuario' },
-      { pattern: /\/atribuir_origem:(?:\[([^\]]+)\]|([^\n\/\s]+))/gi, handler: 'atribuir_origem' },
-      { pattern: /\/mudar_etapa_crm:(?:\[([^\]]+)\]|([^\n\/\s]+))/gi, handler: 'mudar_etapa_crm' },
-      { pattern: /\/notificar_equipe:(?:\[([^\]]+)\]|([^\n]+))/gi, handler: 'notificar_equipe' },
-      { pattern: /\/atribuir_departamento:(?:\[([^\]]+)\]|([^\n\/\s]+))/gi, handler: 'atribuir_departamento' },
+      { pattern: /\/adicionar_etiqueta:(?:\[([^\]]+)\]|([^\n\/]+?)(?=\n|\/[a-z_]+:|$))/gi, handler: 'adicionar_etiqueta' },
+      { pattern: /\/transferir_agente:(?:\[([^\]]+)\]|([^\n\/]+?)(?=\n|\/[a-z_]+:|$))/gi, handler: 'transferir_agente' },
+      { pattern: /\/transferir_usuario:(?:\[([^\]]+)\]|([^\n\/]+?)(?=\n|\/[a-z_]+:|$))/gi, handler: 'transferir_usuario' },
+      { pattern: /\/atribuir_origem:(?:\[([^\]]+)\]|([^\n\/]+?)(?=\n|\/[a-z_]+:|$))/gi, handler: 'atribuir_origem' },
+      { pattern: /\/mudar_etapa_crm:(?:\[([^\]]+)\]|([^\n\/]+?)(?=\n|\/[a-z_]+:|$))/gi, handler: 'mudar_etapa_crm' },
+      { pattern: /\/notificar_equipe:(?:\[([^\]]+)\]|([^\n]+?)(?=\n|\/[a-z_]+:|$))/gi, handler: 'notificar_equipe' },
+      { pattern: /\/atribuir_departamento:(?:\[([^\]]+)\]|([^\n\/]+?)(?=\n|\/[a-z_]+:|$))/gi, handler: 'atribuir_departamento' },
       { pattern: /\/desativar_agente/gi, handler: 'desativar_agente' },
     ];
 
@@ -2401,7 +2402,8 @@ CRÍTICO SOBRE COMANDOS:
       for (const match of matches) {
         slashCommandsFound++;
         // Extract value from bracketed group (match[1]) or simple group (match[2])
-        const value = (match[1] || match[2] || '').trim();
+        // Normalize multiple spaces and trim
+        const value = (match[1] || match[2] || '').replace(/\s+/g, ' ').trim();
         
         // Check if this command was already executed via tool call
         const alreadyExecuted = executedCommands.some(cmd => 
