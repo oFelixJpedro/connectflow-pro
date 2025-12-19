@@ -1479,7 +1479,7 @@ CRÍTICO SOBRE COMANDOS:
     console.log('🎬 Vídeos para análise:', videoUrls.length);
     console.log('📄 Documentos para análise:', documentData.length);
 
-    const agentTemperature = agent.temperature ?? 0.7;
+    const agentTemperature = agent.temperature ?? 1.0;
     console.log('🌡️ Temperatura configurada:', agentTemperature);
 
     let aiResponse: string = '';
@@ -1640,7 +1640,7 @@ CRÍTICO SOBRE COMANDOS:
       
       const fullPrompt = `${systemPrompt}\n\nHistórico da conversa:\n${conversationContextForPrompt}\n\n[CLIENTE]: ${processedMessageContent || '[Mensagem sem texto]'}\n\nGere a resposta do atendente. Se precisar executar ações (mover no CRM, adicionar etiqueta, etc), use as ferramentas disponíveis:`;
       
-      const agentTemperature = agent.temperature ?? 0.7;
+      const agentTemperature = agent.temperature ?? 1.0;
       
       // Convert OpenAI tool format to Gemini function_declarations format
       const geminiTools = dynamicTools.length > 0 ? [{
