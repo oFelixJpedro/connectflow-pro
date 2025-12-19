@@ -1718,7 +1718,7 @@ CRÍTICO SOBRE COMANDOS:
               mentioned_user_id: admin.user_id,
               mentioner_user_id: admin.user_id, // Self-mention for system notification
               message_id: crypto.randomUUID(), // Placeholder since this is a system notification
-              source_type: 'ai_agent_notification',
+              source_type: 'internal_note', // Valid value for the constraint
               conversation_id: conversationId,
               has_access: true,
               is_read: false
@@ -1737,7 +1737,7 @@ CRÍTICO SOBRE COMANDOS:
             conversation_id: conversationId,
             content: notificationMessage,
             direction: 'outbound',
-            sender_type: 'agent',
+            sender_type: 'system', // Valid enum value
             message_type: 'text',
             is_internal_note: true,
             status: 'sent'
