@@ -1,7 +1,10 @@
-import { Wand2 } from 'lucide-react';
+import { useState } from 'react';
+import { Wand2, Sparkles, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { MarkdownEditor } from '@/components/ui/markdown-editor';
+import { useToast } from '@/hooks/use-toast';
+import { supabase } from '@/integrations/supabase/client';
 import type { AgentMedia } from '@/hooks/useAgentMedia';
 
 interface AgentScriptTabProps {
@@ -149,8 +152,50 @@ Desejamos tudo de bom! 🙏"
 → Encerrar fluxo. Não avançar mais até retorno espontâneo do lead.`;
 
 export function AgentScriptTab({ content, onChange, agentId, medias = [] }: AgentScriptTabProps) {
+  const [isFormatting, setIsFormatting] = useState(false);
+  const { toast } = useToast();
+
   const handleGenerateTemplate = () => {
     onChange(DEFAULT_SCRIPT_TEMPLATE);
+  };
+
+  const handleFormatPrompt = async () => {
+    if (!content.trim()) {
+      toast({
+        title: "Erro",
+        description: "Adicione conteúdo antes de formatar",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsFormatting(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('format-prompt', {
+        body: { text: content }
+      });
+
+      if (error) throw error;
+
+      if (data?.formattedText) {
+        onChange(data.formattedText);
+        toast({
+          title: "Formatado!",
+          description: "O prompt foi formatado com sucesso",
+        });
+      } else {
+        throw new Error('Resposta inválida');
+      }
+    } catch (error) {
+      console.error('Error formatting prompt:', error);
+      toast({
+        title: "Erro ao formatar",
+        description: "Não foi possível formatar o prompt",
+        variant: "destructive",
+      });
+    } finally {
+      setIsFormatting(false);
+    }
   };
 
   return (
@@ -162,10 +207,25 @@ export function AgentScriptTab({ content, onChange, agentId, medias = [] }: Agen
             Defina o fluxo de atendimento do agente passo a passo
           </p>
         </div>
-        <Button variant="outline" size="sm" onClick={handleGenerateTemplate}>
-          <Wand2 className="w-4 h-4 mr-2" />
-          Texto Padrão
-        </Button>
+        <div className="flex gap-2">
+          <Button 
+            variant="outline" 
+            size="sm" 
+            onClick={handleFormatPrompt}
+            disabled={isFormatting}
+          >
+            {isFormatting ? (
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            ) : (
+              <Sparkles className="w-4 h-4 mr-2" />
+            )}
+            Formatar
+          </Button>
+          <Button variant="outline" size="sm" onClick={handleGenerateTemplate}>
+            <Wand2 className="w-4 h-4 mr-2" />
+            Texto Padrão
+          </Button>
+        </div>
       </div>
 
       <div className="bg-muted/50 rounded-lg p-3 text-sm space-y-2">

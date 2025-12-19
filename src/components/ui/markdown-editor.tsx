@@ -103,6 +103,11 @@ function markdownToHtml(markdown: string): string {
   html = html.replace(/\{\{(image|video|audio|document|text|link):([^}]+)\}\}/g, (match, type, key) => {
     return `<span data-media-tag="true" data-media-type="${type}" data-media-key="${key}" class="media-tag-badge media-tag-${type}">📎 ${type}:${key}</span>`;
   });
+  
+  // Fallback: também converter texto plano "📎 type:key" para formato correto (preserva tags ao recarregar)
+  html = html.replace(/📎\s*(image|video|audio|document|text|link):([^\s<\n]+)/g, (match, type, key) => {
+    return `<span data-media-tag="true" data-media-type="${type}" data-media-key="${key}" class="media-tag-badge media-tag-${type}">📎 ${type}:${key}</span>`;
+  });
   // Ordered lists (before converting to paragraphs)
   const orderedListPattern = /(?:^|\n)((?:\d+\. .+\n?)+)/g;
   html = html.replace(orderedListPattern, (match, listContent) => {
@@ -672,7 +677,7 @@ export function MarkdownEditor({
   return (
     <div ref={editorContainerRef} className={cn('relative border border-input rounded-lg overflow-hidden bg-background', className)}>
       {/* Toolbar */}
-      <div className="flex items-center gap-0.5 p-1.5 border-b border-input bg-muted/30 flex-wrap">
+      <div className="flex items-center gap-0.5 p-1.5 border-b border-input bg-muted/30 flex-wrap sticky top-0 z-10">
         {/* Headings */}
         <ToolbarButton
           onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}

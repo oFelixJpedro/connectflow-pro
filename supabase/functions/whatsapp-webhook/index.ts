@@ -551,7 +551,7 @@ async function processAIBatchImmediate(batchData: any, batchKey: string, redisCl
               body: JSON.stringify({
                 number: phoneNumber,
                 type: 'ptt',
-                media: audioUrl,
+                file: audioUrl,
                 text: '',
               }),
             });
@@ -612,6 +612,151 @@ async function processAIBatchImmediate(batchData: any, batchKey: string, redisCl
               immediateProcessing: true,
             },
           });
+      }
+    }
+    
+    // ═══════════════════════════════════════════════════════════════════════════════
+    // 📦 PROCESSAR MÍDIAS (mediasToSend)
+    // ═══════════════════════════════════════════════════════════════════════════════
+    const mediasToSend = result.mediasToSend as Array<{ type: string; key: string; url?: string; content?: string; fileName?: string }> | undefined;
+    
+    if (mediasToSend && mediasToSend.length > 0) {
+      console.log(`📦 [IMMEDIATE-BATCH] Sending ${mediasToSend.length} media(s)...`);
+      
+      for (const media of mediasToSend) {
+        // Add delay between media messages
+        await new Promise(resolve => setTimeout(resolve, 1500));
+        
+        let whatsappMediaId: string | null = null;
+        
+        try {
+          if (media.type === 'text' && media.content) {
+            // Send as text message
+            const sendTextUrl = `${UAZAPI_BASE_URL}/send/text`;
+            const textResponse = await fetch(sendTextUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'token': instanceToken },
+              body: JSON.stringify({ number: phoneNumber, text: media.content }),
+            });
+            
+            if (textResponse.ok) {
+              const textResult = await textResponse.json();
+              whatsappMediaId = textResult.key?.id || textResult.messageId || null;
+              console.log(`✅ [IMMEDIATE-BATCH] Text media sent: ${whatsappMediaId}`);
+            }
+            
+            // Save to database
+            await supabase.from('messages').insert({
+              conversation_id: conversationId,
+              direction: 'outbound',
+              sender_type: 'bot',
+              content: media.content,
+              message_type: 'text',
+              whatsapp_message_id: whatsappMediaId,
+              status: 'sent',
+              metadata: { aiGenerated: true, mediaKey: media.key }
+            });
+            
+          } else if (media.type === 'link' && media.content) {
+            // Send link as text message
+            const sendTextUrl = `${UAZAPI_BASE_URL}/send/text`;
+            const linkResponse = await fetch(sendTextUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'token': instanceToken },
+              body: JSON.stringify({ number: phoneNumber, text: media.content }),
+            });
+            
+            if (linkResponse.ok) {
+              const linkResult = await linkResponse.json();
+              whatsappMediaId = linkResult.key?.id || linkResult.messageId || null;
+              console.log(`✅ [IMMEDIATE-BATCH] Link sent: ${whatsappMediaId}`);
+            }
+            
+            // Save to database
+            await supabase.from('messages').insert({
+              conversation_id: conversationId,
+              direction: 'outbound',
+              sender_type: 'bot',
+              content: media.content,
+              message_type: 'text',
+              whatsapp_message_id: whatsappMediaId,
+              status: 'sent',
+              metadata: { aiGenerated: true, mediaKey: media.key, isLink: true }
+            });
+            
+          } else if (media.url) {
+            // Send media file (video, image, audio, document)
+            const sendMediaUrl = `${UAZAPI_BASE_URL}/send/media`;
+            
+            // Map media type to UAZAPI type
+            let uazapiType = media.type;
+            if (media.type === 'audio') uazapiType = 'audio'; // or 'ptt' for voice note
+            
+            // Generate signed URL if it's from private bucket and not already signed
+            let mediaFileUrl = media.url;
+            if (mediaFileUrl && mediaFileUrl.includes('/ai-agent-media/') && !mediaFileUrl.includes('token=')) {
+              try {
+                const urlParts = mediaFileUrl.split('/ai-agent-media/');
+                if (urlParts.length > 1) {
+                  const storagePath = decodeURIComponent(urlParts[1].split('?')[0]);
+                  console.log(`🔑 [WEBHOOK] Gerando signed URL para: ${storagePath}`);
+                  
+                  const { data: signedUrlData, error: signedUrlError } = await supabase.storage
+                    .from('ai-agent-media')
+                    .createSignedUrl(storagePath, 3600); // 1 hour validity
+                  
+                  if (signedUrlData?.signedUrl) {
+                    mediaFileUrl = signedUrlData.signedUrl;
+                    console.log(`✅ [WEBHOOK] Signed URL gerada com sucesso`);
+                  } else if (signedUrlError) {
+                    console.log(`⚠️ [WEBHOOK] Erro ao gerar signed URL: ${signedUrlError.message}`);
+                  }
+                }
+              } catch (signedUrlErr) {
+                console.log(`⚠️ [WEBHOOK] Erro ao processar signed URL:`, signedUrlErr);
+              }
+            }
+            
+            const mediaResponse = await fetch(sendMediaUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'token': instanceToken },
+              body: JSON.stringify({
+                number: phoneNumber,
+                type: uazapiType,
+                file: mediaFileUrl,
+                filename: media.fileName || undefined,
+              }),
+            });
+            
+            if (mediaResponse.ok) {
+              const mediaResult = await mediaResponse.json();
+              whatsappMediaId = mediaResult.key?.id || mediaResult.messageId || null;
+              console.log(`✅ [IMMEDIATE-BATCH] Media (${media.type}) sent: ${whatsappMediaId}`);
+            } else {
+              const errorText = await mediaResponse.text();
+              console.log(`❌ [IMMEDIATE-BATCH] Failed to send media: ${errorText}`);
+            }
+            
+            // Save to database
+            await supabase.from('messages').insert({
+              conversation_id: conversationId,
+              direction: 'outbound',
+              sender_type: 'bot',
+              content: media.fileName || '',
+              message_type: media.type as any,
+              media_url: media.url,
+              whatsapp_message_id: whatsappMediaId,
+              status: whatsappMediaId ? 'sent' : 'failed',
+              metadata: { 
+                aiGenerated: true, 
+                mediaKey: media.key,
+                fileName: media.fileName
+              }
+            });
+          }
+        } catch (mediaError) {
+          console.error(`❌ [IMMEDIATE-BATCH] Error sending media ${media.key}:`, mediaError);
+        }
       }
     }
     

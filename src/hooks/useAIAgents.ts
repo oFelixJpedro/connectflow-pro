@@ -234,6 +234,21 @@ export function useAIAgents() {
   // Vincular conexão ao agente
   const addConnection = useCallback(async (agentId: string, connectionId: string): Promise<boolean> => {
     try {
+      // VALIDAÇÃO: Verificar se a conexão já está vinculada a outro agente
+      const { data: existingLink, error: checkError } = await supabase
+        .from('ai_agent_connections')
+        .select('agent_id')
+        .eq('connection_id', connectionId)
+        .neq('agent_id', agentId)
+        .maybeSingle();
+
+      if (checkError) throw checkError;
+
+      if (existingLink) {
+        toast.error('Esta conexão já está vinculada a outro agente');
+        return false;
+      }
+
       const { error: insertError } = await supabase
         .from('ai_agent_connections')
         .insert({

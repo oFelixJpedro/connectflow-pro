@@ -574,8 +574,9 @@ serve(async (req) => {
       // ───────────────────────────────────────────────────────────────────
       case 'ai_restart': {
         console.log('🤖 Reiniciando IA para conversa:', conversationId)
+        console.log('🧠 Limpando memória/contexto estruturado...')
         
-        // Delete existing AI state (reset memory)
+        // Delete existing AI state (this clears all context/memory)
         const { error: deleteError } = await supabase
           .from('ai_conversation_states')
           .delete()
@@ -583,9 +584,11 @@ serve(async (req) => {
         
         if (deleteError) {
           console.log('⚠️ Erro ao deletar estado anterior (não fatal):', deleteError.message)
+        } else {
+          console.log('✅ Estado anterior e contexto deletados')
         }
         
-        // Create fresh AI state
+        // Create fresh AI state with empty context
         const { error: aiError } = await supabase
           .from('ai_conversation_states')
           .insert({
@@ -593,7 +596,7 @@ serve(async (req) => {
             status: 'active',
             activated_at: new Date().toISOString(),
             messages_processed: 0,
-            metadata: {},
+            metadata: {}, // Empty metadata = no context = fresh start
           })
         
         if (aiError) {
@@ -604,10 +607,10 @@ serve(async (req) => {
           )
         }
         
-        console.log('✅ IA reiniciada com sucesso')
+        console.log('✅ IA reiniciada com sucesso - memória limpa')
         
         return new Response(
-          JSON.stringify({ success: true, action: 'ai_restart' }),
+          JSON.stringify({ success: true, action: 'ai_restart', memoryCleared: true }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         )
       }
