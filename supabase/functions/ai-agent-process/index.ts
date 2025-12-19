@@ -1181,8 +1181,7 @@ serve(async (req) => {
               description: `Slug da etapa destino. Opções: ${availableCrmStages.map(s => `"${s.slug}" (${s.name})`).join(', ')}`
             }
           },
-          required: ["stage_slug"],
-          additionalProperties: false
+          required: ["stage_slug"]
         }
       });
     }
@@ -1203,8 +1202,7 @@ serve(async (req) => {
               : "Nome da etiqueta (use nomes sem acentos e em minúsculo, separados por hífen)"
           }
         },
-        required: ["tag_name"],
-        additionalProperties: false
+        required: ["tag_name"]
       }
     });
 
@@ -1234,8 +1232,7 @@ serve(async (req) => {
               description: `Nome do agente destino. Opções: ${agentDescriptions}`
             }
           },
-          required: ["agent_name"],
-          additionalProperties: false
+          required: ["agent_name"]
         }
       });
     }
@@ -1255,8 +1252,7 @@ serve(async (req) => {
               description: `Nome do departamento. Opções: ${availableDepartments.map(d => `"${d.name}"`).join(', ')}`
             }
           },
-          required: ["department_name"],
-          additionalProperties: false
+          required: ["department_name"]
         }
       });
     }
@@ -1274,8 +1270,7 @@ serve(async (req) => {
             description: "Nome do atendente para transferir a conversa"
           }
         },
-        required: ["user_name"],
-        additionalProperties: false
+        required: ["user_name"]
       }
     });
 
@@ -1292,8 +1287,7 @@ serve(async (req) => {
             description: "Mensagem de notificação para a equipe"
           }
         },
-        required: ["message"],
-        additionalProperties: false
+        required: ["message"]
       }
     });
 
@@ -1304,8 +1298,7 @@ serve(async (req) => {
       description: "Desativa o agente de IA permanentemente nesta conversa. Use quando a conversa precisar continuar apenas com humanos.",
       parameters: {
         type: "object",
-        properties: {},
-        additionalProperties: false
+        properties: {}
       }
     });
 
@@ -1322,8 +1315,7 @@ serve(async (req) => {
             description: "Nome da origem do lead"
           }
         },
-        required: ["origin"],
-        additionalProperties: false
+        required: ["origin"]
       }
     });
 
