@@ -1045,7 +1045,7 @@ serve(async (req) => {
     console.log('└─────────────────────────────────────────────────────────────────┘');
 
     // Load CRM stages (Kanban columns) for this connection
-    let availableCrmStages: { name: string; slug: string }[] = [];
+    let availableCrmStages: { id: string; name: string; normalized: string }[] = [];
     const { data: kanbanBoard } = await supabase
       .from('kanban_boards')
       .select('id')
@@ -1055,14 +1055,15 @@ serve(async (req) => {
     if (kanbanBoard) {
       const { data: columns } = await supabase
         .from('kanban_columns')
-        .select('name, position')
+        .select('id, name, position')
         .eq('board_id', kanbanBoard.id)
         .order('position', { ascending: true });
       
       if (columns) {
         availableCrmStages = columns.map(col => ({
+          id: col.id,
           name: col.name,
-          slug: col.name.toLowerCase()
+          normalized: col.name.toLowerCase()
             .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
             .replace(/\s+/g, '-')
         }));
@@ -1080,22 +1081,16 @@ serve(async (req) => {
     const connectionCompanyId = companyData?.company_id;
     let availableTags: string[] = [];
     if (connectionCompanyId) {
-      const { data: contacts } = await supabase
-        .from('contacts')
-        .select('tags')
-        .eq('company_id', connectionCompanyId)
-        .not('tags', 'is', null);
+      // Load tags from tags table (not from contacts)
+      const { data: tagsData, error: tagsError } = await supabase
+        .from('tags')
+        .select('name')
+        .eq('company_id', connectionCompanyId);
       
-      if (contacts) {
-        const allTags = new Set<string>();
-        for (const contact of contacts) {
-          if (Array.isArray(contact.tags)) {
-            for (const tag of contact.tags) {
-              if (tag) allTags.add(tag);
-            }
-          }
-        }
-        availableTags = Array.from(allTags).sort();
+      if (tagsData && !tagsError) {
+        availableTags = tagsData.map(t => t.name).sort();
+      } else {
+        console.log('⚠️ Erro ao carregar tags:', tagsError?.message);
       }
     }
     console.log('🏷️ Etiquetas disponíveis:', availableTags.length);
@@ -1175,13 +1170,13 @@ serve(async (req) => {
         parameters: {
           type: "object",
           properties: {
-            stage_slug: {
+            stage_name: {
               type: "string",
-              enum: availableCrmStages.map(s => s.slug),
-              description: `Slug da etapa destino. Opções: ${availableCrmStages.map(s => `"${s.slug}" (${s.name})`).join(', ')}`
+              enum: availableCrmStages.map(s => s.name),
+              description: `Nome EXATO da etapa destino. Opções disponíveis: ${availableCrmStages.map(s => `"${s.name}"`).join(', ')}. Use o nome EXATAMENTE como mostrado.`
             }
           },
-          required: ["stage_slug"]
+          required: ["stage_name"]
         }
       });
     }
@@ -1412,7 +1407,7 @@ Quando apropriado, INCLUA os comandos abaixo NO INÍCIO da sua resposta (eles se
 
 ### ETAPAS DO CRM (para /mudar_etapa_crm):
 ${availableCrmStages.length > 0 
-  ? availableCrmStages.map(s => `- "${s.name}" → /mudar_etapa_crm:${s.slug}`).join('\n')
+  ? availableCrmStages.map(s => `- "${s.name}" → /mudar_etapa_crm:${s.name}`).join('\n')
   : '- (Nenhuma etapa configurada no CRM)'}
 
 ### ETIQUETAS (para /adicionar_etiqueta):
@@ -2052,23 +2047,88 @@ CRÍTICO SOBRE COMANDOS:
           .maybeSingle();
         
         if (card) {
-          // Find target column
-          const { data: targetColumn } = await supabase
+          const boardId = (card as any).kanban_columns.board_id;
+          
+          // Normalize input for comparison
+          const normalizedInput = stageName.toLowerCase()
+            .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+            .replace(/\s+/g, '-');
+          
+          // First try exact match, then try normalized match, then ilike
+          let targetColumn = null;
+          
+          // 1. Try exact match by name
+          const { data: exactMatch } = await supabase
             .from('kanban_columns')
-            .select('id')
-            .eq('board_id', (card as any).kanban_columns.board_id)
-            .ilike('name', `%${stageName}%`)
+            .select('id, name')
+            .eq('board_id', boardId)
+            .eq('name', stageName)
             .limit(1)
             .maybeSingle();
+          
+          if (exactMatch) {
+            targetColumn = exactMatch;
+            console.log('✅ Match exato encontrado:', exactMatch.name);
+          } else {
+            // 2. Try case-insensitive ilike match
+            const { data: ilikeMatch } = await supabase
+              .from('kanban_columns')
+              .select('id, name')
+              .eq('board_id', boardId)
+              .ilike('name', stageName)
+              .limit(1)
+              .maybeSingle();
+            
+            if (ilikeMatch) {
+              targetColumn = ilikeMatch;
+              console.log('✅ Match ilike encontrado:', ilikeMatch.name);
+            } else {
+              // 3. Try partial match
+              const { data: partialMatch } = await supabase
+                .from('kanban_columns')
+                .select('id, name')
+                .eq('board_id', boardId)
+                .ilike('name', `%${stageName}%`)
+                .limit(1)
+                .maybeSingle();
+              
+              if (partialMatch) {
+                targetColumn = partialMatch;
+                console.log('✅ Match parcial encontrado:', partialMatch.name);
+              } else {
+                // 4. Load all columns and try normalized comparison
+                const { data: allColumns } = await supabase
+                  .from('kanban_columns')
+                  .select('id, name')
+                  .eq('board_id', boardId);
+                
+                if (allColumns) {
+                  for (const col of allColumns) {
+                    const normalizedColName = col.name.toLowerCase()
+                      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+                      .replace(/\s+/g, '-');
+                    
+                    if (normalizedColName === normalizedInput || 
+                        normalizedColName.includes(normalizedInput) ||
+                        normalizedInput.includes(normalizedColName)) {
+                      targetColumn = col;
+                      console.log('✅ Match normalizado encontrado:', col.name);
+                      break;
+                    }
+                  }
+                }
+              }
+            }
+          }
           
           if (targetColumn) {
             await supabase
               .from('kanban_cards')
               .update({ column_id: targetColumn.id })
               .eq('id', card.id);
-            console.log('✅ Etapa CRM atualizada');
+            console.log('✅ Etapa CRM atualizada para:', targetColumn.name);
           } else {
-            console.log('⚠️ Coluna não encontrada:', stageName);
+            console.log('⚠️ Coluna não encontrada:', stageName, '- Input normalizado:', normalizedInput);
           }
         } else {
           console.log('⚠️ Card não encontrado para contato');
@@ -2541,8 +2601,9 @@ ${contextSummary}
               }
             }
             
-            // Combinar: resposta anterior (até transferência) + separador + resposta do novo agente
-            cleanResponse = `${previousAgentMessage.trim()}\n\n---\n\n${newAiResponse.trim()}`;
+            // Usar apenas a resposta do novo agente (não concatenar com separador)
+            // O agente anterior já indicou a transferência, a mensagem do novo agente é a continuação natural
+            cleanResponse = newAiResponse.trim();
             
             // Atualizar referência do agente para o return
             agent = {
