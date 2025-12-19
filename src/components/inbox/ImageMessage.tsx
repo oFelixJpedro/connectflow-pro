@@ -7,7 +7,7 @@ import {
   DialogContent,
   DialogClose,
 } from '@/components/ui/dialog';
-
+import { LinkifyText } from '@/components/ui/linkify-text';
 interface ImageMessageProps {
   src: string;
   alt?: string;
@@ -180,11 +180,10 @@ export function ImageMessage({
           <div 
             className={cn(
               "px-3 py-2 text-sm leading-relaxed",
-              "whitespace-pre-wrap break-words",
               isOutbound ? "text-foreground" : "text-foreground"
             )}
           >
-            {caption}
+            <LinkifyText text={caption} />
           </div>
         )}
       </div>

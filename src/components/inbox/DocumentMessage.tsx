@@ -11,6 +11,7 @@ import {
   FileCode
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { LinkifyText } from '@/components/ui/linkify-text';
 
 interface DocumentMessageProps {
   src: string;
@@ -246,13 +247,12 @@ export function DocumentMessage({
           <div 
             className={cn(
               "px-4 py-3 rounded-b-xl text-sm leading-relaxed",
-              "whitespace-pre-wrap break-words",
               isOutbound 
                 ? "bg-primary/10 dark:bg-primary/20 text-foreground border-t border-primary/20"
                 : "bg-muted text-foreground border-t border-border"
             )}
           >
-            {caption}
+            <LinkifyText text={caption} />
           </div>
         )}
       </div>
