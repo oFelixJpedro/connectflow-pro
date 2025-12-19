@@ -1,10 +1,36 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { Redis } from "https://esm.sh/@upstash/redis@1.28.0";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
+
+// Initialize Redis client for idempotency
+let redis: Redis | null = null;
+try {
+  const redisUrl = Deno.env.get('UPSTASH_REDIS_URL');
+  const redisToken = Deno.env.get('UPSTASH_REDIS_TOKEN');
+  if (redisUrl && redisToken) {
+    redis = new Redis({ url: redisUrl, token: redisToken });
+  }
+} catch (e) {
+  console.log('⚠️ Redis not configured for ai-agent-process');
+}
+
+// Helper to create idempotency key from batch
+function createBatchHash(conversationId: string, messages: any[]): string {
+  const content = messages.map(m => `${m.type}:${m.content || m.mediaUrl || ''}`).join('|');
+  // Simple hash for deduplication
+  let hash = 0;
+  for (let i = 0; i < content.length; i++) {
+    const char = content.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash; // Convert to 32bit integer
+  }
+  return `ai-process:${conversationId}:${Math.abs(hash).toString(36)}`;
+}
 
 // ═══════════════════════════════════════════════════════════════════
 // STRUCTURED CONTEXT TYPES
@@ -351,6 +377,31 @@ serve(async (req) => {
         JSON.stringify({ success: false, error: 'connectionId and conversationId required' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════════
+    // 🔒 IDEMPOTENCY CHECK - Prevent duplicate processing of same batch
+    // ═══════════════════════════════════════════════════════════════════════════════
+    const messagesToProcess = isBatchRequest ? messages : [{ type: messageType || 'text', content: messageContent, mediaUrl }];
+    const idempotencyKey = createBatchHash(conversationId, messagesToProcess);
+    
+    if (redis) {
+      try {
+        const alreadyProcessing = await redis.get(idempotencyKey);
+        if (alreadyProcessing) {
+          console.log(`🔒 [IDEMPOTENCY] Batch already being processed: ${idempotencyKey}`);
+          return new Response(
+            JSON.stringify({ success: true, skip: true, reason: 'Already processing this batch' }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+        
+        // Mark as processing with 5 minute TTL
+        await redis.setex(idempotencyKey, 300, 'processing');
+        console.log(`✅ [IDEMPOTENCY] Marked batch as processing: ${idempotencyKey}`);
+      } catch (redisError) {
+        console.log('⚠️ [IDEMPOTENCY] Redis error, continuing anyway:', redisError);
+      }
     }
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
@@ -1499,10 +1550,40 @@ CRÍTICO SOBRE COMANDOS:
 
     // Command handlers
     const commandHandlers: Record<string, (value: string) => Promise<void>> = {
-      // Add tag to contact
+      // Add tag to contact - with validation against tags table
       'adicionar_etiqueta': async (tagName: string) => {
-        if (!contactId) return;
-        console.log('🏷️ Adicionando etiqueta:', tagName);
+        if (!contactId || !companyId) return;
+        console.log('🏷️ Tentando adicionar etiqueta:', tagName);
+        
+        // Validate tag exists in the tags table
+        const { data: existingTag, error: tagError } = await supabase
+          .from('tags')
+          .select('name')
+          .eq('company_id', companyId)
+          .ilike('name', tagName)
+          .maybeSingle();
+        
+        if (tagError) {
+          console.log('⚠️ Erro ao buscar etiqueta:', tagError.message);
+          return;
+        }
+        
+        if (!existingTag) {
+          // Tag doesn't exist - log warning and DO NOT add
+          console.log(`⚠️ [TAG] Etiqueta "${tagName}" não existe na tabela tags. Ignorando.`);
+          
+          // Debug: list available tags for this company
+          const { data: availableTags } = await supabase
+            .from('tags')
+            .select('name')
+            .eq('company_id', companyId);
+          console.log('📋 [TAG] Etiquetas disponíveis:', availableTags?.map(t => t.name).join(', ') || 'nenhuma');
+          return;
+        }
+        
+        // Use the exact name from the database
+        const validTagName = existingTag.name;
+        console.log('✅ [TAG] Etiqueta válida encontrada:', validTagName);
         
         // Get current tags
         const { data: contact } = await supabase
@@ -1512,12 +1593,14 @@ CRÍTICO SOBRE COMANDOS:
           .single();
         
         const currentTags = contact?.tags || [];
-        if (!currentTags.includes(tagName)) {
+        if (!currentTags.includes(validTagName)) {
           await supabase
             .from('contacts')
-            .update({ tags: [...currentTags, tagName] })
+            .update({ tags: [...currentTags, validTagName] })
             .eq('id', contactId);
-          console.log('✅ Etiqueta adicionada');
+          console.log('✅ Etiqueta adicionada com sucesso:', validTagName);
+        } else {
+          console.log('ℹ️ Contato já possui esta etiqueta:', validTagName);
         }
       },
 
