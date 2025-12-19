@@ -773,6 +773,98 @@ serve(async (req) => {
       console.log('ℹ️ Nenhum contexto estruturado anterior');
     }
 
+    // ═══════════════════════════════════════════════════════════════════
+    // LOAD REAL DATA FOR AVAILABLE ACTIONS (PHASE 1: ERROR-PROOF SYSTEM)
+    // ═══════════════════════════════════════════════════════════════════
+    console.log('\n┌─────────────────────────────────────────────────────────────────┐');
+    console.log('│ 🎯 CARREGAR DADOS REAIS PARA AÇÕES                              │');
+    console.log('└─────────────────────────────────────────────────────────────────┘');
+
+    // Load CRM stages (Kanban columns) for this connection
+    let availableCrmStages: { name: string; slug: string }[] = [];
+    const { data: kanbanBoard } = await supabase
+      .from('kanban_boards')
+      .select('id')
+      .eq('whatsapp_connection_id', connectionId)
+      .maybeSingle();
+    
+    if (kanbanBoard) {
+      const { data: columns } = await supabase
+        .from('kanban_columns')
+        .select('name, position')
+        .eq('board_id', kanbanBoard.id)
+        .order('position', { ascending: true });
+      
+      if (columns) {
+        availableCrmStages = columns.map(col => ({
+          name: col.name,
+          slug: col.name.toLowerCase()
+            .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+            .replace(/\s+/g, '-')
+        }));
+      }
+    }
+    console.log('📊 Etapas CRM disponíveis:', availableCrmStages.length);
+
+    // Load existing tags from contacts in this company
+    const { data: companyData } = await supabase
+      .from('whatsapp_connections')
+      .select('company_id')
+      .eq('id', connectionId)
+      .single();
+    
+    const connectionCompanyId = companyData?.company_id;
+    let availableTags: string[] = [];
+    if (connectionCompanyId) {
+      const { data: contacts } = await supabase
+        .from('contacts')
+        .select('tags')
+        .eq('company_id', connectionCompanyId)
+        .not('tags', 'is', null);
+      
+      if (contacts) {
+        const allTags = new Set<string>();
+        for (const contact of contacts) {
+          if (Array.isArray(contact.tags)) {
+            for (const tag of contact.tags) {
+              if (tag) allTags.add(tag);
+            }
+          }
+        }
+        availableTags = Array.from(allTags).sort();
+      }
+    }
+    console.log('🏷️ Etiquetas disponíveis:', availableTags.length);
+
+    // Load active AI agents (sub-agents) for this company
+    let availableAgents: { name: string; description: string | null }[] = [];
+    if (connectionCompanyId) {
+      const { data: agents } = await supabase
+        .from('ai_agents')
+        .select('name, description')
+        .eq('company_id', connectionCompanyId)
+        .eq('status', 'active')
+        .neq('id', agent.id); // Exclude current agent
+      
+      if (agents) {
+        availableAgents = agents.map(a => ({ name: a.name, description: a.description }));
+      }
+    }
+    console.log('🤖 Agentes disponíveis:', availableAgents.length);
+
+    // Load departments for this connection
+    let availableDepartments: { name: string }[] = [];
+    const { data: departments } = await supabase
+      .from('departments')
+      .select('name')
+      .eq('whatsapp_connection_id', connectionId)
+      .eq('active', true);
+    
+    if (departments) {
+      availableDepartments = departments;
+    }
+    console.log('🏢 Departamentos disponíveis:', availableDepartments.length);
+
     // Build system prompt
     const companyInfo = agent.company_info || {};
     const isFirstInteraction = (convState?.messages_processed || 0) === 0;
@@ -836,19 +928,43 @@ ${conversationContext.qualificacao.nivel ? `- Nível do lead: ${conversationCont
 ## COMANDOS DISPONÍVEIS
 Quando apropriado, INCLUA os comandos abaixo NO INÍCIO da sua resposta (eles serão automaticamente removidos antes de enviar ao cliente):
 
-- /adicionar_etiqueta:nome-da-etiqueta → Adiciona uma etiqueta ao contato (use nomes SEM acentos, separados por hífen)
-- /transferir_agente:Nome do Agente → Transfere para outro agente de IA (use o nome EXATO do agente)
+- /adicionar_etiqueta:nome-da-etiqueta → Adiciona uma etiqueta ao contato
+- /transferir_agente:Nome do Agente → Transfere para outro agente de IA
 - /transferir_usuario:Nome do Usuário → Transfere para um atendente humano
 - /mudar_etapa_crm:nome-da-etapa → Move o card do cliente no CRM
 - /atribuir_departamento:Nome do Departamento → Atribui a conversa a um departamento
 - /notificar_equipe:mensagem → Notifica a equipe interna
 - /desativar_agente → Desativa a IA permanentemente nesta conversa
 
-IMPORTANTE SOBRE COMANDOS:
+## ⚠️ OPÇÕES VÁLIDAS PARA COMANDOS (USE EXATAMENTE COMO ESCRITO)
+
+### ETAPAS DO CRM (para /mudar_etapa_crm):
+${availableCrmStages.length > 0 
+  ? availableCrmStages.map(s => `- "${s.name}" → /mudar_etapa_crm:${s.slug}`).join('\n')
+  : '- (Nenhuma etapa configurada no CRM)'}
+
+### ETIQUETAS (para /adicionar_etiqueta):
+${availableTags.length > 0 
+  ? availableTags.map(t => `- ${t}`).join('\n')
+  : '- (Nenhuma etiqueta cadastrada ainda - você pode criar novas)'}
+
+### AGENTES DE IA (para /transferir_agente):
+${availableAgents.length > 0 
+  ? availableAgents.map(a => `- "${a.name}"${a.description ? ` - ${a.description}` : ''}`).join('\n')
+  : '- (Nenhum outro agente disponível)'}
+
+### DEPARTAMENTOS (para /atribuir_departamento):
+${availableDepartments.length > 0 
+  ? availableDepartments.map(d => `- "${d.name}"`).join('\n')
+  : '- (Nenhum departamento configurado)'}
+
+CRÍTICO SOBRE COMANDOS:
+- Use APENAS os nomes listados acima - eles existem no sistema
+- Se a etapa, etiqueta ou agente NÃO estiver na lista, NÃO tente usar
 - Coloque os comandos no INÍCIO da resposta, cada um em uma linha separada
-- Use nomes de etiquetas SEM acentos e em minúsculo (ex: salario-maternidade, bpc-loas-pcd)
+- Para etiquetas: use nomes SEM acentos e em minúsculo (ex: salario-maternidade)
 - Os comandos serão REMOVIDOS automaticamente antes de enviar a mensagem ao cliente
-- SEMPRE use comandos quando o roteiro indicar (ex: ao identificar o interesse do cliente, adicione a etiqueta correspondente)
+- SEMPRE use comandos quando o roteiro indicar (ex: ao identificar o interesse, adicione a etiqueta)
 
 ## REGRAS CRÍTICAS (OBRIGATÓRIAS)
 1. ${isFirstInteraction ? 'Esta é a primeira interação - você pode se apresentar e cumprimentar' : 'NUNCA repita saudações como "Prazer em te conhecer" ou "Olá, tudo bem?" - a conversa já está em andamento'}
