@@ -1520,29 +1520,49 @@ CRÍTICO SOBRE COMANDOS:
 
       // Transfer to another AI agent (sub-agent)
       'transferir_agente': async (agentIdentifier: string) => {
-        console.log('🤖 Transferindo para agente:', agentIdentifier);
+        console.log('🤖 [TRANSFER] Iniciando transferência para agente:', agentIdentifier);
+        console.log('🔍 [TRANSFER] Company ID:', companyId);
         
-        // Find agent by name or id
-        const { data: targetAgent } = await supabase
+        // Find agent by name or id - use * wildcard for Supabase ilike
+        const { data: targetAgent, error: agentError } = await supabase
           .from('ai_agents')
-          .select('id, name')
-          .or(`name.ilike.%${agentIdentifier}%,id.eq.${agentIdentifier}`)
+          .select('id, name, parent_agent_id')
+          .or(`name.ilike.*${agentIdentifier}*,id.eq.${agentIdentifier}`)
           .eq('company_id', companyId)
           .eq('status', 'active')
           .limit(1)
           .maybeSingle();
         
+        if (agentError) {
+          console.log('❌ [TRANSFER] Erro na busca de agente:', agentError.message);
+        }
+        
+        console.log('📋 [TRANSFER] Resultado da busca:', targetAgent ? `${targetAgent.name} (${targetAgent.id})` : 'NULL');
+        
         if (targetAgent) {
-          await supabase
+          const { error: updateError } = await supabase
             .from('ai_conversation_states')
             .update({ 
               current_sub_agent_id: targetAgent.id,
               updated_at: new Date().toISOString()
             })
             .eq('conversation_id', conversationId);
-          console.log('✅ Transferido para agente:', targetAgent.name);
+          
+          if (updateError) {
+            console.log('❌ [TRANSFER] Erro ao atualizar estado:', updateError.message);
+          } else {
+            console.log('✅ [TRANSFER] Transferido com sucesso para:', targetAgent.name, '| ID:', targetAgent.id);
+          }
         } else {
-          console.log('⚠️ Agente não encontrado:', agentIdentifier);
+          console.log('⚠️ [TRANSFER] Agente não encontrado:', agentIdentifier);
+          
+          // Debug: list all active agents for this company
+          const { data: allAgents } = await supabase
+            .from('ai_agents')
+            .select('id, name, status')
+            .eq('company_id', companyId)
+            .eq('status', 'active');
+          console.log('📋 [TRANSFER] Agentes ativos disponíveis:', allAgents?.map(a => a.name).join(', ') || 'nenhum');
         }
       },
 
