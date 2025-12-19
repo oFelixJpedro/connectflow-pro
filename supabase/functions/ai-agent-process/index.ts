@@ -479,8 +479,10 @@ serve(async (req) => {
         if (subAgent.status === 'active') {
           activeSubAgent = subAgent;
           // Use sub-agent prompts while keeping parent agent's audio/delay settings
+          // CRÍTICO: Incluir ID do sub-agente para que busca de mídia funcione corretamente
           agent = {
             ...agent,
+            id: subAgent.id,  // ← ID do sub-agente para buscar mídia corretamente
             name: subAgent.name,
             script_content: subAgent.script_content || agent.script_content,
             rules_content: subAgent.rules_content || agent.rules_content,
@@ -490,6 +492,7 @@ serve(async (req) => {
             temperature: subAgent.temperature ?? agent.temperature
           };
           console.log('✅ Sub-agente carregado:', subAgent.name);
+          console.log('🆔 Agent ID atualizado para sub-agente:', agent.id);
           console.log('📝 Usando prompts do sub-agente');
         } else {
           console.log('⚠️ Sub-agente inativo:', subAgent.name, '| Status:', subAgent.status);
