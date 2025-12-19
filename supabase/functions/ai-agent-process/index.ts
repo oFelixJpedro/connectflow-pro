@@ -1523,15 +1523,39 @@ CRÍTICO SOBRE COMANDOS:
         console.log('🤖 [TRANSFER] Iniciando transferência para agente:', agentIdentifier);
         console.log('🔍 [TRANSFER] Company ID:', companyId);
         
-        // Find agent by name or id - use * wildcard for Supabase ilike
-        const { data: targetAgent, error: agentError } = await supabase
-          .from('ai_agents')
-          .select('id, name, parent_agent_id')
-          .or(`name.ilike.*${agentIdentifier}*,id.eq.${agentIdentifier}`)
-          .eq('company_id', companyId)
-          .eq('status', 'active')
-          .limit(1)
-          .maybeSingle();
+        // Validate if identifier is a UUID
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        const isUuid = uuidRegex.test(agentIdentifier);
+        
+        let targetAgent = null;
+        let agentError = null;
+        
+        if (isUuid) {
+          // Search by exact UUID
+          console.log('🔍 [TRANSFER] Buscando por UUID:', agentIdentifier);
+          const result = await supabase
+            .from('ai_agents')
+            .select('id, name, parent_agent_id')
+            .eq('id', agentIdentifier)
+            .eq('company_id', companyId)
+            .eq('status', 'active')
+            .maybeSingle();
+          targetAgent = result.data;
+          agentError = result.error;
+        } else {
+          // Search by name using ILIKE with % wildcard (PostgreSQL standard)
+          console.log('🔍 [TRANSFER] Buscando por nome:', agentIdentifier);
+          const result = await supabase
+            .from('ai_agents')
+            .select('id, name, parent_agent_id')
+            .ilike('name', `%${agentIdentifier}%`)
+            .eq('company_id', companyId)
+            .eq('status', 'active')
+            .limit(1)
+            .maybeSingle();
+          targetAgent = result.data;
+          agentError = result.error;
+        }
         
         if (agentError) {
           console.log('❌ [TRANSFER] Erro na busca de agente:', agentError.message);
