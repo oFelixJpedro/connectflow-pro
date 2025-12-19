@@ -289,10 +289,37 @@ REGRAS:
 Retorne APENAS o JSON, sem explicações.`;
 }
 
-// Helper function to transcribe audio
+// Helper function to convert ArrayBuffer to base64
+function arrayBufferToBase64(buffer: ArrayBuffer): string {
+  let binary = '';
+  const bytes = new Uint8Array(buffer);
+  for (let i = 0; i < bytes.byteLength; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+}
+
+// Helper function to fetch image as base64
+async function fetchImageAsBase64(imageUrl: string): Promise<{ base64: string; mimeType: string } | null> {
+  try {
+    const response = await fetch(imageUrl);
+    if (!response.ok) return null;
+    
+    const arrayBuffer = await response.arrayBuffer();
+    const base64 = arrayBufferToBase64(arrayBuffer);
+    const contentType = response.headers.get('content-type') || 'image/jpeg';
+    
+    return { base64, mimeType: contentType };
+  } catch (error) {
+    console.error('❌ Erro ao baixar imagem:', error);
+    return null;
+  }
+}
+
+// Helper function to transcribe audio using Gemini 3.0 Flash
 async function transcribeAudio(audioUrl: string, apiKey: string): Promise<string | null> {
   try {
-    console.log('🎤 Transcrevendo áudio:', audioUrl.substring(0, 80) + '...');
+    console.log('🎤 Transcrevendo áudio com Gemini 3.0 Flash:', audioUrl.substring(0, 80) + '...');
     
     const audioResponse = await fetch(audioUrl);
     if (!audioResponse.ok) {
@@ -300,36 +327,60 @@ async function transcribeAudio(audioUrl: string, apiKey: string): Promise<string
       return null;
     }
     
-    const audioBlob = await audioResponse.blob();
+    const audioBuffer = await audioResponse.arrayBuffer();
+    const audioBase64 = arrayBufferToBase64(audioBuffer);
     const contentType = audioResponse.headers.get('content-type') || 'audio/ogg';
     
-    let extension = 'ogg';
-    if (contentType.includes('mp3')) extension = 'mp3';
-    else if (contentType.includes('wav')) extension = 'wav';
-    else if (contentType.includes('webm')) extension = 'webm';
-    else if (contentType.includes('m4a')) extension = 'm4a';
-    else if (contentType.includes('mpeg')) extension = 'mp3';
+    // Map content type to Gemini's expected MIME types
+    let mimeType = 'audio/ogg';
+    if (contentType.includes('mp3') || contentType.includes('mpeg')) mimeType = 'audio/mp3';
+    else if (contentType.includes('wav')) mimeType = 'audio/wav';
+    else if (contentType.includes('webm')) mimeType = 'audio/webm';
+    else if (contentType.includes('m4a') || contentType.includes('mp4')) mimeType = 'audio/mp4';
+    else if (contentType.includes('ogg')) mimeType = 'audio/ogg';
     
-    const formData = new FormData();
-    formData.append('file', audioBlob, `audio.${extension}`);
-    formData.append('model', 'gpt-4o-transcribe');
-    formData.append('language', 'pt');
+    const geminiResponse = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.0-flash:generateContent?key=${apiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{
+            parts: [
+              {
+                inline_data: {
+                  mime_type: mimeType,
+                  data: audioBase64
+                }
+              },
+              {
+                text: "Transcreva o áudio em português brasileiro. Retorne APENAS o texto transcrito, sem formatação, explicações ou comentários adicionais."
+              }
+            ]
+          }],
+          generationConfig: {
+            temperature: 0.1,
+            maxOutputTokens: 2000
+          }
+        })
+      }
+    );
     
-    const transcriptionResponse = await fetch('https://api.openai.com/v1/audio/transcriptions', {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${apiKey}` },
-      body: formData,
-    });
-    
-    if (!transcriptionResponse.ok) {
-      const errorText = await transcriptionResponse.text();
-      console.log('❌ Erro na transcrição:', transcriptionResponse.status, errorText);
+    if (!geminiResponse.ok) {
+      const errorText = await geminiResponse.text();
+      console.log('❌ Erro na transcrição Gemini:', geminiResponse.status, errorText);
       return null;
     }
     
-    const result = await transcriptionResponse.json();
-    console.log('✅ Áudio transcrito:', result.text?.substring(0, 50) + '...');
-    return result.text || null;
+    const result = await geminiResponse.json();
+    const transcription = result.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+    
+    if (transcription) {
+      console.log('✅ Áudio transcrito:', transcription.substring(0, 50) + '...');
+      return transcription;
+    }
+    
+    return null;
   } catch (error) {
     console.error('❌ Erro ao transcrever áudio:', error);
     return null;
@@ -646,11 +697,11 @@ serve(async (req) => {
     console.log('│ 4️⃣  GERAR RESPOSTA COM IA                                       │');
     console.log('└─────────────────────────────────────────────────────────────────┘');
 
-    const AI_API_KEY = Deno.env.get('AI_AGENTS_OPENAI_API_KEY');
-    if (!AI_API_KEY) {
-      console.log('❌ AI_AGENTS_OPENAI_API_KEY não configurada');
+    const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY');
+    if (!GEMINI_API_KEY) {
+      console.log('❌ GEMINI_API_KEY não configurada');
       return new Response(
-        JSON.stringify({ success: false, error: 'AI API key not configured' }),
+        JSON.stringify({ success: false, error: 'Gemini API key not configured' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -732,7 +783,7 @@ serve(async (req) => {
         } else if (msg.type === 'audio') {
           // Transcribe audio if we have URL
           if (msg.mediaUrl) {
-            const transcription = await transcribeAudio(msg.mediaUrl, AI_API_KEY);
+            const transcription = await transcribeAudio(msg.mediaUrl, GEMINI_API_KEY);
             if (transcription) {
               batchContents.push(`[Áudio transcrito]: ${transcription}`);
             } else {
@@ -787,7 +838,7 @@ serve(async (req) => {
     // Handle audio transcription for current message (legacy mode)
     if (!isBatchRequest && currentMessageIsAudio && actualMediaUrl && !processedMessageContent) {
       console.log('🎤 Transcrevendo áudio do cliente...');
-      const transcription = await transcribeAudio(actualMediaUrl, AI_API_KEY);
+      const transcription = await transcribeAudio(actualMediaUrl, GEMINI_API_KEY);
       if (transcription) {
         processedMessageContent = transcription;
         console.log('✅ Transcrição obtida:', transcription.substring(0, 50) + '...');
@@ -1273,7 +1324,7 @@ CRÍTICO SOBRE COMANDOS:
     const agentTemperature = agent.temperature ?? 0.7;
     console.log('🌡️ Temperatura configurada:', agentTemperature);
 
-    let aiResponse: string;
+    let aiResponse: string = '';
     let modelUsed: string;
     let toolCallsFromApi: any[] = []; // Store tool calls from API response
 
@@ -1281,63 +1332,70 @@ CRÍTICO SOBRE COMANDOS:
     const shouldUseMultimodal = currentMessageIsImage && actualMediaUrl;
 
     if (shouldUseMultimodal) {
-      // Use multimodal endpoint with gpt-5-nano for image analysis (no tools for now - vision model)
-      console.log('🖼️ Usando endpoint multimodal /v1/responses com gpt-5-nano');
-      modelUsed = 'gpt-5-nano';
+      // Use Gemini 3.0 Flash for image analysis with inline_data
+      console.log('🖼️ Usando Gemini 3.0 Flash para análise de imagem');
+      modelUsed = 'gemini-3.0-flash';
       
       const historyText = conversationHistory.map((m: any) => 
         `${m.role === 'user' ? '[CLIENTE]' : '[AGENTE]'}: ${m.content}`
       ).join('\n');
       
-      const contentItems = [
-        { 
-          type: 'input_text', 
-          text: `${systemPrompt}\n\nHistórico da conversa:\n${historyText}\n\nO cliente acabou de enviar esta imagem${processedMessageContent ? ` com a seguinte mensagem: "${processedMessageContent}"` : ''}. Analise a imagem e responda de forma adequada ao contexto.`
-        },
-        {
-          type: 'input_image',
-          image_url: actualMediaUrl
-        }
-      ];
+      // Fetch image as base64
+      const imageData = await fetchImageAsBase64(actualMediaUrl);
+      if (!imageData) {
+        console.log('❌ Não foi possível baixar a imagem');
+        await supabase.from('ai_agent_logs').insert({
+          agent_id: agent.id,
+          conversation_id: conversationId,
+          action_type: 'response_error',
+          input_text: processedMessageContent,
+          error_message: 'Failed to fetch image',
+          metadata: { messageType, hasImage: true }
+        });
+        return new Response(
+          JSON.stringify({ success: false, error: 'Failed to process image' }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
       
       const agentTemperature = agent.temperature ?? 0.7;
+      const imagePrompt = `${systemPrompt}\n\nHistórico da conversa:\n${historyText}\n\nO cliente acabou de enviar esta imagem${processedMessageContent ? ` com a seguinte mensagem: "${processedMessageContent}"` : ''}. Analise a imagem e responda de forma adequada ao contexto.`;
       
-      const response = await fetch('https://api.openai.com/v1/responses', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${AI_API_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: 'gpt-5-nano',
-          input: [
-            {
-              type: 'message',
-              role: 'user',
-              content: contentItems
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.0-flash:generateContent?key=${GEMINI_API_KEY}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{
+              parts: [
+                {
+                  inline_data: {
+                    mime_type: imageData.mimeType,
+                    data: imageData.base64
+                  }
+                },
+                { text: imagePrompt }
+              ]
+            }],
+            generationConfig: {
+              temperature: agentTemperature,
+              maxOutputTokens: 1500
             }
-          ],
-          text: {
-            format: { type: 'text' },
-            verbosity: 'medium'
-          },
-          reasoning: {
-            effort: 'low',
-            summary: 'concise'
-          }
-        }),
-      });
+          })
+        }
+      );
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.log('❌ OpenAI /v1/responses error:', response.status, errorText);
+        console.log('❌ Gemini multimodal error:', response.status, errorText);
         
         await supabase.from('ai_agent_logs').insert({
           agent_id: agent.id,
           conversation_id: conversationId,
           action_type: 'response_error',
           input_text: processedMessageContent,
-          error_message: `OpenAI /v1/responses error: ${response.status}`,
+          error_message: `Gemini multimodal error: ${response.status}`,
           metadata: { errorDetails: errorText, messageType, hasImage: true }
         });
 
@@ -1348,38 +1406,41 @@ CRÍTICO SOBRE COMANDOS:
       }
 
       const aiData = await response.json();
-      console.log('📦 Resposta API (multimodal):', JSON.stringify(aiData, null, 2));
-      aiResponse = aiData.output?.find((o: any) => o.type === 'message')?.content?.[0]?.text?.trim() || '';
+      console.log('📦 Resposta Gemini (multimodal):', JSON.stringify(aiData, null, 2).substring(0, 500) + '...');
+      aiResponse = aiData.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
       
       // Retry with lower temperature if empty
       if (!aiResponse) {
         console.log('⚠️ Resposta multimodal vazia - tentando retry com temperatura 0.5');
-        const retryResponse = await fetch('https://api.openai.com/v1/responses', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${AI_API_KEY}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            model: 'gpt-5-nano',
-            input: [{ type: 'message', role: 'user', content: contentItems }],
-            text: { format: { type: 'text' }, verbosity: 'medium' },
-            reasoning: { effort: 'low', summary: 'concise' }
-          }),
-        });
+        const retryResponse = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.0-flash:generateContent?key=${GEMINI_API_KEY}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [{
+                parts: [
+                  { inline_data: { mime_type: imageData.mimeType, data: imageData.base64 } },
+                  { text: imagePrompt }
+                ]
+              }],
+              generationConfig: { temperature: 0.5, maxOutputTokens: 1500 }
+            })
+          }
+        );
         
         if (retryResponse.ok) {
           const retryData = await retryResponse.json();
-          console.log('🔄 Retry multimodal result:', JSON.stringify(retryData, null, 2));
-          aiResponse = retryData.output?.find((o: any) => o.type === 'message')?.content?.[0]?.text?.trim() || '';
+          console.log('🔄 Retry multimodal result:', JSON.stringify(retryData, null, 2).substring(0, 500) + '...');
+          aiResponse = retryData.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
         }
       }
       
     } else {
-      // Use /v1/responses endpoint with Tool Calling (compatible with GPT-5 models)
-      console.log('📝 Usando endpoint /v1/responses com gpt-5-mini + Tool Calling');
+      // Use Gemini 3.0 Flash with Function Calling
+      console.log('📝 Usando Gemini 3.0 Flash com Function Calling');
       console.log('🔧 Tools disponíveis:', dynamicTools.length);
-      modelUsed = 'gpt-5-mini';
+      modelUsed = 'gemini-3.0-flash';
       
       // Build conversation context as single prompt
       const conversationContextForPrompt = conversationHistory
@@ -1391,45 +1452,51 @@ CRÍTICO SOBRE COMANDOS:
       
       const agentTemperature = agent.temperature ?? 0.7;
       
-      // Build request body with tools
+      // Convert OpenAI tool format to Gemini function_declarations format
+      const geminiTools = dynamicTools.length > 0 ? [{
+        function_declarations: dynamicTools.map(tool => ({
+          name: tool.name,
+          description: tool.description,
+          parameters: tool.parameters
+        }))
+      }] : undefined;
+      
+      // Build request body
       const requestBody: any = {
-        model: 'gpt-5-mini',
-        input: fullPrompt,
-        text: {
-          format: { type: 'text' },
-          verbosity: 'medium'
-        },
-        reasoning: {
-          effort: 'low',
-          summary: 'concise'
+        contents: [{
+          parts: [{ text: fullPrompt }]
+        }],
+        generationConfig: {
+          temperature: agentTemperature,
+          maxOutputTokens: 1500
         }
       };
 
       // Add tools if available
-      if (dynamicTools.length > 0) {
-        requestBody.tools = dynamicTools;
-        requestBody.tool_choice = 'auto'; // Let the model decide when to use tools
+      if (geminiTools) {
+        requestBody.tools = geminiTools;
+        requestBody.tool_config = { function_calling_config: { mode: 'AUTO' } };
       }
       
-      const openaiResponse = await fetch('https://api.openai.com/v1/responses', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${AI_API_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(requestBody),
-      });
+      const geminiResponse = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.0-flash:generateContent?key=${GEMINI_API_KEY}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(requestBody)
+        }
+      );
 
-      if (!openaiResponse.ok) {
-        const errorText = await openaiResponse.text();
-        console.log('❌ OpenAI error:', openaiResponse.status, errorText);
+      if (!geminiResponse.ok) {
+        const errorText = await geminiResponse.text();
+        console.log('❌ Gemini error:', geminiResponse.status, errorText);
         
         await supabase.from('ai_agent_logs').insert({
           agent_id: agent.id,
           conversation_id: conversationId,
           action_type: 'response_error',
           input_text: processedMessageContent,
-          error_message: `OpenAI API error: ${openaiResponse.status}`,
+          error_message: `Gemini API error: ${geminiResponse.status}`,
           metadata: { errorDetails: errorText, toolsCount: dynamicTools.length }
         });
 
@@ -1439,77 +1506,71 @@ CRÍTICO SOBRE COMANDOS:
         );
       }
 
-      const aiData = await openaiResponse.json();
-      console.log('📦 Resposta API (texto + tools):', JSON.stringify(aiData, null, 2));
+      const aiData = await geminiResponse.json();
+      console.log('📦 Resposta Gemini (texto + tools):', JSON.stringify(aiData, null, 2).substring(0, 500) + '...');
       
-      // Extract text response
-      aiResponse = aiData.output?.find((o: any) => o.type === 'message')?.content?.[0]?.text?.trim() || '';
+      // Extract text response and function calls from Gemini response
+      const candidate = aiData.candidates?.[0];
+      const parts = candidate?.content?.parts || [];
       
-      // Extract tool calls from the response
-      const functionCalls = aiData.output?.filter((o: any) => o.type === 'function_call') || [];
-      if (functionCalls.length > 0) {
-        console.log('🔧 Tool calls encontrados:', functionCalls.length);
-        for (const fc of functionCalls) {
-          console.log(`   - ${fc.name}:`, fc.arguments);
+      for (const part of parts) {
+        if (part.text) {
+          aiResponse = part.text.trim();
+        }
+        if (part.functionCall) {
+          console.log(`🔧 Function call encontrado: ${part.functionCall.name}`, part.functionCall.args);
           toolCallsFromApi.push({
-            name: fc.name,
-            arguments: typeof fc.arguments === 'string' ? JSON.parse(fc.arguments) : fc.arguments
+            name: part.functionCall.name,
+            arguments: part.functionCall.args || {}
           });
         }
+      }
+      
+      if (toolCallsFromApi.length > 0) {
+        console.log('🔧 Tool calls encontrados:', toolCallsFromApi.length);
       }
       
       // Retry with lower temperature if empty
       if (!aiResponse) {
         console.log('⚠️ Resposta texto vazia - tentando retry com temperatura 0.5');
-        const retryResponse = await fetch('https://api.openai.com/v1/responses', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${AI_API_KEY}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            model: 'gpt-5-mini',
-            input: fullPrompt,
-            text: { format: { type: 'text' }, verbosity: 'medium' },
-            reasoning: { effort: 'low', summary: 'concise' }
-          }),
-        });
+        const retryResponse = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.0-flash:generateContent?key=${GEMINI_API_KEY}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [{ parts: [{ text: fullPrompt }] }],
+              generationConfig: { temperature: 0.5, maxOutputTokens: 1500 }
+            })
+          }
+        );
         
         if (retryResponse.ok) {
           const retryData = await retryResponse.json();
-          console.log('🔄 Retry texto result:', JSON.stringify(retryData, null, 2));
-          aiResponse = retryData.output?.find((o: any) => o.type === 'message')?.content?.[0]?.text?.trim() || '';
+          console.log('🔄 Retry texto result:', JSON.stringify(retryData, null, 2).substring(0, 500) + '...');
+          aiResponse = retryData.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
         }
       }
       
-      // Fallback to chat/completions if still empty
+      // Fallback with even lower temperature if still empty
       if (!aiResponse) {
-        console.log('⚠️ Ainda vazio - tentando fallback com chat/completions (gpt-4o-mini)');
-        const fallbackResponse = await fetch('https://api.openai.com/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${AI_API_KEY}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            model: 'gpt-4o-mini',
-            messages: [
-              { role: 'system', content: systemPrompt },
-              ...conversationHistory.filter(Boolean).map((msg: any) => ({
-                role: msg.role,
-                content: msg.content
-              })),
-              { role: 'user', content: processedMessageContent || '[Mensagem sem texto]' }
-            ],
-            temperature: 0.7,
-            max_tokens: 500
-          }),
-        });
+        console.log('⚠️ Ainda vazio - tentando fallback com temperatura 0.3');
+        const fallbackResponse = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.0-flash:generateContent?key=${GEMINI_API_KEY}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [{ parts: [{ text: fullPrompt }] }],
+              generationConfig: { temperature: 0.3, maxOutputTokens: 1500 }
+            })
+          }
+        );
         
         if (fallbackResponse.ok) {
           const fallbackData = await fallbackResponse.json();
-          console.log('✅ Fallback result:', JSON.stringify(fallbackData, null, 2));
-          aiResponse = fallbackData.choices?.[0]?.message?.content?.trim() || '';
+          console.log('✅ Fallback result:', JSON.stringify(fallbackData, null, 2).substring(0, 500) + '...');
+          aiResponse = fallbackData.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
         }
       }
     }
@@ -2187,25 +2248,26 @@ CRÍTICO SOBRE COMANDOS:
       
       console.log('🔍 Fazendo chamada de extração de contexto...');
       
-      const extractionResponse = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${AI_API_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: 'gpt-4o-mini',
-          messages: [
-            { role: 'user', content: extractionPrompt }
-          ],
-          temperature: 0.1, // Low temperature for consistent extraction
-          max_tokens: 1000
-        }),
-      });
+      const extractionResponse = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.0-flash:generateContent?key=${GEMINI_API_KEY}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{
+              parts: [{ text: extractionPrompt }]
+            }],
+            generationConfig: {
+              temperature: 0.1, // Low temperature for consistent extraction
+              maxOutputTokens: 1000
+            }
+          })
+        }
+      );
       
       if (extractionResponse.ok) {
         const extractionData = await extractionResponse.json();
-        const extractedText = extractionData.choices?.[0]?.message?.content?.trim() || '';
+        const extractedText = extractionData.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
         
         console.log('📝 Resposta da extração:', extractedText.substring(0, 200) + '...');
         
