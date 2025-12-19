@@ -1627,49 +1627,94 @@ CRÍTICO SOBRE COMANDOS:
 
       // Notify team - Creates real notifications for admins/owners
       'notificar_equipe': async (message: string) => {
-        console.log('🔔 Notificando equipe:', message);
+        console.log('🔔 [NOTIFICAR_EQUIPE] Iniciando notificação:', message);
         
         try {
-          // Get company ID from connection
-          const { data: connData } = await supabase
+          // Step 1: Get company ID from connection
+          const { data: connData, error: connError } = await supabase
             .from('whatsapp_connections')
             .select('company_id')
             .eq('id', connectionId)
             .single();
           
-          if (!connData?.company_id) {
-            console.log('⚠️ Company não encontrada para notificação');
+          if (connError) {
+            console.log('❌ [NOTIFICAR_EQUIPE] Erro ao buscar connection:', connError.message);
             return;
           }
           
-          // Get all admins and owners from this company
-          const { data: adminUsers } = await supabase
+          if (!connData?.company_id) {
+            console.log('⚠️ [NOTIFICAR_EQUIPE] Company não encontrada para connection:', connectionId);
+            return;
+          }
+          
+          console.log('🏢 [NOTIFICAR_EQUIPE] Company ID:', connData.company_id);
+          
+          // Step 2: Get all profiles from this company (separate query to avoid JOIN issues)
+          const { data: companyProfiles, error: profilesError } = await supabase
+            .from('profiles')
+            .select('id, full_name, email')
+            .eq('company_id', connData.company_id)
+            .eq('active', true);
+          
+          if (profilesError) {
+            console.log('❌ [NOTIFICAR_EQUIPE] Erro ao buscar profiles:', profilesError.message);
+            return;
+          }
+          
+          console.log(`👥 [NOTIFICAR_EQUIPE] Profiles ativos na empresa: ${companyProfiles?.length || 0}`);
+          
+          if (!companyProfiles?.length) {
+            console.log('⚠️ [NOTIFICAR_EQUIPE] Nenhum profile ativo encontrado na empresa');
+            return;
+          }
+          
+          const userIds = companyProfiles.map(p => p.id);
+          console.log('👤 [NOTIFICAR_EQUIPE] User IDs para verificar roles:', userIds.join(', '));
+          
+          // Step 3: Get admins/owners from user_roles (separate query to avoid JOIN issues)
+          const { data: adminRoles, error: rolesError } = await supabase
             .from('user_roles')
-            .select('user_id, profiles!inner(company_id)')
+            .select('user_id, role')
+            .in('user_id', userIds)
             .in('role', ['owner', 'admin']);
           
-          // Filter by company
-          const companyAdmins = adminUsers?.filter(u => 
-            (u.profiles as any)?.company_id === connData.company_id
-          ) || [];
+          if (rolesError) {
+            console.log('❌ [NOTIFICAR_EQUIPE] Erro ao buscar roles:', rolesError.message);
+            return;
+          }
           
-          console.log(`📢 Encontrados ${companyAdmins.length} admins/owners para notificar`);
+          console.log(`🔑 [NOTIFICAR_EQUIPE] Roles encontrados:`, JSON.stringify(adminRoles));
           
-          // Get contact info for context
-          const { data: convData } = await supabase
+          const companyAdmins = adminRoles || [];
+          console.log(`📢 [NOTIFICAR_EQUIPE] Total de ${companyAdmins.length} admins/owners para notificar`);
+          
+          if (companyAdmins.length === 0) {
+            console.log('⚠️ [NOTIFICAR_EQUIPE] Nenhum admin/owner encontrado - verifique a tabela user_roles');
+            return;
+          }
+          
+          // Step 4: Get contact info for context
+          const { data: convData, error: convError } = await supabase
             .from('conversations')
             .select('contact_id, contacts(name, phone_number)')
             .eq('id', conversationId)
             .single();
+          
+          if (convError) {
+            console.log('⚠️ [NOTIFICAR_EQUIPE] Erro ao buscar conversa:', convError.message);
+          }
           
           const contactInfo = convData?.contacts as any;
           const notificationMessage = `🤖 Notificação do Agente IA: ${message}${
             contactInfo ? `\n👤 Cliente: ${contactInfo.name || contactInfo.phone_number}` : ''
           }`;
           
-          // Create mention notifications for each admin
+          console.log('📝 [NOTIFICAR_EQUIPE] Mensagem de notificação:', notificationMessage);
+          
+          // Step 5: Create mention notifications for each admin
+          let successCount = 0;
           for (const admin of companyAdmins) {
-            await supabase.from('mention_notifications').insert({
+            const { error: insertError } = await supabase.from('mention_notifications').insert({
               mentioned_user_id: admin.user_id,
               mentioner_user_id: admin.user_id, // Self-mention for system notification
               message_id: crypto.randomUUID(), // Placeholder since this is a system notification
@@ -1678,10 +1723,17 @@ CRÍTICO SOBRE COMANDOS:
               has_access: true,
               is_read: false
             });
+            
+            if (insertError) {
+              console.log(`❌ [NOTIFICAR_EQUIPE] Erro ao criar notificação para ${admin.user_id}:`, insertError.message);
+            } else {
+              successCount++;
+              console.log(`✅ [NOTIFICAR_EQUIPE] Notificação criada para ${admin.user_id} (role: ${admin.role})`);
+            }
           }
           
-          // Also create an internal note in the conversation for audit trail
-          await supabase.from('messages').insert({
+          // Step 6: Create an internal note in the conversation for audit trail
+          const { error: noteError } = await supabase.from('messages').insert({
             conversation_id: conversationId,
             content: notificationMessage,
             direction: 'outbound',
@@ -1691,9 +1743,13 @@ CRÍTICO SOBRE COMANDOS:
             status: 'sent'
           });
           
-          console.log('✅ Notificações criadas para', companyAdmins.length, 'usuários');
+          if (noteError) {
+            console.log('⚠️ [NOTIFICAR_EQUIPE] Erro ao criar nota interna:', noteError.message);
+          }
+          
+          console.log(`✅ [NOTIFICAR_EQUIPE] Notificações criadas: ${successCount}/${companyAdmins.length}`);
         } catch (notifyError) {
-          console.error('❌ Erro ao criar notificações:', notifyError);
+          console.error('❌ [NOTIFICAR_EQUIPE] Erro inesperado:', notifyError);
         }
       },
 
