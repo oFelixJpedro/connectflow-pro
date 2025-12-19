@@ -316,10 +316,10 @@ async function fetchImageAsBase64(imageUrl: string): Promise<{ base64: string; m
   }
 }
 
-// Helper function to transcribe audio using Gemini 3.0 Flash
+// Helper function to transcribe audio using Gemini 3 Flash Preview
 async function transcribeAudio(audioUrl: string, apiKey: string): Promise<string | null> {
   try {
-    console.log('🎤 Transcrevendo áudio com Gemini 3.0 Flash:', audioUrl.substring(0, 80) + '...');
+    console.log('🎤 Transcrevendo áudio com Gemini 3 Flash Preview:', audioUrl.substring(0, 80) + '...');
     
     const audioResponse = await fetch(audioUrl);
     if (!audioResponse.ok) {
@@ -340,7 +340,7 @@ async function transcribeAudio(audioUrl: string, apiKey: string): Promise<string
     else if (contentType.includes('ogg')) mimeType = 'audio/ogg';
     
     const geminiResponse = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.0-flash:generateContent?key=${apiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1333,8 +1333,8 @@ CRÍTICO SOBRE COMANDOS:
 
     if (shouldUseMultimodal) {
       // Use Gemini 3.0 Flash for image analysis with inline_data
-      console.log('🖼️ Usando Gemini 3.0 Flash para análise de imagem');
-      modelUsed = 'gemini-3.0-flash';
+      console.log('🖼️ Usando Gemini 3 Flash Preview para análise de imagem');
+      modelUsed = 'gemini-3-flash-preview';
       
       const historyText = conversationHistory.map((m: any) => 
         `${m.role === 'user' ? '[CLIENTE]' : '[AGENTE]'}: ${m.content}`
@@ -1362,7 +1362,7 @@ CRÍTICO SOBRE COMANDOS:
       const imagePrompt = `${systemPrompt}\n\nHistórico da conversa:\n${historyText}\n\nO cliente acabou de enviar esta imagem${processedMessageContent ? ` com a seguinte mensagem: "${processedMessageContent}"` : ''}. Analise a imagem e responda de forma adequada ao contexto.`;
       
       const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.0-flash:generateContent?key=${GEMINI_API_KEY}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${GEMINI_API_KEY}`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -1413,7 +1413,7 @@ CRÍTICO SOBRE COMANDOS:
       if (!aiResponse) {
         console.log('⚠️ Resposta multimodal vazia - tentando retry com temperatura 0.5');
         const retryResponse = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.0-flash:generateContent?key=${GEMINI_API_KEY}`,
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${GEMINI_API_KEY}`,
           {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -1437,10 +1437,10 @@ CRÍTICO SOBRE COMANDOS:
       }
       
     } else {
-      // Use Gemini 3.0 Flash with Function Calling
-      console.log('📝 Usando Gemini 3.0 Flash com Function Calling');
+      // Use Gemini 3 Flash Preview with Function Calling
+      console.log('📝 Usando Gemini 3 Flash Preview com Function Calling');
       console.log('🔧 Tools disponíveis:', dynamicTools.length);
-      modelUsed = 'gemini-3.0-flash';
+      modelUsed = 'gemini-3-flash-preview';
       
       // Build conversation context as single prompt
       const conversationContextForPrompt = conversationHistory
@@ -1479,7 +1479,7 @@ CRÍTICO SOBRE COMANDOS:
       }
       
       const geminiResponse = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.0-flash:generateContent?key=${GEMINI_API_KEY}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${GEMINI_API_KEY}`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -1534,7 +1534,7 @@ CRÍTICO SOBRE COMANDOS:
       if (!aiResponse) {
         console.log('⚠️ Resposta texto vazia - tentando retry com temperatura 0.5');
         const retryResponse = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.0-flash:generateContent?key=${GEMINI_API_KEY}`,
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${GEMINI_API_KEY}`,
           {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -1556,7 +1556,7 @@ CRÍTICO SOBRE COMANDOS:
       if (!aiResponse) {
         console.log('⚠️ Ainda vazio - tentando fallback com temperatura 0.3');
         const fallbackResponse = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.0-flash:generateContent?key=${GEMINI_API_KEY}`,
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${GEMINI_API_KEY}`,
           {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -2249,7 +2249,7 @@ CRÍTICO SOBRE COMANDOS:
       console.log('🔍 Fazendo chamada de extração de contexto...');
       
       const extractionResponse = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.0-flash:generateContent?key=${GEMINI_API_KEY}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${GEMINI_API_KEY}`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
