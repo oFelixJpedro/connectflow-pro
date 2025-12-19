@@ -1799,6 +1799,11 @@ CRÍTICO SOBRE COMANDOS:
     const contactId = conversationData?.contact_id;
     const companyId = conversationData?.company_id;
 
+    // 🚀 FLAGS PARA RESPOSTA IMEDIATA APÓS TRANSFERÊNCIA DE AGENTE
+    let agentTransferOccurred = false;
+    let transferredToAgentId: string | null = null;
+    let transferredToAgentName: string | null = null;
+
     // Command handlers
     const commandHandlers: Record<string, (value: string) => Promise<void>> = {
       // Add tag to contact - with validation against tags table
@@ -1913,6 +1918,12 @@ CRÍTICO SOBRE COMANDOS:
             console.log('❌ [TRANSFER] Erro ao atualizar estado:', updateError.message);
           } else {
             console.log('✅ [TRANSFER] Transferido com sucesso para:', targetAgent.name, '| ID:', targetAgent.id);
+            
+            // 🚀 MARCAR FLAG PARA RESPOSTA IMEDIATA DO NOVO AGENTE
+            agentTransferOccurred = true;
+            transferredToAgentId = targetAgent.id;
+            transferredToAgentName = targetAgent.name;
+            console.log('🚀 [TRANSFER] Flag de transferência ativado para resposta imediata');
           }
         } else {
           console.log('⚠️ [TRANSFER] Agente não encontrado:', agentIdentifier);
@@ -2344,6 +2355,182 @@ CRÍTICO SOBRE COMANDOS:
       console.log('ℹ️ Nenhum comando executado nesta resposta');
     }
 
+    // 🚀 RESPOSTA IMEDIATA APÓS TRANSFERÊNCIA DE AGENTE
+    if (agentTransferOccurred && transferredToAgentId) {
+      console.log('\n┌─────────────────────────────────────────────────────────────────┐');
+      console.log('│ 🔄 GERANDO RESPOSTA IMEDIATA DO NOVO AGENTE                     │');
+      console.log('└─────────────────────────────────────────────────────────────────┘');
+      console.log('🤖 Novo agente:', transferredToAgentName, '| ID:', transferredToAgentId);
+      
+      // Carregar dados completos do novo agente
+      const { data: newAgent, error: newAgentError } = await supabase
+        .from('ai_agents')
+        .select(`
+          id, name, status, agent_type, description,
+          script_content, rules_content, faq_content,
+          company_info, contract_link, temperature,
+          delay_seconds, audio_enabled, voice_name,
+          audio_always_respond_audio, audio_respond_with_audio,
+          speech_speed, audio_temperature, language_code
+        `)
+        .eq('id', transferredToAgentId)
+        .single();
+      
+      if (newAgent && !newAgentError) {
+        console.log('✅ Dados do novo agente carregados');
+        
+        // Construir prompt simplificado para o novo agente
+        const newAgentCompanyInfo = newAgent.company_info || {};
+        let newAgentSystemPrompt = `Você é ${newAgent.name}, um assistente virtual especializado.
+
+`;
+        
+        if (newAgent.script_content) {
+          newAgentSystemPrompt += `## ROTEIRO DE ATENDIMENTO
+${newAgent.script_content}
+
+`;
+        }
+        
+        if (newAgent.rules_content) {
+          newAgentSystemPrompt += `## REGRAS DE COMPORTAMENTO
+${newAgent.rules_content}
+
+`;
+        }
+        
+        if (newAgent.faq_content) {
+          newAgentSystemPrompt += `## PERGUNTAS FREQUENTES (FAQ)
+${newAgent.faq_content}
+
+`;
+        }
+        
+        if (Object.keys(newAgentCompanyInfo).length > 0) {
+          newAgentSystemPrompt += `## INFORMAÇÕES DA EMPRESA
+`;
+          for (const [key, value] of Object.entries(newAgentCompanyInfo)) {
+            if (value) newAgentSystemPrompt += `- ${key}: ${value}\n`;
+          }
+          newAgentSystemPrompt += '\n';
+        }
+        
+        if (newAgent.contract_link) {
+          newAgentSystemPrompt += `## 📄 LINK DO CONTRATO
+O link do contrato para enviar ao cliente é: ${newAgent.contract_link}
+
+`;
+        }
+        
+        // Adicionar contexto da conversa
+        if (contextSummary) {
+          newAgentSystemPrompt += `## 🧠 MEMÓRIA DA CONVERSA (INFORMAÇÕES JÁ COLETADAS)
+${contextSummary}
+
+`;
+        }
+        
+        newAgentSystemPrompt += `## CONTEXTO DA TRANSFERÊNCIA
+- Cliente: ${conversationContext.lead.nome || contactName || 'Cliente'}
+- O cliente foi transferido para você pelo agente anterior (${agent.name})
+- Contexto da última mensagem do cliente: ${processedMessageContent || messageContent || '(sem texto)'}
+- Resposta do agente anterior (que mencionou a transferência): ${cleanResponse.substring(0, 300)}
+
+## INSTRUÇÕES PARA ESTA RESPOSTA
+1. Apresente-se brevemente como ${newAgent.name}
+2. Mostre que você entendeu o contexto da conversa
+3. Continue o atendimento de forma natural
+4. NÃO repita saudações extensas - seja objetivo
+5. NÃO use comandos/ações nesta primeira resposta após transferência
+6. Responda de forma concisa (máximo 2-3 frases)`;
+
+        console.log('📝 Prompt do novo agente criado (' + newAgentSystemPrompt.length + ' chars)');
+        
+        // Gerar resposta do novo agente
+        const newAgentTemperature = newAgent.temperature ?? 1.0;
+        const newAgentApiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${GEMINI_API_KEY}`;
+        
+        try {
+          const newAgentApiResponse = await fetch(newAgentApiUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [{
+                role: 'user',
+                parts: [{ text: newAgentSystemPrompt }]
+              }],
+              generationConfig: {
+                temperature: newAgentTemperature,
+                maxOutputTokens: 1024
+              }
+            })
+          });
+          
+          const newAgentResult = await newAgentApiResponse.json();
+          const newAiResponse = newAgentResult.candidates?.[0]?.content?.parts?.[0]?.text || '';
+          
+          if (newAiResponse) {
+            console.log('✅ Resposta do novo agente gerada');
+            console.log('📝 Preview:', newAiResponse.substring(0, 100) + '...');
+            
+            // Combinar resposta: mensagem de transferência + resposta do novo agente
+            // Limpar a resposta do agente anterior (remover texto após menção de transferência se necessário)
+            const transferPatterns = [
+              /vou\s+te\s+transferir/gi,
+              /transferindo\s+para/gi,
+              /vou\s+transferir\s+você/gi,
+              /deixa\s+eu\s+te\s+transferir/gi,
+              /encaminhando\s+para/gi
+            ];
+            
+            let previousAgentMessage = cleanResponse;
+            for (const pattern of transferPatterns) {
+              const match = previousAgentMessage.match(pattern);
+              if (match) {
+                // Encontrar onde a mensagem de transferência termina
+                const idx = previousAgentMessage.search(pattern);
+                // Pegar apenas até o fim da frase que menciona a transferência
+                const afterPattern = previousAgentMessage.substring(idx);
+                const sentenceEnd = afterPattern.search(/[.!?]\s*$/);
+                if (sentenceEnd > 0) {
+                  previousAgentMessage = previousAgentMessage.substring(0, idx + sentenceEnd + 1);
+                }
+                break;
+              }
+            }
+            
+            // Combinar: resposta anterior (até transferência) + separador + resposta do novo agente
+            cleanResponse = `${previousAgentMessage.trim()}\n\n---\n\n${newAiResponse.trim()}`;
+            
+            // Atualizar referência do agente para o return
+            agent = {
+              ...agent,
+              id: newAgent.id,
+              name: newAgent.name,
+              delay_seconds: newAgent.delay_seconds,
+              audio_enabled: newAgent.audio_enabled,
+              voice_name: newAgent.voice_name,
+              audio_always_respond_audio: newAgent.audio_always_respond_audio,
+              audio_respond_with_audio: newAgent.audio_respond_with_audio,
+              speech_speed: newAgent.speech_speed,
+              audio_temperature: newAgent.audio_temperature,
+              language_code: newAgent.language_code
+            };
+            
+            console.log('✅ Resposta combinada gerada com sucesso');
+            console.log('🤖 Agente atualizado para:', agent.name);
+          } else {
+            console.log('⚠️ Resposta do novo agente vazia, mantendo resposta original');
+          }
+        } catch (newAgentError) {
+          console.error('❌ Erro ao gerar resposta do novo agente:', newAgentError);
+          // Manter a resposta original em caso de erro
+        }
+      } else {
+        console.log('⚠️ Não foi possível carregar dados do novo agente:', newAgentError?.message);
+      }
+    }
+
     // 6️⃣ Parse and extract media tags from response
     console.log('\n┌─────────────────────────────────────────────────────────────────┐');
     console.log('│ 6️⃣  PROCESSAR TAGS DE MÍDIA NA RESPOSTA                         │');
@@ -2534,7 +2721,10 @@ CRÍTICO SOBRE COMANDOS:
         executedCommands: executedCommands.length > 0 ? executedCommands : undefined,
         toolCallsCount: toolCallsFromApi.length,
         toolCallsUsed: toolCallsFromApi.length > 0,
-        contextUpdated: true
+        contextUpdated: true,
+        agentTransferOccurred,
+        transferredToAgentId: agentTransferOccurred ? transferredToAgentId : undefined,
+        transferredToAgentName: agentTransferOccurred ? transferredToAgentName : undefined
       }
     });
 
