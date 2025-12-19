@@ -142,17 +142,36 @@ export function AgentSidebar({ agent, totalChars, charLimit, onAgentUpdate }: Ag
     
     setIsLoadingConnections(true);
     try {
-      const { data, error } = await supabase
+      // 1. Buscar conexões da empresa
+      const { data: connections, error: connError } = await supabase
         .from('whatsapp_connections')
         .select('id, name, phone_number, status')
         .eq('company_id', profile.company_id)
         .eq('status', 'connected');
 
-      if (error) throw error;
+      if (connError) throw connError;
 
-      // Filter out connections already linked to this agent
-      const linkedConnectionIds = agent.connections?.map(c => c.connection_id) || [];
-      const available = (data || []).filter(conn => !linkedConnectionIds.includes(conn.id));
+      // 2. Buscar TODAS as conexões já vinculadas a QUALQUER agente
+      const { data: allLinked, error: linkedError } = await supabase
+        .from('ai_agent_connections')
+        .select('connection_id, agent_id');
+
+      if (linkedError) throw linkedError;
+
+      // 3. IDs das conexões vinculadas ao AGENTE ATUAL (para não esconder as que já tem)
+      const currentAgentConnectionIds = agent.connections?.map(c => c.connection_id) || [];
+
+      // 4. IDs das conexões vinculadas a OUTROS agentes
+      const otherAgentsConnectionIds = (allLinked || [])
+        .filter(link => link.agent_id !== agent.id)
+        .map(link => link.connection_id);
+
+      // 5. Filtrar: mostrar apenas conexões NÃO vinculadas a outros agentes
+      //    E que também não estão vinculadas ao agente atual (essas já aparecem na lista de vinculadas)
+      const available = (connections || []).filter(conn => 
+        !otherAgentsConnectionIds.includes(conn.id) && 
+        !currentAgentConnectionIds.includes(conn.id)
+      );
       
       setAvailableConnections(available);
     } catch (err) {
