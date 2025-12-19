@@ -375,6 +375,7 @@ serve(async (req) => {
           rules_content,
           faq_content,
           company_info,
+          contract_link,
           activation_triggers,
           require_activation_trigger,
           delay_seconds,
@@ -466,6 +467,7 @@ serve(async (req) => {
           rules_content,
           faq_content,
           company_info,
+          contract_link,
           temperature
         `)
         .eq('id', convState.current_sub_agent_id)
@@ -484,6 +486,7 @@ serve(async (req) => {
             rules_content: subAgent.rules_content || agent.rules_content,
             faq_content: subAgent.faq_content || agent.faq_content,
             company_info: subAgent.company_info || agent.company_info,
+            contract_link: subAgent.contract_link || agent.contract_link,
             temperature: subAgent.temperature ?? agent.temperature
           };
           console.log('✅ Sub-agente carregado:', subAgent.name);
@@ -1082,6 +1085,21 @@ ${agent.faq_content}
       systemPrompt += '\n';
     }
 
+    // Inject contract link with clear instructions
+    const contractLink = agent.contract_link;
+    if (contractLink) {
+      systemPrompt += `## 📄 LINK DO CONTRATO
+O link do contrato para enviar ao cliente é: ${contractLink}
+
+⚠️ INSTRUÇÕES IMPORTANTES:
+- Quando o cliente pedir o contrato, modelo de contrato, ou quando for apropriado enviar o link do contrato, envie EXATAMENTE este link: ${contractLink}
+- NÃO use placeholders como [LINK], [LINK_CONTRATO], [LINK_DO_CONTRATO], etc.
+- Envie o link diretamente na sua mensagem para o cliente poder clicar.
+- Você pode apresentar o link de forma natural, como: "Aqui está o link do contrato: ${contractLink}"
+
+`;
+    }
+
     // INJECT STRUCTURED CONTEXT INTO PROMPT
     if (contextSummary) {
       systemPrompt += `## 🧠 MEMÓRIA DA CONVERSA (INFORMAÇÕES JÁ COLETADAS)
@@ -1627,73 +1645,129 @@ CRÍTICO SOBRE COMANDOS:
 
       // Notify team - Creates real notifications for admins/owners
       'notificar_equipe': async (message: string) => {
-        console.log('🔔 Notificando equipe:', message);
+        console.log('🔔 [NOTIFICAR_EQUIPE] Iniciando notificação:', message);
         
         try {
-          // Get company ID from connection
-          const { data: connData } = await supabase
+          // Step 1: Get company ID from connection
+          const { data: connData, error: connError } = await supabase
             .from('whatsapp_connections')
             .select('company_id')
             .eq('id', connectionId)
             .single();
           
-          if (!connData?.company_id) {
-            console.log('⚠️ Company não encontrada para notificação');
+          if (connError) {
+            console.log('❌ [NOTIFICAR_EQUIPE] Erro ao buscar connection:', connError.message);
             return;
           }
           
-          // Get all admins and owners from this company
-          const { data: adminUsers } = await supabase
+          if (!connData?.company_id) {
+            console.log('⚠️ [NOTIFICAR_EQUIPE] Company não encontrada para connection:', connectionId);
+            return;
+          }
+          
+          console.log('🏢 [NOTIFICAR_EQUIPE] Company ID:', connData.company_id);
+          
+          // Step 2: Get all profiles from this company (separate query to avoid JOIN issues)
+          const { data: companyProfiles, error: profilesError } = await supabase
+            .from('profiles')
+            .select('id, full_name, email')
+            .eq('company_id', connData.company_id)
+            .eq('active', true);
+          
+          if (profilesError) {
+            console.log('❌ [NOTIFICAR_EQUIPE] Erro ao buscar profiles:', profilesError.message);
+            return;
+          }
+          
+          console.log(`👥 [NOTIFICAR_EQUIPE] Profiles ativos na empresa: ${companyProfiles?.length || 0}`);
+          
+          if (!companyProfiles?.length) {
+            console.log('⚠️ [NOTIFICAR_EQUIPE] Nenhum profile ativo encontrado na empresa');
+            return;
+          }
+          
+          const userIds = companyProfiles.map(p => p.id);
+          console.log('👤 [NOTIFICAR_EQUIPE] User IDs para verificar roles:', userIds.join(', '));
+          
+          // Step 3: Get admins/owners from user_roles (separate query to avoid JOIN issues)
+          const { data: adminRoles, error: rolesError } = await supabase
             .from('user_roles')
-            .select('user_id, profiles!inner(company_id)')
+            .select('user_id, role')
+            .in('user_id', userIds)
             .in('role', ['owner', 'admin']);
           
-          // Filter by company
-          const companyAdmins = adminUsers?.filter(u => 
-            (u.profiles as any)?.company_id === connData.company_id
-          ) || [];
+          if (rolesError) {
+            console.log('❌ [NOTIFICAR_EQUIPE] Erro ao buscar roles:', rolesError.message);
+            return;
+          }
           
-          console.log(`📢 Encontrados ${companyAdmins.length} admins/owners para notificar`);
+          console.log(`🔑 [NOTIFICAR_EQUIPE] Roles encontrados:`, JSON.stringify(adminRoles));
           
-          // Get contact info for context
-          const { data: convData } = await supabase
+          const companyAdmins = adminRoles || [];
+          console.log(`📢 [NOTIFICAR_EQUIPE] Total de ${companyAdmins.length} admins/owners para notificar`);
+          
+          if (companyAdmins.length === 0) {
+            console.log('⚠️ [NOTIFICAR_EQUIPE] Nenhum admin/owner encontrado - verifique a tabela user_roles');
+            return;
+          }
+          
+          // Step 4: Get contact info for context
+          const { data: convData, error: convError } = await supabase
             .from('conversations')
             .select('contact_id, contacts(name, phone_number)')
             .eq('id', conversationId)
             .single();
+          
+          if (convError) {
+            console.log('⚠️ [NOTIFICAR_EQUIPE] Erro ao buscar conversa:', convError.message);
+          }
           
           const contactInfo = convData?.contacts as any;
           const notificationMessage = `🤖 Notificação do Agente IA: ${message}${
             contactInfo ? `\n👤 Cliente: ${contactInfo.name || contactInfo.phone_number}` : ''
           }`;
           
-          // Create mention notifications for each admin
+          console.log('📝 [NOTIFICAR_EQUIPE] Mensagem de notificação:', notificationMessage);
+          
+          // Step 5: Create mention notifications for each admin
+          let successCount = 0;
           for (const admin of companyAdmins) {
-            await supabase.from('mention_notifications').insert({
+            const { error: insertError } = await supabase.from('mention_notifications').insert({
               mentioned_user_id: admin.user_id,
               mentioner_user_id: admin.user_id, // Self-mention for system notification
               message_id: crypto.randomUUID(), // Placeholder since this is a system notification
-              source_type: 'ai_agent_notification',
+              source_type: 'internal_note', // Valid value for the constraint
               conversation_id: conversationId,
               has_access: true,
               is_read: false
             });
+            
+            if (insertError) {
+              console.log(`❌ [NOTIFICAR_EQUIPE] Erro ao criar notificação para ${admin.user_id}:`, insertError.message);
+            } else {
+              successCount++;
+              console.log(`✅ [NOTIFICAR_EQUIPE] Notificação criada para ${admin.user_id} (role: ${admin.role})`);
+            }
           }
           
-          // Also create an internal note in the conversation for audit trail
-          await supabase.from('messages').insert({
+          // Step 6: Create an internal note in the conversation for audit trail
+          const { error: noteError } = await supabase.from('messages').insert({
             conversation_id: conversationId,
             content: notificationMessage,
             direction: 'outbound',
-            sender_type: 'agent',
+            sender_type: 'system', // Valid enum value
             message_type: 'text',
             is_internal_note: true,
             status: 'sent'
           });
           
-          console.log('✅ Notificações criadas para', companyAdmins.length, 'usuários');
+          if (noteError) {
+            console.log('⚠️ [NOTIFICAR_EQUIPE] Erro ao criar nota interna:', noteError.message);
+          }
+          
+          console.log(`✅ [NOTIFICAR_EQUIPE] Notificações criadas: ${successCount}/${companyAdmins.length}`);
         } catch (notifyError) {
-          console.error('❌ Erro ao criar notificações:', notifyError);
+          console.error('❌ [NOTIFICAR_EQUIPE] Erro inesperado:', notifyError);
         }
       },
 

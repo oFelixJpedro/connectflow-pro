@@ -690,7 +690,7 @@ async function processAIBatchImmediate(batchData: any, batchKey: string, redisCl
             
             // Map media type to UAZAPI type
             let uazapiType = media.type;
-            if (media.type === 'audio') uazapiType = 'audio'; // or 'ptt' for voice note
+            if (media.type === 'audio') uazapiType = 'ptt'; // Voice note (push-to-talk)
             
             // Generate signed URL if it's from private bucket and not already signed
             let mediaFileUrl = media.url;
@@ -717,24 +717,35 @@ async function processAIBatchImmediate(batchData: any, batchKey: string, redisCl
               }
             }
             
+            // Build payload with caption/text support
+            const mediaPayload = {
+              number: phoneNumber,
+              type: uazapiType,
+              file: mediaFileUrl,
+              filename: media.fileName || undefined,
+              text: media.content || undefined, // Caption/legenda para a mídia
+            };
+            
+            console.log(`📤 [IMMEDIATE-BATCH] Sending media to UAZAPI:`, JSON.stringify({
+              type: uazapiType,
+              file: mediaFileUrl ? mediaFileUrl.substring(0, 80) + '...' : 'N/A',
+              filename: media.fileName,
+              hasCaption: !!media.content
+            }));
+            
             const mediaResponse = await fetch(sendMediaUrl, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', 'token': instanceToken },
-              body: JSON.stringify({
-                number: phoneNumber,
-                type: uazapiType,
-                file: mediaFileUrl,
-                filename: media.fileName || undefined,
-              }),
+              body: JSON.stringify(mediaPayload),
             });
             
             if (mediaResponse.ok) {
               const mediaResult = await mediaResponse.json();
               whatsappMediaId = mediaResult.key?.id || mediaResult.messageId || null;
-              console.log(`✅ [IMMEDIATE-BATCH] Media (${media.type}) sent: ${whatsappMediaId}`);
+              console.log(`✅ [IMMEDIATE-BATCH] Media (${media.type}→${uazapiType}) sent: ${whatsappMediaId}`);
             } else {
               const errorText = await mediaResponse.text();
-              console.log(`❌ [IMMEDIATE-BATCH] Failed to send media: ${errorText}`);
+              console.log(`❌ [IMMEDIATE-BATCH] Failed to send media (${uazapiType}):`, errorText);
             }
             
             // Save to database

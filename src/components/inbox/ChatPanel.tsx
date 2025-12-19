@@ -69,6 +69,7 @@ import { toast } from '@/hooks/use-toast';
 // Import mentions
 import { MentionPicker, MentionText } from '@/components/mentions';
 import { useMentions, parseMentionsFromText } from '@/hooks/useMentions';
+import { LinkifyText } from '@/components/ui/linkify-text';
 
 interface ChatPanelProps {
   conversation: Conversation | null;
@@ -1664,9 +1665,10 @@ export function ChatPanel({
                                   }
                                 />
                               ) : (
-                              <p className="text-sm whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
-                                  {message.content}
-                                </p>
+                              <LinkifyText 
+                                  text={message.content || ''} 
+                                  className="text-sm [overflow-wrap:anywhere]"
+                                />
                               )
                             )}
                             

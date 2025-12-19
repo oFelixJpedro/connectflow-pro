@@ -123,6 +123,16 @@ export default function AIAgentConfig() {
     }
   };
 
+  const handleCompanyInfoChange = (info: Record<string, string>) => {
+    setHasChanges(true);
+    setCompanyInfo(info);
+  };
+
+  const handleContractLinkChange = (link: string) => {
+    setHasChanges(true);
+    setContractLink(link);
+  };
+
   if (!canManage) {
     return (
       <div className="flex flex-col items-center justify-center h-full p-8">
@@ -281,9 +291,9 @@ export default function AIAgentConfig() {
                     content={faqContent}
                     onChange={(content) => handleContentChange('faq', content)}
                     companyInfo={companyInfo}
-                    onCompanyInfoChange={setCompanyInfo}
+                    onCompanyInfoChange={handleCompanyInfoChange}
                     contractLink={contractLink}
-                    onContractLinkChange={setContractLink}
+                    onContractLinkChange={handleContractLinkChange}
                   />
                 </TabsContent>
                 {agent.agent_type === 'multi' && (
