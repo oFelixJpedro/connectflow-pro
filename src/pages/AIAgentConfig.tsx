@@ -262,47 +262,49 @@ export default function AIAgentConfig() {
         {/* Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col overflow-hidden">
           <div className="border-b px-6">
-            <TabsList className="h-12 w-full bg-transparent p-0">
-              <TabsTrigger 
-                value="rules" 
-                className="flex-1 data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none pb-3 justify-center"
-              >
-                <FileText className="w-4 h-4 mr-2" />
-                Regras Gerais
-              </TabsTrigger>
-              <TabsTrigger 
-                value="script"
-                className="flex-1 data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none pb-3 justify-center"
-              >
-                <List className="w-4 h-4 mr-2" />
-                Roteiro de Atendimento
-              </TabsTrigger>
-              <TabsTrigger 
-                value="faq"
-                className="flex-1 data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none pb-3 justify-center"
-              >
-                <HelpCircle className="w-4 h-4 mr-2" />
-                Perguntas Frequentes
-              </TabsTrigger>
-              {/* Aba Especialidade - para configurar redirecionamento inteligente entre agentes */}
-              <TabsTrigger 
-                value="specialty"
-                className="flex-1 data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none pb-3 justify-center"
-              >
-                <Target className="w-4 h-4 mr-2" />
-                Especialidade
-              </TabsTrigger>
-              {/* Aba Sub-agentes - apenas para agentes do tipo multi */}
-              {agent.agent_type === 'multi' && (
+            <div className="-mx-6 px-6 overflow-x-auto">
+              <TabsList className="h-12 w-max min-w-full bg-transparent p-0 inline-flex gap-1">
                 <TabsTrigger 
-                  value="subagents"
-                  className="flex-1 data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none pb-3 justify-center"
+                  value="rules" 
+                  className="flex-none data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none pb-3 justify-center px-4"
                 >
-                  <Users className="w-4 h-4 mr-2" />
-                  Sub-agentes
+                  <FileText className="w-4 h-4 mr-2" />
+                  Regras Gerais
                 </TabsTrigger>
-              )}
-            </TabsList>
+                <TabsTrigger 
+                  value="script"
+                  className="flex-none data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none pb-3 justify-center px-4"
+                >
+                  <List className="w-4 h-4 mr-2" />
+                  Roteiro de Atendimento
+                </TabsTrigger>
+                <TabsTrigger 
+                  value="faq"
+                  className="flex-none data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none pb-3 justify-center px-4"
+                >
+                  <HelpCircle className="w-4 h-4 mr-2" />
+                  Perguntas Frequentes
+                </TabsTrigger>
+                {/* Aba Especialidade - para configurar redirecionamento inteligente entre agentes */}
+                <TabsTrigger 
+                  value="specialty"
+                  className="flex-none data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none pb-3 justify-center px-4"
+                >
+                  <Target className="w-4 h-4 mr-2" />
+                  Especialidade
+                </TabsTrigger>
+                {/* Aba Sub-agentes - apenas para agentes do tipo multi */}
+                {agent.agent_type === 'multi' && (
+                  <TabsTrigger 
+                    value="subagents"
+                    className="flex-none data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none pb-3 justify-center px-4"
+                  >
+                    <Users className="w-4 h-4 mr-2" />
+                    Sub-agentes
+                  </TabsTrigger>
+                )}
+              </TabsList>
+            </div>
           </div>
 
           <div className="flex-1 overflow-hidden">
