@@ -17,6 +17,15 @@ function escapeRegex(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+// Remove slash commands from text (e.g., /mudar_etapa_crm:value, /pausar_agente)
+function removeSlashCommands(text: string): string {
+  return text
+    .split('\n')
+    .filter(line => !line.trim().match(/^\/[a-z_]+(?::[^\s]*)?$/i))
+    .join('\n')
+    .trim();
+}
+
 export function MentionText({ 
   text, 
   className, 
@@ -27,6 +36,10 @@ export function MentionText({
 }: MentionTextProps) {
   const formattedText = useMemo(() => {
     if (!text) return null;
+    
+    // Clean slash commands before processing
+    const cleanedText = removeSlashCommands(text);
+    if (!cleanedText) return null;
     
     // Choose color based on variant for better contrast
     const variantStyles = {
@@ -69,7 +82,7 @@ export function MentionText({
       const pattern = sortedNames.map(name => `@${escapeRegex(name)}`).join('|');
       const regex = new RegExp(`(${pattern})`, 'gi');
       
-      const parts = text.split(regex);
+      const parts = cleanedText.split(regex);
       
       const result: (string | JSX.Element)[] = [];
       parts.forEach((part, index) => {
@@ -111,10 +124,10 @@ export function MentionText({
 
     mentionRegex.lastIndex = 0;
 
-    while ((match = mentionRegex.exec(text)) !== null) {
+    while ((match = mentionRegex.exec(cleanedText)) !== null) {
       // Add text before mention (with linkification)
       if (match.index > lastIndex) {
-        const beforeText = text.slice(lastIndex, match.index);
+        const beforeText = cleanedText.slice(lastIndex, match.index);
         parts.push(...linkifySegment(beforeText, `before-${match.index}`));
       }
 
@@ -138,12 +151,12 @@ export function MentionText({
     }
 
     // Add remaining text (with linkification)
-    if (lastIndex < text.length) {
-      const remainingText = text.slice(lastIndex);
+    if (lastIndex < cleanedText.length) {
+      const remainingText = cleanedText.slice(lastIndex);
       parts.push(...linkifySegment(remainingText, 'remaining'));
     }
 
-    return parts.length > 0 ? parts : text;
+    return parts.length > 0 ? parts : cleanedText;
   }, [text, mentionClassName, linkClassName, variant, knownMentionNames]);
 
   return (
