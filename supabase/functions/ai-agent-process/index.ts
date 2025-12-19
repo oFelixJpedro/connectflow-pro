@@ -6,6 +6,263 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// ═══════════════════════════════════════════════════════════════════
+// STRUCTURED CONTEXT TYPES
+// ═══════════════════════════════════════════════════════════════════
+interface LeadInfo {
+  nome?: string;
+  telefone?: string;
+  email?: string;
+  cidade?: string;
+  estado?: string;
+  idade?: string;
+  profissao?: string;
+  [key: string]: string | undefined;
+}
+
+interface ConversationContext {
+  lead: LeadInfo;
+  interesse: {
+    principal?: string;
+    secundarios?: string[];
+    detalhes?: string;
+  };
+  qualificacao: {
+    perguntas_respondidas: string[];
+    informacoes_pendentes: string[];
+    nivel?: 'frio' | 'morno' | 'quente';
+  };
+  situacao: {
+    problema_relatado?: string;
+    urgencia?: 'baixa' | 'media' | 'alta';
+    expectativas?: string;
+  };
+  objecoes: string[];
+  historico_resumido: string[];
+  acoes_executadas: string[];
+  ultima_atualizacao: string;
+}
+
+// Helper function to create empty context
+function createEmptyContext(): ConversationContext {
+  return {
+    lead: {},
+    interesse: {},
+    qualificacao: {
+      perguntas_respondidas: [],
+      informacoes_pendentes: []
+    },
+    situacao: {},
+    objecoes: [],
+    historico_resumido: [],
+    acoes_executadas: [],
+    ultima_atualizacao: new Date().toISOString()
+  };
+}
+
+// Helper function to merge contexts (new info takes precedence, arrays are concatenated uniquely)
+function mergeContext(existing: ConversationContext, newInfo: Partial<ConversationContext>): ConversationContext {
+  const merged = { ...existing };
+  
+  // Merge lead info
+  if (newInfo.lead) {
+    merged.lead = { ...merged.lead };
+    for (const [key, value] of Object.entries(newInfo.lead)) {
+      if (value && value.trim()) {
+        merged.lead[key] = value;
+      }
+    }
+  }
+  
+  // Merge interesse
+  if (newInfo.interesse) {
+    merged.interesse = { ...merged.interesse };
+    if (newInfo.interesse.principal) {
+      merged.interesse.principal = newInfo.interesse.principal;
+    }
+    if (newInfo.interesse.secundarios?.length) {
+      const existing = merged.interesse.secundarios || [];
+      merged.interesse.secundarios = [...new Set([...existing, ...newInfo.interesse.secundarios])];
+    }
+    if (newInfo.interesse.detalhes) {
+      merged.interesse.detalhes = newInfo.interesse.detalhes;
+    }
+  }
+  
+  // Merge qualificacao
+  if (newInfo.qualificacao) {
+    merged.qualificacao = { ...merged.qualificacao };
+    if (newInfo.qualificacao.perguntas_respondidas?.length) {
+      merged.qualificacao.perguntas_respondidas = [
+        ...new Set([...merged.qualificacao.perguntas_respondidas, ...newInfo.qualificacao.perguntas_respondidas])
+      ];
+    }
+    if (newInfo.qualificacao.informacoes_pendentes?.length) {
+      // Remove from pending if already answered
+      const answered = new Set(merged.qualificacao.perguntas_respondidas);
+      merged.qualificacao.informacoes_pendentes = [
+        ...new Set([...merged.qualificacao.informacoes_pendentes, ...newInfo.qualificacao.informacoes_pendentes])
+      ].filter(p => !answered.has(p));
+    }
+    if (newInfo.qualificacao.nivel) {
+      merged.qualificacao.nivel = newInfo.qualificacao.nivel;
+    }
+  }
+  
+  // Merge situacao
+  if (newInfo.situacao) {
+    merged.situacao = { ...merged.situacao, ...newInfo.situacao };
+  }
+  
+  // Merge objecoes (unique)
+  if (newInfo.objecoes?.length) {
+    merged.objecoes = [...new Set([...merged.objecoes, ...newInfo.objecoes])];
+  }
+  
+  // Merge historico_resumido (append new items, keep last 20)
+  if (newInfo.historico_resumido?.length) {
+    merged.historico_resumido = [...merged.historico_resumido, ...newInfo.historico_resumido].slice(-20);
+  }
+  
+  // Merge acoes_executadas (append new items)
+  if (newInfo.acoes_executadas?.length) {
+    merged.acoes_executadas = [...merged.acoes_executadas, ...newInfo.acoes_executadas];
+  }
+  
+  merged.ultima_atualizacao = new Date().toISOString();
+  
+  return merged;
+}
+
+// Format context for system prompt injection
+function formatContextForPrompt(context: ConversationContext): string {
+  const parts: string[] = [];
+  
+  // Lead info
+  const leadEntries = Object.entries(context.lead).filter(([_, v]) => v);
+  if (leadEntries.length > 0) {
+    parts.push('### INFORMAÇÕES DO LEAD (já coletadas - NÃO pergunte novamente):');
+    for (const [key, value] of leadEntries) {
+      parts.push(`- ${key}: ${value}`);
+    }
+  }
+  
+  // Interesse
+  if (context.interesse.principal) {
+    parts.push(`\n### INTERESSE IDENTIFICADO:`);
+    parts.push(`- Principal: ${context.interesse.principal}`);
+    if (context.interesse.secundarios?.length) {
+      parts.push(`- Secundários: ${context.interesse.secundarios.join(', ')}`);
+    }
+    if (context.interesse.detalhes) {
+      parts.push(`- Detalhes: ${context.interesse.detalhes}`);
+    }
+  }
+  
+  // Qualificação
+  if (context.qualificacao.perguntas_respondidas.length > 0 || context.qualificacao.nivel) {
+    parts.push(`\n### QUALIFICAÇÃO:`);
+    if (context.qualificacao.nivel) {
+      parts.push(`- Nível: ${context.qualificacao.nivel}`);
+    }
+    if (context.qualificacao.perguntas_respondidas.length > 0) {
+      parts.push(`- Já respondeu sobre: ${context.qualificacao.perguntas_respondidas.join(', ')}`);
+    }
+    if (context.qualificacao.informacoes_pendentes.length > 0) {
+      parts.push(`- Ainda precisa responder: ${context.qualificacao.informacoes_pendentes.join(', ')}`);
+    }
+  }
+  
+  // Situação
+  if (context.situacao.problema_relatado || context.situacao.urgencia) {
+    parts.push(`\n### SITUAÇÃO:`);
+    if (context.situacao.problema_relatado) {
+      parts.push(`- Problema: ${context.situacao.problema_relatado}`);
+    }
+    if (context.situacao.urgencia) {
+      parts.push(`- Urgência: ${context.situacao.urgencia}`);
+    }
+    if (context.situacao.expectativas) {
+      parts.push(`- Expectativas: ${context.situacao.expectativas}`);
+    }
+  }
+  
+  // Objeções
+  if (context.objecoes.length > 0) {
+    parts.push(`\n### OBJEÇÕES LEVANTADAS:`);
+    for (const objecao of context.objecoes) {
+      parts.push(`- ${objecao}`);
+    }
+  }
+  
+  // Histórico resumido (últimas 5 interações)
+  if (context.historico_resumido.length > 0) {
+    parts.push(`\n### RESUMO DA CONVERSA (últimas interações):`);
+    for (const item of context.historico_resumido.slice(-5)) {
+      parts.push(`- ${item}`);
+    }
+  }
+  
+  return parts.length > 0 ? parts.join('\n') : '';
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// CONTEXT EXTRACTION PROMPT
+// ═══════════════════════════════════════════════════════════════════
+function buildExtractionPrompt(userMessage: string, aiResponse: string, existingContext: ConversationContext): string {
+  return `Você é um extrator de informações. Analise a mensagem do cliente e a resposta do agente para extrair NOVAS informações relevantes.
+
+MENSAGEM DO CLIENTE:
+"${userMessage}"
+
+RESPOSTA DO AGENTE:
+"${aiResponse}"
+
+CONTEXTO EXISTENTE (já coletado anteriormente):
+${JSON.stringify(existingContext, null, 2)}
+
+EXTRAIA APENAS INFORMAÇÕES NOVAS que NÃO estão no contexto existente. Retorne um JSON com a estrutura abaixo, incluindo APENAS campos com valores novos:
+
+{
+  "lead": {
+    "nome": "string ou null",
+    "telefone": "string ou null",
+    "email": "string ou null",
+    "cidade": "string ou null",
+    "estado": "string ou null",
+    "idade": "string ou null",
+    "profissao": "string ou null"
+  },
+  "interesse": {
+    "principal": "string ou null (ex: salario-maternidade, bpc-loas, aposentadoria)",
+    "secundarios": ["array de strings ou vazio"],
+    "detalhes": "string ou null"
+  },
+  "qualificacao": {
+    "perguntas_respondidas": ["lista de tópicos que o cliente respondeu nesta mensagem"],
+    "informacoes_pendentes": ["lista de informações que ainda precisam ser coletadas"],
+    "nivel": "frio, morno ou quente (baseado no engajamento)"
+  },
+  "situacao": {
+    "problema_relatado": "string ou null",
+    "urgencia": "baixa, media ou alta",
+    "expectativas": "string ou null"
+  },
+  "objecoes": ["lista de objeções ou preocupações mencionadas"],
+  "historico_resumido": ["uma frase resumindo esta interação"]
+}
+
+REGRAS:
+1. Extraia APENAS informações NOVAS mencionadas nesta interação
+2. NÃO repita informações já presentes no contexto existente
+3. Para arrays, inclua apenas novos itens
+4. Se não houver nova informação para um campo, omita-o ou use null/array vazio
+5. O historico_resumido deve ter UMA frase curta resumindo o que aconteceu nesta interação
+6. Seja preciso e objetivo
+
+Retorne APENAS o JSON, sem explicações.`;
+}
+
 // Helper function to transcribe audio
 async function transcribeAudio(audioUrl: string, apiKey: string): Promise<string | null> {
   try {
@@ -490,6 +747,32 @@ serve(async (req) => {
       }
     }
 
+    // ═══════════════════════════════════════════════════════════════════
+    // LOAD STRUCTURED CONTEXT FROM METADATA
+    // ═══════════════════════════════════════════════════════════════════
+    console.log('\n┌─────────────────────────────────────────────────────────────────┐');
+    console.log('│ 📚 CARREGAR CONTEXTO ESTRUTURADO                                │');
+    console.log('└─────────────────────────────────────────────────────────────────┘');
+    
+    const existingMetadata = (convState?.metadata as Record<string, unknown>) || {};
+    let conversationContext: ConversationContext = existingMetadata.context as ConversationContext || createEmptyContext();
+    
+    // Update lead info from known data if not already set
+    if (contactName && !conversationContext.lead.nome) {
+      conversationContext.lead.nome = contactName;
+    }
+    if (contactPhone && !conversationContext.lead.telefone) {
+      conversationContext.lead.telefone = contactPhone;
+    }
+    
+    const contextSummary = formatContextForPrompt(conversationContext);
+    if (contextSummary) {
+      console.log('✅ Contexto carregado:');
+      console.log(contextSummary.substring(0, 300) + (contextSummary.length > 300 ? '...' : ''));
+    } else {
+      console.log('ℹ️ Nenhum contexto estruturado anterior');
+    }
+
     // Build system prompt
     const companyInfo = agent.company_info || {};
     const isFirstInteraction = (convState?.messages_processed || 0) === 0;
@@ -529,13 +812,26 @@ ${agent.faq_content}
       systemPrompt += '\n';
     }
 
-    systemPrompt += `## CONTEXTO
-- Cliente: ${contactName || 'Cliente'}
+    // INJECT STRUCTURED CONTEXT INTO PROMPT
+    if (contextSummary) {
+      systemPrompt += `## 🧠 MEMÓRIA DA CONVERSA (INFORMAÇÕES JÁ COLETADAS)
+${contextSummary}
+
+⚠️ ATENÇÃO: As informações acima já foram coletadas em interações anteriores. 
+NÃO pergunte novamente por informações que você já tem!
+
+`;
+    }
+
+    systemPrompt += `## CONTEXTO ATUAL
+- Cliente: ${conversationContext.lead.nome || contactName || 'Cliente'}
 - Telefone: ${contactPhone || 'N/A'}
 - Canal: WhatsApp
 - Mensagens já processadas: ${convState?.messages_processed || 0}
 - É primeira interação: ${isFirstInteraction ? 'Sim' : 'Não'}
 ${isUsingSubAgent ? `- Você é o sub-agente especializado: ${activeSubAgent.name}` : ''}
+${conversationContext.interesse.principal ? `- Interesse identificado: ${conversationContext.interesse.principal}` : ''}
+${conversationContext.qualificacao.nivel ? `- Nível do lead: ${conversationContext.qualificacao.nivel}` : ''}
 
 ## COMANDOS DISPONÍVEIS
 Quando apropriado, INCLUA os comandos abaixo NO INÍCIO da sua resposta (eles serão automaticamente removidos antes de enviar ao cliente):
@@ -556,8 +852,8 @@ IMPORTANTE SOBRE COMANDOS:
 
 ## REGRAS CRÍTICAS (OBRIGATÓRIAS)
 1. ${isFirstInteraction ? 'Esta é a primeira interação - você pode se apresentar e cumprimentar' : 'NUNCA repita saudações como "Prazer em te conhecer" ou "Olá, tudo bem?" - a conversa já está em andamento'}
-2. ${isFirstInteraction ? 'Pergunte o nome do cliente se ainda não sabe' : 'NÃO pergunte o nome do cliente novamente - você já sabe que é ' + (contactName || 'Cliente')}
-3. LEIA o histórico da conversa antes de responder - não repita perguntas que já foram respondidas
+2. ${conversationContext.lead.nome ? `VOCÊ JÁ SABE que o nome do cliente é ${conversationContext.lead.nome} - NÃO pergunte novamente` : isFirstInteraction ? 'Pergunte o nome do cliente se ainda não sabe' : 'NÃO pergunte o nome do cliente novamente - você já sabe que é ' + (contactName || 'Cliente')}
+3. CONSULTE A SEÇÃO "MEMÓRIA DA CONVERSA" acima - NÃO repita perguntas sobre informações já coletadas
 4. Continue de onde parou - se fez uma pergunta, aguarde a resposta antes de fazer outra
 5. Se o cliente já respondeu algo, USE essa informação - não pergunte novamente
 6. Use conectores naturais como: "Certo", "Entendi", "Perfeito", "Tudo bem"
@@ -1123,15 +1419,100 @@ IMPORTANTE SOBRE COMANDOS:
     // Use cleaned response
     aiResponse = cleanResponse;
 
-    // 8️⃣ Update conversation state
+    // ═══════════════════════════════════════════════════════════════════
+    // EXTRACT AND UPDATE STRUCTURED CONTEXT
+    // ═══════════════════════════════════════════════════════════════════
+    console.log('\n┌─────────────────────────────────────────────────────────────────┐');
+    console.log('│ 🧠 EXTRAIR E SALVAR CONTEXTO ESTRUTURADO                        │');
+    console.log('└─────────────────────────────────────────────────────────────────┘');
+
+    let updatedContext = conversationContext;
+    
+    try {
+      // Make extraction call to AI
+      const extractionPrompt = buildExtractionPrompt(
+        processedMessageContent || messageContent || '',
+        aiResponse,
+        conversationContext
+      );
+      
+      console.log('🔍 Fazendo chamada de extração de contexto...');
+      
+      const extractionResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${AI_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'gpt-4o-mini',
+          messages: [
+            { role: 'user', content: extractionPrompt }
+          ],
+          temperature: 0.1, // Low temperature for consistent extraction
+          max_tokens: 1000
+        }),
+      });
+      
+      if (extractionResponse.ok) {
+        const extractionData = await extractionResponse.json();
+        const extractedText = extractionData.choices?.[0]?.message?.content?.trim() || '';
+        
+        console.log('📝 Resposta da extração:', extractedText.substring(0, 200) + '...');
+        
+        // Parse the JSON response
+        try {
+          // Clean up potential markdown code blocks
+          const cleanedJson = extractedText
+            .replace(/```json\n?/g, '')
+            .replace(/```\n?/g, '')
+            .trim();
+          
+          const extractedInfo = JSON.parse(cleanedJson) as Partial<ConversationContext>;
+          
+          // Add executed commands to context
+          if (executedCommands.length > 0) {
+            extractedInfo.acoes_executadas = executedCommands;
+          }
+          
+          // Merge with existing context
+          updatedContext = mergeContext(conversationContext, extractedInfo);
+          
+          console.log('✅ Contexto atualizado com sucesso');
+          console.log('   - Lead info:', Object.keys(updatedContext.lead).filter(k => updatedContext.lead[k]).length, 'campos');
+          console.log('   - Interesse:', updatedContext.interesse.principal || 'não identificado');
+          console.log('   - Qualificação:', updatedContext.qualificacao.nivel || 'não definido');
+          console.log('   - Histórico:', updatedContext.historico_resumido.length, 'interações');
+          
+        } catch (parseError) {
+          console.log('⚠️ Erro ao parsear JSON da extração (não fatal):', parseError);
+          // Continue with existing context
+        }
+      } else {
+        console.log('⚠️ Extração falhou (não fatal):', extractionResponse.status);
+      }
+    } catch (extractionError) {
+      console.log('⚠️ Erro na extração de contexto (não fatal):', extractionError);
+      // Continue with existing context - extraction failure shouldn't block the response
+    }
+
+    // 8️⃣ Update conversation state WITH CONTEXT
+    const updatedMetadata = {
+      ...existingMetadata,
+      context: updatedContext
+    };
+    
     await supabase
       .from('ai_conversation_states')
       .update({
         last_response_at: new Date().toISOString(),
         messages_processed: (convState?.messages_processed || 0) + 1,
-        updated_at: new Date().toISOString()
+        updated_at: new Date().toISOString(),
+        metadata: updatedMetadata
       })
       .eq('conversation_id', conversationId);
+    
+    console.log('✅ Estado da conversa e contexto salvos');
 
     // 9️⃣ Log the interaction
     await supabase.from('ai_agent_logs').insert({
@@ -1149,7 +1530,8 @@ IMPORTANTE SOBRE COMANDOS:
         messageType,
         hasImage: shouldUseMultimodal,
         wasTranscribed: currentMessageIsAudio,
-        executedCommands: executedCommands.length > 0 ? executedCommands : undefined
+        executedCommands: executedCommands.length > 0 ? executedCommands : undefined,
+        contextUpdated: true
       }
     });
 
