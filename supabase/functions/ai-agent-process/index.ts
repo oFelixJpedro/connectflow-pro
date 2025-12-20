@@ -2838,14 +2838,11 @@ ${contextSummary}
     const shouldGenerateAudio = 
       agent.audio_enabled === true && 
       agent.voice_name && 
-      (
-        agent.audio_always_respond_audio === true ||
-        (agent.audio_respond_with_audio === true && messageType === 'audio')
-      );
+      agent.audio_respond_with_audio === true && 
+      messageType === 'audio';
 
     console.log('🔊 Audio config:', {
       audio_enabled: agent.audio_enabled,
-      audio_always_respond_audio: agent.audio_always_respond_audio,
       audio_respond_with_audio: agent.audio_respond_with_audio,
       voice_name: agent.voice_name,
       messageType,
