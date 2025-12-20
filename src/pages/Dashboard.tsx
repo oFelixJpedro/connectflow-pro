@@ -165,19 +165,19 @@ export default function Dashboard() {
           <div>
             {isAdmin ? (
               <Select value="dashboard" onValueChange={handleViewChange}>
-                <SelectTrigger className="w-[220px] border-none shadow-none text-xl md:text-2xl font-bold bg-transparent h-auto p-0 focus:ring-0">
+                <SelectTrigger className="w-auto border-none shadow-none text-xl md:text-2xl font-bold bg-transparent h-auto p-0 focus:ring-0">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent className="bg-popover">
                   <SelectItem value="dashboard">
-                    <div className="flex items-center gap-2">
-                      <LayoutDashboard className="w-4 h-4" />
+                    <div className="flex items-center gap-2 whitespace-nowrap">
+                      <LayoutDashboard className="w-5 h-5" />
                       Dashboard
                     </div>
                   </SelectItem>
                   <SelectItem value="commercial">
-                    <div className="flex items-center gap-2">
-                      <TrendingUp className="w-4 h-4" />
+                    <div className="flex items-center gap-2 whitespace-nowrap">
+                      <TrendingUp className="w-5 h-5" />
                       Gerente Comercial
                     </div>
                   </SelectItem>
