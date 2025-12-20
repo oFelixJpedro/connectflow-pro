@@ -10,8 +10,7 @@ import {
   CheckCircle2,
   AlertCircle,
   Loader2,
-  LayoutDashboard,
-  Library
+  LayoutDashboard
 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -24,7 +23,6 @@ import { cn } from '@/lib/utils';
 import { useDashboardData } from '@/hooks/useDashboardData';
 import { DashboardFilters } from '@/components/dashboard/DashboardFilters';
 import { ConversationPreviewModal } from '@/components/crm/ConversationPreviewModal';
-import { ReportsModal } from '@/components/reports/ReportsModal';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { 
@@ -81,7 +79,6 @@ export default function Dashboard() {
   } = useDashboardData();
 
   const [viewMode, setViewMode] = useState<'dashboard' | 'commercial'>('dashboard');
-  const [reportsModalOpen, setReportsModalOpen] = useState(false);
 
   // State for conversation preview modal
   const [previewModal, setPreviewModal] = useState<{
@@ -195,19 +192,6 @@ export default function Dashboard() {
           </div>
           <div className="flex items-center gap-2 md:gap-3">
             {getFilterIndicator()}
-            
-            {/* Reports Button - admin/owner only */}
-            {isAdmin && (
-              <Button 
-                variant="ghost" 
-                size="icon"
-                onClick={() => setReportsModalOpen(true)}
-                className="text-muted-foreground hover:text-foreground"
-                title="Relatórios"
-              >
-                <Library className="w-5 h-5" />
-              </Button>
-            )}
             
             <Badge variant="outline" className="text-xs md:text-sm flex items-center gap-1 md:gap-2">
               {loading && <Loader2 className="w-3 h-3 animate-spin" />}
@@ -690,11 +674,6 @@ export default function Dashboard() {
         contactAvatarUrl={previewModal.contactAvatarUrl}
       />
 
-      {/* Reports Modal */}
-      <ReportsModal
-        open={reportsModalOpen}
-        onOpenChange={setReportsModalOpen}
-      />
     </div>
   );
 }
