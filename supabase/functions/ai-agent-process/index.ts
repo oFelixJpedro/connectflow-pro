@@ -33,6 +33,72 @@ function createBatchHash(conversationId: string, messages: any[]): string {
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// COPY MEDIA TO PUBLIC BUCKET FOR PERMANENT URLs
+// ═══════════════════════════════════════════════════════════════════
+async function copyMediaToPublicBucket(
+  supabase: any,
+  privateUrl: string,
+  agentId: string,
+  mediaKey: string,
+  mimeType?: string
+): Promise<string | null> {
+  try {
+    console.log(`📋 Copiando mídia para bucket público: ${mediaKey}`);
+    
+    // If URL is already from whatsapp-media (public), return as is
+    if (privateUrl.includes('/whatsapp-media/') && !privateUrl.includes('token=')) {
+      console.log(`✅ Mídia já está no bucket público`);
+      return privateUrl;
+    }
+    
+    // Download from private bucket using signed URL
+    const response = await fetch(privateUrl);
+    if (!response.ok) {
+      console.error(`❌ Erro ao baixar mídia: ${response.status}`);
+      return null;
+    }
+    
+    const arrayBuffer = await response.arrayBuffer();
+    const contentType = mimeType || response.headers.get('content-type') || 'application/octet-stream';
+    
+    // Generate unique path in public bucket
+    const extMap: Record<string, string> = {
+      'image/jpeg': 'jpg', 'image/jpg': 'jpg', 'image/png': 'png', 'image/gif': 'gif', 'image/webp': 'webp',
+      'video/mp4': 'mp4', 'video/webm': 'webm', 'video/quicktime': 'mov',
+      'audio/mpeg': 'mp3', 'audio/mp3': 'mp3', 'audio/wav': 'wav', 'audio/ogg': 'ogg', 'audio/webm': 'webm',
+      'application/pdf': 'pdf', 'application/msword': 'doc',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+    };
+    const ext = extMap[contentType] || contentType.split('/')[1] || 'bin';
+    const uniquePath = `ai-agent/${agentId}/${mediaKey}-${Date.now()}.${ext}`;
+    
+    // Upload to public bucket
+    const { error } = await supabase.storage
+      .from('whatsapp-media')
+      .upload(uniquePath, new Uint8Array(arrayBuffer), {
+        contentType,
+        upsert: true
+      });
+    
+    if (error) {
+      console.error(`❌ Erro ao fazer upload para bucket público:`, error);
+      return null;
+    }
+    
+    // Get public URL
+    const { data: { publicUrl } } = supabase.storage
+      .from('whatsapp-media')
+      .getPublicUrl(uniquePath);
+    
+    console.log(`✅ Mídia copiada para bucket público: ${publicUrl}`);
+    return publicUrl;
+  } catch (e) {
+    console.error(`❌ Erro ao copiar mídia:`, e);
+    return null;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // STRUCTURED CONTEXT TYPES
 // ═══════════════════════════════════════════════════════════════════
 interface LeadInfo {
@@ -2660,28 +2726,49 @@ ${contextSummary}
       if (media) {
         let mediaUrl = media.media_url || undefined;
         
-        // Generate signed URL for private bucket storage
+        // Copy from private bucket to public bucket for permanent URLs
         if (mediaUrl && mediaUrl.includes('/ai-agent-media/')) {
           try {
             // Extract storage path from full URL
             const urlParts = mediaUrl.split('/ai-agent-media/');
             if (urlParts.length > 1) {
-              const storagePath = decodeURIComponent(urlParts[1].split('?')[0]); // Remove any query params
-              console.log(`🔑 Gerando signed URL para: ${storagePath}`);
+              const storagePath = decodeURIComponent(urlParts[1].split('?')[0]);
+              console.log(`🔑 Gerando signed URL temporária para copiar: ${storagePath}`);
               
+              // Generate temporary signed URL for download (5 min is enough)
               const { data: signedUrlData, error: signedUrlError } = await supabase.storage
                 .from('ai-agent-media')
-                .createSignedUrl(storagePath, 3600); // 1 hour validity
+                .createSignedUrl(storagePath, 300);
               
               if (signedUrlData?.signedUrl) {
-                mediaUrl = signedUrlData.signedUrl;
-                console.log(`✅ Signed URL gerada com sucesso`);
+                // Copy to public bucket and get permanent URL
+                const publicUrl = await copyMediaToPublicBucket(
+                  supabase,
+                  signedUrlData.signedUrl,
+                  agent.id,
+                  media.media_key,
+                  media.mime_type
+                );
+                
+                if (publicUrl) {
+                  mediaUrl = publicUrl; // Use permanent public URL
+                  console.log(`✅ URL permanente gerada: ${publicUrl.substring(0, 60)}...`);
+                } else {
+                  // Fallback: use signed URL with longer TTL if copy fails
+                  const { data: fallbackUrl } = await supabase.storage
+                    .from('ai-agent-media')
+                    .createSignedUrl(storagePath, 86400); // 24h fallback
+                  if (fallbackUrl?.signedUrl) {
+                    mediaUrl = fallbackUrl.signedUrl;
+                    console.log(`⚠️ Usando signed URL de 24h como fallback`);
+                  }
+                }
               } else if (signedUrlError) {
                 console.log(`⚠️ Erro ao gerar signed URL: ${signedUrlError.message}`);
               }
             }
           } catch (signedUrlErr) {
-            console.log(`⚠️ Erro ao processar signed URL:`, signedUrlErr);
+            console.log(`⚠️ Erro ao processar mídia:`, signedUrlErr);
           }
         }
         
