@@ -50,6 +50,13 @@ interface AggregatedInsights {
   qualified_leads_percent: number;
 }
 
+export interface CRMStageMapData {
+  stageId: string;
+  stageName: string;
+  stageColor: string;
+  countByState: Record<StateCode, number>;
+}
+
 interface CommercialData {
   averageScore: number;
   classification: 'EXCEPCIONAL' | 'BOM' | 'REGULAR' | 'RUIM' | 'CRÍTICO';
@@ -92,7 +99,15 @@ const DEFAULT_INSIGHTS: AggregatedInsights = {
   qualified_leads_percent: 0,
 };
 
-export function useCommercialData() {
+export interface CommercialFilter {
+  type: 'general' | 'connection' | 'department';
+  connectionId?: string;
+  departmentId?: string;
+  startDate?: Date;
+  endDate?: Date;
+}
+
+export function useCommercialData(filter?: CommercialFilter) {
   const { profile, userRole } = useAuth();
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<CommercialData | null>(null);
@@ -262,23 +277,46 @@ export function useCommercialData() {
     const fetchData = async () => {
       setLoading(true);
       try {
-        const now = new Date();
-        const startOfWeek = new Date(now);
-        startOfWeek.setDate(now.getDate() - now.getDay() + 1);
-        startOfWeek.setHours(0, 0, 0, 0);
+        // Calculate date range - use filter dates or default to current week
+        let startDate: Date;
+        let endDate: Date;
+        
+        if (filter?.startDate && filter?.endDate) {
+          startDate = filter.startDate;
+          endDate = filter.endDate;
+        } else {
+          // Default: current week
+          const now = new Date();
+          startDate = new Date(now);
+          startDate.setDate(now.getDate() - now.getDay() + 1);
+          startDate.setHours(0, 0, 0, 0);
+          endDate = now;
+        }
 
-        // Fetch conversations from this week
-        const { data: conversations, error: convError } = await supabase
+        // Build base query for conversations
+        let conversationsQuery = supabase
           .from('conversations')
           .select(`
             id,
             status,
             created_at,
             assigned_user_id,
+            whatsapp_connection_id,
+            department_id,
             contact:contacts(phone_number, name)
           `)
           .eq('company_id', profile.company_id)
-          .gte('created_at', startOfWeek.toISOString());
+          .gte('created_at', startDate.toISOString())
+          .lte('created_at', endDate.toISOString());
+
+        // Apply filters
+        if (filter?.type === 'connection' && filter.connectionId) {
+          conversationsQuery = conversationsQuery.eq('whatsapp_connection_id', filter.connectionId);
+        } else if (filter?.type === 'department' && filter.departmentId) {
+          conversationsQuery = conversationsQuery.eq('department_id', filter.departmentId);
+        }
+
+        const { data: conversations, error: convError } = await conversationsQuery;
 
         if (convError) throw convError;
 
@@ -657,7 +695,7 @@ export function useCommercialData() {
     };
 
     fetchData();
-  }, [profile?.company_id, isAdmin, aggregatedInsights]);
+  }, [profile?.company_id, isAdmin, aggregatedInsights, filter?.type, filter?.connectionId, filter?.departmentId, filter?.startDate, filter?.endDate]);
 
   return {
     loading,

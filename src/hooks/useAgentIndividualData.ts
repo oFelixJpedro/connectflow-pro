@@ -88,6 +88,13 @@ export function useAgentIndividualData(agentId: string | null) {
           .eq('company_id', profile.company_id)
           .in('conversation_id', conversationIds.length > 0 ? conversationIds : ['00000000-0000-0000-0000-000000000000']);
 
+        // Fetch messages to calculate response time
+        const { data: messages } = await supabase
+          .from('messages')
+          .select('conversation_id, sender_type, created_at')
+          .in('conversation_id', conversationIds.length > 0 ? conversationIds : ['00000000-0000-0000-0000-000000000000'])
+          .order('created_at', { ascending: true });
+
         // Fetch alerts for this agent
         const { data: alerts } = await supabase
           .from('agent_behavior_alerts')
@@ -110,11 +117,42 @@ export function useAgentIndividualData(agentId: string | null) {
         const lostDeals = liveMetrics?.filter(m => m.lead_status === 'closed_lost').length || 0;
         const conversionRate = totalConversations > 0 ? (closedDeals / totalConversations) * 100 : 0;
 
-        // Calculate avg response time from live metrics
-        const responseTimes = liveMetrics?.map(m => m.avg_response_time_seconds).filter(Boolean) || [];
-        const avgResponseTime = responseTimes.length > 0 
-          ? (responseTimes.reduce((a, b) => a + (b || 0), 0) / responseTimes.length) / 60 
-          : 0;
+        // Calculate avg response time from messages (time between contact message and user response)
+        let avgResponseTime = 0;
+        if (messages && messages.length > 0) {
+          const responseTimes: number[] = [];
+          
+          // Group messages by conversation
+          const messagesByConversation = messages.reduce((acc, msg) => {
+            if (!acc[msg.conversation_id]) acc[msg.conversation_id] = [];
+            acc[msg.conversation_id].push(msg);
+            return acc;
+          }, {} as Record<string, typeof messages>);
+
+          // Calculate response times for each conversation
+          Object.values(messagesByConversation).forEach(convMessages => {
+            for (let i = 0; i < convMessages.length - 1; i++) {
+              const current = convMessages[i];
+              const next = convMessages[i + 1];
+              
+              // If contact sent message and user responded
+              if (current.sender_type === 'contact' && next.sender_type === 'user') {
+                const contactTime = new Date(current.created_at).getTime();
+                const userTime = new Date(next.created_at).getTime();
+                const diffMinutes = (userTime - contactTime) / (1000 * 60);
+                
+                // Only count reasonable response times (less than 24 hours)
+                if (diffMinutes > 0 && diffMinutes < 1440) {
+                  responseTimes.push(diffMinutes);
+                }
+              }
+            }
+          });
+
+          if (responseTimes.length > 0) {
+            avgResponseTime = responseTimes.reduce((a, b) => a + b, 0) / responseTimes.length;
+          }
+        }
 
         // Calculate criteria scores from evaluations
         const criteriaScores = {
