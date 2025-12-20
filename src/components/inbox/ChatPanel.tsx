@@ -88,11 +88,11 @@ interface ChatPanelProps {
   isRestricted?: boolean;
 }
 
-const statusIcons = {
+const statusIcons: Record<string, React.ReactNode> = {
   pending: <Clock className="w-3 h-3 animate-pulse" />,
-  sent: <Check className="w-3 h-3" />,
+  sent: <CheckCheck className="w-3 h-3" />,
   delivered: <CheckCheck className="w-3 h-3" />,
-  read: <CheckCheck className="w-3 h-3 text-primary" />,
+  read: <CheckCheck className="w-3 h-3" />,
   failed: <AlertCircle className="w-3 h-3 text-destructive" />,
 };
 
