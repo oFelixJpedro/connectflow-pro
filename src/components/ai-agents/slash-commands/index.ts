@@ -4,3 +4,4 @@ export { UserSelector } from './UserSelector';
 export { CRMStageSelector } from './CRMStageSelector';
 export { DepartmentSelector } from './DepartmentSelector';
 export { TextInputSelector } from './TextInputSelector';
+export { ConnectionSelector } from './ConnectionSelector';

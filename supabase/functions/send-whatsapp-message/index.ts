@@ -418,6 +418,32 @@ serve(async (req) => {
     }
 
     // ═══════════════════════════════════════════════════════════════════
+    // 6️⃣ DISPARAR COMMERCIAL PIXEL (BACKGROUND)
+    // ═══════════════════════════════════════════════════════════════════
+    console.log('\n┌─────────────────────────────────────────────────────────────────┐')
+    console.log('│ 6️⃣  DISPARAR COMMERCIAL PIXEL                                   │')
+    console.log('└─────────────────────────────────────────────────────────────────┘')
+
+    // Disparar Commercial Pixel em background (não bloqueia a resposta)
+    fetch(`${supabaseUrl}/functions/v1/commercial-pixel`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${supabaseServiceKey}`,
+      },
+      body: JSON.stringify({
+        conversation_id: conversationId,
+        company_id: conversation.whatsapp_connections?.company_id,
+        message_content: finalMessageContent,
+        message_type: 'text',
+        direction: 'outbound',
+        contact_name: conversation.contacts?.name || 'Desconhecido'
+      }),
+    })
+      .then(res => console.log('📊 [PIXEL] Commercial Pixel disparado:', res.status))
+      .catch(e => console.log('⚠️ [PIXEL] Erro ao disparar Commercial Pixel:', e.message))
+
+    // ═══════════════════════════════════════════════════════════════════
     // ✅ SUCESSO
     // ═══════════════════════════════════════════════════════════════════
     console.log('\n╔══════════════════════════════════════════════════════════════════╗')

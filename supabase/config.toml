@@ -1,5 +1,11 @@
 project_id = "stjtkvanmlidurmwpdpc"
 
+[functions.generate-weekly-report]
+verify_jwt = false
+
+[functions.generate-anticipated-report]
+verify_jwt = true
+
 [functions.developer-auth]
 verify_jwt = false
 
@@ -89,3 +95,12 @@ verify_jwt = true
 
 [functions.format-prompt]
 verify_jwt = true
+
+[functions.summarize-chat]
+verify_jwt = true
+
+[functions.evaluate-conversation]
+verify_jwt = true
+
+[functions.commercial-pixel]
+verify_jwt = false

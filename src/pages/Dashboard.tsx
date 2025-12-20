@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { 
   MessageSquare, 
   Users, 
@@ -8,13 +9,16 @@ import {
   ArrowDownRight,
   CheckCircle2,
   AlertCircle,
-  Loader2
+  Loader2,
+  LayoutDashboard
 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { useDashboardData } from '@/hooks/useDashboardData';
 import { DashboardFilters } from '@/components/dashboard/DashboardFilters';
@@ -60,6 +64,7 @@ function MetricCardSkeleton() {
 }
 
 export default function Dashboard() {
+  const navigate = useNavigate();
   const {
     loading,
     metrics,
@@ -72,6 +77,8 @@ export default function Dashboard() {
     setFilter,
     isAdmin,
   } = useDashboardData();
+
+  const [viewMode, setViewMode] = useState<'dashboard' | 'commercial'>('dashboard');
 
   // State for conversation preview modal
   const [previewModal, setPreviewModal] = useState<{
@@ -93,6 +100,13 @@ export default function Dashboard() {
       contactPhone: conv.contact?.phoneNumber,
       contactAvatarUrl: conv.contact?.avatarUrl || undefined,
     });
+  };
+
+  const handleViewChange = (value: string) => {
+    if (value === 'commercial') {
+      navigate('/commercial-manager');
+    }
+    setViewMode(value as 'dashboard' | 'commercial');
   };
 
   const todayChange = metrics.yesterdayConversations > 0
@@ -149,13 +163,36 @@ export default function Dashboard() {
       <div className="flex flex-col gap-3 md:gap-4">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
           <div>
-            <h1 className="text-xl md:text-2xl font-bold text-foreground">{getPageTitle()}</h1>
+            {isAdmin ? (
+              <Select value="dashboard" onValueChange={handleViewChange}>
+                <SelectTrigger className="w-[220px] border-none shadow-none text-xl md:text-2xl font-bold bg-transparent h-auto p-0 focus:ring-0">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="bg-popover">
+                  <SelectItem value="dashboard">
+                    <div className="flex items-center gap-2">
+                      <LayoutDashboard className="w-4 h-4" />
+                      Dashboard
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="commercial">
+                    <div className="flex items-center gap-2">
+                      <TrendingUp className="w-4 h-4" />
+                      Gerente Comercial
+                    </div>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            ) : (
+              <h1 className="text-xl md:text-2xl font-bold text-foreground">{getPageTitle()}</h1>
+            )}
             <p className="text-sm text-muted-foreground">
               {getPageDescription()}
             </p>
           </div>
           <div className="flex items-center gap-2 md:gap-3">
             {getFilterIndicator()}
+            
             <Badge variant="outline" className="text-xs md:text-sm flex items-center gap-1 md:gap-2">
               {loading && <Loader2 className="w-3 h-3 animate-spin" />}
               <span className="hidden sm:inline">Atualizado</span> {format(lastUpdated, "HH:mm", { locale: ptBR })}
@@ -636,6 +673,7 @@ export default function Dashboard() {
         contactPhone={previewModal.contactPhone}
         contactAvatarUrl={previewModal.contactAvatarUrl}
       />
+
     </div>
   );
 }

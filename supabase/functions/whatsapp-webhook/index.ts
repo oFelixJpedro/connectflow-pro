@@ -22,6 +22,72 @@ try {
   console.log('⚠️ Redis not configured, falling back to EdgeRuntime.waitUntil')
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// COPY MEDIA TO PUBLIC BUCKET FOR PERMANENT URLs
+// ═══════════════════════════════════════════════════════════════════
+async function copyMediaToPublicBucket(
+  supabase: any,
+  privateUrl: string,
+  agentId: string,
+  mediaKey: string,
+  mimeType?: string
+): Promise<string | null> {
+  try {
+    console.log(`📋 [WEBHOOK] Copiando mídia para bucket público: ${mediaKey}`);
+    
+    // If URL is already from whatsapp-media (public), return as is
+    if (privateUrl.includes('/whatsapp-media/') && !privateUrl.includes('token=')) {
+      console.log(`✅ [WEBHOOK] Mídia já está no bucket público`);
+      return privateUrl;
+    }
+    
+    // Download from private bucket using signed URL
+    const response = await fetch(privateUrl);
+    if (!response.ok) {
+      console.error(`❌ [WEBHOOK] Erro ao baixar mídia: ${response.status}`);
+      return null;
+    }
+    
+    const arrayBuffer = await response.arrayBuffer();
+    const contentType = mimeType || response.headers.get('content-type') || 'application/octet-stream';
+    
+    // Generate unique path in public bucket
+    const extMap: Record<string, string> = {
+      'image/jpeg': 'jpg', 'image/jpg': 'jpg', 'image/png': 'png', 'image/gif': 'gif', 'image/webp': 'webp',
+      'video/mp4': 'mp4', 'video/webm': 'webm', 'video/quicktime': 'mov',
+      'audio/mpeg': 'mp3', 'audio/mp3': 'mp3', 'audio/wav': 'wav', 'audio/ogg': 'ogg', 'audio/webm': 'webm',
+      'application/pdf': 'pdf', 'application/msword': 'doc',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+    };
+    const ext = extMap[contentType] || contentType.split('/')[1] || 'bin';
+    const uniquePath = `ai-agent/${agentId}/${mediaKey}-${Date.now()}.${ext}`;
+    
+    // Upload to public bucket
+    const { error } = await supabase.storage
+      .from('whatsapp-media')
+      .upload(uniquePath, new Uint8Array(arrayBuffer), {
+        contentType,
+        upsert: true
+      });
+    
+    if (error) {
+      console.error(`❌ [WEBHOOK] Erro ao fazer upload para bucket público:`, error);
+      return null;
+    }
+    
+    // Get public URL
+    const { data: { publicUrl } } = supabase.storage
+      .from('whatsapp-media')
+      .getPublicUrl(uniquePath);
+    
+    console.log(`✅ [WEBHOOK] Mídia copiada para bucket público: ${publicUrl}`);
+    return publicUrl;
+  } catch (e) {
+    console.error(`❌ [WEBHOOK] Erro ao copiar mídia:`, e);
+    return null;
+  }
+}
+
 // Declare EdgeRuntime for TypeScript (fallback when Redis unavailable)
 declare const EdgeRuntime: {
   waitUntil: (promise: Promise<any>) => void;
@@ -722,26 +788,52 @@ async function processAIBatchImmediate(batchData: any, batchKey: string, redisCl
             
             // Generate signed URL if it's from private bucket and not already signed
             let mediaFileUrl = media.url;
+            let permanentUrl = media.url; // URL permanente para salvar no banco
+            
             if (mediaFileUrl && mediaFileUrl.includes('/ai-agent-media/') && !mediaFileUrl.includes('token=')) {
               try {
                 const urlParts = mediaFileUrl.split('/ai-agent-media/');
                 if (urlParts.length > 1) {
                   const storagePath = decodeURIComponent(urlParts[1].split('?')[0]);
-                  console.log(`🔑 [WEBHOOK] Gerando signed URL para: ${storagePath}`);
+                  console.log(`🔑 [WEBHOOK] Gerando signed URL temporária para copiar: ${storagePath}`);
                   
+                  // Generate temporary signed URL for download (5 min is enough)
                   const { data: signedUrlData, error: signedUrlError } = await supabase.storage
                     .from('ai-agent-media')
-                    .createSignedUrl(storagePath, 3600); // 1 hour validity
+                    .createSignedUrl(storagePath, 300);
                   
                   if (signedUrlData?.signedUrl) {
+                    // Use signed URL to send to WhatsApp (immediate)
                     mediaFileUrl = signedUrlData.signedUrl;
-                    console.log(`✅ [WEBHOOK] Signed URL gerada com sucesso`);
+                    
+                    // Copy to public bucket for permanent URL in database
+                    const agentId = result.agentId || agentConfig.id || 'unknown';
+                    const publicUrl = await copyMediaToPublicBucket(
+                      supabase,
+                      signedUrlData.signedUrl,
+                      agentId,
+                      media.key
+                    );
+                    
+                    if (publicUrl) {
+                      permanentUrl = publicUrl;
+                      console.log(`✅ [WEBHOOK] URL permanente gerada: ${publicUrl.substring(0, 60)}...`);
+                    } else {
+                      // Fallback: use signed URL with longer TTL
+                      const { data: fallbackUrl } = await supabase.storage
+                        .from('ai-agent-media')
+                        .createSignedUrl(storagePath, 86400); // 24h fallback
+                      if (fallbackUrl?.signedUrl) {
+                        permanentUrl = fallbackUrl.signedUrl;
+                        console.log(`⚠️ [WEBHOOK] Usando signed URL de 24h como fallback`);
+                      }
+                    }
                   } else if (signedUrlError) {
                     console.log(`⚠️ [WEBHOOK] Erro ao gerar signed URL: ${signedUrlError.message}`);
                   }
                 }
               } catch (signedUrlErr) {
-                console.log(`⚠️ [WEBHOOK] Erro ao processar signed URL:`, signedUrlErr);
+                console.log(`⚠️ [WEBHOOK] Erro ao processar mídia:`, signedUrlErr);
               }
             }
             
@@ -776,14 +868,14 @@ async function processAIBatchImmediate(batchData: any, batchKey: string, redisCl
               console.log(`❌ [IMMEDIATE-BATCH] Failed to send media (${uazapiType}):`, errorText);
             }
             
-            // Save to database
+            // Save to database with PERMANENT URL
             await supabase.from('messages').insert({
               conversation_id: conversationId,
               direction: 'outbound',
               sender_type: 'bot',
               content: media.fileName || '',
               message_type: media.type as any,
-              media_url: media.url,
+              media_url: permanentUrl, // ← URL permanente!
               whatsapp_message_id: whatsappMediaId,
               status: whatsappMediaId ? 'sent' : 'failed',
               metadata: { 
@@ -1182,13 +1274,8 @@ serve(async (req) => {
       )
     }
     
-    // Check if it's a group message
-    if (payload.message?.isGroup === true) {
-      return new Response(
-        JSON.stringify({ success: true, message: 'Group message ignored' }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
-    }
+    // Store group message flag - will be checked after fetching connection config
+    const isGroupMessage = payload.message?.isGroup === true
     
     // ═══════════════════════════════════════════════════════════════════
     // 2️⃣ DETECT MESSAGE TYPE
@@ -1428,7 +1515,7 @@ serve(async (req) => {
     
     const { data: connection, error: connectionError } = await supabase
       .from('whatsapp_connections')
-      .select('id, company_id, instance_token, name')
+      .select('id, company_id, instance_token, name, receive_group_messages')
       .eq('session_id', instanceName)
       .maybeSingle()
     
@@ -1445,6 +1532,20 @@ serve(async (req) => {
     const dbInstanceToken = connection.instance_token
     const payloadToken = payload.token || payload.instanceToken || ''
     const instanceToken = dbInstanceToken || payloadToken
+    
+    // ═══════════════════════════════════════════════════════════════════
+    // 4.1️⃣ CHECK GROUP MESSAGE CONFIGURATION
+    // ═══════════════════════════════════════════════════════════════════
+    if (isGroupMessage) {
+      if (!connection.receive_group_messages) {
+        console.log(`📱 Mensagem de grupo ignorada (configuração desativada para ${connection.name})`)
+        return new Response(
+          JSON.stringify({ success: true, message: 'Group message ignored by configuration' }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+      console.log(`📱 Processando mensagem de grupo (habilitado para ${connection.name})`)
+    }
     
     // Update instance_token if missing in DB
     if (!dbInstanceToken && payloadToken) {
@@ -1929,6 +2030,32 @@ serve(async (req) => {
           })
         )
       }
+    }
+    
+    // ═══════════════════════════════════════════════════════════════════
+    // 📊 COMMERCIAL PIXEL - Analyze message in real-time (fire-and-forget)
+    // ═══════════════════════════════════════════════════════════════════
+    try {
+      EdgeRuntime.waitUntil(
+        fetch(`${supabaseUrl}/functions/v1/commercial-pixel`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${supabaseServiceKey}`,
+          },
+          body: JSON.stringify({
+            conversation_id: conversationId,
+            company_id: companyId,
+            message_content: messageContent || '',
+            message_type: dbMessageType,
+            direction: direction,
+            contact_name: contactName
+          }),
+        }).catch(e => console.log('⚠️ [PIXEL] Error calling commercial-pixel:', e))
+      );
+      console.log('📊 [PIXEL] Commercial pixel triggered for message');
+    } catch (pixelError) {
+      console.log('⚠️ [PIXEL] Failed to trigger commercial pixel:', pixelError);
     }
     
     // ═══════════════════════════════════════════════════════════════════

@@ -415,3 +415,41 @@
 .animate-shimmer {
   animation: shimmer 1.5s ease-in-out infinite;
 }
+
+/* Custom scrollbar for CRM Kanban - more visible horizontal scroll */
+.custom-scrollbar-horizontal {
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--primary) / 0.4) hsl(var(--muted));
+}
+
+.custom-scrollbar-horizontal::-webkit-scrollbar {
+  height: 24px;
+}
+
+.custom-scrollbar-horizontal::-webkit-scrollbar-track {
+  background: hsl(var(--muted));
+  border-radius: 6px;
+}
+
+.custom-scrollbar-horizontal::-webkit-scrollbar-thumb {
+  background: hsl(var(--primary) / 0.5);
+  border-radius: 6px;
+  border: 2px solid hsl(var(--muted));
+}
+
+.custom-scrollbar-horizontal::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--primary) / 0.7);
+}
+
+/* Brazil Map Styling */
+.brazil-map-container .react-brazil-heatmap__state {
+  stroke: #374151;
+  stroke-width: 0.5;
+  transition: all 0.2s ease;
+}
+
+.brazil-map-container .react-brazil-heatmap__state:hover {
+  stroke: #1f2937;
+  stroke-width: 1;
+  filter: brightness(0.95);
+}

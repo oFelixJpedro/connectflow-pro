@@ -17,6 +17,14 @@ export function TagSelector({ position, onSelect, onClose, onBack }: TagSelector
   const [selectedIndex, setSelectedIndex] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const [openUpward, setOpenUpward] = useState(false);
+
+  // Calculate if modal should open upward
+  useEffect(() => {
+    const modalHeight = 350;
+    const spaceBelow = window.innerHeight - position.y;
+    setOpenUpward(spaceBelow < modalHeight && position.y > modalHeight);
+  }, [position]);
 
   const filteredTags = useMemo(() => {
     if (!search) return tags;
@@ -89,7 +97,10 @@ export function TagSelector({ position, onSelect, onClose, onBack }: TagSelector
       className="absolute z-50 w-72 bg-popover border border-border rounded-lg shadow-lg overflow-hidden"
       style={{
         left: Math.min(position.x, window.innerWidth - 300),
-        top: position.y + 8,
+        ...(openUpward 
+          ? { bottom: window.innerHeight - position.y + 8 }
+          : { top: position.y + 8 }
+        ),
       }}
     >
       {/* Header with back button */}

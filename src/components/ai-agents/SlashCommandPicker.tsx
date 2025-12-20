@@ -106,6 +106,7 @@ export function SlashCommandPicker({
   const [selectedIndex, setSelectedIndex] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const [openUpward, setOpenUpward] = useState(false);
 
   const filteredCommands = useMemo(() => {
     if (!search) return SLASH_COMMANDS;
@@ -115,6 +116,13 @@ export function SlashCommandPicker({
       cmd.description.toLowerCase().includes(searchLower)
     );
   }, [search]);
+
+  // Calculate if modal should open upward
+  useEffect(() => {
+    const modalHeight = 400; // Approximate height of the modal
+    const spaceBelow = window.innerHeight - position.y;
+    setOpenUpward(spaceBelow < modalHeight && position.y > modalHeight);
+  }, [position]);
 
   // Auto-focus input
   useEffect(() => {
@@ -171,7 +179,10 @@ export function SlashCommandPicker({
       className="absolute z-50 w-80 bg-popover border border-border rounded-lg shadow-lg overflow-hidden"
       style={{
         left: Math.min(position.x, window.innerWidth - 340),
-        top: position.y + 8,
+        ...(openUpward 
+          ? { bottom: window.innerHeight - position.y + 8 }
+          : { top: position.y + 8 }
+        ),
       }}
     >
       {/* Search Input */}
