@@ -1,12 +1,12 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { TrendingUp, LayoutDashboard, Loader2, Radio, Library } from 'lucide-react';
+import { TrendingUp, LayoutDashboard, Loader2, Radio, Library, Globe, Phone, Users } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { useCommercialData } from '@/hooks/useCommercialData';
+import { useCommercialData, type CommercialFilter } from '@/hooks/useCommercialData';
 import { QualityMetricsCards } from '@/components/commercial/QualityMetricsCards';
 import { LiveMetricsCards } from '@/components/commercial/LiveMetricsCards';
 import { BrazilMap } from '@/components/commercial/BrazilMap';
@@ -14,13 +14,33 @@ import { CriteriaRadarChart } from '@/components/commercial/CriteriaRadarChart';
 import { AgentPerformanceTable } from '@/components/commercial/AgentPerformanceTable';
 import { InsightsCard } from '@/components/commercial/InsightsCard';
 import { ReportsModal } from '@/components/reports/ReportsModal';
+import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
+
+interface Connection {
+  id: string;
+  name: string;
+  phone_number: string;
+}
+
+interface Department {
+  id: string;
+  name: string;
+}
 
 export default function CommercialManager() {
   const navigate = useNavigate();
-  const { loading, data, liveMetrics, isAdmin } = useCommercialData();
+  const { company } = useAuth();
+  const [filter, setFilter] = useState<CommercialFilter>({ type: 'general' });
+  const { loading, data, liveMetrics, isAdmin } = useCommercialData(filter);
   const [viewMode, setViewMode] = useState<'commercial' | 'dashboard'>('commercial');
   const [currentTime, setCurrentTime] = useState(new Date());
   const [reportsModalOpen, setReportsModalOpen] = useState(false);
+  
+  // Filter options data
+  const [connections, setConnections] = useState<Connection[]>([]);
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [loadingFilters, setLoadingFilters] = useState(false);
 
   // Real-time clock update
   useEffect(() => {
@@ -30,6 +50,38 @@ export default function CommercialManager() {
     return () => clearInterval(interval);
   }, []);
 
+  // Load filter options
+  useEffect(() => {
+    if (!company?.id) return;
+
+    const loadFilterData = async () => {
+      setLoadingFilters(true);
+      try {
+        if (filter.type === 'connection' && connections.length === 0) {
+          const { data } = await supabase
+            .from('whatsapp_connections')
+            .select('id, name, phone_number')
+            .eq('company_id', company.id)
+            .eq('status', 'connected')
+            .order('name');
+          setConnections(data || []);
+        } else if (filter.type === 'department' && departments.length === 0) {
+          const { data } = await supabase
+            .from('departments')
+            .select('id, name')
+            .order('name');
+          setDepartments(data || []);
+        }
+      } catch (error) {
+        console.error('Error loading filter data:', error);
+      } finally {
+        setLoadingFilters(false);
+      }
+    };
+
+    loadFilterData();
+  }, [filter.type, company?.id, connections.length, departments.length]);
+
   const handleViewChange = (value: string) => {
     if (value === 'dashboard') {
       navigate('/dashboard');
@@ -37,10 +89,41 @@ export default function CommercialManager() {
     setViewMode(value as 'commercial' | 'dashboard');
   };
 
+  const handleFilterTypeChange = (type: CommercialFilter['type']) => {
+    setFilter({ type });
+  };
+
+  const handleSecondaryFilterChange = (value: string) => {
+    if (filter.type === 'connection') {
+      setFilter({ ...filter, connectionId: value });
+    } else if (filter.type === 'department') {
+      setFilter({ ...filter, departmentId: value });
+    }
+  };
+
+  const getSecondaryValue = () => {
+    if (filter.type === 'connection') return filter.connectionId || '';
+    if (filter.type === 'department') return filter.departmentId || '';
+    return '';
+  };
+
+  const getSecondaryOptions = () => {
+    if (filter.type === 'connection') {
+      return connections.map(c => ({ value: c.id, label: `${c.name} (${c.phone_number})` }));
+    }
+    if (filter.type === 'department') {
+      return departments.map(d => ({ value: d.id, label: d.name }));
+    }
+    return [];
+  };
+
   if (!isAdmin) {
     navigate('/dashboard');
     return null;
   }
+
+  const secondaryOptions = getSecondaryOptions();
+  const showSecondaryFilter = filter.type !== 'general';
 
   return (
     <div className="h-full overflow-auto p-3 md:p-6 space-y-4 md:space-y-6">
@@ -67,6 +150,9 @@ export default function CommercialManager() {
                 </SelectItem>
               </SelectContent>
             </Select>
+            <p className="text-sm text-muted-foreground mt-1">
+              Análise de qualidade e performance da equipe comercial
+            </p>
           </div>
           <div className="flex items-center gap-2">
             <Button
@@ -88,9 +174,60 @@ export default function CommercialManager() {
             </Badge>
           </div>
         </div>
-        <p className="text-sm text-muted-foreground">
-          Análise de qualidade e performance da equipe comercial
-        </p>
+
+        {/* Filters */}
+        <div className="flex items-center gap-3 flex-wrap">
+          <Select value={filter.type} onValueChange={(v) => handleFilterTypeChange(v as CommercialFilter['type'])}>
+            <SelectTrigger className="w-[180px]">
+              <SelectValue placeholder="Selecionar filtro" />
+            </SelectTrigger>
+            <SelectContent className="bg-popover">
+              <SelectItem value="general">
+                <div className="flex items-center gap-2">
+                  <Globe className="w-4 h-4" />
+                  Geral
+                </div>
+              </SelectItem>
+              <SelectItem value="connection">
+                <div className="flex items-center gap-2">
+                  <Phone className="w-4 h-4" />
+                  Por Conexão
+                </div>
+              </SelectItem>
+              <SelectItem value="department">
+                <div className="flex items-center gap-2">
+                  <Users className="w-4 h-4" />
+                  Por Departamento
+                </div>
+              </SelectItem>
+            </SelectContent>
+          </Select>
+
+          {showSecondaryFilter && (
+            <Select 
+              value={getSecondaryValue()} 
+              onValueChange={handleSecondaryFilterChange}
+              disabled={loadingFilters}
+            >
+              <SelectTrigger className="w-[220px]">
+                <SelectValue placeholder={filter.type === 'connection' ? 'Selecionar conexão...' : 'Selecionar departamento...'} />
+              </SelectTrigger>
+              <SelectContent className="bg-popover">
+                {secondaryOptions.length === 0 ? (
+                  <div className="py-2 px-3 text-sm text-muted-foreground">
+                    {filter.type === 'connection' ? 'Nenhuma conexão ativa' : 'Nenhum departamento'}
+                  </div>
+                ) : (
+                  secondaryOptions.map(opt => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </SelectItem>
+                  ))
+                )}
+              </SelectContent>
+            </Select>
+          )}
+        </div>
       </div>
 
       {/* Live Metrics - Real-time */}
