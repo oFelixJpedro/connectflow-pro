@@ -10,7 +10,8 @@ import {
   CheckCircle2,
   AlertCircle,
   Loader2,
-  LayoutDashboard
+  LayoutDashboard,
+  Library
 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -18,10 +19,12 @@ import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { useDashboardData } from '@/hooks/useDashboardData';
 import { DashboardFilters } from '@/components/dashboard/DashboardFilters';
 import { ConversationPreviewModal } from '@/components/crm/ConversationPreviewModal';
+import { ReportsModal } from '@/components/reports/ReportsModal';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { 
@@ -78,6 +81,7 @@ export default function Dashboard() {
   } = useDashboardData();
 
   const [viewMode, setViewMode] = useState<'dashboard' | 'commercial'>('dashboard');
+  const [reportsModalOpen, setReportsModalOpen] = useState(false);
 
   // State for conversation preview modal
   const [previewModal, setPreviewModal] = useState<{
@@ -162,13 +166,49 @@ export default function Dashboard() {
       <div className="flex flex-col gap-3 md:gap-4">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
           <div>
-            <h1 className="text-xl md:text-2xl font-bold text-foreground">{getPageTitle()}</h1>
+            {isAdmin ? (
+              <Select value="dashboard" onValueChange={handleViewChange}>
+                <SelectTrigger className="w-[220px] border-none shadow-none text-xl md:text-2xl font-bold bg-transparent h-auto p-0 focus:ring-0">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="bg-popover">
+                  <SelectItem value="dashboard">
+                    <div className="flex items-center gap-2">
+                      <LayoutDashboard className="w-4 h-4" />
+                      Dashboard
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="commercial">
+                    <div className="flex items-center gap-2">
+                      <TrendingUp className="w-4 h-4" />
+                      Gerente Comercial
+                    </div>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            ) : (
+              <h1 className="text-xl md:text-2xl font-bold text-foreground">{getPageTitle()}</h1>
+            )}
             <p className="text-sm text-muted-foreground">
               {getPageDescription()}
             </p>
           </div>
           <div className="flex items-center gap-2 md:gap-3">
             {getFilterIndicator()}
+            
+            {/* Reports Button - admin/owner only */}
+            {isAdmin && (
+              <Button 
+                variant="ghost" 
+                size="icon"
+                onClick={() => setReportsModalOpen(true)}
+                className="text-muted-foreground hover:text-foreground"
+                title="Relatórios"
+              >
+                <Library className="w-5 h-5" />
+              </Button>
+            )}
+            
             <Badge variant="outline" className="text-xs md:text-sm flex items-center gap-1 md:gap-2">
               {loading && <Loader2 className="w-3 h-3 animate-spin" />}
               <span className="hidden sm:inline">Atualizado</span> {format(lastUpdated, "HH:mm", { locale: ptBR })}
@@ -648,6 +688,12 @@ export default function Dashboard() {
         contactName={previewModal.contactName}
         contactPhone={previewModal.contactPhone}
         contactAvatarUrl={previewModal.contactAvatarUrl}
+      />
+
+      {/* Reports Modal */}
+      <ReportsModal
+        open={reportsModalOpen}
+        onOpenChange={setReportsModalOpen}
       />
     </div>
   );

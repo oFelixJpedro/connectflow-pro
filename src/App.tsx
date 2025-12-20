@@ -23,7 +23,7 @@ import InternalChat from "./pages/InternalChat";
 import AIAgents from "./pages/AIAgents";
 import AIAgentConfig from "./pages/AIAgentConfig";
 import CommercialManager from "./pages/CommercialManager";
-import Reports from "./pages/Reports";
+
 import NotFound from "./pages/NotFound";
 import DeveloperLogin from "./pages/developer/DeveloperLogin";
 import DeveloperDashboard from "./pages/developer/DeveloperDashboard";
@@ -62,7 +62,7 @@ const App = () => (
               }>
               <Route path="/dashboard" element={<Dashboard />} />
                 <Route path="/commercial-manager" element={<CommercialManager />} />
-                <Route path="/reports" element={<Reports />} />
+                
                 <Route path="/inbox" element={<Inbox />} />
                 <Route path="/ai-agents" element={<AIAgents />} />
                 <Route path="/ai-agents/:agentId" element={<AIAgentConfig />} />
