@@ -1327,14 +1327,14 @@ serve(async (req) => {
 `;
 
     if (agent.script_content) {
-      systemPrompt += `## ROTEIRO DE ATENDIMENTO
+      systemPrompt += `## FLUXO DE ATENDIMENTO
 ${agent.script_content}
 
 `;
     }
 
     if (agent.rules_content) {
-      systemPrompt += `## REGRAS DE COMPORTAMENTO
+      systemPrompt += `## DIRETRIZES DO AGENTE
 ${agent.rules_content}
 
 `;
@@ -1503,7 +1503,7 @@ CRÍTICO SOBRE COMANDOS:
 2. Seja objetivo e direto - vá direto ao ponto
 3. Use emojis com MODERAÇÃO (máximo 2-3 por mensagem)
 4. Se não souber responder algo específico, direcione para um atendente humano
-5. Nunca invente informações - use apenas o que está no roteiro, regras e FAQ
+5. Nunca invente informações - use apenas o que está no fluxo, diretrizes e FAQ
 6. Mantenha o tom profissional mas acolhedor
 7. Se o cliente enviar uma imagem, vídeo ou documento, ANALISE o conteúdo e responda de forma contextualizada
 8. VARIE seu vocabulário - não use as mesmas palavras repetidamente`;
@@ -2490,14 +2490,14 @@ CRÍTICO SOBRE COMANDOS:
 `;
         
         if (newAgent.script_content) {
-          newAgentSystemPrompt += `## ROTEIRO DE ATENDIMENTO
+          newAgentSystemPrompt += `## FLUXO DE ATENDIMENTO
 ${newAgent.script_content}
 
 `;
         }
         
         if (newAgent.rules_content) {
-          newAgentSystemPrompt += `## REGRAS DE COMPORTAMENTO
+          newAgentSystemPrompt += `## DIRETRIZES DO AGENTE
 ${newAgent.rules_content}
 
 `;
