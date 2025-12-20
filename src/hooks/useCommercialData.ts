@@ -96,6 +96,8 @@ export interface CommercialFilter {
   type: 'general' | 'connection' | 'department';
   connectionId?: string;
   departmentId?: string;
+  startDate?: Date;
+  endDate?: Date;
 }
 
 export function useCommercialData(filter?: CommercialFilter) {
@@ -268,10 +270,21 @@ export function useCommercialData(filter?: CommercialFilter) {
     const fetchData = async () => {
       setLoading(true);
       try {
-        const now = new Date();
-        const startOfWeek = new Date(now);
-        startOfWeek.setDate(now.getDate() - now.getDay() + 1);
-        startOfWeek.setHours(0, 0, 0, 0);
+        // Calculate date range - use filter dates or default to current week
+        let startDate: Date;
+        let endDate: Date;
+        
+        if (filter?.startDate && filter?.endDate) {
+          startDate = filter.startDate;
+          endDate = filter.endDate;
+        } else {
+          // Default: current week
+          const now = new Date();
+          startDate = new Date(now);
+          startDate.setDate(now.getDate() - now.getDay() + 1);
+          startDate.setHours(0, 0, 0, 0);
+          endDate = now;
+        }
 
         // Build base query for conversations
         let conversationsQuery = supabase
@@ -286,7 +299,8 @@ export function useCommercialData(filter?: CommercialFilter) {
             contact:contacts(phone_number, name)
           `)
           .eq('company_id', profile.company_id)
-          .gte('created_at', startOfWeek.toISOString());
+          .gte('created_at', startDate.toISOString())
+          .lte('created_at', endDate.toISOString());
 
         // Apply filters
         if (filter?.type === 'connection' && filter.connectionId) {
@@ -674,7 +688,7 @@ export function useCommercialData(filter?: CommercialFilter) {
     };
 
     fetchData();
-  }, [profile?.company_id, isAdmin, aggregatedInsights, filter?.type, filter?.connectionId, filter?.departmentId]);
+  }, [profile?.company_id, isAdmin, aggregatedInsights, filter?.type, filter?.connectionId, filter?.departmentId, filter?.startDate, filter?.endDate]);
 
   return {
     loading,
