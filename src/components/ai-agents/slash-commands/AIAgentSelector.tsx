@@ -18,6 +18,14 @@ export function AIAgentSelector({ position, onSelect, onClose, onBack, currentAg
   const [selectedIndex, setSelectedIndex] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const [openUpward, setOpenUpward] = useState(false);
+
+  // Calculate if modal should open upward
+  useEffect(() => {
+    const modalHeight = 350;
+    const spaceBelow = window.innerHeight - position.y;
+    setOpenUpward(spaceBelow < modalHeight && position.y > modalHeight);
+  }, [position]);
 
   // Filter out current agent and show only active ones
   const filteredAgents = useMemo(() => {
@@ -87,7 +95,10 @@ export function AIAgentSelector({ position, onSelect, onClose, onBack, currentAg
       className="absolute z-50 w-72 bg-popover border border-border rounded-lg shadow-lg overflow-hidden"
       style={{
         left: Math.min(position.x, window.innerWidth - 300),
-        top: position.y + 8,
+        ...(openUpward 
+          ? { bottom: window.innerHeight - position.y + 8 }
+          : { top: position.y + 8 }
+        ),
       }}
     >
       {/* Header with back button */}
