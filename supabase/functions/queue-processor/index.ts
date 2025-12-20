@@ -131,6 +131,72 @@ function getExtensionFromMimeType(mimeType: string, fileName?: string): string {
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// COPY MEDIA TO PUBLIC BUCKET FOR PERMANENT URLs
+// ═══════════════════════════════════════════════════════════════════
+async function copyMediaToPublicBucket(
+  supabase: any,
+  privateUrl: string,
+  agentId: string,
+  mediaKey: string,
+  mimeType?: string
+): Promise<string | null> {
+  try {
+    console.log(`📋 [QUEUE] Copiando mídia para bucket público: ${mediaKey}`);
+    
+    // If URL is already from whatsapp-media (public), return as is
+    if (privateUrl.includes('/whatsapp-media/') && !privateUrl.includes('token=')) {
+      console.log(`✅ [QUEUE] Mídia já está no bucket público`);
+      return privateUrl;
+    }
+    
+    // Download from private bucket using signed URL
+    const response = await fetch(privateUrl);
+    if (!response.ok) {
+      console.error(`❌ [QUEUE] Erro ao baixar mídia: ${response.status}`);
+      return null;
+    }
+    
+    const arrayBuffer = await response.arrayBuffer();
+    const contentType = mimeType || response.headers.get('content-type') || 'application/octet-stream';
+    
+    // Generate unique path in public bucket
+    const extMap: Record<string, string> = {
+      'image/jpeg': 'jpg', 'image/jpg': 'jpg', 'image/png': 'png', 'image/gif': 'gif', 'image/webp': 'webp',
+      'video/mp4': 'mp4', 'video/webm': 'webm', 'video/quicktime': 'mov',
+      'audio/mpeg': 'mp3', 'audio/mp3': 'mp3', 'audio/wav': 'wav', 'audio/ogg': 'ogg', 'audio/webm': 'webm',
+      'application/pdf': 'pdf', 'application/msword': 'doc',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+    };
+    const ext = extMap[contentType] || contentType.split('/')[1] || 'bin';
+    const uniquePath = `ai-agent/${agentId}/${mediaKey}-${Date.now()}.${ext}`;
+    
+    // Upload to public bucket
+    const { error } = await supabase.storage
+      .from('whatsapp-media')
+      .upload(uniquePath, new Uint8Array(arrayBuffer), {
+        contentType,
+        upsert: true
+      });
+    
+    if (error) {
+      console.error(`❌ [QUEUE] Erro ao fazer upload para bucket público:`, error);
+      return null;
+    }
+    
+    // Get public URL
+    const { data: { publicUrl } } = supabase.storage
+      .from('whatsapp-media')
+      .getPublicUrl(uniquePath);
+    
+    console.log(`✅ [QUEUE] Mídia copiada para bucket público: ${publicUrl}`);
+    return publicUrl;
+  } catch (e) {
+    console.error(`❌ [QUEUE] Erro ao copiar mídia:`, e);
+    return null;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // DOWNLOAD MEDIA FROM UAZAPI
 // ═══════════════════════════════════════════════════════════════════
 async function downloadMediaFromUazapi(
