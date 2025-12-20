@@ -87,37 +87,37 @@ serve(async (req) => {
     let conversationsToEvaluate: string[] = [];
 
     if (evaluate_all && company_id) {
-      // Buscar todas as conversas não avaliadas da empresa
-      const { data: unevaluatedConvs, error: fetchError } = await supabase
+      // Buscar todas as conversas fechadas da empresa
+      const { data: allClosed, error: closedError } = await supabase
         .from('conversations')
         .select('id')
         .eq('company_id', company_id)
-        .in('status', ['closed', 'resolved'])
-        .not('id', 'in', 
-          supabase.from('conversation_evaluations').select('conversation_id').eq('company_id', company_id)
-        );
+        .in('status', ['closed', 'resolved']);
 
-      if (fetchError) {
-        console.error('[evaluate-conversation] Error fetching unevaluated conversations:', fetchError);
-        // Fallback: buscar todas as fechadas e filtrar manualmente
-        const { data: allClosed } = await supabase
-          .from('conversations')
-          .select('id')
-          .eq('company_id', company_id)
-          .in('status', ['closed', 'resolved']);
-
-        const { data: evaluated } = await supabase
-          .from('conversation_evaluations')
-          .select('conversation_id')
-          .eq('company_id', company_id);
-
-        const evaluatedIds = new Set(evaluated?.map(e => e.conversation_id) || []);
-        conversationsToEvaluate = (allClosed || [])
-          .filter(c => !evaluatedIds.has(c.id))
-          .map(c => c.id);
-      } else {
-        conversationsToEvaluate = (unevaluatedConvs || []).map(c => c.id);
+      if (closedError) {
+        console.error('[evaluate-conversation] Error fetching closed conversations:', closedError);
+        throw new Error('Erro ao buscar conversas fechadas');
       }
+
+      console.log(`[evaluate-conversation] Found ${allClosed?.length || 0} closed/resolved conversations`);
+
+      // Buscar todas as conversas já avaliadas
+      const { data: evaluated, error: evalError } = await supabase
+        .from('conversation_evaluations')
+        .select('conversation_id')
+        .eq('company_id', company_id);
+
+      if (evalError) {
+        console.error('[evaluate-conversation] Error fetching evaluated conversations:', evalError);
+      }
+
+      console.log(`[evaluate-conversation] Found ${evaluated?.length || 0} already evaluated conversations`);
+
+      // Filtrar no JavaScript para encontrar as não avaliadas
+      const evaluatedIds = new Set(evaluated?.map(e => e.conversation_id) || []);
+      conversationsToEvaluate = (allClosed || [])
+        .filter(c => !evaluatedIds.has(c.id))
+        .map(c => c.id);
 
       console.log(`[evaluate-conversation] Found ${conversationsToEvaluate.length} conversations to evaluate`);
     } else if (conversation_id) {
@@ -200,7 +200,7 @@ serve(async (req) => {
         console.log(`[evaluate-conversation] Calling Gemini for conversation ${convId}`);
         
         const geminiResponse = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.0-flash-preview:generateContent?key=${geminiApiKey}`,
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${geminiApiKey}`,
           {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
