@@ -423,7 +423,7 @@
 }
 
 .custom-scrollbar-horizontal::-webkit-scrollbar {
-  height: 12px;
+  height: 24px;
 }
 
 .custom-scrollbar-horizontal::-webkit-scrollbar-track {
