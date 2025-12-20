@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { TrendingUp, LayoutDashboard, Loader2, Radio, Library, Globe, Phone, Users } from 'lucide-react';
+import { TrendingUp, LayoutDashboard, Loader2, Radio, Library, Globe, Phone, Users, Calendar } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { format } from 'date-fns';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Calendar as CalendarComponent } from '@/components/ui/calendar';
+import { format, startOfDay, endOfDay, subDays, startOfWeek, startOfMonth, subMonths } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { useCommercialData, type CommercialFilter } from '@/hooks/useCommercialData';
 import { QualityMetricsCards } from '@/components/commercial/QualityMetricsCards';
@@ -16,6 +18,7 @@ import { InsightsCard } from '@/components/commercial/InsightsCard';
 import { ReportsModal } from '@/components/reports/ReportsModal';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
+import { cn } from '@/lib/utils';
 
 interface Connection {
   id: string;
@@ -28,10 +31,16 @@ interface Department {
   name: string;
 }
 
+type PeriodPreset = 'today' | 'yesterday' | 'week' | 'month' | 'last_month' | 'custom';
+
 export default function CommercialManager() {
   const navigate = useNavigate();
   const { company } = useAuth();
   const [filter, setFilter] = useState<CommercialFilter>({ type: 'general' });
+  const [periodPreset, setPeriodPreset] = useState<PeriodPreset>('week');
+  const [customStartDate, setCustomStartDate] = useState<Date | undefined>();
+  const [customEndDate, setCustomEndDate] = useState<Date | undefined>();
+  const [datePickerOpen, setDatePickerOpen] = useState(false);
   const { loading, data, liveMetrics, isAdmin } = useCommercialData(filter);
   const [viewMode, setViewMode] = useState<'commercial' | 'dashboard'>('commercial');
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -82,6 +91,48 @@ export default function CommercialManager() {
     loadFilterData();
   }, [filter.type, company?.id, connections.length, departments.length]);
 
+  // Update filter when period changes
+  useEffect(() => {
+    const now = new Date();
+    let startDate: Date | undefined;
+    let endDate: Date | undefined;
+
+    switch (periodPreset) {
+      case 'today':
+        startDate = startOfDay(now);
+        endDate = endOfDay(now);
+        break;
+      case 'yesterday':
+        startDate = startOfDay(subDays(now, 1));
+        endDate = endOfDay(subDays(now, 1));
+        break;
+      case 'week':
+        startDate = startOfWeek(now, { weekStartsOn: 1 });
+        endDate = endOfDay(now);
+        break;
+      case 'month':
+        startDate = startOfMonth(now);
+        endDate = endOfDay(now);
+        break;
+      case 'last_month':
+        startDate = startOfMonth(subMonths(now, 1));
+        endDate = endOfDay(subMonths(startOfMonth(now), 1));
+        break;
+      case 'custom':
+        if (customStartDate && customEndDate) {
+          startDate = startOfDay(customStartDate);
+          endDate = endOfDay(customEndDate);
+        }
+        break;
+    }
+
+    setFilter(prev => ({
+      ...prev,
+      startDate,
+      endDate,
+    }));
+  }, [periodPreset, customStartDate, customEndDate]);
+
   const handleViewChange = (value: string) => {
     if (value === 'dashboard') {
       navigate('/dashboard');
@@ -90,14 +141,44 @@ export default function CommercialManager() {
   };
 
   const handleFilterTypeChange = (type: CommercialFilter['type']) => {
-    setFilter({ type });
+    setFilter(prev => ({ ...prev, type, connectionId: undefined, departmentId: undefined }));
   };
 
   const handleSecondaryFilterChange = (value: string) => {
     if (filter.type === 'connection') {
-      setFilter({ ...filter, connectionId: value });
+      setFilter(prev => ({ ...prev, connectionId: value }));
     } else if (filter.type === 'department') {
-      setFilter({ ...filter, departmentId: value });
+      setFilter(prev => ({ ...prev, departmentId: value }));
+    }
+  };
+
+  const handlePeriodChange = (preset: PeriodPreset) => {
+    setPeriodPreset(preset);
+    if (preset !== 'custom') {
+      setDatePickerOpen(false);
+    }
+  };
+
+  const handleCustomDateSelect = (range: { from?: Date; to?: Date } | undefined) => {
+    if (range?.from) setCustomStartDate(range.from);
+    if (range?.to) {
+      setCustomEndDate(range.to);
+      setDatePickerOpen(false);
+    }
+  };
+
+  const getPeriodLabel = () => {
+    switch (periodPreset) {
+      case 'today': return 'Hoje';
+      case 'yesterday': return 'Ontem';
+      case 'week': return 'Esta semana';
+      case 'month': return 'Este mês';
+      case 'last_month': return 'Mês passado';
+      case 'custom': 
+        if (customStartDate && customEndDate) {
+          return `${format(customStartDate, 'dd/MM')} - ${format(customEndDate, 'dd/MM')}`;
+        }
+        return 'Personalizado';
     }
   };
 
@@ -227,6 +308,53 @@ export default function CommercialManager() {
               </SelectContent>
             </Select>
           )}
+
+          {/* Period Filter */}
+          <div className="flex items-center gap-2">
+            <Select value={periodPreset} onValueChange={(v) => handlePeriodChange(v as PeriodPreset)}>
+              <SelectTrigger className="w-[160px]">
+                <Calendar className="w-4 h-4 mr-1" />
+                <SelectValue placeholder="Período" />
+              </SelectTrigger>
+              <SelectContent className="bg-popover">
+                <SelectItem value="today">Hoje</SelectItem>
+                <SelectItem value="yesterday">Ontem</SelectItem>
+                <SelectItem value="week">Esta semana</SelectItem>
+                <SelectItem value="month">Este mês</SelectItem>
+                <SelectItem value="last_month">Mês passado</SelectItem>
+                <SelectItem value="custom">Personalizado</SelectItem>
+              </SelectContent>
+            </Select>
+
+            {periodPreset === 'custom' && (
+              <Popover open={datePickerOpen} onOpenChange={setDatePickerOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className={cn(
+                      "w-[200px] justify-start text-left font-normal",
+                      !customStartDate && "text-muted-foreground"
+                    )}
+                  >
+                    <Calendar className="mr-2 h-4 w-4" />
+                    {customStartDate && customEndDate
+                      ? `${format(customStartDate, 'dd/MM/yy')} - ${format(customEndDate, 'dd/MM/yy')}`
+                      : 'Selecionar datas'}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0 bg-popover" align="start">
+                  <CalendarComponent
+                    mode="range"
+                    selected={{ from: customStartDate, to: customEndDate }}
+                    onSelect={handleCustomDateSelect}
+                    numberOfMonths={2}
+                    locale={ptBR}
+                    className="pointer-events-auto"
+                  />
+                </PopoverContent>
+              </Popover>
+            )}
+          </div>
         </div>
       </div>
 
