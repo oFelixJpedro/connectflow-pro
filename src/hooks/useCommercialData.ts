@@ -566,8 +566,26 @@ export function useCommercialData() {
             .slice(0, 5)
             .map(([w]) => w);
 
-          positivePatterns = allStrengths.slice(0, 3);
-          negativePatterns = allWeaknesses.slice(0, 3);
+          // Create distinct positive/negative patterns from evaluations
+          // Don't just copy strengths/weaknesses - extract patterns from actual scores
+          positivePatterns = [];
+          negativePatterns = [];
+          
+          // Identify positive patterns from high-scoring areas
+          if (criteriaScores.communication >= 7) positivePatterns.push('Comunicação clara e profissional');
+          if (criteriaScores.humanization >= 7) positivePatterns.push('Atendimento humanizado e empático');
+          if (criteriaScores.response_time >= 7) positivePatterns.push('Respostas rápidas e consistentes');
+          if (criteriaScores.closing >= 7) positivePatterns.push('Boas técnicas de fechamento');
+          
+          // Identify negative patterns from low-scoring areas
+          if (criteriaScores.closing < 6) negativePatterns.push('Dificuldade em técnicas de fechamento');
+          if (criteriaScores.response_time < 6) negativePatterns.push('Tempo de resposta acima do ideal');
+          if (criteriaScores.objection_handling < 6) negativePatterns.push('Tratamento de objeções precisa melhorar');
+          if (criteriaScores.objectivity < 6) negativePatterns.push('Falta de objetividade nas respostas');
+          
+          // Limit to 3 each
+          positivePatterns = positivePatterns.slice(0, 3);
+          negativePatterns = negativePatterns.slice(0, 3);
 
           // Generate basic insights until AI generates them
           insights = [];
