@@ -1,8 +1,7 @@
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import html2canvas from 'html2canvas';
-import jsPDF from 'jspdf';
+import { pdf } from '@react-pdf/renderer';
 import { toast } from 'sonner';
 import {
   Download,
@@ -47,6 +46,7 @@ import {
 } from 'recharts';
 import { cn } from '@/lib/utils';
 import { CommercialReport } from '@/hooks/useReportsData';
+import { ProfessionalReportPDF } from './ProfessionalReportPDF';
 
 interface ReportDetailModalProps {
   open: boolean;
@@ -89,7 +89,6 @@ const levelColors: Record<string, string> = {
 };
 
 export function ReportDetailModal({ open, onOpenChange, report }: ReportDetailModalProps) {
-  const contentRef = useRef<HTMLDivElement>(null);
   const [generatingPdf, setGeneratingPdf] = useState(false);
 
   if (!report) return null;
@@ -101,45 +100,22 @@ export function ReportDetailModal({ open, onOpenChange, report }: ReportDetailMo
   }));
 
   const generatePDF = async () => {
-    if (!contentRef.current) return;
-
     setGeneratingPdf(true);
     try {
-      const element = contentRef.current;
+      // Generate PDF using @react-pdf/renderer
+      const blob = await pdf(<ProfessionalReportPDF report={report} />).toBlob();
       
-      // Capture the content as canvas
-      const canvas = await html2canvas(element, {
-        scale: 2,
-        useCORS: true,
-        logging: false,
-        backgroundColor: '#ffffff',
-      });
-
-      const imgData = canvas.toDataURL('image/png');
-      const pdf = new jsPDF({
-        orientation: 'portrait',
-        unit: 'mm',
-        format: 'a4',
-      });
-
-      const imgWidth = 210; // A4 width in mm
-      const pageHeight = 297; // A4 height in mm
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
-      let heightLeft = imgHeight;
-      let position = 0;
-
-      pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
-      heightLeft -= pageHeight;
-
-      while (heightLeft >= 0) {
-        position = heightLeft - imgHeight;
-        pdf.addPage();
-        pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
-        heightLeft -= pageHeight;
-      }
-
-      pdf.save(`relatorio-${report.week_start}-${report.week_end}.pdf`);
-      toast.success('PDF gerado com sucesso!');
+      // Create download link
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `relatorio-comercial-${report.week_start}-${report.week_end}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      
+      toast.success('PDF profissional gerado com sucesso!');
     } catch (error) {
       console.error('Error generating PDF:', error);
       toast.error('Erro ao gerar PDF');
@@ -198,7 +174,7 @@ export function ReportDetailModal({ open, onOpenChange, report }: ReportDetailMo
         </DialogHeader>
 
         <ScrollArea className="flex-1 h-full">
-          <div ref={contentRef} className="p-4 pb-8 bg-background">
+          <div className="p-4 pb-8 bg-background">
             <Tabs defaultValue="resumo" className="w-full">
               <TabsList className="grid w-full grid-cols-4 mb-4">
                 <TabsTrigger value="resumo">Resumo</TabsTrigger>
