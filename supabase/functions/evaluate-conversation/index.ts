@@ -123,6 +123,21 @@ serve(async (req) => {
 
       console.log(`[evaluate-conversation] Found ${conversationsToEvaluate.length} conversations to evaluate`);
     } else if (conversation_id) {
+      // Verificar se já foi avaliada para evitar reprocessamento
+      const { data: existing } = await supabase
+        .from('conversation_evaluations')
+        .select('id')
+        .eq('conversation_id', conversation_id)
+        .maybeSingle();
+        
+      if (existing) {
+        console.log(`[evaluate-conversation] Conversa ${conversation_id} já avaliada, pulando`);
+        return new Response(
+          JSON.stringify({ success: true, message: 'Conversa já avaliada anteriormente', already_evaluated: true }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+      
       conversationsToEvaluate = [conversation_id];
     } else {
       throw new Error('conversation_id ou evaluate_all + company_id são obrigatórios');
