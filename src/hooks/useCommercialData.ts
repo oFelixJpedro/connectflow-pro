@@ -92,7 +92,13 @@ const DEFAULT_INSIGHTS: AggregatedInsights = {
   qualified_leads_percent: 0,
 };
 
-export function useCommercialData() {
+export interface CommercialFilter {
+  type: 'general' | 'connection' | 'department';
+  connectionId?: string;
+  departmentId?: string;
+}
+
+export function useCommercialData(filter?: CommercialFilter) {
   const { profile, userRole } = useAuth();
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<CommercialData | null>(null);
@@ -267,18 +273,29 @@ export function useCommercialData() {
         startOfWeek.setDate(now.getDate() - now.getDay() + 1);
         startOfWeek.setHours(0, 0, 0, 0);
 
-        // Fetch conversations from this week
-        const { data: conversations, error: convError } = await supabase
+        // Build base query for conversations
+        let conversationsQuery = supabase
           .from('conversations')
           .select(`
             id,
             status,
             created_at,
             assigned_user_id,
+            whatsapp_connection_id,
+            department_id,
             contact:contacts(phone_number, name)
           `)
           .eq('company_id', profile.company_id)
           .gte('created_at', startOfWeek.toISOString());
+
+        // Apply filters
+        if (filter?.type === 'connection' && filter.connectionId) {
+          conversationsQuery = conversationsQuery.eq('whatsapp_connection_id', filter.connectionId);
+        } else if (filter?.type === 'department' && filter.departmentId) {
+          conversationsQuery = conversationsQuery.eq('department_id', filter.departmentId);
+        }
+
+        const { data: conversations, error: convError } = await conversationsQuery;
 
         if (convError) throw convError;
 
@@ -657,7 +674,7 @@ export function useCommercialData() {
     };
 
     fetchData();
-  }, [profile?.company_id, isAdmin, aggregatedInsights]);
+  }, [profile?.company_id, isAdmin, aggregatedInsights, filter?.type, filter?.connectionId, filter?.departmentId]);
 
   return {
     loading,
