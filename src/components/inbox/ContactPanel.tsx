@@ -14,7 +14,8 @@ import {
   Loader2,
   Check,
   StickyNote,
-  History
+  History,
+  Sparkles
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -48,7 +49,7 @@ import { useScheduledMessagesCount } from './ScheduledMessagesList';
 import { logConversationEvent } from '@/lib/conversationHistory';
 import { useAuth } from '@/contexts/AuthContext';
 import { AIAgentActions } from './AIAgentActions';
-
+import { ChatSummary } from './ChatSummary';
 interface ContactPanelProps {
   conversation: Conversation | null;
   onClose: () => void;
@@ -701,6 +702,16 @@ export function ContactPanel({ conversation, onClose, onContactUpdated, onScroll
 
           <Separator />
 
+          {/* Chat Summary */}
+          {conversation && (
+            <ChatSummary 
+              conversationId={conversation.id}
+              contactId={contact?.id}
+            />
+          )}
+
+          <Separator />
+
           {/* History */}
           <Collapsible open={historyOpen} onOpenChange={setHistoryOpen}>
             <CollapsibleTrigger className="flex items-center justify-between w-full">
@@ -727,40 +738,6 @@ export function ContactPanel({ conversation, onClose, onContactUpdated, onScroll
                 <History className="w-4 h-4" />
                 Ver timeline detalhada
               </Button>
-              
-              {conversationHistory.length === 0 && !isLoadingHistory ? (
-                <p className="text-sm text-muted-foreground text-center py-4">
-                  Nenhuma conversa encontrada
-                </p>
-              ) : (
-                conversationHistory.map((conv, index) => {
-                  const isCurrent = conv.id === conversation.id;
-                  return (
-                    <div 
-                      key={conv.id}
-                      className={cn(
-                        "p-3 rounded-lg",
-                        isCurrent 
-                          ? "bg-primary/5 border border-primary/20" 
-                          : "bg-muted/50"
-                      )}
-                    >
-                      <div className="flex items-center justify-between">
-                        <p className={cn(
-                          "text-sm",
-                          isCurrent ? "font-medium text-foreground" : "text-foreground"
-                        )}>
-                          {isCurrent ? 'Conversa atual' : `Conversa ${index === 0 ? '' : 'anterior'}`}
-                        </p>
-                        {getStatusBadge(conv.status, isCurrent)}
-                      </div>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        {formatShortDate(conv.createdAt)} - {conv.messageCount} mensage{conv.messageCount === 1 ? 'm' : 'ns'}
-                      </p>
-                    </div>
-                  );
-                })
-              )}
             </CollapsibleContent>
           </Collapsible>
         </div>
