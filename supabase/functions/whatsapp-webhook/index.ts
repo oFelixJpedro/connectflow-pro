@@ -1274,13 +1274,8 @@ serve(async (req) => {
       )
     }
     
-    // Check if it's a group message
-    if (payload.message?.isGroup === true) {
-      return new Response(
-        JSON.stringify({ success: true, message: 'Group message ignored' }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
-    }
+    // Store group message flag - will be checked after fetching connection config
+    const isGroupMessage = payload.message?.isGroup === true
     
     // ═══════════════════════════════════════════════════════════════════
     // 2️⃣ DETECT MESSAGE TYPE
@@ -1520,7 +1515,7 @@ serve(async (req) => {
     
     const { data: connection, error: connectionError } = await supabase
       .from('whatsapp_connections')
-      .select('id, company_id, instance_token, name')
+      .select('id, company_id, instance_token, name, receive_group_messages')
       .eq('session_id', instanceName)
       .maybeSingle()
     
@@ -1537,6 +1532,20 @@ serve(async (req) => {
     const dbInstanceToken = connection.instance_token
     const payloadToken = payload.token || payload.instanceToken || ''
     const instanceToken = dbInstanceToken || payloadToken
+    
+    // ═══════════════════════════════════════════════════════════════════
+    // 4.1️⃣ CHECK GROUP MESSAGE CONFIGURATION
+    // ═══════════════════════════════════════════════════════════════════
+    if (isGroupMessage) {
+      if (!connection.receive_group_messages) {
+        console.log(`📱 Mensagem de grupo ignorada (configuração desativada para ${connection.name})`)
+        return new Response(
+          JSON.stringify({ success: true, message: 'Group message ignored by configuration' }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+      console.log(`📱 Processando mensagem de grupo (habilitado para ${connection.name})`)
+    }
     
     // Update instance_token if missing in DB
     if (!dbInstanceToken && payloadToken) {
