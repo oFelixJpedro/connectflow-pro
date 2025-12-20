@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { TrendingUp, LayoutDashboard, Loader2, Radio } from 'lucide-react';
+import { TrendingUp, LayoutDashboard, Loader2, Radio, Library } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -12,12 +13,14 @@ import { BrazilMap } from '@/components/commercial/BrazilMap';
 import { CriteriaRadarChart } from '@/components/commercial/CriteriaRadarChart';
 import { AgentPerformanceTable } from '@/components/commercial/AgentPerformanceTable';
 import { InsightsCard } from '@/components/commercial/InsightsCard';
+import { ReportsModal } from '@/components/reports/ReportsModal';
 
 export default function CommercialManager() {
   const navigate = useNavigate();
   const { loading, data, liveMetrics, isAdmin } = useCommercialData();
   const [viewMode, setViewMode] = useState<'commercial' | 'dashboard'>('commercial');
   const [currentTime, setCurrentTime] = useState(new Date());
+  const [reportsModalOpen, setReportsModalOpen] = useState(false);
 
   // Real-time clock update
   useEffect(() => {
@@ -65,14 +68,25 @@ export default function CommercialManager() {
               </SelectContent>
             </Select>
           </div>
-          <Badge variant="outline" className="text-xs md:text-sm flex items-center gap-1 md:gap-2 w-fit">
-            {loading ? (
-              <Loader2 className="w-3 h-3 animate-spin" />
-            ) : (
-              <Radio className="w-3 h-3 text-green-500 animate-pulse" />
-            )}
-            <span className="hidden sm:inline">Tempo real</span> {format(currentTime, "HH:mm:ss", { locale: ptBR })}
-          </Badge>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setReportsModalOpen(true)}
+              className="flex items-center gap-2"
+            >
+              <Library className="w-4 h-4" />
+              <span className="hidden sm:inline">Relatórios</span>
+            </Button>
+            <Badge variant="outline" className="text-xs md:text-sm flex items-center gap-1 md:gap-2 w-fit">
+              {loading ? (
+                <Loader2 className="w-3 h-3 animate-spin" />
+              ) : (
+                <Radio className="w-3 h-3 text-green-500 animate-pulse" />
+              )}
+              <span className="hidden sm:inline">Tempo real</span> {format(currentTime, "HH:mm:ss", { locale: ptBR })}
+            </Badge>
+          </div>
         </div>
         <p className="text-sm text-muted-foreground">
           Análise de qualidade e performance da equipe comercial
@@ -126,6 +140,12 @@ export default function CommercialManager() {
         insights={data?.insights || []}
         criticalIssues={data?.criticalIssues || []}
         finalRecommendation={data?.finalRecommendation || ''}
+      />
+
+      {/* Reports Modal */}
+      <ReportsModal
+        open={reportsModalOpen}
+        onOpenChange={setReportsModalOpen}
       />
     </div>
   );
