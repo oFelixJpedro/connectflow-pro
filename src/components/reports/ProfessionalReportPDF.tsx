@@ -4,20 +4,10 @@ import {
   Text,
   View,
   StyleSheet,
-  Font,
 } from '@react-pdf/renderer';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { CommercialReport } from '@/hooks/useReportsData';
-
-// Register fonts (using default for now, can add custom later)
-Font.register({
-  family: 'Helvetica',
-  fonts: [
-    { src: 'https://fonts.gstatic.com/s/roboto/v30/KFOmCnqEu92Fr1Mu4mxP.ttf', fontWeight: 'normal' },
-    { src: 'https://fonts.gstatic.com/s/roboto/v30/KFOlCnqEu92Fr1MmWUlfBBc9.ttf', fontWeight: 'bold' },
-  ],
-});
 
 const colors = {
   primary: '#6366f1',
@@ -40,7 +30,6 @@ const styles = StyleSheet.create({
     color: colors.dark,
     backgroundColor: colors.white,
   },
-  // Cover page
   coverPage: {
     padding: 60,
     display: 'flex',
@@ -96,7 +85,6 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     textAlign: 'center',
   },
-  // Header
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -115,7 +103,6 @@ const styles = StyleSheet.create({
     fontSize: 9,
     color: colors.gray,
   },
-  // Sections
   section: {
     marginBottom: 20,
   },
@@ -134,7 +121,6 @@ const styles = StyleSheet.create({
     color: colors.gray,
     marginBottom: 8,
   },
-  // Metrics grid
   metricsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -159,7 +145,6 @@ const styles = StyleSheet.create({
     color: colors.gray,
     textAlign: 'center',
   },
-  // Paragraph
   paragraph: {
     fontSize: 10,
     lineHeight: 1.6,
@@ -167,7 +152,6 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     textAlign: 'justify',
   },
-  // Lists
   listItem: {
     flexDirection: 'row',
     marginBottom: 6,
@@ -178,47 +162,23 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: colors.primary,
   },
+  listNumber: {
+    width: 18,
+    fontSize: 10,
+    fontWeight: 'bold',
+    color: colors.primary,
+  },
   listText: {
     flex: 1,
     fontSize: 10,
     lineHeight: 1.5,
     color: colors.dark,
   },
-  // Tables
-  table: {
-    marginTop: 10,
-  },
-  tableHeader: {
-    flexDirection: 'row',
-    backgroundColor: colors.primary,
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-    borderTopLeftRadius: 6,
-    borderTopRightRadius: 6,
-  },
-  tableHeaderCell: {
-    color: colors.white,
-    fontSize: 9,
-    fontWeight: 'bold',
-  },
-  tableRow: {
-    flexDirection: 'row',
+  criteriaRow: {
+    marginBottom: 15,
+    paddingBottom: 10,
     borderBottomWidth: 1,
     borderBottomColor: colors.lightGray,
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-    backgroundColor: colors.white,
-  },
-  tableRowAlt: {
-    backgroundColor: colors.background,
-  },
-  tableCell: {
-    fontSize: 9,
-    color: colors.dark,
-  },
-  // Criteria bars
-  criteriaRow: {
-    marginBottom: 10,
   },
   criteriaHeader: {
     flexDirection: 'row',
@@ -226,26 +186,44 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   criteriaLabel: {
-    fontSize: 10,
+    fontSize: 11,
+    fontWeight: 'bold',
     color: colors.dark,
   },
   criteriaValue: {
-    fontSize: 10,
+    fontSize: 11,
     fontWeight: 'bold',
     color: colors.primary,
+  },
+  criteriaAnalysis: {
+    fontSize: 9,
+    color: colors.gray,
+    marginBottom: 4,
+    lineHeight: 1.4,
+  },
+  criteriaImpact: {
+    fontSize: 9,
+    color: colors.dark,
+    marginBottom: 4,
+    lineHeight: 1.4,
+  },
+  criteriaRecommendation: {
+    fontSize: 9,
+    color: colors.success,
+    lineHeight: 1.4,
   },
   progressBar: {
     height: 8,
     backgroundColor: colors.lightGray,
     borderRadius: 4,
     overflow: 'hidden',
+    marginBottom: 8,
   },
   progressFill: {
     height: '100%',
     backgroundColor: colors.primary,
     borderRadius: 4,
   },
-  // Two columns layout
   twoColumns: {
     flexDirection: 'row',
     gap: 15,
@@ -253,7 +231,6 @@ const styles = StyleSheet.create({
   column: {
     flex: 1,
   },
-  // Cards
   card: {
     backgroundColor: colors.background,
     borderRadius: 8,
@@ -266,7 +243,18 @@ const styles = StyleSheet.create({
     color: colors.dark,
     marginBottom: 8,
   },
-  // Footer
+  cardSuccess: {
+    borderLeftWidth: 3,
+    borderLeftColor: colors.success,
+  },
+  cardDanger: {
+    borderLeftWidth: 3,
+    borderLeftColor: colors.danger,
+  },
+  cardPrimary: {
+    borderLeftWidth: 3,
+    borderLeftColor: colors.primary,
+  },
   footer: {
     position: 'absolute',
     bottom: 30,
@@ -287,21 +275,48 @@ const styles = StyleSheet.create({
     fontSize: 9,
     color: colors.gray,
   },
-  // Insights
-  insightCard: {
+  agentCard: {
     backgroundColor: colors.background,
-    borderLeftWidth: 3,
-    borderLeftColor: colors.primary,
-    padding: 10,
-    marginBottom: 8,
-    borderRadius: 4,
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 12,
   },
-  insightText: {
-    fontSize: 10,
-    lineHeight: 1.5,
+  agentHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  agentName: {
+    fontSize: 11,
+    fontWeight: 'bold',
     color: colors.dark,
   },
-  // Highlight box
+  agentScore: {
+    fontSize: 11,
+    fontWeight: 'bold',
+    color: colors.primary,
+  },
+  agentAnalysis: {
+    fontSize: 9,
+    color: colors.gray,
+    marginBottom: 8,
+    lineHeight: 1.4,
+  },
+  agentStrengths: {
+    fontSize: 9,
+    color: colors.success,
+    marginBottom: 4,
+  },
+  agentDevelopment: {
+    fontSize: 9,
+    color: colors.warning,
+    marginBottom: 4,
+  },
+  agentAction: {
+    fontSize: 9,
+    color: colors.primary,
+    fontStyle: 'italic',
+  },
   highlightBox: {
     backgroundColor: colors.primary,
     color: colors.white,
@@ -313,6 +328,48 @@ const styles = StyleSheet.create({
     color: colors.white,
     fontSize: 11,
     textAlign: 'center',
+  },
+  insightCard: {
+    backgroundColor: colors.background,
+    borderLeftWidth: 3,
+    borderLeftColor: colors.primary,
+    padding: 10,
+    marginBottom: 10,
+    borderRadius: 4,
+  },
+  insightTitle: {
+    fontSize: 10,
+    fontWeight: 'bold',
+    color: colors.dark,
+    marginBottom: 4,
+  },
+  insightContext: {
+    fontSize: 9,
+    color: colors.gray,
+    marginBottom: 4,
+    lineHeight: 1.4,
+  },
+  insightAction: {
+    fontSize: 9,
+    color: colors.primary,
+  },
+  conclusionBox: {
+    backgroundColor: colors.background,
+    padding: 15,
+    borderRadius: 8,
+    marginBottom: 15,
+  },
+  finalMessage: {
+    backgroundColor: colors.primary,
+    padding: 15,
+    borderRadius: 8,
+    marginTop: 15,
+  },
+  finalMessageText: {
+    color: colors.white,
+    fontSize: 11,
+    textAlign: 'center',
+    fontStyle: 'italic',
   },
 });
 
@@ -340,40 +397,6 @@ const classificationInfo: Record<string, { color: string; bg: string; descriptio
   SEM_DADOS: { color: colors.gray, bg: colors.lightGray, description: 'Dados insuficientes para análise' },
 };
 
-// Helper functions
-const getExecutiveSummary = (report: CommercialReport): string => {
-  const qualityDesc = report.average_score >= 8 ? 'excepcional' : 
-                      report.average_score >= 6 ? 'satisfatório' : 
-                      report.average_score >= 4 ? 'regular' : 'abaixo do esperado';
-  
-  const conversionRate = report.total_conversations > 0 
-    ? ((report.qualified_leads / report.total_conversations) * 100).toFixed(0) 
-    : 0;
-
-  return `Durante o período analisado de ${format(new Date(report.week_start), "dd 'de' MMMM", { locale: ptBR })} a ${format(new Date(report.week_end), "dd 'de' MMMM 'de' yyyy", { locale: ptBR })}, a equipe comercial realizou um total de ${report.total_conversations} atendimentos, obtendo uma nota média de ${report.average_score?.toFixed(1) || 0}/10, classificada como ${qualityDesc}. Dos leads atendidos, ${report.qualified_leads} foram identificados como potenciais clientes qualificados, representando uma taxa de qualificação de ${conversionRate}%. O período resultou em ${report.closed_deals || 0} vendas concluídas.`;
-};
-
-const getCriteriaAnalysis = (key: string, value: number): string => {
-  const name = criteriaLabels[key] || key;
-  if (value >= 8) return `O critério "${name}" apresentou desempenho excelente com nota ${value.toFixed(1)}, demonstrando domínio consistente nesta competência.`;
-  if (value >= 6) return `O critério "${name}" obteve nota ${value.toFixed(1)}, indicando um bom nível de competência com espaço para aprimoramento.`;
-  if (value >= 4) return `O critério "${name}" alcançou nota ${value.toFixed(1)}, sugerindo necessidade de desenvolvimento focado nesta área.`;
-  return `O critério "${name}" apresentou nota ${value.toFixed(1)}, sendo uma área prioritária para capacitação imediata.`;
-};
-
-const getRecommendation = (report: CommercialReport): string => {
-  if (report.average_score >= 8) {
-    return 'Manter o alto padrão de qualidade e compartilhar as melhores práticas com toda a equipe. Considerar programas de reconhecimento para os colaboradores de destaque.';
-  }
-  if (report.average_score >= 6) {
-    return 'Focar no desenvolvimento das áreas com menor pontuação através de treinamentos específicos. Estabelecer metas progressivas de melhoria para o próximo período.';
-  }
-  if (report.average_score >= 4) {
-    return 'Implementar um plano de ação urgente para elevar a qualidade dos atendimentos. Realizar sessões de coaching individual e monitoramento mais frequente das conversas.';
-  }
-  return 'Situação crítica que demanda intervenção imediata. Recomenda-se revisão completa dos processos, treinamento intensivo e acompanhamento diário da equipe.';
-};
-
 interface Props {
   report: CommercialReport;
   companyName?: string;
@@ -383,6 +406,25 @@ export function ProfessionalReportPDF({ report, companyName = 'Sua Empresa' }: P
   const classInfo = classificationInfo[report.classification || 'REGULAR'];
   const periodFormatted = `${format(new Date(report.week_start), "dd/MM/yyyy")} - ${format(new Date(report.week_end), "dd/MM/yyyy")}`;
   const generatedAt = format(new Date(), "dd 'de' MMMM 'de' yyyy 'às' HH:mm", { locale: ptBR });
+  
+  const hasAIContent = report.report_content && Object.keys(report.report_content).length > 0;
+  const content = report.report_content;
+
+  // Fallback content generators
+  const getExecutiveSummary = (): string => {
+    if (hasAIContent && content?.executive_summary) {
+      return content.executive_summary;
+    }
+    const qualityDesc = report.average_score >= 8 ? 'excepcional' : 
+                        report.average_score >= 6 ? 'satisfatório' : 
+                        report.average_score >= 4 ? 'regular' : 'abaixo do esperado';
+    
+    const conversionRate = report.total_conversations > 0 
+      ? ((report.qualified_leads / report.total_conversations) * 100).toFixed(0) 
+      : 0;
+
+    return `Durante o período analisado de ${format(new Date(report.week_start), "dd 'de' MMMM", { locale: ptBR })} a ${format(new Date(report.week_end), "dd 'de' MMMM 'de' yyyy", { locale: ptBR })}, a equipe comercial realizou um total de ${report.total_conversations} atendimentos, obtendo uma nota média de ${report.average_score?.toFixed(1) || 0}/10, classificada como ${qualityDesc}. Dos leads atendidos, ${report.qualified_leads} foram identificados como potenciais clientes qualificados, representando uma taxa de qualificação de ${conversionRate}%. O período resultou em ${report.closed_deals || 0} vendas concluídas.`;
+  };
 
   return (
     <Document>
@@ -443,8 +485,16 @@ export function ProfessionalReportPDF({ report, companyName = 'Sua Empresa' }: P
         {/* Executive Summary Text */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Visão Geral do Período</Text>
-          <Text style={styles.paragraph}>{getExecutiveSummary(report)}</Text>
+          <Text style={styles.paragraph}>{getExecutiveSummary()}</Text>
         </View>
+
+        {/* Period Overview */}
+        {hasAIContent && content?.period_overview && (
+          <View style={styles.section}>
+            <Text style={styles.sectionSubtitle}>Contexto do Período</Text>
+            <Text style={styles.paragraph}>{content.period_overview}</Text>
+          </View>
+        )}
 
         {/* Classification Highlight */}
         <View style={[styles.highlightBox, { backgroundColor: classInfo.color }]}>
@@ -452,12 +502,6 @@ export function ProfessionalReportPDF({ report, companyName = 'Sua Empresa' }: P
             Classificação: {report.classification === 'SEM_DADOS' ? 'Sem Dados' : report.classification}
           </Text>
           <Text style={styles.highlightText}>{classInfo.description}</Text>
-        </View>
-
-        {/* Recommendation */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Recomendação Principal</Text>
-          <Text style={styles.paragraph}>{getRecommendation(report)}</Text>
         </View>
 
         <View style={styles.footer}>
@@ -475,35 +519,42 @@ export function ProfessionalReportPDF({ report, companyName = 'Sua Empresa' }: P
 
         <View style={styles.section}>
           <Text style={styles.paragraph}>
-            A análise abaixo apresenta o desempenho da equipe em cada critério de avaliação. 
-            Cada indicador foi calculado com base nas avaliações realizadas pela inteligência artificial 
-            durante o período analisado.
+            A análise abaixo apresenta o desempenho da equipe em cada critério de avaliação, 
+            com análise detalhada do impacto e recomendações específicas de melhoria.
           </Text>
         </View>
 
-        {/* Criteria Bars */}
+        {/* Criteria with AI Analysis */}
         <View style={styles.section}>
-          {Object.entries(report.criteria_scores || {}).map(([key, value]) => (
-            <View key={key} style={styles.criteriaRow}>
-              <View style={styles.criteriaHeader}>
-                <Text style={styles.criteriaLabel}>{criteriaLabels[key] || key}</Text>
-                <Text style={styles.criteriaValue}>{value.toFixed(1)}/10</Text>
+          {Object.entries(report.criteria_scores || {}).map(([key, value]) => {
+            const aiAnalysis = hasAIContent && content?.criteria_analysis?.[key];
+            
+            return (
+              <View key={key} style={styles.criteriaRow}>
+                <View style={styles.criteriaHeader}>
+                  <Text style={styles.criteriaLabel}>{criteriaLabels[key] || key}</Text>
+                  <Text style={styles.criteriaValue}>{value.toFixed(1)}/10</Text>
+                </View>
+                <View style={styles.progressBar}>
+                  <View style={[styles.progressFill, { width: `${value * 10}%` }]} />
+                </View>
+                
+                {aiAnalysis ? (
+                  <>
+                    <Text style={styles.criteriaAnalysis}>{aiAnalysis.analysis}</Text>
+                    <Text style={styles.criteriaImpact}>Impacto: {aiAnalysis.impact}</Text>
+                    <Text style={styles.criteriaRecommendation}>Recomendação: {aiAnalysis.recommendation}</Text>
+                  </>
+                ) : (
+                  <Text style={styles.criteriaAnalysis}>
+                    {value >= 7 
+                      ? `O critério "${criteriaLabels[key] || key}" apresentou bom desempenho, contribuindo positivamente para os resultados.`
+                      : `O critério "${criteriaLabels[key] || key}" apresenta oportunidade de melhoria para aumentar a efetividade comercial.`}
+                  </Text>
+                )}
               </View>
-              <View style={styles.progressBar}>
-                <View style={[styles.progressFill, { width: `${value * 10}%` }]} />
-              </View>
-            </View>
-          ))}
-        </View>
-
-        {/* Criteria Descriptions */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Análise Detalhada</Text>
-          {Object.entries(report.criteria_scores || {}).map(([key, value]) => (
-            <Text key={key} style={[styles.paragraph, { marginBottom: 8 }]}>
-              {getCriteriaAnalysis(key, value)}
-            </Text>
-          ))}
+            );
+          })}
         </View>
 
         <View style={styles.footer}>
@@ -520,76 +571,59 @@ export function ProfessionalReportPDF({ report, companyName = 'Sua Empresa' }: P
         </View>
 
         <View style={styles.twoColumns}>
-          {/* Strengths */}
+          {/* Strengths Column */}
           <View style={styles.column}>
-            <View style={[styles.card, { borderLeftWidth: 3, borderLeftColor: colors.success }]}>
-              <Text style={[styles.cardTitle, { color: colors.success }]}>✓ Pontos Fortes</Text>
-              {report.strengths && report.strengths.length > 0 ? (
-                report.strengths.map((strength, i) => (
-                  <View key={i} style={styles.listItem}>
-                    <Text style={[styles.listBullet, { color: colors.success }]}>•</Text>
-                    <Text style={styles.listText}>{strength}</Text>
-                  </View>
-                ))
-              ) : (
-                <Text style={[styles.listText, { color: colors.gray }]}>
-                  Nenhum ponto forte identificado neste período
-                </Text>
-              )}
-            </View>
-          </View>
-
-          {/* Weaknesses */}
-          <View style={styles.column}>
-            <View style={[styles.card, { borderLeftWidth: 3, borderLeftColor: colors.danger }]}>
-              <Text style={[styles.cardTitle, { color: colors.danger }]}>⚠ Áreas de Melhoria</Text>
-              {report.weaknesses && report.weaknesses.length > 0 ? (
-                report.weaknesses.map((weakness, i) => (
-                  <View key={i} style={styles.listItem}>
-                    <Text style={[styles.listBullet, { color: colors.danger }]}>•</Text>
-                    <Text style={styles.listText}>{weakness}</Text>
-                  </View>
-                ))
-              ) : (
-                <Text style={[styles.listText, { color: colors.gray }]}>
-                  Nenhuma área de melhoria identificada
-                </Text>
-              )}
-            </View>
-          </View>
-        </View>
-
-        {/* Agents Performance */}
-        {report.agents_analysis && report.agents_analysis.length > 0 && (
-          <View style={[styles.section, { marginTop: 20 }]}>
-            <Text style={styles.sectionTitle}>Performance Individual dos Agentes</Text>
-            
-            <View style={styles.table}>
-              <View style={styles.tableHeader}>
-                <Text style={[styles.tableHeaderCell, { width: '30%' }]}>Agente</Text>
-                <Text style={[styles.tableHeaderCell, { width: '20%' }]}>Nível</Text>
-                <Text style={[styles.tableHeaderCell, { width: '15%', textAlign: 'center' }]}>Score</Text>
-                <Text style={[styles.tableHeaderCell, { width: '35%' }]}>Observação</Text>
-              </View>
-              {report.agents_analysis.map((agent: any, i) => (
-                <View key={i} style={[styles.tableRow, i % 2 === 1 && styles.tableRowAlt]}>
-                  <Text style={[styles.tableCell, { width: '30%', fontWeight: 'bold' }]}>
-                    {agent.agent_name || agent.name || 'Agente'}
-                  </Text>
-                  <Text style={[styles.tableCell, { width: '20%' }]}>
-                    {agent.level || 'N/A'}
-                  </Text>
-                  <Text style={[styles.tableCell, { width: '15%', textAlign: 'center', fontWeight: 'bold', color: colors.primary }]}>
-                    {(agent.average_score ?? agent.score)?.toFixed(1) || '0.0'}
-                  </Text>
-                  <Text style={[styles.tableCell, { width: '35%' }]}>
-                    {agent.recommendation || `${agent.total_conversations || 0} conversas realizadas`}
+            <Text style={styles.sectionTitle}>Pontos Fortes</Text>
+            {hasAIContent && content?.strengths_detailed?.length > 0 ? (
+              content.strengths_detailed.map((strength, i) => (
+                <View key={i} style={[styles.card, styles.cardSuccess]}>
+                  <Text style={styles.cardTitle}>{strength.title}</Text>
+                  <Text style={styles.paragraph}>{strength.description}</Text>
+                  <Text style={{ fontSize: 8, color: colors.success, fontStyle: 'italic' }}>
+                    Evidência: {strength.evidence}
                   </Text>
                 </View>
-              ))}
-            </View>
+              ))
+            ) : report.strengths?.length > 0 ? (
+              report.strengths.map((strength, i) => (
+                <View key={i} style={styles.listItem}>
+                  <Text style={styles.listBullet}>•</Text>
+                  <Text style={styles.listText}>{strength}</Text>
+                </View>
+              ))
+            ) : (
+              <Text style={styles.paragraph}>Nenhum ponto forte identificado neste período.</Text>
+            )}
           </View>
-        )}
+
+          {/* Weaknesses Column */}
+          <View style={styles.column}>
+            <Text style={styles.sectionTitle}>Áreas de Melhoria</Text>
+            {hasAIContent && content?.weaknesses_detailed?.length > 0 ? (
+              content.weaknesses_detailed.map((weakness, i) => (
+                <View key={i} style={[styles.card, styles.cardDanger]}>
+                  <Text style={styles.cardTitle}>{weakness.title}</Text>
+                  <Text style={styles.paragraph}>{weakness.description}</Text>
+                  <Text style={{ fontSize: 8, color: colors.danger }}>
+                    Impacto: {weakness.impact}
+                  </Text>
+                  <Text style={{ fontSize: 8, color: colors.primary, marginTop: 4 }}>
+                    Ação: {weakness.recommendation}
+                  </Text>
+                </View>
+              ))
+            ) : report.weaknesses?.length > 0 ? (
+              report.weaknesses.map((weakness, i) => (
+                <View key={i} style={styles.listItem}>
+                  <Text style={styles.listBullet}>•</Text>
+                  <Text style={styles.listText}>{weakness}</Text>
+                </View>
+              ))
+            ) : (
+              <Text style={styles.paragraph}>Nenhuma área de melhoria identificada neste período.</Text>
+            )}
+          </View>
+        </View>
 
         <View style={styles.footer}>
           <Text style={styles.footerText}>Confidencial - Uso Interno</Text>
@@ -597,84 +631,131 @@ export function ProfessionalReportPDF({ report, companyName = 'Sua Empresa' }: P
         </View>
       </Page>
 
-      {/* Insights Page */}
-      <Page size="A4" style={styles.page}>
-        <View style={styles.header}>
-          <Text style={styles.headerTitle}>Insights e Recomendações</Text>
-          <Text style={styles.headerDate}>{periodFormatted}</Text>
-        </View>
+      {/* Agents Performance Page */}
+      {((hasAIContent && content?.agents_detailed?.length > 0) || report.agents_analysis?.length > 0) && (
+        <Page size="A4" style={styles.page}>
+          <View style={styles.header}>
+            <Text style={styles.headerTitle}>Performance Individual dos Agentes</Text>
+            <Text style={styles.headerDate}>{periodFormatted}</Text>
+          </View>
 
-        <View style={styles.section}>
-          <Text style={styles.paragraph}>
-            Os insights abaixo foram gerados pela análise de inteligência artificial com base 
-            nos padrões identificados nas conversas do período. Utilize essas informações para 
-            orientar as ações de melhoria contínua da equipe comercial.
-          </Text>
-        </View>
+          <View style={styles.section}>
+            <Text style={styles.paragraph}>
+              Análise detalhada do desempenho de cada membro da equipe comercial, com pontos fortes identificados, 
+              áreas de desenvolvimento e plano de ação personalizado.
+            </Text>
+          </View>
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Insights Identificados</Text>
-          {report.insights && report.insights.length > 0 ? (
-            report.insights.map((insight, i) => (
-              <View key={i} style={styles.insightCard}>
-                <Text style={styles.insightText}>
-                  <Text style={{ fontWeight: 'bold', color: colors.primary }}>#{i + 1} </Text>
-                  {insight}
-                </Text>
+          {hasAIContent && content?.agents_detailed?.length > 0 ? (
+            content.agents_detailed.map((agent, i) => (
+              <View key={i} style={styles.agentCard}>
+                <View style={styles.agentHeader}>
+                  <Text style={styles.agentName}>{agent.agent_name}</Text>
+                  <Text style={styles.agentScore}>{agent.score?.toFixed(1) || '0.0'}/10</Text>
+                </View>
+                <Text style={styles.agentAnalysis}>{agent.analysis}</Text>
+                
+                {agent.strengths?.length > 0 && (
+                  <Text style={styles.agentStrengths}>
+                    Pontos Fortes: {agent.strengths.join(', ')}
+                  </Text>
+                )}
+                
+                {agent.development_areas?.length > 0 && (
+                  <Text style={styles.agentDevelopment}>
+                    Áreas de Desenvolvimento: {agent.development_areas.join(', ')}
+                  </Text>
+                )}
+                
+                <Text style={styles.agentAction}>Plano de Ação: {agent.action_plan}</Text>
               </View>
             ))
           ) : (
-            <View style={styles.insightCard}>
-              <Text style={[styles.insightText, { color: colors.gray }]}>
-                Nenhum insight específico identificado para este período. 
-                Continue monitorando as conversas para obter análises mais detalhadas.
-              </Text>
-            </View>
+            report.agents_analysis?.map((agent: any, i) => (
+              <View key={i} style={styles.agentCard}>
+                <View style={styles.agentHeader}>
+                  <Text style={styles.agentName}>{agent.agent_name || agent.name || 'Agente'}</Text>
+                  <Text style={styles.agentScore}>{(agent.average_score ?? agent.score)?.toFixed(1) || '0.0'}/10</Text>
+                </View>
+                <Text style={styles.agentAnalysis}>
+                  Realizou {agent.total_conversations || 0} atendimentos no período analisado.
+                </Text>
+              </View>
+            ))
+          )}
+
+          <View style={styles.footer}>
+            <Text style={styles.footerText}>Confidencial - Uso Interno</Text>
+            <Text style={styles.pageNumber}>Página 5</Text>
+          </View>
+        </Page>
+      )}
+
+      {/* Insights & Conclusion Page */}
+      <Page size="A4" style={styles.page}>
+        <View style={styles.header}>
+          <Text style={styles.headerTitle}>Insights e Conclusão</Text>
+          <Text style={styles.headerDate}>{periodFormatted}</Text>
+        </View>
+
+        {/* Insights */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Insights Estratégicos</Text>
+          {hasAIContent && content?.insights_detailed?.length > 0 ? (
+            content.insights_detailed.map((item, i) => (
+              <View key={i} style={styles.insightCard}>
+                <Text style={styles.insightTitle}>{item.insight}</Text>
+                <Text style={styles.insightContext}>{item.context}</Text>
+                <Text style={styles.insightAction}>→ {item.action_suggested}</Text>
+              </View>
+            ))
+          ) : report.insights?.length > 0 ? (
+            report.insights.map((insight, i) => (
+              <View key={i} style={styles.insightCard}>
+                <Text style={styles.insightTitle}>{insight}</Text>
+              </View>
+            ))
+          ) : (
+            <Text style={styles.paragraph}>Nenhum insight gerado para este período.</Text>
           )}
         </View>
 
-        {/* Action Items */}
+        {/* Conclusion */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Próximos Passos Sugeridos</Text>
-          <View style={styles.card}>
-            {report.average_score < 6 && (
-              <View style={styles.listItem}>
-                <Text style={[styles.listBullet, { color: colors.danger }]}>1.</Text>
-                <Text style={styles.listText}>
-                  Realizar reunião de alinhamento com a equipe para discutir os pontos críticos identificados.
-                </Text>
-              </View>
-            )}
-            <View style={styles.listItem}>
-              <Text style={[styles.listBullet, { color: colors.primary }]}>
-                {report.average_score < 6 ? '2.' : '1.'}
-              </Text>
-              <Text style={styles.listText}>
-                Desenvolver treinamentos focados nos critérios com menor pontuação.
-              </Text>
-            </View>
-            <View style={styles.listItem}>
-              <Text style={[styles.listBullet, { color: colors.primary }]}>
-                {report.average_score < 6 ? '3.' : '2.'}
-              </Text>
-              <Text style={styles.listText}>
-                Estabelecer metas de melhoria para o próximo período com acompanhamento semanal.
-              </Text>
-            </View>
-            <View style={styles.listItem}>
-              <Text style={[styles.listBullet, { color: colors.primary }]}>
-                {report.average_score < 6 ? '4.' : '3.'}
-              </Text>
-              <Text style={styles.listText}>
-                Compartilhar as melhores práticas dos agentes de destaque com toda a equipe.
-              </Text>
-            </View>
+          <Text style={styles.sectionTitle}>Conclusão</Text>
+          <View style={styles.conclusionBox}>
+            <Text style={styles.paragraph}>
+              {hasAIContent && content?.conclusion 
+                ? content.conclusion 
+                : `O período analisado apresentou ${report.total_conversations} atendimentos com nota média de ${report.average_score?.toFixed(1) || 0}/10, classificada como ${report.classification}. ${report.closed_deals > 0 ? `Foram concluídas ${report.closed_deals} vendas.` : ''}`
+              }
+            </Text>
           </View>
         </View>
 
+        {/* Next Steps */}
+        {hasAIContent && content?.next_steps?.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Próximos Passos</Text>
+            {content.next_steps.map((step, i) => (
+              <View key={i} style={styles.listItem}>
+                <Text style={styles.listNumber}>{i + 1}.</Text>
+                <Text style={styles.listText}>{step}</Text>
+              </View>
+            ))}
+          </View>
+        )}
+
+        {/* Final Message */}
+        {hasAIContent && content?.final_message && (
+          <View style={styles.finalMessage}>
+            <Text style={styles.finalMessageText}>"{content.final_message}"</Text>
+          </View>
+        )}
+
         <View style={styles.footer}>
           <Text style={styles.footerText}>Confidencial - Uso Interno</Text>
-          <Text style={styles.pageNumber}>Página 5</Text>
+          <Text style={styles.pageNumber}>Página 6</Text>
         </View>
       </Page>
     </Document>

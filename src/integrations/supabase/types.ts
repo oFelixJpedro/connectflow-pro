@@ -616,6 +616,7 @@ export type Database = {
           pdf_url: string | null
           positive_patterns: string[] | null
           qualified_leads: number | null
+          report_content: Json | null
           report_date: string
           strengths: string[] | null
           total_conversations: number | null
@@ -649,6 +650,7 @@ export type Database = {
           pdf_url?: string | null
           positive_patterns?: string[] | null
           qualified_leads?: number | null
+          report_content?: Json | null
           report_date: string
           strengths?: string[] | null
           total_conversations?: number | null
@@ -682,6 +684,7 @@ export type Database = {
           pdf_url?: string | null
           positive_patterns?: string[] | null
           qualified_leads?: number | null
+          report_content?: Json | null
           report_date?: string
           strengths?: string[] | null
           total_conversations?: number | null
