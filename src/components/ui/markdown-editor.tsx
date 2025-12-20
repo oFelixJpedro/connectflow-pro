@@ -710,9 +710,9 @@ export function MarkdownEditor({
   }
 
   return (
-    <div ref={editorContainerRef} className={cn('relative border border-input rounded-lg overflow-hidden bg-background', className)}>
-      {/* Toolbar - Sticky to stay visible below header */}
-      <div className="flex items-center gap-0.5 p-1.5 border-b border-input bg-muted/30 flex-wrap sticky top-0 z-20 bg-background/95 backdrop-blur-sm shadow-sm">
+    <div ref={editorContainerRef} className={cn('relative border border-input rounded-lg bg-background flex flex-col', className)}>
+      {/* Toolbar - Fixed at top, never scrolls */}
+      <div className="flex items-center gap-0.5 p-1.5 border-b border-input bg-background/95 backdrop-blur-sm flex-wrap shrink-0 z-10">
         {/* Headings */}
         <ToolbarButton
           onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
@@ -834,8 +834,10 @@ export function MarkdownEditor({
         </Popover>
       </div>
 
-      {/* Editor content */}
-      <EditorContent editor={editor} />
+      {/* Editor content - scrollable area */}
+      <div className="overflow-y-auto flex-1" style={{ maxHeight: minHeight ? `${parseInt(minHeight) + 100}px` : '400px' }}>
+        <EditorContent editor={editor} />
+      </div>
 
       {/* Slash Command Picker */}
       {enableSlashCommands && showSlashPicker && (
