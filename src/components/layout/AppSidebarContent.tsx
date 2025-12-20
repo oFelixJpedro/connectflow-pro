@@ -12,7 +12,8 @@ import {
   User,
   LayoutGrid,
   Bell,
-  Bot
+  Bot,
+  FileText
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
@@ -75,6 +76,13 @@ const baseMenuItems = [
     path: '/crm',
     badgeKey: null as string | null,
     adminOnly: false,
+  },
+  { 
+    icon: FileText, 
+    label: 'Relatórios', 
+    path: '/reports',
+    badgeKey: null as string | null,
+    adminOnly: true,
   },
 ];
 

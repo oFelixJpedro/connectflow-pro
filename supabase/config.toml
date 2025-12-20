@@ -1,5 +1,8 @@
 project_id = "stjtkvanmlidurmwpdpc"
 
+[functions.generate-weekly-report]
+verify_jwt = false
+
 [functions.developer-auth]
 verify_jwt = false
 

@@ -7,8 +7,8 @@ import { StateCode, getStateName, STATE_CODES } from '@/lib/dddMapping';
 import { cn } from '@/lib/utils';
 
 interface BrazilMapProps {
-  contactsByState: Record<StateCode, number>;
-  dealsByState: Record<StateCode, number>;
+  contactsByState: Partial<Record<StateCode, number>>;
+  dealsByState: Partial<Record<StateCode, number>>;
 }
 
 type MapFilter = 'contacts' | 'deals';
