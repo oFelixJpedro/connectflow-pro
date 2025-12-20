@@ -426,6 +426,64 @@ export type Database = {
           },
         ]
       }
+      chat_summaries: {
+        Row: {
+          contact_id: string | null
+          conversation_id: string
+          created_at: string | null
+          generated_by: string | null
+          id: string
+          media_analyzed: Json | null
+          message_count: number
+          summary: string
+          updated_at: string | null
+        }
+        Insert: {
+          contact_id?: string | null
+          conversation_id: string
+          created_at?: string | null
+          generated_by?: string | null
+          id?: string
+          media_analyzed?: Json | null
+          message_count?: number
+          summary: string
+          updated_at?: string | null
+        }
+        Update: {
+          contact_id?: string | null
+          conversation_id?: string
+          created_at?: string | null
+          generated_by?: string | null
+          id?: string
+          media_analyzed?: Json | null
+          message_count?: number
+          summary?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "chat_summaries_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "chat_summaries_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: true
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "chat_summaries_generated_by_fkey"
+            columns: ["generated_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       companies: {
         Row: {
           active: boolean | null

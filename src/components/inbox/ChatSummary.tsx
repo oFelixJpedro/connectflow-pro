@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { 
   FileText, 
   Loader2, 
@@ -8,7 +8,8 @@ import {
   Sparkles,
   ChevronDown,
   ChevronUp,
-  RefreshCw
+  RefreshCw,
+  Clock
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { 
@@ -28,10 +29,42 @@ interface ChatSummaryProps {
 export function ChatSummary({ conversationId, contactId }: ChatSummaryProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isLoadingSaved, setIsLoadingSaved] = useState(true);
   const [summary, setSummary] = useState<string | null>(null);
   const [messageCount, setMessageCount] = useState<number>(0);
+  const [lastGenerated, setLastGenerated] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const { toast } = useToast();
+
+  // Load saved summary on mount
+  useEffect(() => {
+    const loadSavedSummary = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('chat_summaries')
+          .select('*')
+          .eq('conversation_id', conversationId)
+          .maybeSingle();
+
+        if (error) {
+          console.error('[ChatSummary] Error loading saved summary:', error);
+          return;
+        }
+
+        if (data) {
+          setSummary(data.summary);
+          setMessageCount(data.message_count);
+          setLastGenerated(data.updated_at);
+        }
+      } catch (error) {
+        console.error('[ChatSummary] Error:', error);
+      } finally {
+        setIsLoadingSaved(false);
+      }
+    };
+
+    loadSavedSummary();
+  }, [conversationId]);
 
   const generateSummary = async () => {
     setIsLoading(true);
@@ -48,6 +81,7 @@ export function ChatSummary({ conversationId, contactId }: ChatSummaryProps) {
 
       setSummary(data.summary);
       setMessageCount(data.messageCount || 0);
+      setLastGenerated(data.savedAt || new Date().toISOString());
       toast({
         title: "Resumo gerado",
         description: `${data.messageCount || 0} mensagens analisadas`,
@@ -144,7 +178,7 @@ export function ChatSummary({ conversationId, contactId }: ChatSummaryProps) {
         <body>
           <div class="header">
             <h1>📋 Resumo do Chat</h1>
-            <p class="date">Gerado em: ${new Date().toLocaleString('pt-BR')}</p>
+            <p class="date">Gerado em: ${lastGenerated ? new Date(lastGenerated).toLocaleString('pt-BR') : new Date().toLocaleString('pt-BR')}</p>
             <p class="date">${messageCount} mensagens analisadas</p>
           </div>
           ${formatMarkdownToHtml(summary)}
@@ -233,6 +267,17 @@ export function ChatSummary({ conversationId, contactId }: ChatSummaryProps) {
     });
   };
 
+  const formatDate = (dateStr: string) => {
+    const date = new Date(dateStr);
+    return date.toLocaleString('pt-BR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
   return (
     <Collapsible open={isOpen} onOpenChange={setIsOpen}>
       <CollapsibleTrigger className="flex items-center justify-between w-full">
@@ -253,18 +298,31 @@ export function ChatSummary({ conversationId, contactId }: ChatSummaryProps) {
       </CollapsibleTrigger>
       
       <CollapsibleContent className="pt-3 space-y-3">
+        {/* Last Generated Info */}
+        {lastGenerated && (
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <Clock className="w-3 h-3" />
+            <span>Gerado em: {formatDate(lastGenerated)}</span>
+          </div>
+        )}
+
         {/* Generate Button */}
         <Button
           variant={summary ? "outline" : "default"}
           size="sm"
           className="w-full justify-center gap-2"
           onClick={generateSummary}
-          disabled={isLoading}
+          disabled={isLoading || isLoadingSaved}
         >
           {isLoading ? (
             <>
               <Loader2 className="w-4 h-4 animate-spin" />
               Gerando resumo...
+            </>
+          ) : isLoadingSaved ? (
+            <>
+              <Loader2 className="w-4 h-4 animate-spin" />
+              Carregando...
             </>
           ) : summary ? (
             <>

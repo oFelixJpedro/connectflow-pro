@@ -433,19 +433,49 @@ Gere o resumo estruturado conforme as instruções.`;
     }
 
     const data = await response.json();
-    const summary = data.candidates?.[0]?.content?.parts?.[0]?.text || 'Não foi possível gerar o resumo.';
+    const generatedSummary = data.candidates?.[0]?.content?.parts?.[0]?.text || 'Não foi possível gerar o resumo.';
 
     console.log('[summarize-chat] Resumo gerado com sucesso');
 
+    const mediaAnalyzed = {
+      images: Math.min(imageUrls.length, 10),
+      videos: Math.min(videoUrls.length, 5),
+      documents: Math.min(documentData.length, 5)
+    };
+
+    // Get current user for generated_by field
+    const { data: { user } } = await supabase.auth.getUser();
+    
+    // Save or update summary in database
+    const { data: savedSummary, error: upsertError } = await supabase
+      .from('chat_summaries')
+      .upsert({
+        conversation_id: conversationId,
+        contact_id: contactId || null,
+        summary: generatedSummary,
+        message_count: messages.length,
+        media_analyzed: mediaAnalyzed,
+        generated_by: user?.id || null,
+        updated_at: new Date().toISOString()
+      }, {
+        onConflict: 'conversation_id'
+      })
+      .select()
+      .single();
+
+    if (upsertError) {
+      console.error('[summarize-chat] Error saving summary:', upsertError);
+      // Still return the summary even if save failed
+    } else {
+      console.log('[summarize-chat] Summary saved successfully:', savedSummary?.id);
+    }
+
     return new Response(
       JSON.stringify({ 
-        summary, 
+        summary: generatedSummary, 
         messageCount: messages.length,
-        mediaAnalyzed: {
-          images: Math.min(imageUrls.length, 10),
-          videos: Math.min(videoUrls.length, 5),
-          documents: Math.min(documentData.length, 5)
-        }
+        mediaAnalyzed,
+        savedAt: savedSummary?.updated_at || new Date().toISOString()
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
