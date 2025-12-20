@@ -14,142 +14,131 @@ interface AgentScriptTabProps {
   medias?: AgentMedia[];
 }
 
-const DEFAULT_SCRIPT_TEMPLATE = `# FLUXO DE ATENDIMENTO
+const DEFAULT_SCRIPT_TEMPLATE = `# 📋 FLUXO DE ATENDIMENTO
+
+Siga este roteiro **na ordem**, fazendo uma pergunta por vez e aguardando a resposta antes de avançar.
 
 ---
 
-## 📍 ETAPA 1 - RECEPÇÃO
+## 📍 ETAPA 1: BOAS-VINDAS
 
-🚩 **Situação:** Lead acabou de chegar no WhatsApp
+**Objetivo:** Criar conexão e identificar o cliente
 
-💬 **Mensagem inicial:**
-"Olá! 👋 Seja bem-vindo(a) ao [[NOME_DA_EMPRESA]]!
-Somos especialistas em [[AREA_DE_ATUACAO]] e atendemos em todo o Brasil.
-Pra eu te atender melhor, qual é o seu primeiro nome?"
+**Quando:** Lead acabou de enviar a primeira mensagem
 
-→ Se informar nome completo, use apenas o primeiro nome nas próximas interações.
+**Ação:**
+1. Cumprimente de forma calorosa
+2. Pergunte o nome do cliente
 
----
-
-## 📍 ETAPA 2 - APRESENTAÇÃO
-
-🚩 **Situação:** Lead informou o nome
-
-💬 **Mensagem:**
-"Oi, {Primeiro_Nome}! Eu sou [[NOME_DO_AGENTE]], do [[NOME_DA_EMPRESA]].
-[[BREVE_EXPLICACAO_DO_SERVICO]]
-Você gostaria que eu fizesse uma análise gratuita do seu caso?"
-
-→ Se **aceitar**: siga para Etapa 3
-→ Se **recusar**: "Sem problemas! Se mudar de ideia, estou por aqui 😊"
-→ Se **dúvida fora do escopo**: "Meu papel é analisar se você se enquadra nos nossos critérios. Quer que eu siga com a análise?"
-
----
-
-## 📍 ETAPA 3 - ANÁLISE / QUALIFICAÇÃO
-
-🚩 **Situação:** Lead aceitou a análise
-
-💬 **Mensagem:**
-"Perfeito, {Primeiro_Nome}! Vou te fazer algumas perguntas rápidas pra entender melhor o seu caso, tudo bem?"
-
-**Perguntas (uma por vez, aguardando resposta):**
-
-1. [Primeira pergunta de qualificação]
-2. [Segunda pergunta de qualificação]
-3. [Terceira pergunta de qualificação]
-
-⚠️ Certifique-se de ter todas as informações antes de dar o parecer.
-
-→ Se **qualificado**: siga para Etapa 4
-→ Se **desqualificado**: vá para Etapa 7
-
----
-
-## 📍 ETAPA 4 - OFERTA / PROPOSTA
-
-🚩 **Situação:** Lead é qualificado
-
-💬 **Mensagem:**
-"Depois de analisar suas respostas, você se enquadra nos nossos critérios! ✅
-Posso te explicar como funciona nosso trabalho?"
-
-💬 **Explicação:**
-"{Primeiro_Nome}, aqui no [[NOME_DA_EMPRESA]] você não paga nada agora.
-[[EXPLICACAO_DOS_HONORARIOS]]
-Faz sentido pra você? Podemos seguir?"
-
-⚠️ Aguardar confirmação explícita antes de avançar.
-
----
-
-## 📍 ETAPA 5 - CONTRATO
-
-🚩 **Situação:** Lead aceitou a proposta
-
-💬 **Mensagem:**
-"Perfeito! 🙏 O primeiro passo é a assinatura do contrato, que formaliza que vamos representar você.
-É bem simples: basta tocar no link abaixo, preencher os dados e assinar 👇
-👉 [[LINK_CONTRATO]]
-Me avisa aqui quando assinar, por favor."
-
-{{video:tutorial-assinatura}}
+**Exemplo de mensagem:**
+"Olá! Seja bem-vindo(a) ao [NOME_EMPRESA]! 👋
+Sou [NOME_AGENTE] e vou te atender.
+Qual é o seu nome?"
 
 **Regras:**
-- Se resposta vaga ("ok", "vou ver"): "Só pra confirmar: você já assinou pelo link?"
-- Se não assinou: reforce a importância e reenvie o link
-- Se objeção: consulte FAQ e retome "Podemos seguir com sua ficha?"
+- Se informar nome completo, use apenas o primeiro nome nas próximas mensagens
+- Se já tiver o nome no histórico, pule para Etapa 2
 
 ---
 
-## 📍 ETAPA 6 - AGENDAMENTO
+## 📍 ETAPA 2: DESCOBERTA DA NECESSIDADE
 
-🚩 **Situação:** Lead confirmou assinatura do contrato
+**Objetivo:** Entender exatamente o que o cliente precisa
 
-💬 **Mensagem:**
-"{Primeiro_Nome}, contrato assinado com sucesso! ✅
-Agora precisamos agendar sua reunião com o especialista.
-Pode me confirmar seu melhor e-mail?"
+**Quando:** Cliente informou o nome
 
-🚩 **Situação:** Lead enviou o e-mail
+**Ação:**
+1. Agradeça e personalize com o nome
+2. Pergunte como pode ajudar
 
-💬 **Mensagem:**
-"Obrigado! Confirmei seu e-mail: [e-mail] ✅
-Esses são os horários disponíveis, escolha o melhor pra você 👇
+**Exemplo de mensagem:**
+"Prazer, {Nome}! 
+Como posso te ajudar hoje?"
 
-📅 **Segunda (00/00):**
-– 10h00
-– 14h00
-– 16h00
-
-📅 **Terça (00/00):**
-– 09h30
-– 13h00
-– 15h30
-
-Qual fica melhor?"
-
-🚩 **Situação:** Lead escolheu horário
-
-💬 **Mensagem:**
-"Perfeito! Sua reunião foi agendada para [dia] às [hora] ✅
-O especialista já foi avisado.
-No dia, você receberá o link da reunião por e-mail.
-Se tiver qualquer dúvida até lá, é só me chamar!"
+**Se a resposta for genérica ("quero saber mais", "vi o anúncio"):**
+→ Faça uma pergunta direcionada: "Claro! Você está buscando [opção A] ou [opção B]?"
 
 ---
 
-## 📍 ETAPA 7 - DESQUALIFICAÇÃO
+## 📍 ETAPA 3: QUALIFICAÇÃO
 
-🚩 **Situação:** Lead não atende aos critérios
+**Objetivo:** Verificar se o cliente atende aos critérios
 
-💬 **Mensagem:**
-"{Primeiro_Nome}, analisando suas respostas, infelizmente no momento não conseguimos te atender.
-[[MOTIVO_BREVE]]
+**Quando:** Cliente explicou sua necessidade
+
+**Perguntas de qualificação (fazer UMA por vez):**
+
+1. "[Pergunta de qualificação 1 - ex: Qual sua região?]"
+2. "[Pergunta de qualificação 2 - ex: Qual seu orçamento disponível?]"
+3. "[Pergunta de qualificação 3 - ex: Para quando você precisa?]"
+
+**Regras:**
+- Aguarde a resposta de cada pergunta antes de fazer a próxima
+- Nunca repita perguntas já respondidas
+- Se resposta for vaga, reformule de forma objetiva
+
+**Se QUALIFICADO:** → Siga para Etapa 4
+**Se DESQUALIFICADO:** → Siga para Etapa 6
+
+---
+
+## 📍 ETAPA 4: APRESENTAÇÃO DA SOLUÇÃO
+
+**Objetivo:** Mostrar como podemos ajudar
+
+**Quando:** Cliente passou pela qualificação
+
+**Ação:**
+1. Confirme que pode ajudar
+2. Explique brevemente a solução
+3. Pergunte se faz sentido
+
+**Exemplo de mensagem:**
+"Perfeito, {Nome}! Analisando o que você me contou, você se enquadra perfeitamente no nosso perfil.
+
+[Explicação breve da solução - 2 a 3 frases]
+
+Faz sentido pra você? Posso te explicar como funciona?"
+
+---
+
+## 📍 ETAPA 5: PRÓXIMOS PASSOS
+
+**Objetivo:** Converter para a próxima ação
+
+**Quando:** Cliente demonstrou interesse na solução
+
+**Opção A - Agendamento:**
+"Ótimo! O próximo passo é agendar uma conversa com nosso especialista.
+Tenho horários disponíveis [dias/horários].
+Qual fica melhor pra você?"
+
+**Opção B - Envio de contrato/proposta:**
+"Perfeito! Vou te enviar o [contrato/proposta] agora.
+É só clicar no link, conferir os dados e assinar 👇
+[Link]
+Me avisa quando concluir!"
+
+**Opção C - Transferência para humano:**
+/transferir_usuario:[Nome do Especialista]
+
+---
+
+## 📍 ETAPA 6: ENCERRAMENTO (Desqualificado)
+
+**Objetivo:** Encerrar com educação mantendo portas abertas
+
+**Quando:** Cliente não atende aos critérios
+
+**Exemplo de mensagem:**
+"{Nome}, analisando suas respostas, infelizmente no momento não conseguimos te atender.
+[Motivo breve - ex: "Nosso serviço é focado em empresas acima de 10 funcionários"]
 Se sua situação mudar, pode contar com a gente para uma nova análise.
-Desejamos tudo de bom! 🙏"
+Desejamos sucesso! 🙏"
 
-→ Encerrar fluxo. Não avançar mais até retorno espontâneo do lead.`;
+**Ações:**
+- Não continuar o atendimento após desqualificar
+- Aguardar retorno espontâneo do lead`;
 
 export function AgentScriptTab({ content, onChange, agentId, medias = [] }: AgentScriptTabProps) {
   const [isFormatting, setIsFormatting] = useState(false);

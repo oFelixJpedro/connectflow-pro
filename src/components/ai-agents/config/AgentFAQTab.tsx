@@ -1,11 +1,14 @@
 import { useState } from 'react';
-import { HelpCircle, Building2, ChevronDown, ChevronUp } from 'lucide-react';
+import { HelpCircle, Building2, ChevronDown, ChevronUp, Wand2, Sparkles, Loader2 } from 'lucide-react';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { MarkdownEditor } from '@/components/ui/markdown-editor';
+import { useToast } from '@/hooks/use-toast';
+import { supabase } from '@/integrations/supabase/client';
 import type { AIAgentCompanyInfo } from '@/types/ai-agents';
 
 interface AgentFAQTabProps {
@@ -29,19 +32,75 @@ const COMPANY_INFO_FIELDS = [
   { key: 'cancellation_policy', label: 'Política de Cancelamento', placeholder: 'Ex: Sem multa até 24h antes' },
 ];
 
-const FAQ_PLACEHOLDER = `## Perguntas Frequentes
+const DEFAULT_FAQ_TEMPLATE = `# 📚 BASE DE CONHECIMENTO
 
-**P: Qual o horário de atendimento?**
-R: Nosso horário de atendimento é de segunda a sexta, das 9h às 18h.
+Use esta seção para adicionar todas as informações que o agente pode consultar durante o atendimento.
 
-**P: Quanto tempo leva para ter retorno?**
-R: O prazo médio é de 24 a 48 horas úteis.
+---
 
-**P: Quais informações são necessárias?**
-R: As informações básicas são:
-- Nome completo
-- Telefone/WhatsApp
-- Descrição da sua necessidade`;
+## 🏢 SOBRE A EMPRESA
+
+**Qual é o horário de atendimento?**
+[Inserir horário - ex: Segunda a sexta, 9h às 18h. Sábados, 9h às 13h]
+
+**Onde fica a empresa?**
+[Inserir endereço completo e referências]
+
+**Quais são as formas de pagamento aceitas?**
+[Listar todas as formas: PIX, cartão, boleto, etc.]
+
+**Qual o prazo de entrega/atendimento?**
+[Inserir prazos médios]
+
+---
+
+## 💼 SOBRE OS SERVIÇOS/PRODUTOS
+
+**Quanto custa [serviço/produto principal]?**
+[Inserir valores ou faixa de preços]
+
+**Como funciona o processo de [contratação/compra]?**
+[Descrever passo a passo]
+
+**Quais são os requisitos para [contratar/comprar]?**
+[Listar documentos ou requisitos necessários]
+
+**Tem garantia?**
+[Descrever política de garantia]
+
+---
+
+## ❓ DÚVIDAS FREQUENTES
+
+**Posso cancelar?**
+[Inserir política de cancelamento]
+
+**Como faço para [ação comum]?**
+[Inserir resposta]
+
+**Vocês atendem [região/público específico]?**
+[Inserir resposta]
+
+**Qual a diferença entre [opção A] e [opção B]?**
+[Explicar diferenças]
+
+---
+
+## ⚠️ INSTRUÇÕES ESPECIAIS
+
+- Se perguntarem sobre [assunto sensível]: direcionar para atendente humano
+- Se pedirem desconto: "Os valores são tabelados, mas posso verificar condições especiais para o seu caso"
+- Se reclamarem: demonstrar empatia e oferecer solução
+- Se não souber a resposta: "Vou verificar essa informação com nossa equipe e te retorno"
+
+---
+
+## 📞 CONTATOS E LINKS ÚTEIS
+
+- WhatsApp: [número]
+- E-mail: [email]
+- Site: [url]
+- Instagram: [perfil]`;
 
 export function AgentFAQTab({
   content,
@@ -53,12 +112,57 @@ export function AgentFAQTab({
 }: AgentFAQTabProps) {
   const [companyInfoOpen, setCompanyInfoOpen] = useState(true);
   const [faqOpen, setFaqOpen] = useState(true);
+  const [isFormatting, setIsFormatting] = useState(false);
+  const { toast } = useToast();
 
   const handleCompanyFieldChange = (key: string, value: string) => {
     onCompanyInfoChange({
       ...companyInfo,
       [key]: value,
     });
+  };
+
+  const handleGenerateTemplate = () => {
+    onChange(DEFAULT_FAQ_TEMPLATE);
+  };
+
+  const handleFormatPrompt = async () => {
+    if (!content.trim()) {
+      toast({
+        title: "Erro",
+        description: "Adicione conteúdo antes de formatar",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsFormatting(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('format-prompt', {
+        body: { text: content }
+      });
+
+      if (error) throw error;
+
+      if (data?.formattedText) {
+        onChange(data.formattedText);
+        toast({
+          title: "Formatado!",
+          description: "O conteúdo foi formatado com sucesso",
+        });
+      } else {
+        throw new Error('Resposta inválida');
+      }
+    } catch (error) {
+      console.error('Error formatting content:', error);
+      toast({
+        title: "Erro ao formatar",
+        description: "Não foi possível formatar o conteúdo",
+        variant: "destructive",
+      });
+    } finally {
+      setIsFormatting(false);
+    }
   };
 
   // Verificar campos incompletos
@@ -148,14 +252,35 @@ export function AgentFAQTab({
           </CollapsibleTrigger>
           <CollapsibleContent>
             <CardContent className="pt-0 space-y-4">
-              <p className="text-sm text-muted-foreground">
-                Adicione perguntas frequentes e suas respostas para o agente consultar durante o atendimento.
-              </p>
+              <div className="flex items-center justify-between">
+                <p className="text-sm text-muted-foreground">
+                  Adicione perguntas frequentes e suas respostas para o agente consultar durante o atendimento.
+                </p>
+                <div className="flex gap-2">
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={handleFormatPrompt}
+                    disabled={isFormatting}
+                  >
+                    {isFormatting ? (
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    ) : (
+                      <Sparkles className="w-4 h-4 mr-2" />
+                    )}
+                    Formatar
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={handleGenerateTemplate}>
+                    <Wand2 className="w-4 h-4 mr-2" />
+                    Texto Padrão
+                  </Button>
+                </div>
+              </div>
 
               <MarkdownEditor
                 value={content}
                 onChange={onChange}
-                placeholder={FAQ_PLACEHOLDER}
+                placeholder="Digite as perguntas frequentes aqui..."
                 minHeight="300px"
               />
             </CardContent>

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { 
   Settings, 
   Zap, 
@@ -55,7 +55,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useAgentMedia } from '@/hooks/useAgentMedia';
 import { supabase } from '@/integrations/supabase/client';
 import { AI_AGENT_VOICES, AI_AGENT_BATCH_OPTIONS, AI_AGENT_SPLIT_DELAY_OPTIONS } from '@/types/ai-agents';
-import type { AIAgent } from '@/types/ai-agents';
+import type { AIAgent, UpdateAIAgentData } from '@/types/ai-agents';
 import { toast } from 'sonner';
 import { MediaUploadModal, TextLinkModal, MediaList } from '@/components/ai-agents/media';
 
@@ -66,17 +66,42 @@ interface WhatsAppConnection {
   status: string;
 }
 
+import type { DeactivateOnHumanMessage } from '@/types/ai-agents';
+
+// Campos editáveis no sidebar que devem ser acumulados
+export interface SidebarPendingChanges {
+  name?: string;
+  temperature?: number;
+  require_activation_trigger?: boolean;
+  activation_triggers?: string[];
+  deactivate_on_human_message?: DeactivateOnHumanMessage;
+  deactivate_temporary_minutes?: number;
+  message_batch_seconds?: number;
+  split_response_enabled?: boolean;
+  split_message_delay_seconds?: number;
+  audio_enabled?: boolean;
+  audio_respond_with_audio?: boolean;
+  voice_name?: string;
+  language_code?: string;
+  speech_speed?: number;
+  audio_temperature?: number;
+}
+
 interface AgentSidebarProps {
   agent: AIAgent;
   totalChars: number;
   charLimit: number;
   onAgentUpdate: () => void;
+  onPendingChanges?: (changes: SidebarPendingChanges, hasChanges: boolean) => void;
+  pendingChanges?: SidebarPendingChanges;
 }
 
 // Helper para formatar temperatura com descrição curta
 const formatTemperature = (val: number, type: 'text' | 'audio') => {
   if (type === 'text') {
+    if (val === 1.0) return `${val.toFixed(1)} Recomendado ⭐`;
     if (val <= 0.3) return `${val.toFixed(1)} Preciso`;
+    if (val >= 1.5) return `${val.toFixed(1)} Muito Criativo`;
     if (val >= 0.8) return `${val.toFixed(1)} Criativo`;
   } else {
     if (val <= 0.3) return `${val.toFixed(1)} Neutro`;
@@ -94,8 +119,15 @@ const formatVoiceName = (voice: { name: string; description: string }) => {
   return voice.name;
 };
 
-export function AgentSidebar({ agent, totalChars, charLimit, onAgentUpdate }: AgentSidebarProps) {
-  const { updateAgent, addConnection, removeConnection } = useAIAgents();
+export function AgentSidebar({ 
+  agent, 
+  totalChars, 
+  charLimit, 
+  onAgentUpdate,
+  onPendingChanges,
+  pendingChanges = {}
+}: AgentSidebarProps) {
+  const { addConnection, removeConnection } = useAIAgents();
   const { profile } = useAuth();
   const { medias, isLoading: isLoadingMedias, loadMedias, uploadMedia, createTextOrLink, deleteMedia } = useAgentMedia(agent.id);
   
@@ -122,6 +154,7 @@ export function AgentSidebar({ agent, totalChars, charLimit, onAgentUpdate }: Ag
       loadMedias();
     }
   }, [agent.id, loadMedias]);
+
   // Connection selector state
   const [availableConnections, setAvailableConnections] = useState<WhatsAppConnection[]>([]);
   const [isLoadingConnections, setIsLoadingConnections] = useState(false);
@@ -129,6 +162,14 @@ export function AgentSidebar({ agent, totalChars, charLimit, onAgentUpdate }: Ag
 
   const charPercentage = Math.min(100, (totalChars / charLimit) * 100);
   const isOverLimit = totalChars > charLimit;
+
+  // Valores atuais (pendingChanges tem prioridade sobre agent)
+  const getValue = useCallback(<K extends keyof SidebarPendingChanges>(key: K): SidebarPendingChanges[K] | AIAgent[K] => {
+    if (key in pendingChanges && pendingChanges[key] !== undefined) {
+      return pendingChanges[key];
+    }
+    return agent[key as keyof AIAgent] as SidebarPendingChanges[K];
+  }, [pendingChanges, agent]);
 
   // Load available connections when popover opens
   useEffect(() => {
@@ -197,25 +238,27 @@ export function AgentSidebar({ agent, totalChars, charLimit, onAgentUpdate }: Ag
     }
   };
 
-  const handleUpdateField = async (field: string, value: unknown) => {
-    await updateAgent(agent.id, { [field]: value });
-    onAgentUpdate();
+  // Atualiza mudanças pendentes em vez de salvar diretamente
+  const handleUpdateField = (field: keyof SidebarPendingChanges, value: unknown) => {
+    if (onPendingChanges) {
+      const newChanges = { ...pendingChanges, [field]: value };
+      onPendingChanges(newChanges, true);
+    }
   };
 
-  const handleAddTrigger = async () => {
+  const handleAddTrigger = () => {
     if (!newTrigger.trim()) return;
     
-    const currentTriggers = agent.activation_triggers || [];
+    const currentTriggers = (getValue('activation_triggers') as string[]) || [];
     const triggers = [...currentTriggers, newTrigger.trim()];
-    await updateAgent(agent.id, { activation_triggers: triggers });
+    handleUpdateField('activation_triggers', triggers);
     setNewTrigger('');
-    onAgentUpdate();
   };
 
-  const handleRemoveTrigger = async (index: number) => {
-    const triggers = (agent.activation_triggers || []).filter((_, i) => i !== index);
-    await updateAgent(agent.id, { activation_triggers: triggers });
-    onAgentUpdate();
+  const handleRemoveTrigger = (index: number) => {
+    const currentTriggers = (getValue('activation_triggers') as string[]) || [];
+    const triggers = currentTriggers.filter((_, i) => i !== index);
+    handleUpdateField('activation_triggers', triggers);
   };
 
   const handlePlayVoicePreview = async () => {
@@ -240,10 +283,10 @@ export function AgentSidebar({ agent, totalChars, charLimit, onAgentUpdate }: Ag
             'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
           },
           body: JSON.stringify({ 
-            voiceName: agent.voice_name,
-            speed: agent.speech_speed || 1.0,
-            languageCode: agent.language_code || 'pt-BR',
-            temperature: agent.audio_temperature ?? 0.7
+            voiceName: getValue('voice_name') || agent.voice_name,
+            speed: getValue('speech_speed') ?? agent.speech_speed ?? 1.0,
+            languageCode: getValue('language_code') || agent.language_code || 'pt-BR',
+            temperature: getValue('audio_temperature') ?? agent.audio_temperature ?? 0.7
           }),
         }
       );
@@ -288,6 +331,23 @@ export function AgentSidebar({ agent, totalChars, charLimit, onAgentUpdate }: Ag
     }
   };
 
+  // Valores calculados usando getValue
+  const currentName = getValue('name') as string ?? agent.name;
+  const currentTemperature = getValue('temperature') as number ?? agent.temperature ?? 1.0;
+  const currentRequireTrigger = getValue('require_activation_trigger') as boolean ?? agent.require_activation_trigger;
+  const currentTriggers = (getValue('activation_triggers') as string[]) ?? agent.activation_triggers ?? [];
+  const currentDeactivateOnHuman = getValue('deactivate_on_human_message') as string ?? agent.deactivate_on_human_message;
+  const currentDeactivateMinutes = getValue('deactivate_temporary_minutes') as number ?? agent.deactivate_temporary_minutes;
+  const currentBatchSeconds = getValue('message_batch_seconds') as number ?? agent.message_batch_seconds ?? 75;
+  const currentSplitEnabled = getValue('split_response_enabled') as boolean ?? agent.split_response_enabled ?? true;
+  const currentSplitDelay = getValue('split_message_delay_seconds') as number ?? agent.split_message_delay_seconds ?? 2.0;
+  const currentAudioEnabled = getValue('audio_enabled') as boolean ?? agent.audio_enabled;
+  const currentAudioRespond = getValue('audio_respond_with_audio') as boolean ?? agent.audio_respond_with_audio;
+  const currentVoiceName = getValue('voice_name') as string ?? agent.voice_name;
+  const currentLanguageCode = getValue('language_code') as string ?? agent.language_code ?? 'pt-BR';
+  const currentSpeechSpeed = getValue('speech_speed') as number ?? agent.speech_speed ?? 1.0;
+  const currentAudioTemp = getValue('audio_temperature') as number ?? agent.audio_temperature ?? 0.7;
+
   return (
     <div className="w-[40%] border-l bg-muted/30 flex flex-col">
       <ScrollArea className="flex-1">
@@ -320,7 +380,7 @@ export function AgentSidebar({ agent, totalChars, charLimit, onAgentUpdate }: Ag
               <div className="space-y-1.5">
                 <Label className="text-xs">Nome</Label>
                 <Input
-                  value={agent.name}
+                  value={currentName}
                   onChange={(e) => handleUpdateField('name', e.target.value)}
                   className="h-8 text-sm"
                 />
@@ -335,21 +395,21 @@ export function AgentSidebar({ agent, totalChars, charLimit, onAgentUpdate }: Ag
                       <Info className="w-3 h-3 text-muted-foreground" />
                     </TooltipTrigger>
                     <TooltipContent>
-                      <p className="text-xs max-w-[180px]">
-                        Baixo = respostas precisas. Alto = respostas criativas.
+                      <p className="text-xs max-w-[200px]">
+                        Padrão Google para Gemini: 1.0. Valores mais baixos = respostas precisas. Valores mais altos = respostas criativas.
                       </p>
                     </TooltipContent>
                   </Tooltip>
                 </div>
                 <Select 
-                  value={String(agent.temperature ?? 0.7)} 
+                  value={String(currentTemperature)} 
                   onValueChange={(v) => handleUpdateField('temperature', Number(v))}
                 >
                   <SelectTrigger className="h-8 text-sm">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {[0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0].map((val) => (
+                    {[0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0].map((val) => (
                       <SelectItem key={val} value={String(val)}>
                         {formatTemperature(val, 'text')}
                       </SelectItem>
@@ -374,12 +434,12 @@ export function AgentSidebar({ agent, totalChars, charLimit, onAgentUpdate }: Ag
               <div className="flex items-center justify-between">
                 <Label className="text-xs">Exigir gatilho</Label>
                 <Switch
-                  checked={agent.require_activation_trigger}
+                  checked={currentRequireTrigger}
                   onCheckedChange={(v) => handleUpdateField('require_activation_trigger', v)}
                 />
               </div>
 
-              {agent.require_activation_trigger && (
+              {currentRequireTrigger && (
                 <>
                   <div className="flex gap-2">
                     <Input
@@ -395,7 +455,7 @@ export function AgentSidebar({ agent, totalChars, charLimit, onAgentUpdate }: Ag
                   </div>
 
                   <div className="flex flex-wrap gap-1">
-                    {agent.activation_triggers?.map((trigger, index) => (
+                    {currentTriggers.map((trigger, index) => (
                       <Badge key={index} variant="secondary" className="text-xs pr-1">
                         {trigger}
                         <button
@@ -413,7 +473,7 @@ export function AgentSidebar({ agent, totalChars, charLimit, onAgentUpdate }: Ag
               <div className="space-y-1.5">
                 <Label className="text-xs">Pausa ao intervir</Label>
                 <Select 
-                  value={agent.deactivate_on_human_message} 
+                  value={currentDeactivateOnHuman} 
                   onValueChange={(v) => handleUpdateField('deactivate_on_human_message', v)}
                 >
                   <SelectTrigger className="h-8 text-sm">
@@ -427,12 +487,12 @@ export function AgentSidebar({ agent, totalChars, charLimit, onAgentUpdate }: Ag
                 </Select>
               </div>
 
-              {agent.deactivate_on_human_message === 'temporary' && (
+              {currentDeactivateOnHuman === 'temporary' && (
                 <div className="space-y-1.5">
                   <Label className="text-xs">Duração (min)</Label>
                   <Input
                     type="number"
-                    value={agent.deactivate_temporary_minutes}
+                    value={currentDeactivateMinutes}
                     onChange={(e) => handleUpdateField('deactivate_temporary_minutes', Number(e.target.value))}
                     className="h-8 text-sm"
                     min={1}
@@ -469,7 +529,7 @@ export function AgentSidebar({ agent, totalChars, charLimit, onAgentUpdate }: Ag
                   </Tooltip>
                 </div>
                 <Select 
-                  value={String(agent.message_batch_seconds ?? 75)} 
+                  value={String(currentBatchSeconds)} 
                   onValueChange={(v) => handleUpdateField('message_batch_seconds', Number(v))}
                 >
                   <SelectTrigger className="h-8 text-sm">
@@ -500,16 +560,16 @@ export function AgentSidebar({ agent, totalChars, charLimit, onAgentUpdate }: Ag
                   </Tooltip>
                 </div>
                 <Switch
-                  checked={agent.split_response_enabled ?? true}
+                  checked={currentSplitEnabled}
                   onCheckedChange={(v) => handleUpdateField('split_response_enabled', v)}
                 />
               </div>
 
-              {(agent.split_response_enabled ?? true) && (
+              {currentSplitEnabled && (
                 <div className="space-y-1.5">
                   <Label className="text-xs">Delay entre msgs</Label>
                   <Select 
-                    value={String(agent.split_message_delay_seconds ?? 2.0)} 
+                    value={String(currentSplitDelay)} 
                     onValueChange={(v) => handleUpdateField('split_message_delay_seconds', Number(v))}
                   >
                     <SelectTrigger className="h-8 text-sm">
@@ -540,18 +600,18 @@ export function AgentSidebar({ agent, totalChars, charLimit, onAgentUpdate }: Ag
               <div className="flex items-center justify-between">
                 <Label className="text-xs">Gerar áudio</Label>
                 <Switch
-                  checked={agent.audio_enabled}
+                  checked={currentAudioEnabled}
                   onCheckedChange={(v) => handleUpdateField('audio_enabled', v)}
                 />
               </div>
 
-              {agent.audio_enabled && (
+              {currentAudioEnabled && (
                 <>
                   {/* Audio switch */}
                   <div className="flex items-center justify-between py-1">
                     <Label className="text-xs text-muted-foreground">Áudio → Áudio</Label>
                     <Switch
-                      checked={agent.audio_respond_with_audio}
+                      checked={currentAudioRespond}
                       onCheckedChange={(v) => handleUpdateField('audio_respond_with_audio', v)}
                     />
                   </div>
@@ -559,7 +619,7 @@ export function AgentSidebar({ agent, totalChars, charLimit, onAgentUpdate }: Ag
                   <div className="space-y-1.5">
                     <Label className="text-xs">Voz</Label>
                     <Select 
-                      value={agent.voice_name} 
+                      value={currentVoiceName} 
                       onValueChange={(v) => handleUpdateField('voice_name', v)}
                     >
                       <SelectTrigger className="h-8 text-sm">
@@ -578,7 +638,7 @@ export function AgentSidebar({ agent, totalChars, charLimit, onAgentUpdate }: Ag
                   <div className="space-y-1.5">
                     <Label className="text-xs">Idioma</Label>
                     <Select 
-                      value={agent.language_code || 'pt-BR'} 
+                      value={currentLanguageCode} 
                       onValueChange={(v) => handleUpdateField('language_code', v)}
                     >
                       <SelectTrigger className="h-8 text-sm">
@@ -623,7 +683,7 @@ export function AgentSidebar({ agent, totalChars, charLimit, onAgentUpdate }: Ag
                   <div className="space-y-1.5">
                     <Label className="text-xs">Velocidade</Label>
                     <Select 
-                      value={String(agent.speech_speed ?? 1.0)} 
+                      value={String(currentSpeechSpeed)} 
                       onValueChange={(v) => handleUpdateField('speech_speed', Number(v))}
                     >
                       <SelectTrigger className="h-8 text-sm">
@@ -652,7 +712,7 @@ export function AgentSidebar({ agent, totalChars, charLimit, onAgentUpdate }: Ag
                       </Tooltip>
                     </div>
                     <Select 
-                      value={String(agent.audio_temperature ?? 0.7)} 
+                      value={String(currentAudioTemp)} 
                       onValueChange={(v) => handleUpdateField('audio_temperature', Number(v))}
                     >
                       <SelectTrigger className="h-8 text-sm">
