@@ -16,9 +16,10 @@ export function AssignmentBadge({ assignedUser, currentUserId, className }: Assi
       <Badge 
         variant="outline" 
         className={cn(
-          "text-xs px-1.5 py-0 h-5 bg-destructive/20 text-destructive border-destructive/30 flex-shrink-0 max-w-[100px] truncate",
+          "text-xs px-1.5 py-0 h-5 flex-shrink-0 max-w-[100px] truncate border-[#FECACA] text-red-600",
           className
         )}
+        style={{ backgroundColor: '#FECACA' }}
         title="Sem responsável"
       >
         Sem responsável
