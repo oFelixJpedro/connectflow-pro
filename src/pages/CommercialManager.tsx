@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { TrendingUp, LayoutDashboard, Loader2 } from 'lucide-react';
+import { TrendingUp, LayoutDashboard, Loader2, Sparkles } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -11,11 +12,31 @@ import { BrazilMap } from '@/components/commercial/BrazilMap';
 import { CriteriaRadarChart } from '@/components/commercial/CriteriaRadarChart';
 import { AgentPerformanceTable } from '@/components/commercial/AgentPerformanceTable';
 import { InsightsCard } from '@/components/commercial/InsightsCard';
+import { toast } from 'sonner';
 
 export default function CommercialManager() {
   const navigate = useNavigate();
-  const { loading, data, lastUpdated, isAdmin } = useCommercialData();
+  const { loading, data, lastUpdated, isAdmin, evaluating, evaluateConversations } = useCommercialData();
   const [viewMode, setViewMode] = useState<'commercial' | 'dashboard'>('commercial');
+
+  const handleEvaluate = async () => {
+    const result = await evaluateConversations();
+    if (result?.success) {
+      if (result.evaluated > 0) {
+        toast.success(`${result.evaluated} conversa(s) avaliada(s) com sucesso!`, {
+          description: result.remaining > 0 ? `Ainda restam ${result.remaining} para avaliar.` : undefined,
+        });
+        // Reload page to show new data
+        window.location.reload();
+      } else {
+        toast.info('Nenhuma conversa nova para avaliar.');
+      }
+    } else {
+      toast.error('Erro ao avaliar conversas', {
+        description: 'Verifique os logs para mais detalhes.',
+      });
+    }
+  };
 
   const handleViewChange = (value: string) => {
     if (value === 'dashboard') {
@@ -55,10 +76,25 @@ export default function CommercialManager() {
               </SelectContent>
             </Select>
           </div>
-          <Badge variant="outline" className="text-xs md:text-sm flex items-center gap-1 md:gap-2 w-fit">
-            {loading && <Loader2 className="w-3 h-3 animate-spin" />}
-            <span className="hidden sm:inline">Atualizado</span> {format(lastUpdated, "HH:mm", { locale: ptBR })}
-          </Badge>
+          <div className="flex items-center gap-2">
+            <Button
+              onClick={handleEvaluate}
+              disabled={evaluating || loading}
+              size="sm"
+              className="gap-2"
+            >
+              {evaluating ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Sparkles className="w-4 h-4" />
+              )}
+              {evaluating ? 'Avaliando...' : 'Avaliar Conversas'}
+            </Button>
+            <Badge variant="outline" className="text-xs md:text-sm flex items-center gap-1 md:gap-2 w-fit">
+              {loading && <Loader2 className="w-3 h-3 animate-spin" />}
+              <span className="hidden sm:inline">Atualizado</span> {format(lastUpdated, "HH:mm", { locale: ptBR })}
+            </Badge>
+          </div>
         </div>
         <p className="text-sm text-muted-foreground">
           Análise de qualidade e performance da equipe comercial

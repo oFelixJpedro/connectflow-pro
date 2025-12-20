@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { getStateFromPhone, StateCode } from '@/lib/dddMapping';
@@ -49,8 +49,36 @@ export function useCommercialData() {
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<CommercialData | null>(null);
   const [lastUpdated, setLastUpdated] = useState(new Date());
+  const [evaluating, setEvaluating] = useState(false);
 
   const isAdmin = userRole?.role === 'owner' || userRole?.role === 'admin';
+
+  const evaluateConversations = async () => {
+    if (!profile?.company_id) return;
+    
+    setEvaluating(true);
+    try {
+      const { data: result, error } = await supabase.functions.invoke('evaluate-conversation', {
+        body: { 
+          evaluate_all: true, 
+          company_id: profile.company_id 
+        }
+      });
+
+      if (error) {
+        console.error('Error evaluating conversations:', error);
+        return { success: false, error };
+      }
+
+      console.log('Evaluation result:', result);
+      return result;
+    } catch (error) {
+      console.error('Error calling evaluate-conversation:', error);
+      return { success: false, error };
+    } finally {
+      setEvaluating(false);
+    }
+  };
 
   useEffect(() => {
     if (!profile?.company_id || !isAdmin) {
@@ -61,10 +89,9 @@ export function useCommercialData() {
     const fetchData = async () => {
       setLoading(true);
       try {
-        // Fetch this week's data from conversations and contacts
         const now = new Date();
         const startOfWeek = new Date(now);
-        startOfWeek.setDate(now.getDate() - now.getDay() + 1); // Monday
+        startOfWeek.setDate(now.getDate() - now.getDay() + 1);
         startOfWeek.setHours(0, 0, 0, 0);
 
         // Fetch conversations from this week
@@ -81,6 +108,16 @@ export function useCommercialData() {
           .gte('created_at', startOfWeek.toISOString());
 
         if (convError) throw convError;
+
+        // Fetch evaluations from conversation_evaluations table
+        const { data: evaluations, error: evalError } = await supabase
+          .from('conversation_evaluations')
+          .select('*')
+          .eq('company_id', profile.company_id);
+
+        if (evalError) {
+          console.error('Error fetching evaluations:', evalError);
+        }
 
         // Fetch all contacts for geographic data
         const { data: contacts, error: contactsError } = await supabase
@@ -107,7 +144,7 @@ export function useCommercialData() {
           }
         });
 
-        // Calculate deals by state (closed/resolved conversations)
+        // Calculate deals by state
         const dealsByState: Record<string, number> = {};
         conversations?.forEach(conv => {
           if (conv.status === 'closed' || conv.status === 'resolved') {
@@ -135,12 +172,117 @@ export function useCommercialData() {
           }
         });
 
-        // Build agent analysis
+        // Calculate criteria scores from real evaluations
+        let criteriaScores: CriteriaScores;
+        let qualifiedLeadsPercent = 0;
+        let allStrengths: string[] = [];
+        let allWeaknesses: string[] = [];
+        let averageScoreFromEvals = 0;
+
+        if (evaluations && evaluations.length > 0) {
+          // Calculate average scores from real evaluations
+          const scores = {
+            communication: 0,
+            objectivity: 0,
+            humanization: 0,
+            objection_handling: 0,
+            closing: 0,
+            response_time: 0,
+          };
+          let totalOverall = 0;
+          let hotWarmLeads = 0;
+
+          evaluations.forEach(eval_ => {
+            scores.communication += eval_.communication_score || 0;
+            scores.objectivity += eval_.objectivity_score || 0;
+            scores.humanization += eval_.humanization_score || 0;
+            scores.objection_handling += eval_.objection_handling_score || 0;
+            scores.closing += eval_.closing_score || 0;
+            scores.response_time += eval_.response_time_score || 0;
+            totalOverall += eval_.overall_score || 0;
+
+            // Count qualified leads (hot or warm)
+            if (eval_.lead_qualification === 'hot' || eval_.lead_qualification === 'warm') {
+              hotWarmLeads++;
+            }
+
+            // Collect strengths and weaknesses
+            if (eval_.strengths && Array.isArray(eval_.strengths)) {
+              allStrengths.push(...(eval_.strengths as string[]));
+            }
+            if (eval_.improvements && Array.isArray(eval_.improvements)) {
+              allWeaknesses.push(...(eval_.improvements as string[]));
+            }
+          });
+
+          const count = evaluations.length;
+          criteriaScores = {
+            communication: Math.round((scores.communication / count) * 10) / 10,
+            objectivity: Math.round((scores.objectivity / count) * 10) / 10,
+            humanization: Math.round((scores.humanization / count) * 10) / 10,
+            objection_handling: Math.round((scores.objection_handling / count) * 10) / 10,
+            closing: Math.round((scores.closing / count) * 10) / 10,
+            response_time: Math.round((scores.response_time / count) * 10) / 10,
+          };
+
+          averageScoreFromEvals = Math.round((totalOverall / count) * 10) / 10;
+          qualifiedLeadsPercent = Math.round((hotWarmLeads / count) * 100);
+
+          // Get unique top strengths and weaknesses
+          const strengthCounts = allStrengths.reduce((acc, s) => {
+            acc[s] = (acc[s] || 0) + 1;
+            return acc;
+          }, {} as Record<string, number>);
+          
+          const weaknessCounts = allWeaknesses.reduce((acc, w) => {
+            acc[w] = (acc[w] || 0) + 1;
+            return acc;
+          }, {} as Record<string, number>);
+
+          allStrengths = Object.entries(strengthCounts)
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 5)
+            .map(([s]) => s);
+
+          allWeaknesses = Object.entries(weaknessCounts)
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 5)
+            .map(([w]) => w);
+
+        } else {
+          // Fallback to default values when no evaluations exist
+          criteriaScores = {
+            communication: 0,
+            objectivity: 0,
+            humanization: 0,
+            objection_handling: 0,
+            closing: 0,
+            response_time: 0,
+          };
+          allStrengths = ['Sem avaliações ainda'];
+          allWeaknesses = ['Execute a avaliação de conversas'];
+        }
+
+        // Build agent analysis with real evaluation data
         const agentsAnalysis: AgentAnalysis[] = agents?.map(agent => {
           const stats = agentStats[agent.id] || { conversations: 0, closed: 0 };
-          const score = stats.conversations > 0 
-            ? Math.round((stats.closed / stats.conversations) * 10 * 10) / 10 
-            : 0;
+          
+          // Calculate score from real evaluations if available
+          const agentEvaluations = evaluations?.filter(e => {
+            const convIds = conversations?.filter(c => c.assigned_user_id === agent.id).map(c => c.id) || [];
+            return convIds.includes(e.conversation_id);
+          }) || [];
+
+          let score: number;
+          if (agentEvaluations.length > 0) {
+            const totalScore = agentEvaluations.reduce((sum, e) => sum + (e.overall_score || 0), 0);
+            score = Math.round((totalScore / agentEvaluations.length) * 10) / 10;
+          } else {
+            // Fallback to closed/total ratio
+            score = stats.conversations > 0 
+              ? Math.round((stats.closed / stats.conversations) * 10 * 10) / 10 
+              : 0;
+          }
           
           const level: AgentAnalysis['level'] = 
             score >= 8.5 ? 'senior' : 
@@ -172,9 +314,12 @@ export function useCommercialData() {
           ? Math.round((closedConversations / totalConversations) * 100 * 10) / 10 
           : 0;
 
-        const averageScore = agentsAnalysis.length > 0
-          ? Math.round(agentsAnalysis.reduce((sum, a) => sum + a.score, 0) / agentsAnalysis.length * 10) / 10
-          : 0;
+        // Use evaluation average if available, otherwise use agent average
+        const averageScore = evaluations && evaluations.length > 0
+          ? averageScoreFromEvals
+          : (agentsAnalysis.length > 0
+              ? Math.round(agentsAnalysis.reduce((sum, a) => sum + a.score, 0) / agentsAnalysis.length * 10) / 10
+              : 0);
 
         const classification: CommercialData['classification'] = 
           averageScore >= 9.0 ? 'EXCEPCIONAL' :
@@ -182,33 +327,59 @@ export function useCommercialData() {
           averageScore >= 6.0 ? 'REGULAR' :
           averageScore >= 4.0 ? 'RUIM' : 'CRÍTICO';
 
-        // Mock criteria scores (will be replaced by AI evaluation)
-        const criteriaScores: CriteriaScores = {
-          communication: 7.5,
-          objectivity: 7.2,
-          humanization: 8.0,
-          objection_handling: 6.8,
-          closing: 7.0,
-          response_time: 7.5,
-        };
+        // Generate insights based on data
+        const insights: string[] = [];
+        const criticalIssues: string[] = [];
+        
+        if (criteriaScores.closing < 6) {
+          insights.push('Recomendado treinamento em técnicas de fechamento de vendas');
+        }
+        if (criteriaScores.objection_handling < 6) {
+          insights.push('Necessário melhorar tratamento de objeções');
+        }
+        if (criteriaScores.response_time < 6) {
+          criticalIssues.push('Tempo de resposta precisa ser reduzido');
+        }
+        if (qualifiedLeadsPercent < 30) {
+          insights.push('Taxa de leads qualificados abaixo do esperado - revisar processo de qualificação');
+        }
+        if (conversionRate < 30) {
+          insights.push('Taxa de conversão baixa - considerar otimização do funil de vendas');
+        }
+
+        // Generate final recommendation
+        let finalRecommendation = '';
+        if (averageScore >= 8) {
+          finalRecommendation = 'Excelente desempenho! Manter as práticas atuais e considerar promoções.';
+        } else if (averageScore >= 6) {
+          finalRecommendation = 'Bom desempenho com espaço para melhorias. Focar em treinamentos específicos.';
+        } else if (averageScore >= 4) {
+          finalRecommendation = 'Desempenho regular. Necessário plano de ação com treinamentos e monitoramento.';
+        } else {
+          finalRecommendation = 'Desempenho crítico! Ação imediata necessária com acompanhamento intensivo.';
+        }
+
+        // Positive and negative patterns
+        const positivePatterns = allStrengths.slice(0, 3);
+        const negativePatterns = allWeaknesses.slice(0, 3);
 
         setData({
           averageScore,
           classification,
-          qualifiedLeadsPercent: 45, // TODO: Calculate from evaluations
+          qualifiedLeadsPercent,
           conversionRate,
           totalConversations,
           totalLeads: totalConversations,
           closedDeals: closedConversations,
           avgResponseTimeMinutes: 15, // TODO: Calculate from messages
           criteriaScores,
-          strengths: ['Atendimento cordial', 'Resposta rápida', 'Conhecimento do produto'],
-          weaknesses: ['Técnica de fechamento', 'Follow-up'],
-          positivePatterns: ['Uso adequado de emojis', 'Personalização do atendimento'],
-          negativePatterns: ['Demora em horários de pico'],
-          insights: ['Considerar treinamento de técnicas de fechamento', 'Implementar automação de follow-up'],
-          criticalIssues: [],
-          finalRecommendation: 'Manter ritmo atual com foco em treinamento de fechamento',
+          strengths: allStrengths,
+          weaknesses: allWeaknesses,
+          positivePatterns,
+          negativePatterns,
+          insights: insights.length > 0 ? insights : ['Avalie conversas para obter insights detalhados'],
+          criticalIssues,
+          finalRecommendation: finalRecommendation || 'Execute a avaliação de conversas para obter recomendações',
           agentsAnalysis,
           contactsByState: contactsByState as Record<StateCode, number>,
           dealsByState: dealsByState as Record<StateCode, number>,
@@ -230,5 +401,7 @@ export function useCommercialData() {
     data,
     lastUpdated,
     isAdmin,
+    evaluating,
+    evaluateConversations,
   };
 }

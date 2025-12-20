@@ -95,3 +95,6 @@ verify_jwt = true
 
 [functions.summarize-chat]
 verify_jwt = true
+
+[functions.evaluate-conversation]
+verify_jwt = true
