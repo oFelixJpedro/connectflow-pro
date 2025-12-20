@@ -214,24 +214,24 @@ export function BrazilMap({ contactsByState, dealsByState }: BrazilMapProps) {
             Distribuição Geográfica
           </CardTitle>
           <Select value={filter} onValueChange={(v) => handleFilterChange(v as MapFilter)}>
-            <SelectTrigger className="w-[200px]">
+            <SelectTrigger className="w-auto min-w-[180px]">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="contacts">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 whitespace-nowrap">
                   <Users className="w-4 h-4" />
                   Contatos por estado
                 </div>
               </SelectItem>
               <SelectItem value="deals">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 whitespace-nowrap">
                   <Handshake className="w-4 h-4" />
                   Contratos fechados
                 </div>
               </SelectItem>
               <SelectItem value="crm_stage">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 whitespace-nowrap">
                   <Layers className="w-4 h-4" />
                   Por etapa do CRM
                 </div>
