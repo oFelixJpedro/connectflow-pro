@@ -52,6 +52,7 @@ export default function Inbox() {
     conversations,
     selectedConversation,
     messages,
+    setMessages,
     tabUnreadCounts,
     isLoadingConversations,
     isLoadingMessages,
@@ -250,6 +251,7 @@ export default function Inbox() {
                 onOpenContactDetails={handleOpenContactPanel}
                 onSendReaction={sendReaction}
                 onRegisterScrollToMessage={handleRegisterScrollToMessage}
+                onMessagesUpdate={setMessages}
                 isLoadingMessages={isLoadingMessages}
                 isSendingMessage={isSendingMessage}
                 isRestricted={isRestricted}
@@ -335,6 +337,7 @@ export default function Inbox() {
           onOpenContactDetails={handleOpenContactPanel}
           onSendReaction={sendReaction}
           onRegisterScrollToMessage={handleRegisterScrollToMessage}
+          onMessagesUpdate={setMessages}
           isLoadingMessages={isLoadingMessages}
           isSendingMessage={isSendingMessage}
           isRestricted={isRestricted}
