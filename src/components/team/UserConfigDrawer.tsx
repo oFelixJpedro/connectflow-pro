@@ -717,7 +717,7 @@ export function UserConfigDrawer({ open, onClose, member, onSaveSuccess, isOwner
                 <Input
                   value={signature}
                   onChange={(e) => setSignature(e.target.value)}
-                  placeholder="Ex: Dr. Félix, Atendente Maria"
+                  placeholder="Ex: João Silva, Atendente Maria"
                   maxLength={100}
                 />
                 <p className="text-xs text-muted-foreground">

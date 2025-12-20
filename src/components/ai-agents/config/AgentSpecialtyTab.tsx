@@ -73,14 +73,14 @@ export function AgentSpecialtyTab({
               </TooltipTrigger>
               <TooltipContent className="max-w-[280px]">
                 <p className="text-xs">
-                  Termos que identificam esta tese/especialidade. Ex: "bpc", "loas", "idoso", "deficiência".
+                  Termos que identificam esta especialidade. Ex: "agendamento", "orçamento", "suporte", "vendas".
                   O sistema usa essas palavras para identificar quando um lead menciona algo relacionado.
                 </p>
               </TooltipContent>
             </Tooltip>
           </div>
           <CardDescription>
-            Termos que identificam quando um lead está falando sobre esta tese
+            Termos que identificam quando um lead está falando sobre esta especialidade
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -88,7 +88,7 @@ export function AgentSpecialtyTab({
             <Input
               value={newKeyword}
               onChange={(e) => setNewKeyword(e.target.value)}
-              placeholder="Ex: salário-maternidade, gestante, mãe..."
+              placeholder="Ex: agendamento, orçamento, dúvidas, suporte..."
               className="flex-1"
               onKeyDown={(e) => e.key === 'Enter' && handleAddKeyword()}
             />
@@ -131,7 +131,7 @@ export function AgentSpecialtyTab({
               </TooltipTrigger>
               <TooltipContent className="max-w-[280px]">
                 <p className="text-xs">
-                  Descreva o perfil do cliente ideal para esta tese. Outros agentes usarão 
+                  Descreva o perfil do cliente ideal para esta especialidade. Outros agentes usarão 
                   essa descrição para saber quando transferir um lead para você.
                 </p>
               </TooltipContent>
@@ -145,7 +145,7 @@ export function AgentSpecialtyTab({
           <Textarea
             value={qualificationSummary}
             onChange={(e) => onQualificationChange(e.target.value)}
-            placeholder="Ex: Pessoas que trabalharam com carteira assinada, contribuíram para o INSS por pelo menos 10 meses nos últimos 24 meses, e tiveram um filho recentemente ou vão ter..."
+            placeholder="Ex: Pessoas interessadas no serviço, com orçamento definido, prontas para começar, que precisam de atendimento urgente..."
             className="min-h-[100px] resize-none"
             maxLength={500}
           />
@@ -169,7 +169,7 @@ export function AgentSpecialtyTab({
               </TooltipTrigger>
               <TooltipContent className="max-w-[280px]">
                 <p className="text-xs">
-                  Indicadores de que o lead NÃO se encaixa nesta tese. O agente usará 
+                  Indicadores de que o lead NÃO se encaixa nesta especialidade. O agente usará 
                   isso para identificar quando deve transferir para outro especialista.
                 </p>
               </TooltipContent>
@@ -183,7 +183,7 @@ export function AgentSpecialtyTab({
           <Textarea
             value={disqualificationSigns}
             onChange={(e) => onDisqualificationChange(e.target.value)}
-            placeholder="Ex: Pessoa que nunca trabalhou com carteira assinada, nunca contribuiu para o INSS, ou já recebe outro benefício previdenciário..."
+            placeholder="Ex: Apenas pesquisando preços, sem urgência, fora da área de atuação, orçamento incompatível..."
             className="min-h-[100px] resize-none"
             maxLength={500}
           />

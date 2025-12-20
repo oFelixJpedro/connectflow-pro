@@ -112,10 +112,9 @@ export interface AIAgentCompanyInfo {
   business_area?: string;
   address?: string;
   responsible_person?: string;
-  oab?: string;
-  fees?: string;
-  cancellation_fee?: string;
-  minimum_wage?: string;
+  professional_id?: string;
+  pricing?: string;
+  cancellation_policy?: string;
   [key: string]: string | undefined;
 }
 

@@ -18,16 +18,15 @@ interface AgentFAQTabProps {
 }
 
 const COMPANY_INFO_FIELDS = [
-  { key: 'company_name', label: 'Nome do Escritório/Empresa', placeholder: 'Ex: Escritório Exemplo' },
+  { key: 'company_name', label: 'Nome da Empresa', placeholder: 'Ex: Empresa Exemplo' },
   { key: 'agent_name', label: 'Nome do Agente', placeholder: 'Ex: Maria' },
   { key: 'cnpj', label: 'CNPJ', placeholder: 'Ex: 00.000.000/0001-00' },
-  { key: 'business_area', label: 'Área de Atuação', placeholder: 'Ex: Direito Civil' },
+  { key: 'business_area', label: 'Área de Atuação', placeholder: 'Ex: Consultoria, Vendas, Saúde...' },
   { key: 'address', label: 'Endereço', placeholder: 'Ex: Rua Exemplo, nº 123, Centro, Cidade/UF' },
-  { key: 'responsible_person', label: 'Advogado/Responsável', placeholder: 'Ex: Dr. João da Silva' },
-  { key: 'oab', label: 'OAB', placeholder: 'Ex: OAB/UF nº 00000' },
-  { key: 'fees', label: 'Honorários', placeholder: 'Ex: 20% do êxito + parcelas de R$ 000,00' },
-  { key: 'cancellation_fee', label: 'Multa de Desistência', placeholder: 'Ex: R$ 0,00' },
-  { key: 'minimum_wage', label: 'Salário Mínimo Vigente', placeholder: 'Ex: R$ 1.500,00' },
+  { key: 'responsible_person', label: 'Responsável', placeholder: 'Ex: João da Silva' },
+  { key: 'professional_id', label: 'Registro Profissional (opcional)', placeholder: 'Ex: CREA, CRM, CRO, OAB...' },
+  { key: 'pricing', label: 'Valores/Condições', placeholder: 'Ex: Consulta R$ 200 ou a partir de R$ 99/mês' },
+  { key: 'cancellation_policy', label: 'Política de Cancelamento', placeholder: 'Ex: Sem multa até 24h antes' },
 ];
 
 const FAQ_PLACEHOLDER = `## Perguntas Frequentes
@@ -35,15 +34,14 @@ const FAQ_PLACEHOLDER = `## Perguntas Frequentes
 **P: Qual o horário de atendimento?**
 R: Nosso horário de atendimento é de segunda a sexta, das 9h às 18h.
 
-**P: Quanto tempo demora o processo?**
-R: O prazo médio é de 6 a 12 meses, dependendo da complexidade do caso.
+**P: Quanto tempo leva para ter retorno?**
+R: O prazo médio é de 24 a 48 horas úteis.
 
-**P: Quais documentos são necessários?**
-R: Os documentos básicos são:
-- RG
-- CPF
-- Comprovante de residência
-- Documentação específica do caso`;
+**P: Quais informações são necessárias?**
+R: As informações básicas são:
+- Nome completo
+- Telefone/WhatsApp
+- Descrição da sua necessidade`;
 
 export function AgentFAQTab({
   content,
@@ -78,7 +76,7 @@ export function AgentFAQTab({
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <Building2 className="w-5 h-5" />
-                  <CardTitle className="text-base">Informações do Escritório</CardTitle>
+                  <CardTitle className="text-base">Informações da Empresa</CardTitle>
                 </div>
                 <div className="flex items-center gap-2">
                   {incompleteFields.length > 0 && (
