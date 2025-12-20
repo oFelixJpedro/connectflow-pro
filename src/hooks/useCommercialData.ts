@@ -127,6 +127,67 @@ export function useCommercialData() {
 
         if (contactsError) throw contactsError;
 
+        // Fetch messages to calculate real response time
+        const conversationIds = conversations?.map(c => c.id) || [];
+        let avgResponseTimeMinutes = 0;
+        
+        if (conversationIds.length > 0) {
+          const { data: messages } = await supabase
+            .from('messages')
+            .select('id, conversation_id, direction, sender_type, created_at')
+            .in('conversation_id', conversationIds)
+            .order('created_at', { ascending: true });
+
+          if (messages && messages.length > 0) {
+            // Group messages by conversation
+            const messagesByConv: Record<string, typeof messages> = {};
+            messages.forEach(msg => {
+              if (!messagesByConv[msg.conversation_id]) {
+                messagesByConv[msg.conversation_id] = [];
+              }
+              messagesByConv[msg.conversation_id].push(msg);
+            });
+
+            const responseTimes: number[] = [];
+            
+            Object.values(messagesByConv).forEach(convMessages => {
+              convMessages.sort((a, b) => 
+                new Date(a.created_at!).getTime() - new Date(b.created_at!).getTime()
+              );
+              
+              for (let i = 0; i < convMessages.length - 1; i++) {
+                const currentMsg = convMessages[i];
+                
+                // Look for inbound messages from contact
+                if (currentMsg.direction === 'inbound' && currentMsg.sender_type === 'contact') {
+                  // Find the next outbound message from user
+                  for (let j = i + 1; j < convMessages.length; j++) {
+                    const nextMsg = convMessages[j];
+                    
+                    if (nextMsg.direction === 'outbound' && nextMsg.sender_type === 'user') {
+                      const inboundTime = new Date(currentMsg.created_at!).getTime();
+                      const outboundTime = new Date(nextMsg.created_at!).getTime();
+                      const diffMinutes = Math.round((outboundTime - inboundTime) / (1000 * 60));
+                      
+                      // Only count reasonable response times (< 24 hours)
+                      if (diffMinutes > 0 && diffMinutes < 1440) {
+                        responseTimes.push(diffMinutes);
+                      }
+                      break;
+                    }
+                  }
+                }
+              }
+            });
+
+            if (responseTimes.length > 0) {
+              avgResponseTimeMinutes = Math.round(
+                responseTimes.reduce((sum, time) => sum + time, 0) / responseTimes.length
+              );
+            }
+          }
+        }
+
         // Fetch agents
         const { data: agents, error: agentsError } = await supabase
           .from('profiles')
@@ -371,7 +432,7 @@ export function useCommercialData() {
           totalConversations,
           totalLeads: totalConversations,
           closedDeals: closedConversations,
-          avgResponseTimeMinutes: 15, // TODO: Calculate from messages
+          avgResponseTimeMinutes,
           criteriaScores,
           strengths: allStrengths,
           weaknesses: allWeaknesses,
