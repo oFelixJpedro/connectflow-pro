@@ -289,15 +289,15 @@ export function ConversationList({
                       </p>
 
                       {/* Assignment, department badges and contact tags */}
-                      <div className="flex items-center gap-1 mt-2 overflow-hidden">
+                      <div className="flex items-center gap-1 mt-2 flex-wrap max-w-full overflow-hidden">
                         {/* Reopened badge - shows when conversation was auto-reopened */}
                         {conversation.metadata?.autoReopened && (
                           <Badge 
                             variant="outline" 
-                            className="text-xs px-1.5 py-0 h-5 flex-shrink-0 bg-amber-100 text-amber-700 border-amber-300 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-700"
+                            className="text-xs px-1.5 py-0 h-5 flex-shrink-0 bg-amber-100 text-amber-700 border-amber-300 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-700 max-w-[80px] truncate"
                           >
-                            <RotateCcw className="w-3 h-3 mr-0.5" />
-                            Reaberta
+                            <RotateCcw className="w-3 h-3 mr-0.5 flex-shrink-0" />
+                            <span className="truncate">Reaberta</span>
                           </Badge>
                         )}
                         
@@ -311,11 +311,12 @@ export function ConversationList({
                         {conversation.department && (
                           <Badge 
                             variant="outline" 
-                            className="text-xs px-1.5 py-0 h-5 flex-shrink-0"
+                            className="text-xs px-1.5 py-0 h-5 flex-shrink-0 max-w-[80px] truncate"
                             style={{ 
                               borderColor: conversation.department.color,
                               color: conversation.department.color 
                             }}
+                            title={conversation.department.name}
                           >
                             {conversation.department.name}
                           </Badge>
@@ -331,7 +332,7 @@ export function ConversationList({
                                 <Badge 
                                   key={tagName} 
                                   variant="outline"
-                                  className="text-xs px-1.5 py-0 h-5 flex-shrink-0 max-w-[60px] truncate"
+                                  className="text-xs px-1.5 py-0 h-5 flex-shrink-0 max-w-[70px] truncate"
                                   style={{
                                     backgroundColor: `${tagColor}20`,
                                     borderColor: tagColor,
