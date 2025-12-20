@@ -36,8 +36,15 @@ export function ChatSummary({ conversationId, contactId }: ChatSummaryProps) {
   const [copied, setCopied] = useState(false);
   const { toast } = useToast();
 
-  // Load saved summary on mount
+  // Load saved summary when conversationId changes
   useEffect(() => {
+    // Reset states immediately when conversation changes
+    setSummary(null);
+    setMessageCount(0);
+    setLastGenerated(null);
+    setIsLoadingSaved(true);
+    setIsOpen(false);
+
     const loadSavedSummary = async () => {
       try {
         const { data, error } = await supabase
