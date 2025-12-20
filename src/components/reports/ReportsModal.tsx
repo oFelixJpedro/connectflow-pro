@@ -1,15 +1,27 @@
-import { Library, Download, Calendar, Loader2, X } from 'lucide-react';
+import { Library, Download, Calendar, Loader2, Clock, CheckCircle, Zap } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import { useReportsData } from '@/hooks/useReportsData';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -26,6 +38,7 @@ const classificationColors: Record<string, string> = {
   REGULAR: 'bg-warning/10 text-warning border-warning/20',
   RUIM: 'bg-orange-500/10 text-orange-600 border-orange-500/20',
   CRÍTICO: 'bg-destructive/10 text-destructive border-destructive/20',
+  SEM_DADOS: 'bg-muted text-muted-foreground border-muted',
 };
 
 function ReportCardSkeleton() {
@@ -58,6 +71,9 @@ export function ReportsModal({ open, onOpenChange }: ReportsModalProps) {
     selectedMonth,
     setSelectedMonth,
     downloadReport,
+    canGenerateAnticipated,
+    generatingAnticipated,
+    generateAnticipatedReport,
   } = useReportsData();
 
   const currentYear = new Date().getFullYear();
@@ -80,34 +96,111 @@ export function ReportsModal({ open, onOpenChange }: ReportsModalProps) {
           </DialogTitle>
         </DialogHeader>
 
-        {/* Filters */}
-        <div className="flex flex-wrap gap-2 py-2">
-          <Select value={selectedYear.toString()} onValueChange={(v) => setSelectedYear(parseInt(v))}>
-            <SelectTrigger className="w-[120px]">
-              <Calendar className="w-4 h-4 mr-2" />
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent className="bg-popover">
-              {years.map((year) => (
-                <SelectItem key={year} value={year.toString()}>{year}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+        {/* Filters and Anticipated Report Button */}
+        <div className="flex flex-wrap items-center justify-between gap-2 py-2">
+          <div className="flex flex-wrap gap-2">
+            <Select value={selectedYear.toString()} onValueChange={(v) => setSelectedYear(parseInt(v))}>
+              <SelectTrigger className="w-[120px]">
+                <Calendar className="w-4 h-4 mr-2" />
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="bg-popover">
+                {years.map((year) => (
+                  <SelectItem key={year} value={year.toString()}>{year}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
 
-          <Select 
-            value={selectedMonth?.toString() ?? 'all'} 
-            onValueChange={(v) => setSelectedMonth(v === 'all' ? null : parseInt(v))}
-          >
-            <SelectTrigger className="w-[140px]">
-              <SelectValue placeholder="Todos os meses" />
-            </SelectTrigger>
-            <SelectContent className="bg-popover">
-              <SelectItem value="all">Todos os meses</SelectItem>
-              {months.map((month, index) => (
-                <SelectItem key={index} value={index.toString()}>{month}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+            <Select 
+              value={selectedMonth?.toString() ?? 'all'} 
+              onValueChange={(v) => setSelectedMonth(v === 'all' ? null : parseInt(v))}
+            >
+              <SelectTrigger className="w-[140px]">
+                <SelectValue placeholder="Todos os meses" />
+              </SelectTrigger>
+              <SelectContent className="bg-popover">
+                <SelectItem value="all">Todos os meses</SelectItem>
+                {months.map((month, index) => (
+                  <SelectItem key={index} value={index.toString()}>{month}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Anticipated Report Button */}
+          <TooltipProvider>
+            {canGenerateAnticipated ? (
+              <AlertDialog>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <AlertDialogTrigger asChild>
+                      <Button 
+                        variant="outline" 
+                        size="sm"
+                        disabled={generatingAnticipated}
+                        className="border-amber-500/30 text-amber-600 hover:bg-amber-500/10"
+                      >
+                        {generatingAnticipated ? (
+                          <>
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            Gerando...
+                          </>
+                        ) : (
+                          <>
+                            <Zap className="w-4 h-4 mr-2" />
+                            Adiantar Relatório
+                          </>
+                        )}
+                      </Button>
+                    </AlertDialogTrigger>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>Gerar relatório antecipado da semana atual (1x por semana)</p>
+                  </TooltipContent>
+                </Tooltip>
+
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle className="flex items-center gap-2">
+                      <Zap className="w-5 h-5 text-amber-500" />
+                      Adiantar Relatório Semanal
+                    </AlertDialogTitle>
+                    <AlertDialogDescription className="space-y-2">
+                      <p>
+                        O relatório antecipado será gerado com os <strong>dados parciais</strong> da semana atual (até este momento).
+                      </p>
+                      <p className="text-muted-foreground text-sm">
+                        • Você só pode usar esta funcionalidade <strong>1 vez por semana</strong><br />
+                        • O relatório automático de segunda-feira será bloqueado<br />
+                        • As conversas avaliadas serão apenas as ocorridas até agora
+                      </p>
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                    <AlertDialogAction 
+                      onClick={generateAnticipatedReport}
+                      className="bg-amber-500 hover:bg-amber-600"
+                    >
+                      Gerar Relatório Antecipado
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            ) : (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground bg-muted/50 px-3 py-1.5 rounded-md">
+                    <CheckCircle className="w-4 h-4 text-success" />
+                    <span>Relatório antecipado gerado</span>
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Próximo uso disponível na segunda-feira</p>
+                </TooltipContent>
+              </Tooltip>
+            )}
+          </TooltipProvider>
         </div>
 
         {/* Reports List */}
@@ -141,11 +234,28 @@ export function ReportsModal({ open, onOpenChange }: ReportsModalProps) {
                         <span className="font-medium">
                           Semana {format(new Date(report.week_start), "dd/MM", { locale: ptBR })} - {format(new Date(report.week_end), "dd/MM/yyyy", { locale: ptBR })}
                         </span>
+                        {report.is_anticipated && (
+                          <Badge 
+                            variant="outline" 
+                            className="bg-amber-500/10 text-amber-600 border-amber-500/20 text-xs"
+                          >
+                            <Zap className="w-3 h-3 mr-1" />
+                            Antecipado
+                          </Badge>
+                        )}
                       </div>
                       <div className="flex items-center gap-3 text-sm text-muted-foreground">
                         <span>{report.total_conversations} conversas</span>
                         <span>•</span>
                         <span>Nota: {report.average_score?.toFixed(1) ?? 'N/A'}/10</span>
+                        {report.is_anticipated && report.anticipated_at && (
+                          <>
+                            <span>•</span>
+                            <span className="text-xs">
+                              Gerado em {format(new Date(report.anticipated_at), "dd/MM 'às' HH:mm", { locale: ptBR })}
+                            </span>
+                          </>
+                        )}
                       </div>
                     </div>
                     
@@ -154,7 +264,7 @@ export function ReportsModal({ open, onOpenChange }: ReportsModalProps) {
                         variant="outline" 
                         className={cn(classificationColors[report.classification || ''] || '')}
                       >
-                        {report.classification || 'N/A'}
+                        {report.classification === 'SEM_DADOS' ? 'Sem Dados' : report.classification || 'N/A'}
                       </Badge>
                       
                       <Button 

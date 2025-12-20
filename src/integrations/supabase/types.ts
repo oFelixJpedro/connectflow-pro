@@ -593,6 +593,8 @@ export type Database = {
       commercial_reports: {
         Row: {
           agents_analysis: Json | null
+          anticipated_at: string | null
+          anticipated_by: string | null
           average_score: number | null
           avg_response_time_minutes: number | null
           classification: string | null
@@ -609,6 +611,7 @@ export type Database = {
           generated_by: string | null
           id: string
           insights: string[] | null
+          is_anticipated: boolean | null
           negative_patterns: string[] | null
           pdf_url: string | null
           positive_patterns: string[] | null
@@ -623,6 +626,8 @@ export type Database = {
         }
         Insert: {
           agents_analysis?: Json | null
+          anticipated_at?: string | null
+          anticipated_by?: string | null
           average_score?: number | null
           avg_response_time_minutes?: number | null
           classification?: string | null
@@ -639,6 +644,7 @@ export type Database = {
           generated_by?: string | null
           id?: string
           insights?: string[] | null
+          is_anticipated?: boolean | null
           negative_patterns?: string[] | null
           pdf_url?: string | null
           positive_patterns?: string[] | null
@@ -653,6 +659,8 @@ export type Database = {
         }
         Update: {
           agents_analysis?: Json | null
+          anticipated_at?: string | null
+          anticipated_by?: string | null
           average_score?: number | null
           avg_response_time_minutes?: number | null
           classification?: string | null
@@ -669,6 +677,7 @@ export type Database = {
           generated_by?: string | null
           id?: string
           insights?: string[] | null
+          is_anticipated?: boolean | null
           negative_patterns?: string[] | null
           pdf_url?: string | null
           positive_patterns?: string[] | null
