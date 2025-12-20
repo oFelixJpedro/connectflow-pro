@@ -545,14 +545,34 @@ ${conversationText}`;
     }
 
     // =====================================================
-    // AUTOMATIC INSIGHTS AGGREGATION (every 20 messages)
+    // AUTOMATIC INSIGHTS AGGREGATION (every 10 messages OR when empty)
     // =====================================================
-    const INSIGHTS_INTERVAL = 20;
+    const INSIGHTS_INTERVAL = 10; // Reduced for faster feedback
     const newInsightsCount = needsReset ? 1 : currentInsightsCount + 1;
-    const shouldGenerateInsights = newInsightsCount > 0 && newInsightsCount % INSIGHTS_INTERVAL === 0;
     
-    if (shouldGenerateInsights && geminiApiKey) {
-      console.log(`🧠 [PIXEL] Triggering insights aggregation at ${newInsightsCount} total messages today`);
+    // Fetch current dashboard to check if insights exist
+    const { data: existingDashboard } = await supabase
+      .from('company_live_dashboard')
+      .select('aggregated_insights')
+      .eq('company_id', company_id)
+      .maybeSingle();
+    
+    const currentInsights = existingDashboard?.aggregated_insights as any;
+    const hasNoInsights = !currentInsights || 
+      !currentInsights.strengths || 
+      currentInsights.strengths.length === 0 ||
+      !currentInsights.final_recommendation ||
+      currentInsights.final_recommendation === '';
+    
+    const shouldGenerateInsights = geminiApiKey && (
+      hasNoInsights || // Always generate if no insights exist
+      (newInsightsCount > 0 && newInsightsCount % INSIGHTS_INTERVAL === 0) // Or on interval
+    );
+
+    console.log(`🔍 [PIXEL] Insights check: count=${newInsightsCount}, interval=${INSIGHTS_INTERVAL}, hasNoInsights=${hasNoInsights}, shouldGenerate=${shouldGenerateInsights}`);
+    
+    if (shouldGenerateInsights) {
+      console.log(`🧠 [PIXEL] Triggering insights aggregation (count=${newInsightsCount}, noInsights=${hasNoInsights})`);
       
       // Fetch all data for insights
       const { data: allLiveMetrics } = await supabase
