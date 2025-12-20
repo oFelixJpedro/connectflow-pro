@@ -140,17 +140,17 @@ serve(async (req) => {
       try {
         console.log(`Processing company: ${company.name} (${company.id})`);
 
-        // Check if report already exists for this week
+        // Check if report already exists for this week (regular OR anticipated)
         const { data: existingReport } = await supabase
           .from('commercial_reports')
-          .select('id')
+          .select('id, is_anticipated')
           .eq('company_id', company.id)
           .eq('week_start', weekStart.toISOString().split('T')[0])
-          .eq('week_end', weekEnd.toISOString().split('T')[0])
-          .single();
+          .maybeSingle();
 
         if (existingReport) {
-          console.log(`Report already exists for company ${company.id}`);
+          // If any report exists (anticipated or regular), skip generation
+          console.log(`Report already exists for company ${company.id} (anticipated: ${existingReport.is_anticipated || false})`);
           results.push({ companyId: company.id, success: true });
           continue;
         }
