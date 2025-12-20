@@ -14,6 +14,112 @@ export type Database = {
   }
   public: {
     Tables: {
+      agent_behavior_alerts: {
+        Row: {
+          agent_id: string
+          ai_confidence: number | null
+          alert_type: string
+          company_id: string
+          contact_id: string
+          conversation_id: string
+          created_at: string
+          description: string
+          detected_at: string
+          id: string
+          lead_was_rude: boolean | null
+          message_excerpt: string | null
+          message_id: string | null
+          reviewed: boolean | null
+          reviewed_at: string | null
+          reviewed_by: string | null
+          severity: string
+          title: string
+        }
+        Insert: {
+          agent_id: string
+          ai_confidence?: number | null
+          alert_type: string
+          company_id: string
+          contact_id: string
+          conversation_id: string
+          created_at?: string
+          description: string
+          detected_at?: string
+          id?: string
+          lead_was_rude?: boolean | null
+          message_excerpt?: string | null
+          message_id?: string | null
+          reviewed?: boolean | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          severity?: string
+          title: string
+        }
+        Update: {
+          agent_id?: string
+          ai_confidence?: number | null
+          alert_type?: string
+          company_id?: string
+          contact_id?: string
+          conversation_id?: string
+          created_at?: string
+          description?: string
+          detected_at?: string
+          id?: string
+          lead_was_rude?: boolean | null
+          message_excerpt?: string | null
+          message_id?: string | null
+          reviewed?: boolean | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          severity?: string
+          title?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_behavior_alerts_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agent_behavior_alerts_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agent_behavior_alerts_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agent_behavior_alerts_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agent_behavior_alerts_message_id_fkey"
+            columns: ["message_id"]
+            isOneToOne: false
+            referencedRelation: "messages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agent_behavior_alerts_reviewed_by_fkey"
+            columns: ["reviewed_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ai_agent_connections: {
         Row: {
           agent_id: string
@@ -814,6 +920,7 @@ export type Database = {
       }
       conversation_evaluations: {
         Row: {
+          agent_id: string | null
           ai_summary: string | null
           closing_score: number | null
           communication_score: number | null
@@ -834,6 +941,7 @@ export type Database = {
           strengths: string[] | null
         }
         Insert: {
+          agent_id?: string | null
           ai_summary?: string | null
           closing_score?: number | null
           communication_score?: number | null
@@ -854,6 +962,7 @@ export type Database = {
           strengths?: string[] | null
         }
         Update: {
+          agent_id?: string | null
           ai_summary?: string | null
           closing_score?: number | null
           communication_score?: number | null
@@ -874,6 +983,13 @@ export type Database = {
           strengths?: string[] | null
         }
         Relationships: [
+          {
+            foreignKeyName: "conversation_evaluations_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "conversation_evaluations_company_id_fkey"
             columns: ["company_id"]

@@ -54,6 +54,36 @@ Critérios:
 - response_time_score: Agilidade nas respostas (avalie pelo fluxo)
 `;
 
+// Prompt for behavior analysis
+const BEHAVIOR_PROMPT = `Analise esta mensagem do VENDEDOR em uma conversa comercial e detecte comportamentos problemáticos.
+Contexto das últimas mensagens está incluído para você avaliar se a resposta é justificada.
+
+Responda APENAS em JSON válido, sem markdown:
+{
+  "has_issue": true/false,
+  "alert_type": "aggressive" | "negligent" | "lazy" | "slow_response" | "sabotage" | "quality_issue" | "unprofessional" | null,
+  "severity": "low" | "medium" | "high" | "critical",
+  "title": "título curto do problema",
+  "description": "descrição do comportamento problemático",
+  "lead_was_rude": true/false,
+  "confidence": 0.0-1.0
+}
+
+Tipos de alerta:
+- aggressive: xingamentos, palavrões, ameaças, grosseria sem motivo
+- negligent: ignorar perguntas importantes, desqualificar lead sem razão
+- lazy: respostas secas/curtas demais, falta de proatividade, má vontade evidente
+- slow_response: (não detectável aqui, será calculado separadamente)
+- sabotage: prejudicar propositalmente a venda, desincentivar compra
+- quality_issue: respostas confusas, erros graves, informações incorretas
+- unprofessional: comportamento inadequado, linguagem imprópria
+
+IMPORTANTE: 
+- Se o lead foi grosseiro/rude primeiro, NÃO é alerta (lead_was_rude=true, has_issue=false)
+- Respostas diretas e objetivas NÃO são lazy
+- Analise o CONTEXTO antes de julgar
+`;
+
 // Prompt for aggregated insights
 const INSIGHTS_PROMPT = `Com base nos dados agregados das conversas comerciais, gere insights estratégicos.
 Responda APENAS em JSON válido, sem markdown:
@@ -410,6 +440,66 @@ ${message_content}`;
         });
       }
     }
+
+    // =====================================================
+    // AGENT BEHAVIOR DETECTION (for outbound messages only)
+    // =====================================================
+    if (!isInbound && geminiApiKey && message_content && message_type === 'text') {
+      // Get conversation details to find the agent
+      const { data: convDetails } = await supabase
+        .from('conversations')
+        .select('assigned_user_id, contact_id')
+        .eq('id', conversation_id)
+        .maybeSingle();
+
+      if (convDetails?.assigned_user_id) {
+        // Get last 5 messages for context
+        const { data: contextMessages } = await supabase
+          .from('messages')
+          .select('content, direction, sender_type')
+          .eq('conversation_id', conversation_id)
+          .order('created_at', { ascending: false })
+          .limit(5);
+
+        const contextText = (contextMessages || [])
+          .reverse()
+          .filter((m: any) => m.content)
+          .map((m: any) => `${m.direction === 'inbound' ? 'Cliente' : 'Vendedor'}: ${m.content}`)
+          .join('\n');
+
+        const behaviorPrompt = `${BEHAVIOR_PROMPT}
+
+Contexto da conversa:
+${contextText}
+
+Mensagem do vendedor a analisar:
+${message_content}`;
+
+        console.log('🔍 [PIXEL] Analyzing agent behavior...');
+        const behaviorResult = await callGemini(behaviorPrompt, geminiApiKey);
+
+        if (behaviorResult && behaviorResult.has_issue && behaviorResult.alert_type && behaviorResult.confidence >= 0.7) {
+          console.log('⚠️ [PIXEL] Behavior issue detected:', behaviorResult);
+
+          // Insert behavior alert
+          await supabase.from('agent_behavior_alerts').insert({
+            company_id,
+            agent_id: convDetails.assigned_user_id,
+            conversation_id,
+            contact_id: convDetails.contact_id,
+            alert_type: behaviorResult.alert_type,
+            severity: behaviorResult.severity || 'medium',
+            title: behaviorResult.title || 'Comportamento detectado',
+            description: behaviorResult.description || '',
+            message_excerpt: message_content.substring(0, 200),
+            ai_confidence: behaviorResult.confidence,
+            lead_was_rude: behaviorResult.lead_was_rude || false,
+            detected_at: new Date().toISOString()
+          });
+
+          console.log('✅ [PIXEL] Behavior alert saved');
+        }
+      }
 
     // Upsert metrics
     const { error: metricsError } = await supabase
