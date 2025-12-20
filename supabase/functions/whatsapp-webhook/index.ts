@@ -2033,6 +2033,32 @@ serve(async (req) => {
     }
     
     // ═══════════════════════════════════════════════════════════════════
+    // 📊 COMMERCIAL PIXEL - Analyze message in real-time (fire-and-forget)
+    // ═══════════════════════════════════════════════════════════════════
+    try {
+      EdgeRuntime.waitUntil(
+        fetch(`${supabaseUrl}/functions/v1/commercial-pixel`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${supabaseServiceKey}`,
+          },
+          body: JSON.stringify({
+            conversation_id: conversationId,
+            company_id: companyId,
+            message_content: messageContent || '',
+            message_type: dbMessageType,
+            direction: direction,
+            contact_name: contactName
+          }),
+        }).catch(e => console.log('⚠️ [PIXEL] Error calling commercial-pixel:', e))
+      );
+      console.log('📊 [PIXEL] Commercial pixel triggered for message');
+    } catch (pixelError) {
+      console.log('⚠️ [PIXEL] Failed to trigger commercial pixel:', pixelError);
+    }
+    
+    // ═══════════════════════════════════════════════════════════════════
     // 🤖 PROCESS AI AGENT (BATCH SYSTEM)
     // ═══════════════════════════════════════════════════════════════════
     // Process AI agent for text, audio and image messages (not stickers, documents, videos)

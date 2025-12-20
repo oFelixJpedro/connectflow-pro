@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { getStateFromPhone, StateCode } from '@/lib/dddMapping';
@@ -20,6 +20,21 @@ interface AgentAnalysis {
   score: number;
   conversations: number;
   recommendation: 'promover' | 'manter' | 'treinar' | 'monitorar' | 'ação corretiva';
+}
+
+interface LiveMetrics {
+  activeConversations: number;
+  hotLeads: number;
+  warmLeads: number;
+  coldLeads: number;
+  todayMessages: number;
+  todayNewConversations: number;
+  todayContractsClosed: number;
+  todayLeadsLost: number;
+  currentAvgResponseTime: number;
+  currentAvgSentiment: string;
+  topObjections: string[];
+  topPainPoints: string[];
 }
 
 interface CommercialData {
@@ -48,6 +63,7 @@ export function useCommercialData() {
   const { profile, userRole } = useAuth();
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<CommercialData | null>(null);
+  const [liveMetrics, setLiveMetrics] = useState<LiveMetrics | null>(null);
   const [lastUpdated, setLastUpdated] = useState(new Date());
   const [evaluating, setEvaluating] = useState(false);
 
@@ -79,6 +95,92 @@ export function useCommercialData() {
       setEvaluating(false);
     }
   };
+
+  // Fetch live metrics from company_live_dashboard
+  const fetchLiveMetrics = useCallback(async () => {
+    if (!profile?.company_id || !isAdmin) return;
+
+    try {
+      const { data: dashboard } = await supabase
+        .from('company_live_dashboard')
+        .select('*')
+        .eq('company_id', profile.company_id)
+        .maybeSingle();
+
+      if (dashboard) {
+        setLiveMetrics({
+          activeConversations: dashboard.active_conversations || 0,
+          hotLeads: dashboard.hot_leads || 0,
+          warmLeads: dashboard.warm_leads || 0,
+          coldLeads: dashboard.cold_leads || 0,
+          todayMessages: dashboard.today_messages || 0,
+          todayNewConversations: dashboard.today_new_conversations || 0,
+          todayContractsClosed: dashboard.today_contracts_closed || 0,
+          todayLeadsLost: dashboard.today_leads_lost || 0,
+          currentAvgResponseTime: dashboard.current_avg_response_time || 0,
+          currentAvgSentiment: dashboard.current_avg_sentiment || 'neutral',
+          topObjections: Array.isArray(dashboard.top_objections) 
+            ? dashboard.top_objections as string[]
+            : [],
+          topPainPoints: Array.isArray(dashboard.top_pain_points)
+            ? dashboard.top_pain_points as string[]
+            : [],
+        });
+      }
+    } catch (error) {
+      console.error('Error fetching live metrics:', error);
+    }
+  }, [profile?.company_id, isAdmin]);
+
+  // Set up realtime subscription for live updates
+  useEffect(() => {
+    if (!profile?.company_id || !isAdmin) return;
+
+    fetchLiveMetrics();
+
+    // Subscribe to realtime updates on company_live_dashboard
+    const channel = supabase
+      .channel('commercial-live-dashboard')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'company_live_dashboard',
+          filter: `company_id=eq.${profile.company_id}`,
+        },
+        (payload) => {
+          console.log('📊 [REALTIME] Dashboard updated:', payload);
+          const newData = payload.new as any;
+          if (newData) {
+            setLiveMetrics({
+              activeConversations: newData.active_conversations || 0,
+              hotLeads: newData.hot_leads || 0,
+              warmLeads: newData.warm_leads || 0,
+              coldLeads: newData.cold_leads || 0,
+              todayMessages: newData.today_messages || 0,
+              todayNewConversations: newData.today_new_conversations || 0,
+              todayContractsClosed: newData.today_contracts_closed || 0,
+              todayLeadsLost: newData.today_leads_lost || 0,
+              currentAvgResponseTime: newData.current_avg_response_time || 0,
+              currentAvgSentiment: newData.current_avg_sentiment || 'neutral',
+              topObjections: Array.isArray(newData.top_objections) 
+                ? newData.top_objections as string[]
+                : [],
+              topPainPoints: Array.isArray(newData.top_pain_points)
+                ? newData.top_pain_points as string[]
+                : [],
+            });
+            setLastUpdated(new Date());
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [profile?.company_id, isAdmin, fetchLiveMetrics]);
 
   useEffect(() => {
     if (!profile?.company_id || !isAdmin) {
@@ -126,6 +228,17 @@ export function useCommercialData() {
           .eq('company_id', profile.company_id);
 
         if (contactsError) throw contactsError;
+
+        // Fetch live metrics for closed deals (from Kanban or AI detection)
+        const { data: liveMetricsData } = await supabase
+          .from('conversation_live_metrics')
+          .select('lead_status, conversation_id')
+          .eq('company_id', profile.company_id);
+
+        // Count closed deals from live metrics (AI-detected or Kanban confirmed)
+        const closedDealsFromAI = liveMetricsData?.filter(
+          m => m.lead_status === 'closed_won'
+        ).length || 0;
 
         // Fetch messages to calculate real response time
         const conversationIds = conversations?.map(c => c.id) || [];
@@ -205,19 +318,31 @@ export function useCommercialData() {
           }
         });
 
-        // Calculate deals by state
+        // Calculate deals by state - using live metrics (AI-detected closures)
         const dealsByState: Record<string, number> = {};
-        conversations?.forEach(conv => {
-          if (conv.status === 'closed' || conv.status === 'resolved') {
-            const contact = conv.contact as any;
-            if (contact?.phone_number) {
-              const stateInfo = getStateFromPhone(contact.phone_number);
-              if (stateInfo) {
-                dealsByState[stateInfo.state] = (dealsByState[stateInfo.state] || 0) + 1;
+        
+        if (liveMetricsData && liveMetricsData.length > 0) {
+          const closedConvIds = liveMetricsData
+            .filter(m => m.lead_status === 'closed_won')
+            .map(m => m.conversation_id);
+          
+          if (closedConvIds.length > 0) {
+            const { data: closedConvs } = await supabase
+              .from('conversations')
+              .select('contact:contacts(phone_number)')
+              .in('id', closedConvIds);
+            
+            closedConvs?.forEach(conv => {
+              const contact = conv.contact as any;
+              if (contact?.phone_number) {
+                const stateInfo = getStateFromPhone(contact.phone_number);
+                if (stateInfo) {
+                  dealsByState[stateInfo.state] = (dealsByState[stateInfo.state] || 0) + 1;
+                }
               }
-            }
+            });
           }
-        });
+        }
 
         // Calculate agent statistics
         const agentStats: Record<string, { conversations: number; closed: number }> = {};
@@ -227,7 +352,11 @@ export function useCommercialData() {
               agentStats[conv.assigned_user_id] = { conversations: 0, closed: 0 };
             }
             agentStats[conv.assigned_user_id].conversations++;
-            if (conv.status === 'closed' || conv.status === 'resolved') {
+            // Check if this conversation has closed_won status in live metrics
+            const isClosedWon = liveMetricsData?.some(
+              m => m.conversation_id === conv.id && m.lead_status === 'closed_won'
+            );
+            if (isClosedWon) {
               agentStats[conv.assigned_user_id].closed++;
             }
           }
@@ -366,13 +495,10 @@ export function useCommercialData() {
           };
         }).filter(a => a.conversations > 0).sort((a, b) => b.score - a.score) || [];
 
-        // Calculate overall metrics
+        // Calculate overall metrics - use AI-detected closed deals
         const totalConversations = conversations?.length || 0;
-        const closedConversations = conversations?.filter(c => 
-          c.status === 'closed' || c.status === 'resolved'
-        ).length || 0;
         const conversionRate = totalConversations > 0 
-          ? Math.round((closedConversations / totalConversations) * 100 * 10) / 10 
+          ? Math.round((closedDealsFromAI / totalConversations) * 100 * 10) / 10 
           : 0;
 
         // Use evaluation average if available, otherwise use agent average
@@ -431,7 +557,7 @@ export function useCommercialData() {
           conversionRate,
           totalConversations,
           totalLeads: totalConversations,
-          closedDeals: closedConversations,
+          closedDeals: closedDealsFromAI,
           avgResponseTimeMinutes,
           criteriaScores,
           strengths: allStrengths,
@@ -460,6 +586,7 @@ export function useCommercialData() {
   return {
     loading,
     data,
+    liveMetrics,
     lastUpdated,
     isAdmin,
     evaluating,

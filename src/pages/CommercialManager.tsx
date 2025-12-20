@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { TrendingUp, LayoutDashboard, Loader2, Sparkles } from 'lucide-react';
+import { TrendingUp, LayoutDashboard, Loader2, Sparkles, Radio } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -8,6 +8,7 @@ import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { useCommercialData } from '@/hooks/useCommercialData';
 import { QualityMetricsCards } from '@/components/commercial/QualityMetricsCards';
+import { LiveMetricsCards } from '@/components/commercial/LiveMetricsCards';
 import { BrazilMap } from '@/components/commercial/BrazilMap';
 import { CriteriaRadarChart } from '@/components/commercial/CriteriaRadarChart';
 import { AgentPerformanceTable } from '@/components/commercial/AgentPerformanceTable';
@@ -16,7 +17,7 @@ import { toast } from 'sonner';
 
 export default function CommercialManager() {
   const navigate = useNavigate();
-  const { loading, data, lastUpdated, isAdmin, evaluating, evaluateConversations } = useCommercialData();
+  const { loading, data, liveMetrics, lastUpdated, isAdmin, evaluating, evaluateConversations } = useCommercialData();
   const [viewMode, setViewMode] = useState<'commercial' | 'dashboard'>('commercial');
 
   const handleEvaluate = async () => {
@@ -91,8 +92,12 @@ export default function CommercialManager() {
               {evaluating ? 'Avaliando...' : 'Avaliar Conversas'}
             </Button>
             <Badge variant="outline" className="text-xs md:text-sm flex items-center gap-1 md:gap-2 w-fit">
-              {loading && <Loader2 className="w-3 h-3 animate-spin" />}
-              <span className="hidden sm:inline">Atualizado</span> {format(lastUpdated, "HH:mm", { locale: ptBR })}
+              {loading ? (
+                <Loader2 className="w-3 h-3 animate-spin" />
+              ) : (
+                <Radio className="w-3 h-3 text-green-500 animate-pulse" />
+              )}
+              <span className="hidden sm:inline">Tempo real</span> {format(lastUpdated, "HH:mm:ss", { locale: ptBR })}
             </Badge>
           </div>
         </div>
@@ -100,6 +105,9 @@ export default function CommercialManager() {
           Análise de qualidade e performance da equipe comercial
         </p>
       </div>
+
+      {/* Live Metrics - Real-time */}
+      <LiveMetricsCards loading={loading} metrics={liveMetrics} />
 
       {/* Quality Metrics */}
       <QualityMetricsCards

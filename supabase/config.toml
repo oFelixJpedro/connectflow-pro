@@ -98,3 +98,6 @@ verify_jwt = true
 
 [functions.evaluate-conversation]
 verify_jwt = true
+
+[functions.commercial-pixel]
+verify_jwt = false
