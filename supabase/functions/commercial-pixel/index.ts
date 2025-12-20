@@ -26,6 +26,132 @@ Sinais de fechamento incluem: pedido de preço, contrato, forma de pagamento, pr
 Sinais de desqualificação: "não tenho interesse", "não é para mim", errou o número, spam.
 `;
 
+// Prompt for conversation evaluation
+const EVALUATION_PROMPT = `Avalie esta conversa comercial de vendas. Analise a qualidade do atendimento do vendedor.
+Responda APENAS em JSON válido, sem markdown:
+{
+  "communication_score": 0-10,
+  "objectivity_score": 0-10,
+  "humanization_score": 0-10,
+  "objection_handling_score": 0-10,
+  "closing_score": 0-10,
+  "response_time_score": 0-10,
+  "overall_score": 0-10,
+  "lead_qualification": "cold" | "warm" | "hot",
+  "lead_interest_level": 1-5,
+  "strengths": ["lista de pontos fortes do vendedor"],
+  "improvements": ["lista de melhorias necessárias"],
+  "lead_pain_points": ["dores identificadas do cliente"],
+  "ai_summary": "resumo de 2-3 frases da conversa"
+}
+
+Critérios:
+- communication_score: Clareza, gramática, tom profissional
+- objectivity_score: Foco no objetivo, sem enrolação
+- humanization_score: Empatia, personalização, conexão
+- objection_handling_score: Tratamento de objeções e dúvidas
+- closing_score: Técnicas de fechamento, call to action
+- response_time_score: Agilidade nas respostas (avalie pelo fluxo)
+`;
+
+// Prompt for aggregated insights
+const INSIGHTS_PROMPT = `Com base nos dados agregados das conversas comerciais, gere insights estratégicos.
+Responda APENAS em JSON válido, sem markdown:
+{
+  "strengths": ["3-5 pontos fortes identificados na equipe"],
+  "weaknesses": ["3-5 pontos fracos que precisam atenção"],
+  "positive_patterns": ["2-3 padrões positivos observados"],
+  "negative_patterns": ["2-3 padrões negativos a corrigir"],
+  "critical_issues": ["problemas críticos que precisam ação imediata, pode ser vazio"],
+  "insights": ["5 insights acionáveis e específicos para melhoria"],
+  "final_recommendation": "Uma recomendação estratégica clara e acionável com base em todos os dados"
+}
+
+Seja específico, acionável e baseado nos dados fornecidos. Evite generalidades.
+`;
+
+// Robust JSON parsing
+function parseAIResponse(responseText: string): any | null {
+  if (!responseText) return null;
+  
+  // Clean markdown formatting
+  let cleanedResponse = responseText
+    .replace(/```json\s*/gi, '')
+    .replace(/```\s*/gi, '')
+    .trim();
+  
+  // Try direct parse first (if response starts with {)
+  if (cleanedResponse.startsWith('{')) {
+    try {
+      return JSON.parse(cleanedResponse);
+    } catch (e) {
+      console.log('⚠️ [PIXEL] Direct parse failed, trying extraction');
+    }
+  }
+  
+  // Extract from first { to last }
+  const start = cleanedResponse.indexOf('{');
+  const end = cleanedResponse.lastIndexOf('}');
+  
+  if (start !== -1 && end > start) {
+    const jsonText = cleanedResponse.slice(start, end + 1);
+    try {
+      return JSON.parse(jsonText);
+    } catch (e) {
+      console.log('⚠️ [PIXEL] Extraction parse failed:', e);
+      console.log('⚠️ [PIXEL] Attempted to parse:', jsonText.substring(0, 300));
+    }
+  }
+  
+  // Try regex as last resort
+  const jsonMatch = cleanedResponse.match(/\{[\s\S]*\}/);
+  if (jsonMatch) {
+    try {
+      return JSON.parse(jsonMatch[0]);
+    } catch (e) {
+      console.log('⚠️ [PIXEL] Regex parse failed');
+    }
+  }
+  
+  return null;
+}
+
+// Call Gemini API
+async function callGemini(prompt: string, geminiApiKey: string): Promise<any | null> {
+  try {
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiApiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: {
+            temperature: 0.3,
+            maxOutputTokens: 1500
+          }
+        })
+      }
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.log('⚠️ [PIXEL] Gemini API error:', response.status, errorText.substring(0, 200));
+      return null;
+    }
+
+    const data = await response.json();
+    const responseText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    
+    console.log('📄 [PIXEL] Gemini response (first 300 chars):', responseText.substring(0, 300));
+    
+    return parseAIResponse(responseText);
+  } catch (error) {
+    console.log('⚠️ [PIXEL] Gemini call error:', error);
+    return null;
+  }
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -94,18 +220,20 @@ serve(async (req) => {
     // Get current dashboard and increment today_messages
     const { data: dashboard } = await supabase
       .from('company_live_dashboard')
-      .select('today_messages, last_reset_date')
+      .select('today_messages, last_reset_date, insights_message_count')
       .eq('company_id', company_id)
       .maybeSingle();
     
     const today = new Date().toISOString().split('T')[0];
     const needsReset = dashboard?.last_reset_date !== today;
+    const currentInsightsCount = dashboard?.insights_message_count || 0;
     
     await supabase
       .from('company_live_dashboard')
       .upsert({
         company_id,
         today_messages: needsReset ? 1 : (dashboard?.today_messages || 0) + 1,
+        insights_message_count: needsReset ? 1 : currentInsightsCount + 1,
         last_reset_date: today,
         updated_at: new Date().toISOString()
       }, { onConflict: 'company_id' });
@@ -114,22 +242,21 @@ serve(async (req) => {
     let aiAnalysis: any = null;
     
     if (geminiApiKey && message_content && message_type === 'text') {
-      try {
-        // Get last 5 messages for context
-        const { data: recentMessages } = await supabase
-          .from('messages')
-          .select('content, direction, sender_type, message_type')
-          .eq('conversation_id', conversation_id)
-          .order('created_at', { ascending: false })
-          .limit(5);
+      // Get last 5 messages for context
+      const { data: recentMessages } = await supabase
+        .from('messages')
+        .select('content, direction, sender_type, message_type')
+        .eq('conversation_id', conversation_id)
+        .order('created_at', { ascending: false })
+        .limit(5);
 
-        const contextMessages = (recentMessages || [])
-          .reverse()
-          .filter((m: any) => m.content)
-          .map((m: any) => `${m.direction === 'inbound' ? 'Cliente' : 'Vendedor'}: ${m.content}`)
-          .join('\n');
+      const contextMessages = (recentMessages || [])
+        .reverse()
+        .filter((m: any) => m.content)
+        .map((m: any) => `${m.direction === 'inbound' ? 'Cliente' : 'Vendedor'}: ${m.content}`)
+        .join('\n');
 
-        const fullPrompt = `${ANALYSIS_PROMPT}
+      const fullPrompt = `${ANALYSIS_PROMPT}
 
 Contexto da conversa (últimas mensagens):
 ${contextMessages}
@@ -137,56 +264,11 @@ ${contextMessages}
 Mensagem atual do ${isInbound ? 'cliente' : 'vendedor'}:
 ${message_content}`;
 
-        console.log('🤖 [PIXEL] Calling Gemini for analysis...');
-        
-        const geminiResponse = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${geminiApiKey}`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              contents: [{ parts: [{ text: fullPrompt }] }],
-              generationConfig: {
-                temperature: 0.3,
-                maxOutputTokens: 500
-              }
-            })
-          }
-        );
-
-        if (geminiResponse.ok) {
-          const geminiData = await geminiResponse.json();
-          const responseText = geminiData.candidates?.[0]?.content?.parts?.[0]?.text || '';
-          
-          // Debug: Log raw response
-          console.log('📄 [PIXEL] Gemini raw response (first 500 chars):', responseText.substring(0, 500));
-          
-          // Clean markdown formatting before extracting JSON
-          let cleanedResponse = responseText
-            .replace(/```json\s*/gi, '')
-            .replace(/```\s*/gi, '')
-            .trim();
-          
-          // Extract JSON from response
-          const jsonMatch = cleanedResponse.match(/\{[\s\S]*\}/);
-          if (jsonMatch) {
-            try {
-              aiAnalysis = JSON.parse(jsonMatch[0]);
-              console.log('✅ [PIXEL] AI Analysis parsed successfully:', JSON.stringify(aiAnalysis));
-            } catch (parseError) {
-              console.log('⚠️ [PIXEL] Failed to parse AI response as JSON:', parseError);
-              console.log('⚠️ [PIXEL] Attempted to parse:', jsonMatch[0].substring(0, 200));
-            }
-          } else {
-            console.log('⚠️ [PIXEL] No JSON found in cleaned response');
-            console.log('⚠️ [PIXEL] Cleaned response:', cleanedResponse.substring(0, 300));
-          }
-        } else {
-          const errorText = await geminiResponse.text();
-          console.log('⚠️ [PIXEL] Gemini API error:', geminiResponse.status, errorText.substring(0, 200));
-        }
-      } catch (aiError) {
-        console.log('⚠️ [PIXEL] AI analysis error:', aiError);
+      console.log('🤖 [PIXEL] Calling Gemini for message analysis...');
+      aiAnalysis = await callGemini(fullPrompt, geminiApiKey);
+      
+      if (aiAnalysis) {
+        console.log('✅ [PIXEL] AI Analysis parsed successfully:', JSON.stringify(aiAnalysis));
       }
     }
 
@@ -352,8 +434,7 @@ ${message_content}`;
       ai_insights: aiAnalysis || {}
     });
 
-    // ALWAYS update aggregated dashboard data (not just when AI analysis happens)
-    // This ensures real-time counts for leads and active conversations
+    // ALWAYS update aggregated dashboard data
     const { data: allMetrics } = await supabase
       .from('conversation_live_metrics')
       .select('lead_status, last_activity_at')
@@ -371,12 +452,10 @@ ${message_content}`;
       };
 
       allMetrics.forEach((m: any) => {
-        // Count leads by status
         if (m.lead_status === 'hot') statusCounts.hot++;
         else if (m.lead_status === 'warming') statusCounts.warm++;
         else if (m.lead_status === 'cold') statusCounts.cold++;
         
-        // Count active conversations (activity in last 24h AND not closed)
         const lastActivity = m.last_activity_at ? new Date(m.last_activity_at) : null;
         const isActive = lastActivity && lastActivity > twentyFourHoursAgo;
         const isNotClosed = !['closed_won', 'closed_lost'].includes(m.lead_status);
@@ -400,12 +479,220 @@ ${message_content}`;
         .eq('company_id', company_id);
     }
 
+    // =====================================================
+    // AUTOMATIC CONVERSATION EVALUATION (every 10 messages)
+    // =====================================================
+    const EVALUATION_INTERVAL = 10;
+    const shouldEvaluate = currentTotalMessages > 0 && currentTotalMessages % EVALUATION_INTERVAL === 0;
+    
+    if (shouldEvaluate && geminiApiKey) {
+      console.log(`📊 [PIXEL] Triggering automatic evaluation at ${currentTotalMessages} messages`);
+      
+      // Get full conversation for evaluation
+      const { data: allMessages } = await supabase
+        .from('messages')
+        .select('content, direction, sender_type, created_at')
+        .eq('conversation_id', conversation_id)
+        .order('created_at', { ascending: true })
+        .limit(50);
+
+      if (allMessages && allMessages.length >= 5) {
+        const conversationText = allMessages
+          .filter((m: any) => m.content)
+          .map((m: any) => `${m.direction === 'inbound' ? 'Cliente' : 'Vendedor'}: ${m.content}`)
+          .join('\n');
+
+        const evalPrompt = `${EVALUATION_PROMPT}
+
+Conversa completa:
+${conversationText}`;
+
+        console.log('🤖 [PIXEL] Calling Gemini for conversation evaluation...');
+        const evalResult = await callGemini(evalPrompt, geminiApiKey);
+        
+        if (evalResult) {
+          console.log('✅ [PIXEL] Evaluation result:', JSON.stringify(evalResult));
+          
+          // Upsert evaluation
+          const { error: evalError } = await supabase
+            .from('conversation_evaluations')
+            .upsert({
+              conversation_id,
+              company_id,
+              communication_score: evalResult.communication_score || 0,
+              objectivity_score: evalResult.objectivity_score || 0,
+              humanization_score: evalResult.humanization_score || 0,
+              objection_handling_score: evalResult.objection_handling_score || 0,
+              closing_score: evalResult.closing_score || 0,
+              response_time_score: evalResult.response_time_score || 0,
+              overall_score: evalResult.overall_score || 0,
+              lead_qualification: evalResult.lead_qualification || 'cold',
+              lead_interest_level: evalResult.lead_interest_level || 3,
+              strengths: evalResult.strengths || [],
+              improvements: evalResult.improvements || [],
+              lead_pain_points: evalResult.lead_pain_points || [],
+              ai_summary: evalResult.ai_summary || '',
+              evaluated_at: new Date().toISOString()
+            }, { onConflict: 'conversation_id' });
+
+          if (evalError) {
+            console.log('⚠️ [PIXEL] Error saving evaluation:', evalError);
+          } else {
+            console.log('✅ [PIXEL] Evaluation saved successfully');
+          }
+        }
+      }
+    }
+
+    // =====================================================
+    // AUTOMATIC INSIGHTS AGGREGATION (every 20 messages)
+    // =====================================================
+    const INSIGHTS_INTERVAL = 20;
+    const newInsightsCount = needsReset ? 1 : currentInsightsCount + 1;
+    const shouldGenerateInsights = newInsightsCount > 0 && newInsightsCount % INSIGHTS_INTERVAL === 0;
+    
+    if (shouldGenerateInsights && geminiApiKey) {
+      console.log(`🧠 [PIXEL] Triggering insights aggregation at ${newInsightsCount} total messages today`);
+      
+      // Fetch all data for insights
+      const { data: allLiveMetrics } = await supabase
+        .from('conversation_live_metrics')
+        .select('*')
+        .eq('company_id', company_id);
+
+      const { data: allEvaluations } = await supabase
+        .from('conversation_evaluations')
+        .select('*')
+        .eq('company_id', company_id);
+
+      // Aggregate data
+      const aggregatedData = {
+        total_conversations: allLiveMetrics?.length || 0,
+        hot_leads: allLiveMetrics?.filter(m => m.lead_status === 'hot').length || 0,
+        warm_leads: allLiveMetrics?.filter(m => m.lead_status === 'warming').length || 0,
+        cold_leads: allLiveMetrics?.filter(m => m.lead_status === 'cold').length || 0,
+        closed_won: allLiveMetrics?.filter(m => m.lead_status === 'closed_won').length || 0,
+        closed_lost: allLiveMetrics?.filter(m => m.lead_status === 'closed_lost').length || 0,
+        avg_close_probability: allLiveMetrics?.length 
+          ? (allLiveMetrics.reduce((sum, m) => sum + (m.close_probability || 0), 0) / allLiveMetrics.length).toFixed(1)
+          : 0,
+        avg_interest_level: allLiveMetrics?.length
+          ? (allLiveMetrics.reduce((sum, m) => sum + (m.interest_level || 0), 0) / allLiveMetrics.length).toFixed(1)
+          : 0,
+        total_objections: [...new Set(allLiveMetrics?.flatMap(m => m.objections_detected || []))],
+        total_pain_points: [...new Set(allLiveMetrics?.flatMap(m => m.pain_points || []))],
+        total_deal_signals: [...new Set(allLiveMetrics?.flatMap(m => m.deal_signals || []))],
+      };
+
+      const evalAggregated = {
+        total_evaluations: allEvaluations?.length || 0,
+        avg_overall_score: allEvaluations?.length
+          ? (allEvaluations.reduce((sum, e) => sum + (e.overall_score || 0), 0) / allEvaluations.length).toFixed(1)
+          : 0,
+        avg_communication: allEvaluations?.length
+          ? (allEvaluations.reduce((sum, e) => sum + (e.communication_score || 0), 0) / allEvaluations.length).toFixed(1)
+          : 0,
+        avg_objectivity: allEvaluations?.length
+          ? (allEvaluations.reduce((sum, e) => sum + (e.objectivity_score || 0), 0) / allEvaluations.length).toFixed(1)
+          : 0,
+        avg_humanization: allEvaluations?.length
+          ? (allEvaluations.reduce((sum, e) => sum + (e.humanization_score || 0), 0) / allEvaluations.length).toFixed(1)
+          : 0,
+        avg_objection_handling: allEvaluations?.length
+          ? (allEvaluations.reduce((sum, e) => sum + (e.objection_handling_score || 0), 0) / allEvaluations.length).toFixed(1)
+          : 0,
+        avg_closing: allEvaluations?.length
+          ? (allEvaluations.reduce((sum, e) => sum + (e.closing_score || 0), 0) / allEvaluations.length).toFixed(1)
+          : 0,
+        avg_response_time: allEvaluations?.length
+          ? (allEvaluations.reduce((sum, e) => sum + (e.response_time_score || 0), 0) / allEvaluations.length).toFixed(1)
+          : 0,
+        all_strengths: [...new Set(allEvaluations?.flatMap(e => e.strengths || []))],
+        all_weaknesses: [...new Set(allEvaluations?.flatMap(e => e.improvements || []))],
+        qualified_leads_percent: allEvaluations?.length
+          ? ((allEvaluations.filter(e => e.lead_qualification === 'hot' || e.lead_qualification === 'warm').length / allEvaluations.length) * 100).toFixed(0)
+          : 0,
+      };
+
+      const insightsPrompt = `${INSIGHTS_PROMPT}
+
+Dados das conversas em tempo real:
+- Total de conversas: ${aggregatedData.total_conversations}
+- Leads quentes: ${aggregatedData.hot_leads}
+- Leads mornos: ${aggregatedData.warm_leads}
+- Leads frios: ${aggregatedData.cold_leads}
+- Fechamentos ganhos: ${aggregatedData.closed_won}
+- Fechamentos perdidos: ${aggregatedData.closed_lost}
+- Probabilidade média de fechamento: ${aggregatedData.avg_close_probability}%
+- Nível médio de interesse: ${aggregatedData.avg_interest_level}/5
+- Objeções detectadas: ${aggregatedData.total_objections.join(', ') || 'Nenhuma'}
+- Dores dos clientes: ${aggregatedData.total_pain_points.join(', ') || 'Nenhuma identificada'}
+- Sinais de compra: ${aggregatedData.total_deal_signals.join(', ') || 'Nenhum'}
+
+Dados das avaliações de qualidade:
+- Total de avaliações: ${evalAggregated.total_evaluations}
+- Score médio geral: ${evalAggregated.avg_overall_score}/10
+- Comunicação média: ${evalAggregated.avg_communication}/10
+- Objetividade média: ${evalAggregated.avg_objectivity}/10
+- Humanização média: ${evalAggregated.avg_humanization}/10
+- Tratamento de objeções: ${evalAggregated.avg_objection_handling}/10
+- Fechamento: ${evalAggregated.avg_closing}/10
+- Tempo de resposta: ${evalAggregated.avg_response_time}/10
+- Leads qualificados: ${evalAggregated.qualified_leads_percent}%
+- Pontos fortes identificados: ${evalAggregated.all_strengths.slice(0, 10).join(', ') || 'Nenhum ainda'}
+- Pontos de melhoria: ${evalAggregated.all_weaknesses.slice(0, 10).join(', ') || 'Nenhum ainda'}`;
+
+      console.log('🤖 [PIXEL] Calling Gemini for insights aggregation...');
+      const insightsResult = await callGemini(insightsPrompt, geminiApiKey);
+      
+      if (insightsResult) {
+        console.log('✅ [PIXEL] Insights generated:', JSON.stringify(insightsResult));
+        
+        // Save aggregated insights to dashboard
+        const aggregatedInsights = {
+          strengths: insightsResult.strengths || [],
+          weaknesses: insightsResult.weaknesses || [],
+          positive_patterns: insightsResult.positive_patterns || [],
+          negative_patterns: insightsResult.negative_patterns || [],
+          critical_issues: insightsResult.critical_issues || [],
+          insights: insightsResult.insights || [],
+          final_recommendation: insightsResult.final_recommendation || '',
+          criteria_scores: {
+            communication: parseFloat(evalAggregated.avg_communication as string) || 0,
+            objectivity: parseFloat(evalAggregated.avg_objectivity as string) || 0,
+            humanization: parseFloat(evalAggregated.avg_humanization as string) || 0,
+            objection_handling: parseFloat(evalAggregated.avg_objection_handling as string) || 0,
+            closing: parseFloat(evalAggregated.avg_closing as string) || 0,
+            response_time: parseFloat(evalAggregated.avg_response_time as string) || 0,
+          },
+          average_score: parseFloat(evalAggregated.avg_overall_score as string) || 0,
+          qualified_leads_percent: parseFloat(evalAggregated.qualified_leads_percent as string) || 0,
+        };
+
+        const { error: insightsError } = await supabase
+          .from('company_live_dashboard')
+          .update({
+            aggregated_insights: aggregatedInsights,
+            last_insights_update: new Date().toISOString(),
+          })
+          .eq('company_id', company_id);
+
+        if (insightsError) {
+          console.log('⚠️ [PIXEL] Error saving insights:', insightsError);
+        } else {
+          console.log('✅ [PIXEL] Insights saved to dashboard');
+        }
+      }
+    }
+
     console.log(`✅ [PIXEL] Analysis complete for ${conversation_id}`);
 
     return new Response(JSON.stringify({ 
       success: true, 
       analysis: aiAnalysis,
-      metrics_updated: true
+      metrics_updated: true,
+      evaluation_triggered: shouldEvaluate,
+      insights_triggered: shouldGenerateInsights
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });

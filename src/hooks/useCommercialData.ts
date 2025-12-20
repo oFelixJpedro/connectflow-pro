@@ -37,6 +37,19 @@ interface LiveMetrics {
   topPainPoints: string[];
 }
 
+interface AggregatedInsights {
+  strengths: string[];
+  weaknesses: string[];
+  positive_patterns: string[];
+  negative_patterns: string[];
+  critical_issues: string[];
+  insights: string[];
+  final_recommendation: string;
+  criteria_scores: CriteriaScores;
+  average_score: number;
+  qualified_leads_percent: number;
+}
+
 interface CommercialData {
   averageScore: number;
   classification: 'EXCEPCIONAL' | 'BOM' | 'REGULAR' | 'RUIM' | 'CRÍTICO';
@@ -59,11 +72,32 @@ interface CommercialData {
   dealsByState: Record<StateCode, number>;
 }
 
+const DEFAULT_INSIGHTS: AggregatedInsights = {
+  strengths: [],
+  weaknesses: [],
+  positive_patterns: [],
+  negative_patterns: [],
+  critical_issues: [],
+  insights: [],
+  final_recommendation: '',
+  criteria_scores: {
+    communication: 0,
+    objectivity: 0,
+    humanization: 0,
+    objection_handling: 0,
+    closing: 0,
+    response_time: 0,
+  },
+  average_score: 0,
+  qualified_leads_percent: 0,
+};
+
 export function useCommercialData() {
   const { profile, userRole } = useAuth();
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<CommercialData | null>(null);
   const [liveMetrics, setLiveMetrics] = useState<LiveMetrics | null>(null);
+  const [aggregatedInsights, setAggregatedInsights] = useState<AggregatedInsights>(DEFAULT_INSIGHTS);
   const [lastUpdated, setLastUpdated] = useState(new Date());
   const [evaluating, setEvaluating] = useState(false);
 
@@ -96,7 +130,7 @@ export function useCommercialData() {
     }
   };
 
-  // Fetch live metrics from company_live_dashboard
+  // Fetch live metrics and aggregated insights from company_live_dashboard
   const fetchLiveMetrics = useCallback(async () => {
     if (!profile?.company_id || !isAdmin) return;
 
@@ -126,6 +160,24 @@ export function useCommercialData() {
             ? dashboard.top_pain_points as string[]
             : [],
         });
+
+        // Parse aggregated insights from dashboard
+        const rawInsights = dashboard.aggregated_insights;
+        if (rawInsights && typeof rawInsights === 'object' && !Array.isArray(rawInsights)) {
+          const insights = rawInsights as unknown as AggregatedInsights;
+          setAggregatedInsights({
+            strengths: insights.strengths || [],
+            weaknesses: insights.weaknesses || [],
+            positive_patterns: insights.positive_patterns || [],
+            negative_patterns: insights.negative_patterns || [],
+            critical_issues: insights.critical_issues || [],
+            insights: insights.insights || [],
+            final_recommendation: insights.final_recommendation || '',
+            criteria_scores: insights.criteria_scores || DEFAULT_INSIGHTS.criteria_scores,
+            average_score: insights.average_score || 0,
+            qualified_leads_percent: insights.qualified_leads_percent || 0,
+          });
+        }
       }
     } catch (error) {
       console.error('Error fetching live metrics:', error);
@@ -171,6 +223,25 @@ export function useCommercialData() {
                 ? newData.top_pain_points as string[]
                 : [],
             });
+
+            // Update aggregated insights from realtime
+            const rawInsights = newData.aggregated_insights;
+            if (rawInsights && typeof rawInsights === 'object' && !Array.isArray(rawInsights)) {
+              const insights = rawInsights as unknown as AggregatedInsights;
+              setAggregatedInsights({
+                strengths: insights.strengths || [],
+                weaknesses: insights.weaknesses || [],
+                positive_patterns: insights.positive_patterns || [],
+                negative_patterns: insights.negative_patterns || [],
+                critical_issues: insights.critical_issues || [],
+                insights: insights.insights || [],
+                final_recommendation: insights.final_recommendation || '',
+                criteria_scores: insights.criteria_scores || DEFAULT_INSIGHTS.criteria_scores,
+                average_score: insights.average_score || 0,
+                qualified_leads_percent: insights.qualified_leads_percent || 0,
+              });
+            }
+
             setLastUpdated(new Date());
           }
         }
@@ -211,16 +282,6 @@ export function useCommercialData() {
 
         if (convError) throw convError;
 
-        // Fetch evaluations from conversation_evaluations table
-        const { data: evaluations, error: evalError } = await supabase
-          .from('conversation_evaluations')
-          .select('*')
-          .eq('company_id', profile.company_id);
-
-        if (evalError) {
-          console.error('Error fetching evaluations:', evalError);
-        }
-
         // Fetch all contacts for geographic data
         const { data: contacts, error: contactsError } = await supabase
           .from('contacts')
@@ -252,7 +313,6 @@ export function useCommercialData() {
             .order('created_at', { ascending: true });
 
           if (messages && messages.length > 0) {
-            // Group messages by conversation
             const messagesByConv: Record<string, typeof messages> = {};
             messages.forEach(msg => {
               if (!messagesByConv[msg.conversation_id]) {
@@ -271,9 +331,7 @@ export function useCommercialData() {
               for (let i = 0; i < convMessages.length - 1; i++) {
                 const currentMsg = convMessages[i];
                 
-                // Look for inbound messages from contact
                 if (currentMsg.direction === 'inbound' && currentMsg.sender_type === 'contact') {
-                  // Find the next outbound message from user
                   for (let j = i + 1; j < convMessages.length; j++) {
                     const nextMsg = convMessages[j];
                     
@@ -282,7 +340,6 @@ export function useCommercialData() {
                       const outboundTime = new Date(nextMsg.created_at!).getTime();
                       const diffMinutes = Math.round((outboundTime - inboundTime) / (1000 * 60));
                       
-                      // Only count reasonable response times (< 24 hours)
                       if (diffMinutes > 0 && diffMinutes < 1440) {
                         responseTimes.push(diffMinutes);
                       }
@@ -318,7 +375,7 @@ export function useCommercialData() {
           }
         });
 
-        // Calculate deals by state - using live metrics (AI-detected closures)
+        // Calculate deals by state
         const dealsByState: Record<string, number> = {};
         
         if (liveMetricsData && liveMetricsData.length > 0) {
@@ -352,7 +409,6 @@ export function useCommercialData() {
               agentStats[conv.assigned_user_id] = { conversations: 0, closed: 0 };
             }
             agentStats[conv.assigned_user_id].conversations++;
-            // Check if this conversation has closed_won status in live metrics
             const isClosedWon = liveMetricsData?.some(
               m => m.conversation_id === conv.id && m.lead_status === 'closed_won'
             );
@@ -362,102 +418,16 @@ export function useCommercialData() {
           }
         });
 
-        // Calculate criteria scores from real evaluations
-        let criteriaScores: CriteriaScores;
-        let qualifiedLeadsPercent = 0;
-        let allStrengths: string[] = [];
-        let allWeaknesses: string[] = [];
-        let averageScoreFromEvals = 0;
-
-        if (evaluations && evaluations.length > 0) {
-          // Calculate average scores from real evaluations
-          const scores = {
-            communication: 0,
-            objectivity: 0,
-            humanization: 0,
-            objection_handling: 0,
-            closing: 0,
-            response_time: 0,
-          };
-          let totalOverall = 0;
-          let hotWarmLeads = 0;
-
-          evaluations.forEach(eval_ => {
-            scores.communication += eval_.communication_score || 0;
-            scores.objectivity += eval_.objectivity_score || 0;
-            scores.humanization += eval_.humanization_score || 0;
-            scores.objection_handling += eval_.objection_handling_score || 0;
-            scores.closing += eval_.closing_score || 0;
-            scores.response_time += eval_.response_time_score || 0;
-            totalOverall += eval_.overall_score || 0;
-
-            // Count qualified leads (hot or warm)
-            if (eval_.lead_qualification === 'hot' || eval_.lead_qualification === 'warm') {
-              hotWarmLeads++;
-            }
-
-            // Collect strengths and weaknesses
-            if (eval_.strengths && Array.isArray(eval_.strengths)) {
-              allStrengths.push(...(eval_.strengths as string[]));
-            }
-            if (eval_.improvements && Array.isArray(eval_.improvements)) {
-              allWeaknesses.push(...(eval_.improvements as string[]));
-            }
-          });
-
-          const count = evaluations.length;
-          criteriaScores = {
-            communication: Math.round((scores.communication / count) * 10) / 10,
-            objectivity: Math.round((scores.objectivity / count) * 10) / 10,
-            humanization: Math.round((scores.humanization / count) * 10) / 10,
-            objection_handling: Math.round((scores.objection_handling / count) * 10) / 10,
-            closing: Math.round((scores.closing / count) * 10) / 10,
-            response_time: Math.round((scores.response_time / count) * 10) / 10,
-          };
-
-          averageScoreFromEvals = Math.round((totalOverall / count) * 10) / 10;
-          qualifiedLeadsPercent = Math.round((hotWarmLeads / count) * 100);
-
-          // Get unique top strengths and weaknesses
-          const strengthCounts = allStrengths.reduce((acc, s) => {
-            acc[s] = (acc[s] || 0) + 1;
-            return acc;
-          }, {} as Record<string, number>);
-          
-          const weaknessCounts = allWeaknesses.reduce((acc, w) => {
-            acc[w] = (acc[w] || 0) + 1;
-            return acc;
-          }, {} as Record<string, number>);
-
-          allStrengths = Object.entries(strengthCounts)
-            .sort((a, b) => b[1] - a[1])
-            .slice(0, 5)
-            .map(([s]) => s);
-
-          allWeaknesses = Object.entries(weaknessCounts)
-            .sort((a, b) => b[1] - a[1])
-            .slice(0, 5)
-            .map(([w]) => w);
-
-        } else {
-          // Fallback to default values when no evaluations exist
-          criteriaScores = {
-            communication: 0,
-            objectivity: 0,
-            humanization: 0,
-            objection_handling: 0,
-            closing: 0,
-            response_time: 0,
-          };
-          allStrengths = ['Sem avaliações ainda'];
-          allWeaknesses = ['Execute a avaliação de conversas'];
-        }
+        // Fetch evaluations for agent scoring
+        const { data: evaluations } = await supabase
+          .from('conversation_evaluations')
+          .select('*')
+          .eq('company_id', profile.company_id);
 
         // Build agent analysis with real evaluation data
         const agentsAnalysis: AgentAnalysis[] = agents?.map(agent => {
           const stats = agentStats[agent.id] || { conversations: 0, closed: 0 };
           
-          // Calculate score from real evaluations if available
           const agentEvaluations = evaluations?.filter(e => {
             const convIds = conversations?.filter(c => c.assigned_user_id === agent.id).map(c => c.id) || [];
             return convIds.includes(e.conversation_id);
@@ -468,7 +438,6 @@ export function useCommercialData() {
             const totalScore = agentEvaluations.reduce((sum, e) => sum + (e.overall_score || 0), 0);
             score = Math.round((totalScore / agentEvaluations.length) * 10) / 10;
           } else {
-            // Fallback to closed/total ratio
             score = stats.conversations > 0 
               ? Math.round((stats.closed / stats.conversations) * 10 * 10) / 10 
               : 0;
@@ -495,60 +464,149 @@ export function useCommercialData() {
           };
         }).filter(a => a.conversations > 0).sort((a, b) => b.score - a.score) || [];
 
-        // Calculate overall metrics - use AI-detected closed deals
+        // Calculate overall metrics
         const totalConversations = conversations?.length || 0;
         const conversionRate = totalConversations > 0 
           ? Math.round((closedDealsFromAI / totalConversations) * 100 * 10) / 10 
           : 0;
 
-        // Use evaluation average if available, otherwise use agent average
-        const averageScore = evaluations && evaluations.length > 0
-          ? averageScoreFromEvals
-          : (agentsAnalysis.length > 0
-              ? Math.round(agentsAnalysis.reduce((sum, a) => sum + a.score, 0) / agentsAnalysis.length * 10) / 10
-              : 0);
+        // Use aggregated insights from realtime if available, otherwise calculate from evaluations
+        const useAggregatedInsights = aggregatedInsights.average_score > 0;
+        
+        let averageScore: number;
+        let criteriaScores: CriteriaScores;
+        let qualifiedLeadsPercent: number;
+        let allStrengths: string[];
+        let allWeaknesses: string[];
+        let positivePatterns: string[];
+        let negativePatterns: string[];
+        let insights: string[];
+        let criticalIssues: string[];
+        let finalRecommendation: string;
+
+        if (useAggregatedInsights) {
+          // Use AI-generated insights from database
+          averageScore = aggregatedInsights.average_score;
+          criteriaScores = aggregatedInsights.criteria_scores;
+          qualifiedLeadsPercent = aggregatedInsights.qualified_leads_percent;
+          allStrengths = aggregatedInsights.strengths;
+          allWeaknesses = aggregatedInsights.weaknesses;
+          positivePatterns = aggregatedInsights.positive_patterns;
+          negativePatterns = aggregatedInsights.negative_patterns;
+          insights = aggregatedInsights.insights;
+          criticalIssues = aggregatedInsights.critical_issues;
+          finalRecommendation = aggregatedInsights.final_recommendation;
+        } else if (evaluations && evaluations.length > 0) {
+          // Calculate from evaluations if no aggregated insights yet
+          const scores = {
+            communication: 0,
+            objectivity: 0,
+            humanization: 0,
+            objection_handling: 0,
+            closing: 0,
+            response_time: 0,
+          };
+          let totalOverall = 0;
+          let hotWarmLeads = 0;
+          const tempStrengths: string[] = [];
+          const tempWeaknesses: string[] = [];
+
+          evaluations.forEach(eval_ => {
+            scores.communication += eval_.communication_score || 0;
+            scores.objectivity += eval_.objectivity_score || 0;
+            scores.humanization += eval_.humanization_score || 0;
+            scores.objection_handling += eval_.objection_handling_score || 0;
+            scores.closing += eval_.closing_score || 0;
+            scores.response_time += eval_.response_time_score || 0;
+            totalOverall += eval_.overall_score || 0;
+
+            if (eval_.lead_qualification === 'hot' || eval_.lead_qualification === 'warm') {
+              hotWarmLeads++;
+            }
+
+            if (eval_.strengths && Array.isArray(eval_.strengths)) {
+              tempStrengths.push(...(eval_.strengths as string[]));
+            }
+            if (eval_.improvements && Array.isArray(eval_.improvements)) {
+              tempWeaknesses.push(...(eval_.improvements as string[]));
+            }
+          });
+
+          const count = evaluations.length;
+          criteriaScores = {
+            communication: Math.round((scores.communication / count) * 10) / 10,
+            objectivity: Math.round((scores.objectivity / count) * 10) / 10,
+            humanization: Math.round((scores.humanization / count) * 10) / 10,
+            objection_handling: Math.round((scores.objection_handling / count) * 10) / 10,
+            closing: Math.round((scores.closing / count) * 10) / 10,
+            response_time: Math.round((scores.response_time / count) * 10) / 10,
+          };
+
+          averageScore = Math.round((totalOverall / count) * 10) / 10;
+          qualifiedLeadsPercent = Math.round((hotWarmLeads / count) * 100);
+
+          // Get unique top strengths and weaknesses
+          const strengthCounts = tempStrengths.reduce((acc, s) => {
+            acc[s] = (acc[s] || 0) + 1;
+            return acc;
+          }, {} as Record<string, number>);
+          
+          const weaknessCounts = tempWeaknesses.reduce((acc, w) => {
+            acc[w] = (acc[w] || 0) + 1;
+            return acc;
+          }, {} as Record<string, number>);
+
+          allStrengths = Object.entries(strengthCounts)
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 5)
+            .map(([s]) => s);
+
+          allWeaknesses = Object.entries(weaknessCounts)
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 5)
+            .map(([w]) => w);
+
+          positivePatterns = allStrengths.slice(0, 3);
+          negativePatterns = allWeaknesses.slice(0, 3);
+
+          // Generate basic insights until AI generates them
+          insights = [];
+          criticalIssues = [];
+          
+          if (criteriaScores.closing < 6) {
+            insights.push('Aguardando análise de IA para insights detalhados de fechamento');
+          }
+          if (criteriaScores.response_time < 6) {
+            criticalIssues.push('Tempo de resposta precisa ser analisado pela IA');
+          }
+
+          finalRecommendation = 'Aguardando análise de IA para recomendação personalizada...';
+        } else {
+          // No data yet
+          criteriaScores = {
+            communication: 0,
+            objectivity: 0,
+            humanization: 0,
+            objection_handling: 0,
+            closing: 0,
+            response_time: 0,
+          };
+          averageScore = 0;
+          qualifiedLeadsPercent = 0;
+          allStrengths = ['Aguardando conversas para análise'];
+          allWeaknesses = ['Dados insuficientes'];
+          positivePatterns = [];
+          negativePatterns = [];
+          insights = ['Envie mensagens para a IA começar a gerar insights automáticos'];
+          criticalIssues = [];
+          finalRecommendation = 'A IA irá gerar recomendações automaticamente conforme as conversas acontecem.';
+        }
 
         const classification: CommercialData['classification'] = 
           averageScore >= 9.0 ? 'EXCEPCIONAL' :
           averageScore >= 7.5 ? 'BOM' :
           averageScore >= 6.0 ? 'REGULAR' :
           averageScore >= 4.0 ? 'RUIM' : 'CRÍTICO';
-
-        // Generate insights based on data
-        const insights: string[] = [];
-        const criticalIssues: string[] = [];
-        
-        if (criteriaScores.closing < 6) {
-          insights.push('Recomendado treinamento em técnicas de fechamento de vendas');
-        }
-        if (criteriaScores.objection_handling < 6) {
-          insights.push('Necessário melhorar tratamento de objeções');
-        }
-        if (criteriaScores.response_time < 6) {
-          criticalIssues.push('Tempo de resposta precisa ser reduzido');
-        }
-        if (qualifiedLeadsPercent < 30) {
-          insights.push('Taxa de leads qualificados abaixo do esperado - revisar processo de qualificação');
-        }
-        if (conversionRate < 30) {
-          insights.push('Taxa de conversão baixa - considerar otimização do funil de vendas');
-        }
-
-        // Generate final recommendation
-        let finalRecommendation = '';
-        if (averageScore >= 8) {
-          finalRecommendation = 'Excelente desempenho! Manter as práticas atuais e considerar promoções.';
-        } else if (averageScore >= 6) {
-          finalRecommendation = 'Bom desempenho com espaço para melhorias. Focar em treinamentos específicos.';
-        } else if (averageScore >= 4) {
-          finalRecommendation = 'Desempenho regular. Necessário plano de ação com treinamentos e monitoramento.';
-        } else {
-          finalRecommendation = 'Desempenho crítico! Ação imediata necessária com acompanhamento intensivo.';
-        }
-
-        // Positive and negative patterns
-        const positivePatterns = allStrengths.slice(0, 3);
-        const negativePatterns = allWeaknesses.slice(0, 3);
 
         setData({
           averageScore,
@@ -564,9 +622,9 @@ export function useCommercialData() {
           weaknesses: allWeaknesses,
           positivePatterns,
           negativePatterns,
-          insights: insights.length > 0 ? insights : ['Avalie conversas para obter insights detalhados'],
+          insights: insights.length > 0 ? insights : ['Aguardando análise de IA'],
           criticalIssues,
-          finalRecommendation: finalRecommendation || 'Execute a avaliação de conversas para obter recomendações',
+          finalRecommendation: finalRecommendation || 'Aguardando análise de IA',
           agentsAnalysis,
           contactsByState: contactsByState as Record<StateCode, number>,
           dealsByState: dealsByState as Record<StateCode, number>,
@@ -581,12 +639,13 @@ export function useCommercialData() {
     };
 
     fetchData();
-  }, [profile?.company_id, isAdmin]);
+  }, [profile?.company_id, isAdmin, aggregatedInsights]);
 
   return {
     loading,
     data,
     liveMetrics,
+    aggregatedInsights,
     lastUpdated,
     isAdmin,
     evaluating,
