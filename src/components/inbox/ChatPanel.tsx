@@ -352,7 +352,6 @@ export function ChatPanel({
   // Save transcription to message metadata
   const handleTranscriptionComplete = async (messageId: string, text: string) => {
     try {
-      // Find the message to get current metadata
       const message = messages.find(m => m.id === messageId);
       const currentMetadata = (message?.metadata as Record<string, unknown>) || {};
       
@@ -361,17 +360,29 @@ export function ChatPanel({
         transcription: text 
       };
       
-      // Update message with transcription in metadata
-      const { error } = await supabase
+      // Update message with transcription and verify it was saved
+      const { data, error } = await supabase
         .from('messages')
         .update({ metadata: updatedMetadata })
-        .eq('id', messageId);
+        .eq('id', messageId)
+        .select('id, metadata');
         
       if (error) {
-        console.error('Erro ao salvar transcrição:', error);
+        console.error('❌ Erro ao salvar transcrição:', error);
         toast({
           title: 'Erro ao salvar transcrição',
           description: 'A transcrição pode não persistir após recarregar.',
+          variant: 'destructive',
+        });
+        return;
+      }
+      
+      // Verify the update actually affected a row
+      if (!data || data.length === 0) {
+        console.error('❌ Transcrição não foi salva (nenhuma linha afetada)');
+        toast({
+          title: 'Permissão negada',
+          description: 'Não foi possível salvar a transcrição.',
           variant: 'destructive',
         });
         return;
@@ -387,7 +398,7 @@ export function ChatPanel({
         onMessagesUpdate(updatedMessages);
       }
       
-      console.log('✅ Transcrição salva no banco de dados');
+      console.log('✅ Transcrição salva no banco de dados:', data[0]?.id);
     } catch (error) {
       console.error('Erro ao salvar transcrição:', error);
       toast({
