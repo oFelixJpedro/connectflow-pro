@@ -322,6 +322,30 @@ serve(async (req) => {
       console.log(`✅ Mensagem atualizada com whatsapp_message_id: ${whatsappMessageId}`);
     }
 
+    // ═══════════════════════════════════════════════════════════════════
+    // Disparar Commercial Pixel (Background)
+    // ═══════════════════════════════════════════════════════════════════
+    console.log('📊 Disparando Commercial Pixel...');
+
+    // Disparar Commercial Pixel em background (não bloqueia a resposta)
+    fetch(`${supabaseUrl}/functions/v1/commercial-pixel`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${supabaseServiceKey}`,
+      },
+      body: JSON.stringify({
+        conversation_id: conversationId,
+        company_id: connection.company_id,
+        message_content: text || `[Documento: ${fileName}]`,
+        message_type: 'document',
+        direction: 'outbound',
+        contact_name: 'Contato'
+      }),
+    })
+      .then(res => console.log('📊 [PIXEL] Commercial Pixel disparado:', res.status))
+      .catch(e => console.log('⚠️ [PIXEL] Erro ao disparar Commercial Pixel:', e.message));
+
     console.log('✅ Concluído!');
 
     return new Response(

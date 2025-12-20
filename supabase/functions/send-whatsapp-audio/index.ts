@@ -433,6 +433,32 @@ serve(async (req) => {
     }
 
     // ═══════════════════════════════════════════════════════════════════
+    // 9️⃣ DISPARAR COMMERCIAL PIXEL (BACKGROUND)
+    // ═══════════════════════════════════════════════════════════════════
+    console.log('\n┌─────────────────────────────────────────────────────────────────┐')
+    console.log('│ 9️⃣  DISPARAR COMMERCIAL PIXEL                                   │')
+    console.log('└─────────────────────────────────────────────────────────────────┘')
+
+    // Disparar Commercial Pixel em background (não bloqueia a resposta)
+    fetch(`${supabaseUrl}/functions/v1/commercial-pixel`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${supabaseServiceKey}`,
+      },
+      body: JSON.stringify({
+        conversation_id: conversationId,
+        company_id: companyId,
+        message_content: '[Áudio]',
+        message_type: 'audio',
+        direction: 'outbound',
+        contact_name: conversation.contacts?.name || 'Desconhecido'
+      }),
+    })
+      .then(res => console.log('📊 [PIXEL] Commercial Pixel disparado:', res.status))
+      .catch(e => console.log('⚠️ [PIXEL] Erro ao disparar Commercial Pixel:', e.message))
+
+    // ═══════════════════════════════════════════════════════════════════
     // ✅ RESPOSTA DE SUCESSO
     // ═══════════════════════════════════════════════════════════════════
     console.log('\n╔══════════════════════════════════════════════════════════════════╗')

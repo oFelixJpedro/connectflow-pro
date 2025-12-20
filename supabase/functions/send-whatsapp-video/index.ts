@@ -380,6 +380,35 @@ serve(async (req) => {
 
       console.log(`✅ Status atualizado para 'sent'`)
 
+      // ═══════════════════════════════════════════════════════════════════
+      // STEP 5: Disparar Commercial Pixel (Background)
+      // ═══════════════════════════════════════════════════════════════════
+      console.log('\n┌─────────────────────────────────────────────────────────────────┐')
+      console.log('│ 5️⃣  DISPARAR COMMERCIAL PIXEL                                   │')
+      console.log('└─────────────────────────────────────────────────────────────────┘')
+
+      const supabaseUrl = Deno.env.get('SUPABASE_URL')!
+      const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+
+      // Disparar Commercial Pixel em background (não bloqueia a resposta)
+      fetch(`${supabaseUrl}/functions/v1/commercial-pixel`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${supabaseServiceKey}`,
+        },
+        body: JSON.stringify({
+          conversation_id: conversationId,
+          company_id: connection.company_id,
+          message_content: text || '[Vídeo]',
+          message_type: 'video',
+          direction: 'outbound',
+          contact_name: 'Contato'
+        }),
+      })
+        .then(res => console.log('📊 [PIXEL] Commercial Pixel disparado:', res.status))
+        .catch(e => console.log('⚠️ [PIXEL] Erro ao disparar Commercial Pixel:', e.message))
+
       console.log('\n╔══════════════════════════════════════════════════════════════════╗')
       console.log('║              🎉 VÍDEO ENVIADO COM SUCESSO!                       ║')
       console.log('╚══════════════════════════════════════════════════════════════════╝')
