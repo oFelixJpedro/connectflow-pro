@@ -500,6 +500,7 @@ ${message_content}`;
           console.log('✅ [PIXEL] Behavior alert saved');
         }
       }
+    }
 
     // Upsert metrics
     const { error: metricsError } = await supabase
