@@ -1,27 +1,27 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { Search, Building2, ArrowLeft } from 'lucide-react';
+import { Search, Smartphone, ArrowLeft } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 
-interface Department {
+interface Connection {
   id: string;
   name: string;
-  color: string;
+  phone_number: string | null;
 }
 
-interface DepartmentSelectorProps {
+interface ConnectionSelectorProps {
   position: { x: number; y: number };
-  onSelect: (value: string) => void;
+  onSelect: (connectionId: string, connectionName: string) => void;
   onClose: () => void;
   onBack?: () => void;
-  connectionId?: string;
+  title: string;
 }
 
-export function DepartmentSelector({ position, onSelect, onClose, onBack, connectionId }: DepartmentSelectorProps) {
+export function ConnectionSelector({ position, onSelect, onClose, onBack, title }: ConnectionSelectorProps) {
   const { profile } = useAuth();
-  const [departments, setDepartments] = useState<Department[]>([]);
+  const [connections, setConnections] = useState<Connection[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -37,55 +37,36 @@ export function DepartmentSelector({ position, onSelect, onClose, onBack, connec
   }, [position]);
 
   useEffect(() => {
-    const fetchDepartments = async () => {
+    const fetchConnections = async () => {
       if (!profile?.company_id) return;
       
       try {
-        let query = supabase
-          .from('departments')
-          .select(`
-            id,
-            name,
-            color,
-            whatsapp_connections!inner(company_id)
-          `)
-          .eq('active', true)
+        const { data, error } = await supabase
+          .from('whatsapp_connections')
+          .select('id, name, phone_number')
+          .eq('company_id', profile.company_id)
           .order('name');
         
-        if (connectionId) {
-          query = query.eq('whatsapp_connection_id', connectionId);
-        }
-        
-        const { data, error } = await query;
-        
         if (error) throw error;
-        
-        // Filter by company
-        const filtered = (data || []).filter(d => {
-          const conn = d.whatsapp_connections as any;
-          return conn.company_id === profile.company_id;
-        });
-        
-        setDepartments(filtered.map(d => ({
-          id: d.id,
-          name: d.name,
-          color: d.color || '#3B82F6'
-        })));
+        setConnections(data || []);
       } catch (err) {
-        console.error('Error fetching departments:', err);
+        console.error('Error fetching connections:', err);
       } finally {
         setLoading(false);
       }
     };
     
-    fetchDepartments();
-  }, [profile?.company_id, connectionId]);
+    fetchConnections();
+  }, [profile?.company_id]);
 
-  const filteredDepartments = useMemo(() => {
-    if (!search) return departments;
+  const filteredConnections = useMemo(() => {
+    if (!search) return connections;
     const searchLower = search.toLowerCase();
-    return departments.filter(d => d.name.toLowerCase().includes(searchLower));
-  }, [departments, search]);
+    return connections.filter(c => 
+      c.name.toLowerCase().includes(searchLower) ||
+      c.phone_number?.includes(search)
+    );
+  }, [connections, search]);
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -93,7 +74,7 @@ export function DepartmentSelector({ position, onSelect, onClose, onBack, connec
 
   useEffect(() => {
     setSelectedIndex(0);
-  }, [filteredDepartments.length]);
+  }, [filteredConnections.length]);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -110,16 +91,16 @@ export function DepartmentSelector({ position, onSelect, onClose, onBack, connec
       switch (e.key) {
         case 'ArrowDown':
           e.preventDefault();
-          setSelectedIndex(i => (i + 1) % filteredDepartments.length);
+          setSelectedIndex(i => (i + 1) % filteredConnections.length);
           break;
         case 'ArrowUp':
           e.preventDefault();
-          setSelectedIndex(i => (i - 1 + filteredDepartments.length) % filteredDepartments.length);
+          setSelectedIndex(i => (i - 1 + filteredConnections.length) % filteredConnections.length);
           break;
         case 'Enter':
           e.preventDefault();
-          if (filteredDepartments[selectedIndex]) {
-            handleSelect(filteredDepartments[selectedIndex].name);
+          if (filteredConnections[selectedIndex]) {
+            onSelect(filteredConnections[selectedIndex].id, filteredConnections[selectedIndex].name);
           }
           break;
         case 'Escape':
@@ -130,11 +111,7 @@ export function DepartmentSelector({ position, onSelect, onClose, onBack, connec
     };
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [filteredDepartments, selectedIndex, onClose]);
-
-  const handleSelect = (deptName: string) => {
-    onSelect(`[${deptName}]`);
-  };
+  }, [filteredConnections, selectedIndex, onSelect, onClose]);
 
   return (
     <div
@@ -158,7 +135,7 @@ export function DepartmentSelector({ position, onSelect, onClose, onBack, connec
             <ArrowLeft className="h-4 w-4" />
           </button>
         )}
-        <span className="text-sm font-medium">Selecionar Departamento</span>
+        <span className="text-sm font-medium">{title}</span>
       </div>
 
       <div className="p-2 border-b border-border">
@@ -168,7 +145,7 @@ export function DepartmentSelector({ position, onSelect, onClose, onBack, connec
             ref={inputRef}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Buscar departamento..."
+            placeholder="Buscar conexão..."
             className="pl-8 h-8 text-sm"
           />
         </div>
@@ -180,15 +157,15 @@ export function DepartmentSelector({ position, onSelect, onClose, onBack, connec
             <div className="p-4 text-center text-muted-foreground text-sm">
               Carregando...
             </div>
-          ) : filteredDepartments.length === 0 ? (
+          ) : filteredConnections.length === 0 ? (
             <div className="p-4 text-center text-muted-foreground text-sm">
-              Nenhum departamento encontrado
+              Nenhuma conexão encontrada
             </div>
           ) : (
-            filteredDepartments.map((dept, index) => (
+            filteredConnections.map((conn, index) => (
               <button
-                key={dept.id}
-                onClick={() => handleSelect(dept.name)}
+                key={conn.id}
+                onClick={() => onSelect(conn.id, conn.name)}
                 className={cn(
                   'w-full flex items-center gap-3 p-2 rounded-md text-left transition-colors',
                   index === selectedIndex 
@@ -196,11 +173,15 @@ export function DepartmentSelector({ position, onSelect, onClose, onBack, connec
                     : 'hover:bg-accent/50'
                 )}
               >
-                <div
-                  className="w-3 h-3 rounded-full flex-shrink-0"
-                  style={{ backgroundColor: dept.color }}
-                />
-                <span className="text-sm truncate">{dept.name}</span>
+                <Smartphone className="h-4 w-4 text-primary flex-shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-medium truncate">{conn.name}</div>
+                  {conn.phone_number && (
+                    <div className="text-xs text-muted-foreground truncate">
+                      {conn.phone_number}
+                    </div>
+                  )}
+                </div>
               </button>
             ))
           )}

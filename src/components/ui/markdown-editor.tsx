@@ -34,6 +34,7 @@ import {
   CRMStageSelector,
   DepartmentSelector,
   TextInputSelector,
+  ConnectionSelector,
 } from '@/components/ai-agents/slash-commands';
 import { SlashCommandMark } from './slash-command-mark';
 import { MediaTagMark } from './media-tag-mark';
@@ -308,6 +309,10 @@ export function MarkdownEditor({
   const [selectedCommand, setSelectedCommand] = useState<SlashCommand | null>(null);
   const [slashSearchTerm, setSlashSearchTerm] = useState('');
   
+  // Connection selection state (for CRM/Department with multiple connections)
+  const [showConnectionSelector, setShowConnectionSelector] = useState<'crm' | 'department' | null>(null);
+  const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(null);
+  
   // Media selection state
   const [showMediaModal, setShowMediaModal] = useState(false);
   const [mediaCursorPosition, setMediaCursorPosition] = useState<number | null>(null);
@@ -515,6 +520,14 @@ export function MarkdownEditor({
     const editing = editingCommandRef.current;
     
     if (command.needsSelection) {
+      // For CRM and Department, if connectionId is not provided, show connection selector first
+      if ((command.id === 'change_crm_stage' || command.id === 'assign_department') && !connectionId) {
+        setShowSlashPicker(false);
+        setSelectedCommand(command);
+        setShowConnectionSelector(command.id === 'change_crm_stage' ? 'crm' : 'department');
+        return;
+      }
+      
       // Open submenu - editingCommand ref is preserved for handleSubMenuSelect
       setSelectedCommand(command);
       setShowSlashPicker(false);
@@ -557,7 +570,14 @@ export function MarkdownEditor({
       }
       setShowSlashPicker(false);
     }
-  }, [editor]);
+  }, [editor, connectionId]);
+
+  // Handle connection selection for CRM/Department
+  const handleConnectionSelect = useCallback((connId: string, connName: string) => {
+    setSelectedConnectionId(connId);
+    setShowConnectionSelector(null);
+    // selectedCommand is already set, so the submenu will open
+  }, []);
 
   // Handle submenu value selection - insert with visual styling
   const handleSubMenuSelect = useCallback((value: string) => {
@@ -608,6 +628,7 @@ export function MarkdownEditor({
         .run();
     }
     setSelectedCommand(null);
+    setSelectedConnectionId(null);
   }, [editor, selectedCommand]); // Removed editingCommand from deps - using ref instead
 
   const closeAllPickers = useCallback(() => {
@@ -615,6 +636,8 @@ export function MarkdownEditor({
     setSelectedCommand(null);
     setEditingCommand(null);
     editingCommandRef.current = null;
+    setShowConnectionSelector(null);
+    setSelectedConnectionId(null);
   }, []);
 
   // Handle back button - return to main picker
@@ -623,7 +646,19 @@ export function MarkdownEditor({
     setEditingCommand(null);
     editingCommandRef.current = null;
     setShowSlashPicker(true);
+    setShowConnectionSelector(null);
+    setSelectedConnectionId(null);
   }, []);
+  
+  // Handle back from CRM/Department selector to connection selector
+  const handleBackToConnectionSelector = useCallback(() => {
+    setSelectedConnectionId(null);
+    if (selectedCommand?.id === 'change_crm_stage') {
+      setShowConnectionSelector('crm');
+    } else if (selectedCommand?.id === 'assign_department') {
+      setShowConnectionSelector('department');
+    }
+  }, [selectedCommand]);
 
   // Handle media selection from modal
   const handleMediaSelect = useCallback((media: AgentMedia) => {
@@ -676,8 +711,8 @@ export function MarkdownEditor({
 
   return (
     <div ref={editorContainerRef} className={cn('relative border border-input rounded-lg overflow-hidden bg-background', className)}>
-      {/* Toolbar */}
-      <div className="flex items-center gap-0.5 p-1.5 border-b border-input bg-muted/30 flex-wrap sticky top-0 z-10">
+      {/* Toolbar - Sticky to stay visible below header */}
+      <div className="flex items-center gap-0.5 p-1.5 border-b border-input bg-muted/30 flex-wrap sticky top-[64px] z-20 shadow-sm">
         {/* Headings */}
         <ToolbarButton
           onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
@@ -852,13 +887,35 @@ export function MarkdownEditor({
         />
       )}
       
-      {enableSlashCommands && selectedCommand?.id === 'change_crm_stage' && (
+      {/* Connection selector for CRM */}
+      {enableSlashCommands && showConnectionSelector === 'crm' && (
+        <ConnectionSelector
+          position={slashPosition}
+          onSelect={handleConnectionSelect}
+          onClose={closeAllPickers}
+          onBack={handleBackToMainPicker}
+          title="Selecionar Conexão (CRM)"
+        />
+      )}
+      
+      {/* Connection selector for Department */}
+      {enableSlashCommands && showConnectionSelector === 'department' && (
+        <ConnectionSelector
+          position={slashPosition}
+          onSelect={handleConnectionSelect}
+          onClose={closeAllPickers}
+          onBack={handleBackToMainPicker}
+          title="Selecionar Conexão (Dept)"
+        />
+      )}
+      
+      {enableSlashCommands && selectedCommand?.id === 'change_crm_stage' && !showConnectionSelector && (connectionId || selectedConnectionId) && (
         <CRMStageSelector
           position={slashPosition}
           onSelect={handleSubMenuSelect}
           onClose={closeAllPickers}
-          onBack={handleBackToMainPicker}
-          connectionId={connectionId}
+          onBack={selectedConnectionId ? handleBackToConnectionSelector : handleBackToMainPicker}
+          connectionId={connectionId || selectedConnectionId || undefined}
         />
       )}
       
@@ -874,13 +931,13 @@ export function MarkdownEditor({
         />
       )}
       
-      {enableSlashCommands && selectedCommand?.id === 'assign_department' && (
+      {enableSlashCommands && selectedCommand?.id === 'assign_department' && !showConnectionSelector && (connectionId || selectedConnectionId) && (
         <DepartmentSelector
           position={slashPosition}
           onSelect={handleSubMenuSelect}
           onClose={closeAllPickers}
-          onBack={handleBackToMainPicker}
-          connectionId={connectionId}
+          onBack={selectedConnectionId ? handleBackToConnectionSelector : handleBackToMainPicker}
+          connectionId={connectionId || selectedConnectionId || undefined}
         />
       )}
 
