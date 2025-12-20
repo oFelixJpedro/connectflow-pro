@@ -6,27 +6,6 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-interface ConversationData {
-  id: string;
-  contact_id: string;
-  assigned_user_id: string | null;
-  status: string;
-  created_at: string;
-  messages: Array<{
-    content: string;
-    direction: string;
-    created_at: string;
-    sender_type: string;
-  }>;
-  contact: {
-    phone_number: string;
-    name: string | null;
-  };
-  assignedUser: {
-    full_name: string;
-  } | null;
-}
-
 interface CriteriaScores {
   comunicacao: number;
   objetividade: number;
@@ -34,16 +13,6 @@ interface CriteriaScores {
   objecoes: number;
   fechamento: number;
   tempoResposta: number;
-}
-
-interface EvaluationResult {
-  overall_score: number;
-  criteria_scores: CriteriaScores;
-  strengths: string[];
-  improvements: string[];
-  lead_qualification: string;
-  lead_interest_level: number;
-  ai_summary: string;
 }
 
 const DDD_TO_STATE: Record<string, string> = {
@@ -100,6 +69,11 @@ function getCurrentWeekMonday(): Date {
   return monday;
 }
 
+function safeAvg(values: (number | null | undefined)[]): number {
+  const valid = values.filter((v): v is number => v != null && !isNaN(v));
+  return valid.length > 0 ? valid.reduce((a, b) => a + b, 0) / valid.length : 0;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -114,7 +88,6 @@ serve(async (req) => {
       throw new Error('GEMINI_API_KEY not configured');
     }
 
-    // Get authorization header to identify the user
     const authHeader = req.headers.get('Authorization');
     if (!authHeader) {
       return new Response(JSON.stringify({ error: 'Unauthorized' }), {
@@ -125,7 +98,6 @@ serve(async (req) => {
 
     const supabase = createClient(supabaseUrl, supabaseKey);
     
-    // Get the user from the JWT token
     const token = authHeader.replace('Bearer ', '');
     const { data: { user }, error: userError } = await supabase.auth.getUser(token);
     
@@ -136,7 +108,6 @@ serve(async (req) => {
       });
     }
 
-    // Get user profile and verify they're admin/owner
     const { data: profile, error: profileError } = await supabase
       .from('profiles')
       .select('company_id')
@@ -166,7 +137,7 @@ serve(async (req) => {
     const companyId = profile.company_id;
     const now = new Date();
     const weekStart = getCurrentWeekMonday();
-    const weekEnd = now; // Current moment (partial week)
+    const weekEnd = now;
 
     console.log(`Generating anticipated report for company ${companyId}`);
     console.log(`Period: ${weekStart.toISOString()} to ${weekEnd.toISOString()}`);
@@ -190,7 +161,7 @@ serve(async (req) => {
       });
     }
 
-    // Fetch conversations for the current week with messages
+    // Fetch conversations for the current week
     const { data: conversations, error: convError } = await supabase
       .from('conversations')
       .select(`
@@ -212,7 +183,6 @@ serve(async (req) => {
     console.log(`Found ${conversations?.length || 0} conversations`);
 
     if (!conversations || conversations.length === 0) {
-      // Create empty anticipated report
       const { error: insertError } = await supabase.from('commercial_reports').insert({
         company_id: companyId,
         report_date: now.toISOString().split('T')[0],
@@ -243,174 +213,76 @@ serve(async (req) => {
       });
     }
 
-    // Fetch messages for each conversation
-    const conversationsWithMessages: ConversationData[] = [];
-    for (const conv of conversations) {
-      const { data: messages } = await supabase
-        .from('messages')
-        .select('content, direction, created_at, sender_type')
-        .eq('conversation_id', conv.id)
-        .order('created_at', { ascending: true })
-        .limit(50);
+    const conversationIds = conversations.map(c => c.id);
 
-      let assignedUser = null;
-      if (conv.assigned_user_id) {
-        const { data: userProfile } = await supabase
-          .from('profiles')
-          .select('full_name')
-          .eq('id', conv.assigned_user_id)
-          .single();
-        assignedUser = userProfile;
-      }
+    // ========================================
+    // FETCH EXISTING EVALUATIONS FROM DATABASE
+    // ========================================
+    const { data: existingEvaluations, error: evalError } = await supabase
+      .from('conversation_evaluations')
+      .select('*')
+      .in('conversation_id', conversationIds);
 
-      conversationsWithMessages.push({
-        ...conv,
-        messages: messages || [],
-        contact: conv.contact as any,
-        assignedUser,
-      });
+    if (evalError) {
+      console.error('Error fetching existing evaluations:', evalError);
     }
 
-    // Evaluate conversations using Gemini
-    const evaluations: EvaluationResult[] = [];
+    console.log(`Found ${existingEvaluations?.length || 0} existing evaluations for ${conversationIds.length} conversations`);
+
+    // Create a map of conversation_id -> evaluation for quick lookup
+    const evaluationMap = new Map<string, any>();
+    if (existingEvaluations) {
+      for (const eval_ of existingEvaluations) {
+        evaluationMap.set(eval_.conversation_id, eval_);
+      }
+    }
+
+    // Calculate metrics from existing evaluations
+    const evaluationsWithScores = existingEvaluations?.filter(e => e.overall_score != null) || [];
     
-    for (const conv of conversationsWithMessages) {
-      if (conv.messages.length < 3) continue;
-
-      const conversationText = conv.messages
-        .map(m => `[${m.direction === 'inbound' ? 'Cliente' : 'Atendente'}]: ${m.content || '[mídia]'}`)
-        .join('\n');
-
-      const evaluationPrompt = `Você é um especialista em análise de qualidade de atendimento comercial.
-
-Analise esta conversa de WhatsApp e avalie a qualidade do atendimento comercial.
-
-CONVERSA:
-${conversationText}
-
-Responda APENAS em JSON válido com esta estrutura exata:
-{
-  "overall_score": 7.5,
-  "criteria_scores": {
-    "comunicacao": 8,
-    "objetividade": 7,
-    "humanizacao": 8,
-    "objecoes": 6,
-    "fechamento": 7,
-    "tempoResposta": 8
-  },
-  "strengths": ["ponto forte 1", "ponto forte 2"],
-  "improvements": ["melhoria 1", "melhoria 2"],
-  "lead_qualification": "hot",
-  "lead_interest_level": 4,
-  "ai_summary": "Resumo breve da conversa e qualidade do atendimento"
-}
-
-Critérios de pontuação (0-10):
-- comunicacao: Clareza e qualidade da comunicação
-- objetividade: Foco nos objetivos comerciais
-- humanizacao: Tratamento personalizado e empático
-- objecoes: Capacidade de lidar com objeções
-- fechamento: Técnicas de fechamento de venda
-- tempoResposta: Agilidade nas respostas
-
-lead_qualification: "hot" (muito interessado), "warm" (interessado), "cold" (pouco interesse), "disqualified" (desqualificado)
-lead_interest_level: 1-5 (1 = nenhum interesse, 5 = muito interessado)`;
-
-      try {
-        const geminiResponse = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiApiKey}`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              contents: [{ parts: [{ text: evaluationPrompt }] }],
-              generationConfig: {
-                temperature: 0.3,
-                maxOutputTokens: 1024,
-              },
-            }),
-          }
-        );
-
-        if (!geminiResponse.ok) {
-          console.error(`Gemini API error for conversation ${conv.id}`);
-          continue;
-        }
-
-        const geminiData = await geminiResponse.json();
-        const responseText = geminiData.candidates?.[0]?.content?.parts?.[0]?.text || '';
-        
-        const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          const evaluation = JSON.parse(jsonMatch[0]) as EvaluationResult;
-          evaluations.push(evaluation);
-
-          // Save individual evaluation
-          await supabase.from('conversation_evaluations').insert({
-            conversation_id: conv.id,
-            company_id: companyId,
-            overall_score: evaluation.overall_score,
-            communication_score: evaluation.criteria_scores.comunicacao,
-            objectivity_score: evaluation.criteria_scores.objetividade,
-            humanization_score: evaluation.criteria_scores.humanizacao,
-            objection_handling_score: evaluation.criteria_scores.objecoes,
-            closing_score: evaluation.criteria_scores.fechamento,
-            response_time_score: evaluation.criteria_scores.tempoResposta,
-            lead_qualification: evaluation.lead_qualification,
-            lead_interest_level: evaluation.lead_interest_level,
-            strengths: evaluation.strengths,
-            improvements: evaluation.improvements,
-            ai_summary: evaluation.ai_summary,
-          });
-        }
-      } catch (evalError) {
-        console.error(`Error evaluating conversation ${conv.id}:`, evalError);
-      }
-    }
-
-    // Calculate aggregate metrics
-    const avgScore = evaluations.length > 0
-      ? evaluations.reduce((sum, e) => sum + e.overall_score, 0) / evaluations.length
-      : 0;
-
+    const avgScore = safeAvg(evaluationsWithScores.map(e => e.overall_score));
+    
     const avgCriteria: CriteriaScores = {
-      comunicacao: 0,
-      objetividade: 0,
-      humanizacao: 0,
-      objecoes: 0,
-      fechamento: 0,
-      tempoResposta: 0,
+      comunicacao: safeAvg(evaluationsWithScores.map(e => e.communication_score)),
+      objetividade: safeAvg(evaluationsWithScores.map(e => e.objectivity_score)),
+      humanizacao: safeAvg(evaluationsWithScores.map(e => e.humanization_score)),
+      objecoes: safeAvg(evaluationsWithScores.map(e => e.objection_handling_score)),
+      fechamento: safeAvg(evaluationsWithScores.map(e => e.closing_score)),
+      tempoResposta: safeAvg(evaluationsWithScores.map(e => e.response_time_score)),
     };
 
-    if (evaluations.length > 0) {
-      for (const e of evaluations) {
-        avgCriteria.comunicacao += e.criteria_scores.comunicacao;
-        avgCriteria.objetividade += e.criteria_scores.objetividade;
-        avgCriteria.humanizacao += e.criteria_scores.humanizacao;
-        avgCriteria.objecoes += e.criteria_scores.objecoes;
-        avgCriteria.fechamento += e.criteria_scores.fechamento;
-        avgCriteria.tempoResposta += e.criteria_scores.tempoResposta;
-      }
-      const count = evaluations.length;
-      avgCriteria.comunicacao /= count;
-      avgCriteria.objetividade /= count;
-      avgCriteria.humanizacao /= count;
-      avgCriteria.objecoes /= count;
-      avgCriteria.fechamento /= count;
-      avgCriteria.tempoResposta /= count;
-    }
+    // Count qualified leads from existing evaluations
+    const hotLeads = evaluationsWithScores.filter(e => e.lead_qualification === 'hot').length;
+    const warmLeads = evaluationsWithScores.filter(e => e.lead_qualification === 'warm').length;
+    const closedDeals = conversations.filter(c => c.status === 'closed').length;
 
-    const hotLeads = evaluations.filter(e => e.lead_qualification === 'hot').length;
-    const warmLeads = evaluations.filter(e => e.lead_qualification === 'warm').length;
-    const closedDeals = conversationsWithMessages.filter(c => c.status === 'closed').length;
+    console.log(`Metrics calculated from existing evaluations:`);
+    console.log(`- Average score: ${avgScore.toFixed(2)}`);
+    console.log(`- Hot leads: ${hotLeads}, Warm leads: ${warmLeads}`);
+    console.log(`- Closed deals: ${closedDeals}`);
+
+    // Get agent names for agent analysis
+    const assignedUserIds = [...new Set(conversations.filter(c => c.assigned_user_id).map(c => c.assigned_user_id!))];
+    
+    const { data: agentProfiles } = await supabase
+      .from('profiles')
+      .select('id, full_name')
+      .in('id', assignedUserIds);
+
+    const agentNameMap = new Map<string, string>();
+    if (agentProfiles) {
+      for (const profile of agentProfiles) {
+        agentNameMap.set(profile.id, profile.full_name || 'Agente');
+      }
+    }
 
     // Calculate geographic distribution
     const contactsByState: Record<string, number> = {};
     const dealsByState: Record<string, number> = {};
 
-    for (const conv of conversationsWithMessages) {
-      const state = getStateFromPhone(conv.contact?.phone_number || '');
+    for (const conv of conversations) {
+      const contact = conv.contact as any;
+      const state = getStateFromPhone(contact?.phone_number || '');
       if (state) {
         contactsByState[state] = (contactsByState[state] || 0) + 1;
         if (conv.status === 'closed') {
@@ -419,26 +291,25 @@ lead_interest_level: 1-5 (1 = nenhum interesse, 5 = muito interessado)`;
       }
     }
 
-    // Agent performance analysis
-    const agentStats: Record<string, { total: number; score: number; name: string }> = {};
-    for (const conv of conversationsWithMessages) {
-      if (conv.assigned_user_id && conv.assignedUser) {
+    // Agent performance analysis using existing evaluations
+    const agentStats: Record<string, { total: number; scores: number[]; name: string }> = {};
+    
+    for (const conv of conversations) {
+      if (conv.assigned_user_id) {
         if (!agentStats[conv.assigned_user_id]) {
           agentStats[conv.assigned_user_id] = {
             total: 0,
-            score: 0,
-            name: conv.assignedUser.full_name,
+            scores: [],
+            name: agentNameMap.get(conv.assigned_user_id) || 'Agente',
           };
         }
         agentStats[conv.assigned_user_id].total++;
-      }
-    }
-
-    for (let i = 0; i < conversationsWithMessages.length; i++) {
-      const conv = conversationsWithMessages[i];
-      const evaluation = evaluations[i];
-      if (conv.assigned_user_id && evaluation) {
-        agentStats[conv.assigned_user_id].score += evaluation.overall_score;
+        
+        // Get score from existing evaluation
+        const evaluation = evaluationMap.get(conv.id);
+        if (evaluation?.overall_score != null) {
+          agentStats[conv.assigned_user_id].scores.push(evaluation.overall_score);
+        }
       }
     }
 
@@ -446,15 +317,27 @@ lead_interest_level: 1-5 (1 = nenhum interesse, 5 = muito interessado)`;
       agent_id: id,
       agent_name: stats.name,
       total_conversations: stats.total,
-      average_score: stats.total > 0 ? stats.score / stats.total : 0,
+      average_score: safeAvg(stats.scores),
     }));
 
-    // Generate insights using Gemini
-    const insightsPrompt = `Baseado nas seguintes métricas de atendimento comercial, gere insights e recomendações:
+    // Generate insights using Gemini (only if we have data)
+    let reportInsights = {
+      strengths: [] as string[],
+      weaknesses: [] as string[],
+      positive_patterns: [] as string[],
+      negative_patterns: [] as string[],
+      critical_issues: [] as string[],
+      insights: [] as string[],
+      final_recommendation: '',
+    };
+
+    if (avgScore > 0) {
+      const insightsPrompt = `Baseado nas seguintes métricas de atendimento comercial, gere insights e recomendações:
 
 Score médio: ${avgScore.toFixed(1)}/10
 Classificação: ${getClassification(avgScore)}
 Total de conversas: ${conversations.length}
+Conversas avaliadas: ${evaluationsWithScores.length}
 Leads qualificados (hot/warm): ${hotLeads + warmLeads}
 Negócios fechados: ${closedDeals}
 Taxa de conversão: ${conversations.length > 0 ? ((closedDeals / conversations.length) * 100).toFixed(1) : 0}%
@@ -480,42 +363,37 @@ Responda APENAS em JSON válido:
   "final_recommendation": "Recomendação principal para melhoria"
 }`;
 
-    let reportInsights = {
-      strengths: [] as string[],
-      weaknesses: [] as string[],
-      positive_patterns: [] as string[],
-      negative_patterns: [] as string[],
-      critical_issues: [] as string[],
-      insights: [] as string[],
-      final_recommendation: '',
-    };
+      try {
+        const insightsResponse = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiApiKey}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [{ parts: [{ text: insightsPrompt }] }],
+              generationConfig: {
+                temperature: 0.4,
+                maxOutputTokens: 1024,
+              },
+            }),
+          }
+        );
 
-    try {
-      const insightsResponse = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiApiKey}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: insightsPrompt }] }],
-            generationConfig: {
-              temperature: 0.4,
-              maxOutputTokens: 1024,
-            },
-          }),
+        if (insightsResponse.ok) {
+          const insightsData = await insightsResponse.json();
+          const insightsText = insightsData.candidates?.[0]?.content?.parts?.[0]?.text || '';
+          const jsonMatch = insightsText.match(/\{[\s\S]*\}/);
+          if (jsonMatch) {
+            reportInsights = JSON.parse(jsonMatch[0]);
+          }
         }
-      );
-
-      if (insightsResponse.ok) {
-        const insightsData = await insightsResponse.json();
-        const insightsText = insightsData.candidates?.[0]?.content?.parts?.[0]?.text || '';
-        const jsonMatch = insightsText.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          reportInsights = JSON.parse(jsonMatch[0]);
-        }
+      } catch (insightsError) {
+        console.error('Error generating insights:', insightsError);
       }
-    } catch (insightsError) {
-      console.error('Error generating insights:', insightsError);
+    } else {
+      // No evaluations yet - provide default message
+      reportInsights.insights = ['Ainda não há avaliações suficientes para gerar insights detalhados.'];
+      reportInsights.final_recommendation = 'Continue usando o sistema para acumular dados de avaliação.';
     }
 
     // Create the anticipated commercial report
@@ -552,11 +430,13 @@ Responda APENAS em JSON válido:
     }
 
     console.log(`Anticipated report created successfully for company ${companyId}`);
+    console.log(`Final metrics: avgScore=${avgScore.toFixed(2)}, qualified=${hotLeads + warmLeads}, closed=${closedDeals}`);
 
     return new Response(JSON.stringify({ 
       success: true,
       message: 'Relatório antecipado gerado com sucesso!',
       total_conversations: conversations.length,
+      evaluated_conversations: evaluationsWithScores.length,
       average_score: avgScore.toFixed(1),
       classification: getClassification(avgScore),
     }), {
