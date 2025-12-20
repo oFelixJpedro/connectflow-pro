@@ -78,7 +78,7 @@ export interface AIAgent {
   // Configurações de áudio
   audio_enabled: boolean;
   audio_respond_with_audio: boolean;
-  audio_always_respond_audio: boolean;
+  audio_always_respond_audio?: boolean; // Deprecated - mantido para compatibilidade
   voice_name: string;
   speech_speed: number;
   audio_temperature: number;
@@ -231,7 +231,6 @@ export interface UpdateAIAgentData {
   deactivate_temporary_minutes?: number;
   audio_enabled?: boolean;
   audio_respond_with_audio?: boolean;
-  audio_always_respond_audio?: boolean;
   voice_name?: string;
   speech_speed?: number;
   audio_temperature?: number;

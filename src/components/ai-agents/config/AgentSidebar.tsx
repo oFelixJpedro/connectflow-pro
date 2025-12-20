@@ -547,22 +547,13 @@ export function AgentSidebar({ agent, totalChars, charLimit, onAgentUpdate }: Ag
 
               {agent.audio_enabled && (
                 <>
-                  {/* Audio switches em lista vertical compacta */}
-                  <div className="space-y-2 py-1">
-                    <div className="flex items-center justify-between">
-                      <Label className="text-xs text-muted-foreground">Áudio → Áudio</Label>
-                      <Switch
-                        checked={agent.audio_respond_with_audio}
-                        onCheckedChange={(v) => handleUpdateField('audio_respond_with_audio', v)}
-                      />
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <Label className="text-xs text-muted-foreground">Sempre áudio</Label>
-                      <Switch
-                        checked={agent.audio_always_respond_audio}
-                        onCheckedChange={(v) => handleUpdateField('audio_always_respond_audio', v)}
-                      />
-                    </div>
+                  {/* Audio switch */}
+                  <div className="flex items-center justify-between py-1">
+                    <Label className="text-xs text-muted-foreground">Áudio → Áudio</Label>
+                    <Switch
+                      checked={agent.audio_respond_with_audio}
+                      onCheckedChange={(v) => handleUpdateField('audio_respond_with_audio', v)}
+                    />
                   </div>
 
                   <div className="space-y-1.5">
