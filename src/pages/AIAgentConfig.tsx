@@ -6,7 +6,6 @@ import {
   FileText, 
   List, 
   HelpCircle,
-  Settings,
   Info,
   Users,
   Target
@@ -30,9 +29,9 @@ import { AgentScriptTab } from '@/components/ai-agents/config/AgentScriptTab';
 import { AgentFAQTab } from '@/components/ai-agents/config/AgentFAQTab';
 import { AgentSubAgentsTab } from '@/components/ai-agents/config/AgentSubAgentsTab';
 import { AgentSpecialtyTab } from '@/components/ai-agents/config/AgentSpecialtyTab';
-import { AgentSidebar } from '@/components/ai-agents/config/AgentSidebar';
+import { AgentSidebar, SidebarPendingChanges } from '@/components/ai-agents/config/AgentSidebar';
 import { AI_AGENT_CHAR_LIMITS } from '@/types/ai-agents';
-import type { AIAgent, UpdateAIAgentData } from '@/types/ai-agents';
+import type { AIAgent } from '@/types/ai-agents';
 import { toast } from 'sonner';
 
 export default function AIAgentConfig() {
@@ -58,6 +57,9 @@ export default function AIAgentConfig() {
   const [qualificationSummary, setQualificationSummary] = useState('');
   const [disqualificationSigns, setDisqualificationSigns] = useState('');
 
+  // Sidebar pending changes
+  const [sidebarChanges, setSidebarChanges] = useState<SidebarPendingChanges>({});
+
   // Verificar permissão (owner/admin)
   const canManage = userRole?.role === 'owner' || userRole?.role === 'admin';
 
@@ -76,6 +78,8 @@ export default function AIAgentConfig() {
         setSpecialtyKeywords(found.specialty_keywords || []);
         setQualificationSummary(found.qualification_summary || '');
         setDisqualificationSigns(found.disqualification_signs || '');
+        // Reset sidebar changes when agent changes
+        setSidebarChanges({});
       }
     }
   }, [agentId, agents]);
@@ -89,7 +93,6 @@ export default function AIAgentConfig() {
 
   // Calcular total de caracteres
   const totalChars = rulesContent.length + scriptContent.length + faqContent.length;
-  const charPercentage = Math.min(100, (totalChars / AI_AGENT_CHAR_LIMITS.total) * 100);
 
   const handleSave = async () => {
     if (!agent || !canManage) return;
@@ -105,11 +108,15 @@ export default function AIAgentConfig() {
         specialty_keywords: specialtyKeywords,
         qualification_summary: qualificationSummary,
         disqualification_signs: disqualificationSigns,
+        // Include sidebar changes
+        ...sidebarChanges,
       });
 
       if (success) {
         setHasChanges(false);
+        setSidebarChanges({});
         toast.success('Agente salvo com sucesso!');
+        loadAgents(); // Reload to get updated data
       }
     } finally {
       setIsSaving(false);
@@ -162,6 +169,13 @@ export default function AIAgentConfig() {
     setDisqualificationSigns(signs);
   };
 
+  const handleSidebarPendingChanges = (changes: SidebarPendingChanges, hasSidebarChanges: boolean) => {
+    setSidebarChanges(changes);
+    if (hasSidebarChanges) {
+      setHasChanges(true);
+    }
+  };
+
   if (!canManage) {
     return (
       <div className="flex flex-col items-center justify-center h-full p-8">
@@ -181,17 +195,6 @@ export default function AIAgentConfig() {
       </div>
     );
   }
-
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case 'active':
-        return <Badge className="bg-emerald-500/20 text-emerald-600 border-emerald-500/30">Ativo</Badge>;
-      case 'paused':
-        return <Badge className="bg-amber-500/20 text-amber-600 border-amber-500/30">Pausado</Badge>;
-      default:
-        return <Badge variant="secondary">Inativo</Badge>;
-    }
-  };
 
   // Obter agente pai se for sub-agente
   const parentAgent = getParentAgent(agent.id);
@@ -226,11 +229,11 @@ export default function AIAgentConfig() {
                     <span>/</span>
                     <span className="text-foreground">Sub-agente</span>
                   </div>
-                  <h1 className="font-semibold">{agent.name}</h1>
+                  <h1 className="font-semibold">{sidebarChanges.name ?? agent.name}</h1>
                 </>
               ) : (
                 <>
-                  <h1 className="font-semibold">{agent.name}</h1>
+                  <h1 className="font-semibold">{sidebarChanges.name ?? agent.name}</h1>
                   <p className="text-xs text-muted-foreground">
                     {agent.agent_type === 'multi' ? 'Agente Multiagente' : 'Configuração do agente'}
                   </p>
@@ -252,9 +255,10 @@ export default function AIAgentConfig() {
             <Button 
               onClick={handleSave}
               disabled={isSaving || !hasChanges}
+              className={hasChanges ? 'animate-pulse' : ''}
             >
               <Save className="w-4 h-4 mr-2" />
-              {isSaving ? 'Salvando...' : 'Salvar'}
+              {isSaving ? 'Salvando...' : hasChanges ? 'Salvar*' : 'Salvar'}
             </Button>
           </div>
         </div>
@@ -365,6 +369,8 @@ export default function AIAgentConfig() {
         totalChars={totalChars}
         charLimit={AI_AGENT_CHAR_LIMITS.total}
         onAgentUpdate={loadAgents}
+        onPendingChanges={handleSidebarPendingChanges}
+        pendingChanges={sidebarChanges}
       />
     </div>
   );
