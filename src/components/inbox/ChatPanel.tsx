@@ -1358,16 +1358,40 @@ export function ChatPanel({
 
                   {/* Messages grouped by time intervals */}
                   <div className="space-y-1">
-                    {groupMessagesByTimeInterval(dateMessages).map((timeGroup, groupIndex) => (
+                    {groupMessagesByTimeInterval(dateMessages).map((timeGroup, groupIndex) => {
+                      // Get the last outbound message status for this group
+                      const lastOutboundMessage = timeGroup.messages
+                        .filter(m => m.direction === 'outbound' && !m.isInternalNote)
+                        .pop();
+                      const isOutboundGroup = timeGroup.messages[0]?.direction === 'outbound';
+                      
+                      return (
                       <div key={`group-${groupIndex}`} className="space-y-0.5">
                         {/* Time group header - align based on message direction */}
                         <div className={cn(
-                          "flex items-center my-2",
-                          timeGroup.messages[0]?.direction === 'outbound' ? 'justify-end' : 'justify-start'
+                          "flex items-center gap-1 my-2",
+                          isOutboundGroup ? 'justify-end' : 'justify-start'
                         )}>
                           <span className="text-[10px] text-muted-foreground">
                             {formatMessageTime(timeGroup.timestamp)}
                           </span>
+                          {/* Status icons next to time for outbound messages */}
+                          {isOutboundGroup && lastOutboundMessage && (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span className={cn(
+                                  'text-muted-foreground cursor-default',
+                                  lastOutboundMessage.status === 'read' && 'text-primary',
+                                  lastOutboundMessage.status === 'failed' && 'text-destructive'
+                                )}>
+                                  {statusIcons[lastOutboundMessage.status]}
+                                </span>
+                              </TooltipTrigger>
+                              <TooltipContent side="left">
+                                {statusTooltips[lastOutboundMessage.status] || lastOutboundMessage.status}
+                              </TooltipContent>
+                            </Tooltip>
+                          )}
                         </div>
                         
                         {/* Messages in this time group */}
@@ -1672,25 +1696,7 @@ export function ChatPanel({
                               )
                             )}
                             
-                            {/* Message footer - show status only on last message of group */}
-                            {isLastInGroup && isOutbound && ((message.messageType !== 'audio' && message.messageType !== 'image' && message.messageType !== 'video' && message.messageType !== 'document') || (!message.mediaUrl)) && (
-                              <div className="flex items-center justify-end gap-1 mt-0.5">
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <span className={cn(
-                                      'text-[hsl(var(--chat-bubble-outgoing-foreground))]/70 cursor-default',
-                                      message.status === 'read' && 'text-primary',
-                                      message.status === 'failed' && 'text-destructive'
-                                    )}>
-                                      {statusIcons[message.status]}
-                                    </span>
-                                  </TooltipTrigger>
-                                  <TooltipContent side="left">
-                                    {statusTooltips[message.status] || message.status}
-                                  </TooltipContent>
-                                </Tooltip>
-                              </div>
-                            )}
+                            {/* Status is now shown next to the time group header */}
 
                             {/* Message reactions */}
                             {message.reactions && message.reactions.length > 0 && (
@@ -1756,7 +1762,8 @@ export function ChatPanel({
                       );
                     })}
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               ))}
