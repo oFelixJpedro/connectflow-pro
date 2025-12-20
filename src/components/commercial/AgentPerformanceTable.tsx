@@ -61,10 +61,12 @@ export function AgentPerformanceTable({ loading, agents }: AgentPerformanceTable
         <CardHeader>
           <Skeleton className="h-6 w-48" />
         </CardHeader>
-        <CardContent className="space-y-3">
-          {[1, 2, 3].map((i) => (
-            <Skeleton key={i} className="h-16 w-full" />
-          ))}
+        <CardContent>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {[1, 2, 3, 4].map((i) => (
+              <Skeleton key={i} className="h-[180px] w-full rounded-lg" />
+            ))}
+          </div>
         </CardContent>
       </Card>
     );
@@ -86,68 +88,68 @@ export function AgentPerformanceTable({ loading, agents }: AgentPerformanceTable
               <p>Nenhum dado de atendente disponível</p>
             </div>
           ) : (
-            <div className="space-y-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               {agents.map((agent, index) => (
                 <div
                   key={agent.id}
                   onClick={() => handleAgentClick(agent)}
-                  className="flex items-center gap-4 p-3 bg-muted/30 rounded-lg border cursor-pointer hover:bg-muted/50 hover:border-primary/30 transition-colors group"
+                  className="relative p-4 bg-muted/30 rounded-lg border cursor-pointer hover:bg-muted/50 hover:border-primary/30 transition-colors group flex flex-col"
                 >
-                  {/* Rank */}
-                  <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
-                    <span className="text-sm font-bold text-primary">#{index + 1}</span>
+                  {/* Rank Badge */}
+                  <div className="absolute top-3 right-3 w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center">
+                    <span className="text-xs font-bold text-primary">#{index + 1}</span>
                   </div>
 
-                  {/* Avatar */}
-                  <Avatar className="w-10 h-10">
-                    <AvatarImage src={agent.avatar_url} className="object-cover object-top" />
-                    <AvatarFallback className="bg-secondary text-secondary-foreground text-sm">
-                      {getInitials(agent.name)}
-                    </AvatarFallback>
-                  </Avatar>
-
-                  {/* Name and Level */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium text-foreground truncate">
-                        {agent.name}
-                      </span>
-                      <Badge 
-                        variant="outline" 
-                        className={cn("text-xs", levelLabels[agent.level].color)}
-                      >
-                        {levelLabels[agent.level].label}
-                      </Badge>
-                    </div>
-                    <div className="flex items-center gap-2 mt-1">
-                      <Progress 
-                        value={agent.score * 10} 
-                        className="h-2 flex-1 max-w-[100px]" 
-                      />
-                      <span className="text-sm text-muted-foreground">
-                        {agent.conversations} conv.
-                      </span>
-                    </div>
+                  {/* Avatar and Name */}
+                  <div className="flex flex-col items-center text-center mb-3">
+                    <Avatar className="w-14 h-14 mb-2">
+                      <AvatarImage src={agent.avatar_url} className="object-cover object-top" />
+                      <AvatarFallback className="bg-secondary text-secondary-foreground text-lg">
+                        {getInitials(agent.name)}
+                      </AvatarFallback>
+                    </Avatar>
+                    <span className="font-medium text-foreground text-sm truncate max-w-full">
+                      {agent.name}
+                    </span>
+                    <Badge 
+                      variant="outline" 
+                      className={cn("text-xs mt-1", levelLabels[agent.level].color)}
+                    >
+                      {levelLabels[agent.level].label}
+                    </Badge>
                   </div>
 
                   {/* Score */}
-                  <div className="text-right">
-                    <p className="text-xl font-bold text-foreground">
+                  <div className="flex items-center justify-center gap-2 mb-3">
+                    <span className="text-2xl font-bold text-foreground">
                       {agent.score.toFixed(1)}
-                    </p>
-                    <p className="text-xs text-muted-foreground">/10</p>
+                    </span>
+                    <span className="text-sm text-muted-foreground">/10</span>
                   </div>
 
-                  {/* Recommendation */}
-                  <Badge 
-                    variant="outline" 
-                    className={cn("text-xs shrink-0", recommendationLabels[agent.recommendation].color)}
-                  >
-                    {recommendationLabels[agent.recommendation].label}
-                  </Badge>
+                  {/* Progress Bar */}
+                  <Progress 
+                    value={agent.score * 10} 
+                    className="h-2 mb-3" 
+                  />
 
-                  {/* Arrow indicator */}
-                  <ChevronRight className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors" />
+                  {/* Stats and Recommendation */}
+                  <div className="flex items-center justify-between mt-auto">
+                    <span className="text-xs text-muted-foreground">
+                      {agent.conversations} conv.
+                    </span>
+                    <Badge 
+                      variant="outline" 
+                      className={cn("text-xs", recommendationLabels[agent.recommendation].color)}
+                    >
+                      {recommendationLabels[agent.recommendation].label}
+                    </Badge>
+                  </div>
+
+                  {/* Hover indicator */}
+                  <div className="absolute bottom-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <ChevronRight className="w-4 h-4 text-primary" />
+                  </div>
                 </div>
               ))}
             </div>
