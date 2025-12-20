@@ -640,12 +640,15 @@ export type Database = {
       company_live_dashboard: {
         Row: {
           active_conversations: number | null
+          aggregated_insights: Json | null
           cold_leads: number | null
           company_id: string
           current_avg_response_time: number | null
           current_avg_sentiment: string | null
           hot_leads: number | null
           id: string
+          insights_message_count: number | null
+          last_insights_update: string | null
           last_reset_date: string | null
           today_contracts_closed: number | null
           today_leads_lost: number | null
@@ -658,12 +661,15 @@ export type Database = {
         }
         Insert: {
           active_conversations?: number | null
+          aggregated_insights?: Json | null
           cold_leads?: number | null
           company_id: string
           current_avg_response_time?: number | null
           current_avg_sentiment?: string | null
           hot_leads?: number | null
           id?: string
+          insights_message_count?: number | null
+          last_insights_update?: string | null
           last_reset_date?: string | null
           today_contracts_closed?: number | null
           today_leads_lost?: number | null
@@ -676,12 +682,15 @@ export type Database = {
         }
         Update: {
           active_conversations?: number | null
+          aggregated_insights?: Json | null
           cold_leads?: number | null
           company_id?: string
           current_avg_response_time?: number | null
           current_avg_sentiment?: string | null
           hot_leads?: number | null
           id?: string
+          insights_message_count?: number | null
+          last_insights_update?: string | null
           last_reset_date?: string | null
           today_contracts_closed?: number | null
           today_leads_lost?: number | null
