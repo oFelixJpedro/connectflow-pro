@@ -110,10 +110,10 @@ serve(async (req) => {
         updated_at: new Date().toISOString()
       }, { onConflict: 'company_id' });
 
-    // Only analyze with AI if we have content and it's from the client
+    // Analyze ALL text messages (inbound AND outbound) to track conversation flow
     let aiAnalysis: any = null;
     
-    if (geminiApiKey && message_content && isInbound && message_type === 'text') {
+    if (geminiApiKey && message_content && message_type === 'text') {
       try {
         // Get last 5 messages for context
         const { data: recentMessages } = await supabase
@@ -275,39 +275,52 @@ ${message_content}`;
       ai_insights: aiAnalysis || {}
     });
 
-    // Update aggregated dashboard data
-    if (aiAnalysis?.lead_status) {
-      const { data: allMetrics } = await supabase
-        .from('conversation_live_metrics')
-        .select('lead_status')
+    // ALWAYS update aggregated dashboard data (not just when AI analysis happens)
+    // This ensures real-time counts for leads and active conversations
+    const { data: allMetrics } = await supabase
+      .from('conversation_live_metrics')
+      .select('lead_status, last_activity_at')
+      .eq('company_id', company_id);
+
+    if (allMetrics) {
+      const now = new Date();
+      const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+      
+      const statusCounts = {
+        hot: 0,
+        warm: 0,
+        cold: 0,
+        active: 0
+      };
+
+      allMetrics.forEach((m: any) => {
+        // Count leads by status
+        if (m.lead_status === 'hot') statusCounts.hot++;
+        else if (m.lead_status === 'warming') statusCounts.warm++;
+        else if (m.lead_status === 'cold') statusCounts.cold++;
+        
+        // Count active conversations (activity in last 24h AND not closed)
+        const lastActivity = m.last_activity_at ? new Date(m.last_activity_at) : null;
+        const isActive = lastActivity && lastActivity > twentyFourHoursAgo;
+        const isNotClosed = !['closed_won', 'closed_lost'].includes(m.lead_status);
+        
+        if (isActive && isNotClosed) {
+          statusCounts.active++;
+        }
+      });
+
+      console.log(`📊 [PIXEL] Dashboard update - Hot: ${statusCounts.hot}, Warm: ${statusCounts.warm}, Cold: ${statusCounts.cold}, Active: ${statusCounts.active}`);
+
+      await supabase
+        .from('company_live_dashboard')
+        .update({
+          hot_leads: statusCounts.hot,
+          warm_leads: statusCounts.warm,
+          cold_leads: statusCounts.cold,
+          active_conversations: statusCounts.active,
+          updated_at: new Date().toISOString()
+        })
         .eq('company_id', company_id);
-
-      if (allMetrics) {
-        const statusCounts = {
-          hot: 0,
-          warm: 0,
-          cold: 0,
-          active: 0
-        };
-
-        allMetrics.forEach((m: any) => {
-          if (m.lead_status === 'hot') statusCounts.hot++;
-          else if (m.lead_status === 'warming') statusCounts.warm++;
-          else if (m.lead_status === 'cold') statusCounts.cold++;
-          if (!['closed_won', 'closed_lost'].includes(m.lead_status)) statusCounts.active++;
-        });
-
-        await supabase
-          .from('company_live_dashboard')
-          .update({
-            hot_leads: statusCounts.hot,
-            warm_leads: statusCounts.warm,
-            cold_leads: statusCounts.cold,
-            active_conversations: statusCounts.active,
-            updated_at: new Date().toISOString()
-          })
-          .eq('company_id', company_id);
-      }
     }
 
     console.log(`✅ [PIXEL] Analysis complete for ${conversation_id}`);
