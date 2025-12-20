@@ -46,6 +46,8 @@ IMPORTANTE:
 - Seja justo e preciso nas notas
 - A nota geral (overall_score) deve ser a média ponderada dos 6 critérios
 - Se não houver mensagens suficientes para avaliar um critério, use 5.0 como nota neutra
+- Limite o campo "ai_summary" a no máximo 100 palavras
+- Responda SOMENTE com JSON válido (sem markdown ou formatação extra)
 
 Responda APENAS em JSON válido no seguinte formato:
 {
@@ -208,7 +210,7 @@ serve(async (req) => {
               contents: [{ parts: [{ text: prompt }] }],
               generationConfig: {
                 temperature: 0.3,
-                maxOutputTokens: 2048,
+                maxOutputTokens: 8192,
               },
             }),
           }
@@ -233,11 +235,25 @@ serve(async (req) => {
         // Extrair JSON da resposta
         let evaluation: EvaluationResult;
         try {
-          const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-          if (!jsonMatch) {
-            throw new Error('JSON não encontrado na resposta');
-          }
-          evaluation = JSON.parse(jsonMatch[0]);
+          const extractJson = (text: string) => {
+            let t = text.trim();
+
+            // Remove possíveis blocos de markdown (```json ... ```)
+            const fenced = t.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+            if (fenced?.[1]) t = fenced[1].trim();
+
+            // Extrai do primeiro "{" até o último "}" (fallback)
+            const start = t.indexOf('{');
+            const end = t.lastIndexOf('}');
+            if (start === -1 || end === -1 || end <= start) return null;
+
+            return t.slice(start, end + 1).trim();
+          };
+
+          const jsonText = extractJson(responseText);
+          if (!jsonText) throw new Error('JSON não encontrado na resposta');
+
+          evaluation = JSON.parse(jsonText);
         } catch (parseError) {
           console.error(`[evaluate-conversation] Error parsing Gemini response for ${convId}:`, parseError);
           console.log('Response text:', responseText);
