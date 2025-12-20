@@ -103,7 +103,7 @@ export function CriteriaRadarChart({ loading, scores, showCard = true }: Criteri
       </div>
 
       {/* Legend below chart */}
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-2 mt-4">
+      <div className="grid grid-cols-2 gap-2 mt-4">
         {data.map((item) => (
           <div 
             key={item.criteria} 
