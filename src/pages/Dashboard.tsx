@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { 
   MessageSquare, 
   Users, 
@@ -8,13 +9,15 @@ import {
   ArrowDownRight,
   CheckCircle2,
   AlertCircle,
-  Loader2
+  Loader2,
+  LayoutDashboard
 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 import { useDashboardData } from '@/hooks/useDashboardData';
 import { DashboardFilters } from '@/components/dashboard/DashboardFilters';
@@ -60,6 +63,7 @@ function MetricCardSkeleton() {
 }
 
 export default function Dashboard() {
+  const navigate = useNavigate();
   const {
     loading,
     metrics,
@@ -72,6 +76,8 @@ export default function Dashboard() {
     setFilter,
     isAdmin,
   } = useDashboardData();
+
+  const [viewMode, setViewMode] = useState<'dashboard' | 'commercial'>('dashboard');
 
   // State for conversation preview modal
   const [previewModal, setPreviewModal] = useState<{
@@ -93,6 +99,13 @@ export default function Dashboard() {
       contactPhone: conv.contact?.phoneNumber,
       contactAvatarUrl: conv.contact?.avatarUrl || undefined,
     });
+  };
+
+  const handleViewChange = (value: string) => {
+    if (value === 'commercial') {
+      navigate('/commercial-manager');
+    }
+    setViewMode(value as 'dashboard' | 'commercial');
   };
 
   const todayChange = metrics.yesterdayConversations > 0

@@ -484,6 +484,114 @@ export type Database = {
           },
         ]
       }
+      commercial_reports: {
+        Row: {
+          agents_analysis: Json | null
+          average_score: number | null
+          avg_response_time_minutes: number | null
+          classification: string | null
+          closed_deals: number | null
+          company_id: string
+          contacts_by_state: Json | null
+          conversion_rate: number | null
+          created_at: string | null
+          criteria_scores: Json | null
+          critical_issues: string[] | null
+          deals_by_state: Json | null
+          final_recommendation: string | null
+          generated_at: string | null
+          generated_by: string | null
+          id: string
+          insights: string[] | null
+          negative_patterns: string[] | null
+          pdf_url: string | null
+          positive_patterns: string[] | null
+          qualified_leads: number | null
+          report_date: string
+          strengths: string[] | null
+          total_conversations: number | null
+          total_leads: number | null
+          weaknesses: string[] | null
+          week_end: string
+          week_start: string
+        }
+        Insert: {
+          agents_analysis?: Json | null
+          average_score?: number | null
+          avg_response_time_minutes?: number | null
+          classification?: string | null
+          closed_deals?: number | null
+          company_id: string
+          contacts_by_state?: Json | null
+          conversion_rate?: number | null
+          created_at?: string | null
+          criteria_scores?: Json | null
+          critical_issues?: string[] | null
+          deals_by_state?: Json | null
+          final_recommendation?: string | null
+          generated_at?: string | null
+          generated_by?: string | null
+          id?: string
+          insights?: string[] | null
+          negative_patterns?: string[] | null
+          pdf_url?: string | null
+          positive_patterns?: string[] | null
+          qualified_leads?: number | null
+          report_date: string
+          strengths?: string[] | null
+          total_conversations?: number | null
+          total_leads?: number | null
+          weaknesses?: string[] | null
+          week_end: string
+          week_start: string
+        }
+        Update: {
+          agents_analysis?: Json | null
+          average_score?: number | null
+          avg_response_time_minutes?: number | null
+          classification?: string | null
+          closed_deals?: number | null
+          company_id?: string
+          contacts_by_state?: Json | null
+          conversion_rate?: number | null
+          created_at?: string | null
+          criteria_scores?: Json | null
+          critical_issues?: string[] | null
+          deals_by_state?: Json | null
+          final_recommendation?: string | null
+          generated_at?: string | null
+          generated_by?: string | null
+          id?: string
+          insights?: string[] | null
+          negative_patterns?: string[] | null
+          pdf_url?: string | null
+          positive_patterns?: string[] | null
+          qualified_leads?: number | null
+          report_date?: string
+          strengths?: string[] | null
+          total_conversations?: number | null
+          total_leads?: number | null
+          weaknesses?: string[] | null
+          week_end?: string
+          week_start?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "commercial_reports_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "commercial_reports_generated_by_fkey"
+            columns: ["generated_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       companies: {
         Row: {
           active: boolean | null
@@ -626,6 +734,84 @@ export type Database = {
             columns: ["company_id"]
             isOneToOne: false
             referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      conversation_evaluations: {
+        Row: {
+          ai_summary: string | null
+          closing_score: number | null
+          communication_score: number | null
+          company_id: string
+          conversation_id: string
+          created_at: string | null
+          evaluated_at: string | null
+          humanization_score: number | null
+          id: string
+          improvements: string[] | null
+          lead_interest_level: number | null
+          lead_pain_points: string[] | null
+          lead_qualification: string | null
+          objection_handling_score: number | null
+          objectivity_score: number | null
+          overall_score: number | null
+          response_time_score: number | null
+          strengths: string[] | null
+        }
+        Insert: {
+          ai_summary?: string | null
+          closing_score?: number | null
+          communication_score?: number | null
+          company_id: string
+          conversation_id: string
+          created_at?: string | null
+          evaluated_at?: string | null
+          humanization_score?: number | null
+          id?: string
+          improvements?: string[] | null
+          lead_interest_level?: number | null
+          lead_pain_points?: string[] | null
+          lead_qualification?: string | null
+          objection_handling_score?: number | null
+          objectivity_score?: number | null
+          overall_score?: number | null
+          response_time_score?: number | null
+          strengths?: string[] | null
+        }
+        Update: {
+          ai_summary?: string | null
+          closing_score?: number | null
+          communication_score?: number | null
+          company_id?: string
+          conversation_id?: string
+          created_at?: string | null
+          evaluated_at?: string | null
+          humanization_score?: number | null
+          id?: string
+          improvements?: string[] | null
+          lead_interest_level?: number | null
+          lead_pain_points?: string[] | null
+          lead_qualification?: string | null
+          objection_handling_score?: number | null
+          objectivity_score?: number | null
+          overall_score?: number | null
+          response_time_score?: number | null
+          strengths?: string[] | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "conversation_evaluations_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "conversation_evaluations_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: true
+            referencedRelation: "conversations"
             referencedColumns: ["id"]
           },
         ]
