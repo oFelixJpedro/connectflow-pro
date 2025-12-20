@@ -239,7 +239,7 @@ export function KanbanBoard({
         onDragOver={handleDragOver}
         onDragEnd={handleDragEnd}
       >
-        <div className="flex-1 overflow-x-auto p-4">
+        <div className="flex-1 overflow-x-auto p-4 custom-scrollbar-horizontal">
           <div className="flex gap-4 h-full min-w-max">
             <SortableContext
               items={columns.map(c => c.id)}
