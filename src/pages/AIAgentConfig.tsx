@@ -269,14 +269,14 @@ export default function AIAgentConfig() {
                   className="flex-none data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none pb-3 justify-center px-4"
                 >
                   <FileText className="w-4 h-4 mr-2" />
-                  Regras Gerais
+                  Diretrizes do Agente
                 </TabsTrigger>
                 <TabsTrigger 
                   value="script"
                   className="flex-none data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none pb-3 justify-center px-4"
                 >
                   <List className="w-4 h-4 mr-2" />
-                  Roteiro de Atendimento
+                  Fluxo de Atendimento
                 </TabsTrigger>
                 <TabsTrigger 
                   value="faq"

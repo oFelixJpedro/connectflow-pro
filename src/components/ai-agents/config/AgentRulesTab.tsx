@@ -142,9 +142,9 @@ export function AgentRulesTab({ content, onChange, medias = [] }: AgentRulesTabP
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <Label className="text-base font-medium">Regras Gerais do Agente</Label>
+          <Label className="text-base font-medium">Diretrizes do Agente</Label>
           <p className="text-sm text-muted-foreground mt-1">
-            Defina as regras de comportamento e restrições do agente
+            Defina as diretrizes de comportamento e restrições do agente
           </p>
         </div>
         <div className="flex gap-2">
