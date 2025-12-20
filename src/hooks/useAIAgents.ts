@@ -97,6 +97,8 @@ export function useAIAgents() {
           parent_agent_id: data.parent_agent_id || null,
           created_by: profile.id,
           status: 'inactive',
+          temperature: 1.0,
+          audio_temperature: 1.0,
         })
         .select()
         .single();
