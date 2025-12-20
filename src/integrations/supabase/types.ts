@@ -637,6 +637,71 @@ export type Database = {
         }
         Relationships: []
       }
+      company_live_dashboard: {
+        Row: {
+          active_conversations: number | null
+          cold_leads: number | null
+          company_id: string
+          current_avg_response_time: number | null
+          current_avg_sentiment: string | null
+          hot_leads: number | null
+          id: string
+          last_reset_date: string | null
+          today_contracts_closed: number | null
+          today_leads_lost: number | null
+          today_messages: number | null
+          today_new_conversations: number | null
+          top_objections: Json | null
+          top_pain_points: Json | null
+          updated_at: string | null
+          warm_leads: number | null
+        }
+        Insert: {
+          active_conversations?: number | null
+          cold_leads?: number | null
+          company_id: string
+          current_avg_response_time?: number | null
+          current_avg_sentiment?: string | null
+          hot_leads?: number | null
+          id?: string
+          last_reset_date?: string | null
+          today_contracts_closed?: number | null
+          today_leads_lost?: number | null
+          today_messages?: number | null
+          today_new_conversations?: number | null
+          top_objections?: Json | null
+          top_pain_points?: Json | null
+          updated_at?: string | null
+          warm_leads?: number | null
+        }
+        Update: {
+          active_conversations?: number | null
+          cold_leads?: number | null
+          company_id?: string
+          current_avg_response_time?: number | null
+          current_avg_sentiment?: string | null
+          hot_leads?: number | null
+          id?: string
+          last_reset_date?: string | null
+          today_contracts_closed?: number | null
+          today_leads_lost?: number | null
+          today_messages?: number | null
+          today_new_conversations?: number | null
+          top_objections?: Json | null
+          top_pain_points?: Json | null
+          updated_at?: string | null
+          warm_leads?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "company_live_dashboard_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: true
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       connection_users: {
         Row: {
           access_level: string
@@ -816,6 +881,51 @@ export type Database = {
           },
         ]
       }
+      conversation_events: {
+        Row: {
+          ai_insights: Json | null
+          company_id: string
+          conversation_id: string | null
+          created_at: string | null
+          event_data: Json | null
+          event_type: string
+          id: string
+        }
+        Insert: {
+          ai_insights?: Json | null
+          company_id: string
+          conversation_id?: string | null
+          created_at?: string | null
+          event_data?: Json | null
+          event_type: string
+          id?: string
+        }
+        Update: {
+          ai_insights?: Json | null
+          company_id?: string
+          conversation_id?: string | null
+          created_at?: string | null
+          event_data?: Json | null
+          event_type?: string
+          id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "conversation_events_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "conversation_events_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       conversation_followers: {
         Row: {
           conversation_id: string
@@ -896,6 +1006,87 @@ export type Database = {
             columns: ["performed_by"]
             isOneToOne: false
             referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      conversation_live_metrics: {
+        Row: {
+          agent_messages: number | null
+          avg_response_time_seconds: number | null
+          client_messages: number | null
+          close_probability: number | null
+          company_id: string
+          conversation_id: string
+          current_sentiment: string | null
+          deal_signals: string[] | null
+          engagement_score: number | null
+          id: string
+          interest_level: number | null
+          last_activity_at: string | null
+          lead_status: string | null
+          lead_status_confidence: number | null
+          objections_detected: string[] | null
+          pain_points: string[] | null
+          predicted_outcome: string | null
+          total_messages: number | null
+          updated_at: string | null
+        }
+        Insert: {
+          agent_messages?: number | null
+          avg_response_time_seconds?: number | null
+          client_messages?: number | null
+          close_probability?: number | null
+          company_id: string
+          conversation_id: string
+          current_sentiment?: string | null
+          deal_signals?: string[] | null
+          engagement_score?: number | null
+          id?: string
+          interest_level?: number | null
+          last_activity_at?: string | null
+          lead_status?: string | null
+          lead_status_confidence?: number | null
+          objections_detected?: string[] | null
+          pain_points?: string[] | null
+          predicted_outcome?: string | null
+          total_messages?: number | null
+          updated_at?: string | null
+        }
+        Update: {
+          agent_messages?: number | null
+          avg_response_time_seconds?: number | null
+          client_messages?: number | null
+          close_probability?: number | null
+          company_id?: string
+          conversation_id?: string
+          current_sentiment?: string | null
+          deal_signals?: string[] | null
+          engagement_score?: number | null
+          id?: string
+          interest_level?: number | null
+          last_activity_at?: string | null
+          lead_status?: string | null
+          lead_status_confidence?: number | null
+          objections_detected?: string[] | null
+          pain_points?: string[] | null
+          predicted_outcome?: string | null
+          total_messages?: number | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "conversation_live_metrics_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "conversation_live_metrics_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: true
+            referencedRelation: "conversations"
             referencedColumns: ["id"]
           },
         ]
@@ -2510,6 +2701,7 @@ export type Database = {
         Returns: boolean
       }
       is_admin_or_owner: { Args: never; Returns: boolean }
+      reset_daily_dashboard_counters: { Args: never; Returns: undefined }
       room_belongs_to_user_company: {
         Args: { room_id: string }
         Returns: boolean
