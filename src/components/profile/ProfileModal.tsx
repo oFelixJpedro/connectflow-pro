@@ -244,7 +244,7 @@ export function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
                 id="signature"
                 value={signature}
                 onChange={(e) => setSignature(e.target.value)}
-                placeholder="Ex: Dr. João Silva, Atendente Maria"
+                placeholder="Ex: João Silva, Atendente Maria"
                 maxLength={100}
               />
               <div className="flex justify-between">
