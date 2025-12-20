@@ -244,20 +244,56 @@ export function useDashboardData() {
           responseTimeMessagesQuery = responseTimeMessagesQuery.eq('conversation_id', 'no-match');
         }
 
+        // Query for yesterday's open conversations
+        let yesterdayOpenConvsQuery = supabase
+          .from('conversations')
+          .select('id', { count: 'exact' })
+          .eq('company_id', company.id)
+          .in('status', ['open', 'pending', 'in_progress'])
+          .lte('created_at', yesterdayEnd.toISOString());
+        yesterdayOpenConvsQuery = applyConversationFilter(yesterdayOpenConvsQuery);
+
+        // Query for yesterday's messages (for response time comparison)
+        let yesterdayMessagesQuery = supabase
+          .from('messages')
+          .select('id, conversation_id, direction, sender_type, created_at')
+          .gte('created_at', yesterdayStart.toISOString())
+          .lte('created_at', yesterdayEnd.toISOString())
+          .order('created_at', { ascending: true });
+
+        if (conversationIdsForMessages !== null && conversationIdsForMessages.length > 0) {
+          yesterdayMessagesQuery = yesterdayMessagesQuery.in('conversation_id', conversationIdsForMessages);
+        } else if (conversationIdsForMessages !== null && conversationIdsForMessages.length === 0) {
+          yesterdayMessagesQuery = yesterdayMessagesQuery.eq('conversation_id', 'no-match');
+        }
+
+        // Query for yesterday's resolution rate
+        let yesterdayConvsForRateQuery = supabase
+          .from('conversations')
+          .select('id, status')
+          .eq('company_id', company.id)
+          .gte('created_at', yesterdayStart.toISOString())
+          .lte('created_at', yesterdayEnd.toISOString());
+        yesterdayConvsForRateQuery = applyConversationFilter(yesterdayConvsForRateQuery);
+
         // Fetch all data in parallel
         const [
           todayConvsResult,
           yesterdayConvsResult,
           openConvsResult,
+          yesterdayOpenConvsResult,
           weeklyConvsResult,
           todayMessagesResult,
           recentConvsResult,
           agentsResult,
           responseTimeMessagesResult,
+          yesterdayMessagesResult,
+          yesterdayConvsForRateResult,
         ] = await Promise.all([
           todayConvsQuery,
           yesterdayConvsQuery,
           openConvsQuery,
+          yesterdayOpenConvsQuery,
           weeklyConvsQuery,
           todayMessagesQuery,
           recentConvsQuery,
@@ -267,6 +303,8 @@ export function useDashboardData() {
             .eq('company_id', company.id)
             .eq('active', true),
           responseTimeMessagesQuery,
+          yesterdayMessagesQuery,
+          yesterdayConvsForRateQuery,
         ]);
 
         // Process metrics
@@ -330,15 +368,76 @@ export function useDashboardData() {
           }
         }
 
+        // Calculate yesterday's open conversations
+        const yesterdayOpenCount = yesterdayOpenConvsResult.count || 0;
+
+        // Calculate yesterday's average response time
+        let previousAvgResponseTime = 0;
+        const yesterdayMessages = yesterdayMessagesResult.data || [];
+        
+        if (yesterdayMessages.length > 0) {
+          const messagesByConv: Record<string, typeof yesterdayMessages> = {};
+          yesterdayMessages.forEach(msg => {
+            if (!messagesByConv[msg.conversation_id]) {
+              messagesByConv[msg.conversation_id] = [];
+            }
+            messagesByConv[msg.conversation_id].push(msg);
+          });
+
+          const responseTimes: number[] = [];
+          
+          Object.values(messagesByConv).forEach(convMessages => {
+            convMessages.sort((a, b) => 
+              new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+            );
+            
+            for (let i = 0; i < convMessages.length - 1; i++) {
+              const currentMsg = convMessages[i];
+              
+              if (currentMsg.direction === 'inbound' && currentMsg.sender_type === 'contact') {
+                for (let j = i + 1; j < convMessages.length; j++) {
+                  const nextMsg = convMessages[j];
+                  
+                  if (nextMsg.direction === 'outbound' && nextMsg.sender_type === 'user') {
+                    const inboundTime = new Date(currentMsg.created_at).getTime();
+                    const outboundTime = new Date(nextMsg.created_at).getTime();
+                    const diffMinutes = Math.round((outboundTime - inboundTime) / (1000 * 60));
+                    
+                    if (diffMinutes > 0 && diffMinutes < 1440) {
+                      responseTimes.push(diffMinutes);
+                    }
+                    break;
+                  }
+                }
+              }
+            }
+          });
+
+          if (responseTimes.length > 0) {
+            previousAvgResponseTime = Math.round(
+              responseTimes.reduce((sum, time) => sum + time, 0) / responseTimes.length
+            );
+          }
+        }
+
+        // Calculate yesterday's resolution rate
+        const yesterdayTotalConvs = yesterdayConvsForRateResult.data?.length || 0;
+        const yesterdayResolvedConvs = yesterdayConvsForRateResult.data?.filter(
+          c => c.status === 'closed' || c.status === 'resolved'
+        ).length || 0;
+        const previousResolutionRate = yesterdayTotalConvs > 0 
+          ? Math.round((yesterdayResolvedConvs / yesterdayTotalConvs) * 100) 
+          : 0;
+
         setMetrics({
           todayConversations: todayCount,
           yesterdayConversations: yesterdayCount,
           openConversations: openCount,
-          yesterdayOpenConversations: 0,
+          yesterdayOpenConversations: yesterdayOpenCount,
           avgResponseTimeMinutes,
-          previousAvgResponseTime: 0,
+          previousAvgResponseTime,
           resolutionRate,
-          previousResolutionRate: resolutionRate - 3,
+          previousResolutionRate,
         });
 
         // Process weekly chart data
