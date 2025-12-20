@@ -16,7 +16,7 @@ export function AssignmentBadge({ assignedUser, currentUserId, className }: Assi
       <Badge 
         variant="outline" 
         className={cn(
-          "text-xs px-1.5 py-0 h-5 flex-shrink-0 max-w-[100px] truncate border-[#FECACA] text-red-600",
+          "text-xs px-1.5 py-0 h-5 flex-shrink-0 max-w-[100px] truncate border-0 text-red-600",
           className
         )}
         style={{ backgroundColor: '#FECACA' }}
@@ -33,7 +33,7 @@ export function AssignmentBadge({ assignedUser, currentUserId, className }: Assi
       <Badge 
         variant="default" 
         className={cn(
-          "text-xs px-1.5 py-0 h-5 bg-success/20 text-success border-success/30 flex-shrink-0 max-w-[60px] truncate",
+          "text-xs px-1.5 py-0 h-5 bg-success/20 text-success border-0 flex-shrink-0 max-w-[60px] truncate",
           className
         )}
         title="Sua conversa"
@@ -50,7 +50,7 @@ export function AssignmentBadge({ assignedUser, currentUserId, className }: Assi
     <Badge 
       variant="outline" 
       className={cn(
-        "text-xs px-1.5 py-0 h-5 bg-warning/20 text-warning border-warning/30 flex-shrink-0 max-w-[80px] truncate",
+        "text-xs px-1.5 py-0 h-5 bg-warning/20 text-warning border-0 flex-shrink-0 max-w-[80px] truncate",
         className
       )}
       title={assignedUser.fullName || 'Atribuída'}
