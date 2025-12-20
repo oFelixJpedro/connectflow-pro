@@ -3,6 +3,55 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
 
+export interface ReportContentCriteriaItem {
+  score: number;
+  analysis: string;
+  impact: string;
+  recommendation: string;
+}
+
+export interface ReportContentAgent {
+  agent_id: string;
+  agent_name: string;
+  score: number;
+  analysis: string;
+  strengths: string[];
+  development_areas: string[];
+  action_plan: string;
+}
+
+export interface ReportContentStrength {
+  title: string;
+  description: string;
+  evidence: string;
+}
+
+export interface ReportContentWeakness {
+  title: string;
+  description: string;
+  impact: string;
+  recommendation: string;
+}
+
+export interface ReportContentInsight {
+  insight: string;
+  context: string;
+  action_suggested: string;
+}
+
+export interface ReportContent {
+  executive_summary: string;
+  period_overview: string;
+  criteria_analysis: Record<string, ReportContentCriteriaItem>;
+  agents_detailed: ReportContentAgent[];
+  strengths_detailed: ReportContentStrength[];
+  weaknesses_detailed: ReportContentWeakness[];
+  insights_detailed: ReportContentInsight[];
+  conclusion: string;
+  next_steps: string[];
+  final_message: string;
+}
+
 export interface CommercialReport {
   id: string;
   report_date: string;
@@ -30,6 +79,7 @@ export interface CommercialReport {
   is_anticipated?: boolean;
   anticipated_at?: string;
   anticipated_by?: string;
+  report_content?: ReportContent;
 }
 
 function getCurrentWeekMondayStr(): string {
@@ -104,6 +154,7 @@ export function useReportsData() {
         is_anticipated: r.is_anticipated || false,
         anticipated_at: r.anticipated_at || undefined,
         anticipated_by: r.anticipated_by || undefined,
+        report_content: (r.report_content as unknown as ReportContent) || undefined,
       })));
     } catch (error) {
       console.error('Error fetching reports:', error);

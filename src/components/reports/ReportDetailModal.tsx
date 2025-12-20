@@ -14,7 +14,10 @@ import {
   Award,
   Lightbulb,
   Zap,
-  BarChart3,
+  FileText,
+  CheckCircle2,
+  AlertTriangle,
+  ArrowRight,
 } from 'lucide-react';
 import {
   Dialog,
@@ -22,28 +25,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import {
-  RadarChart,
-  PolarGrid,
-  PolarAngleAxis,
-  PolarRadiusAxis,
-  Radar,
-  ResponsiveContainer,
-} from 'recharts';
+import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
 import { CommercialReport } from '@/hooks/useReportsData';
 import { ProfessionalReportPDF } from './ProfessionalReportPDF';
@@ -64,14 +51,12 @@ const classificationColors: Record<string, string> = {
 };
 
 const criteriaLabels: Record<string, string> = {
-  // Português (como vem do banco)
   tempoResposta: 'Tempo de Resposta',
   comunicacao: 'Comunicação',
   objetividade: 'Objetividade',
   humanizacao: 'Humanização',
   fechamento: 'Fechamento',
   objecoes: 'Tratamento de Objeções',
-  // Inglês (fallback)
   response_time: 'Tempo de Resposta',
   communication: 'Comunicação',
   objectivity: 'Objetividade',
@@ -80,32 +65,19 @@ const criteriaLabels: Record<string, string> = {
   objection_handling: 'Tratamento de Objeções',
 };
 
-const levelColors: Record<string, string> = {
-  INICIANTE: 'bg-slate-500/10 text-slate-600 border-slate-500/20',
-  INTERMEDIÁRIO: 'bg-blue-500/10 text-blue-600 border-blue-500/20',
-  AVANÇADO: 'bg-purple-500/10 text-purple-600 border-purple-500/20',
-  ESPECIALISTA: 'bg-amber-500/10 text-amber-600 border-amber-500/20',
-  MESTRE: 'bg-success/10 text-success border-success/20',
-};
-
 export function ReportDetailModal({ open, onOpenChange, report }: ReportDetailModalProps) {
   const [generatingPdf, setGeneratingPdf] = useState(false);
 
   if (!report) return null;
 
-  const radarData = Object.entries(report.criteria_scores || {}).map(([key, value]) => ({
-    criteria: criteriaLabels[key] || key,
-    score: value,
-    fullMark: 10,
-  }));
+  const hasAIContent = report.report_content && Object.keys(report.report_content).length > 0;
+  const content = report.report_content;
 
   const generatePDF = async () => {
     setGeneratingPdf(true);
     try {
-      // Generate PDF using @react-pdf/renderer
       const blob = await pdf(<ProfessionalReportPDF report={report} />).toBlob();
       
-      // Create download link
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -126,17 +98,18 @@ export function ReportDetailModal({ open, onOpenChange, report }: ReportDetailMo
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl h-[90vh] overflow-hidden flex flex-col">
-        <DialogHeader className="flex-shrink-0">
+      <DialogContent className="max-w-4xl h-[90vh] overflow-hidden flex flex-col p-0">
+        {/* Header */}
+        <DialogHeader className="flex-shrink-0 p-6 pb-4 border-b bg-muted/30">
           <div className="flex items-center justify-between">
             <DialogTitle className="flex items-center gap-3">
               <div className="w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center">
-                <BarChart3 className="w-5 h-5 text-primary" />
+                <FileText className="w-5 h-5 text-primary" />
               </div>
               <div>
                 <div className="flex items-center gap-2">
                   <span className="text-xl font-bold">
-                    Semana {format(new Date(report.week_start), "dd/MM", { locale: ptBR })} - {format(new Date(report.week_end), "dd/MM/yyyy", { locale: ptBR })}
+                    Relatório Comercial
                   </span>
                   {report.is_anticipated && (
                     <Badge 
@@ -149,14 +122,13 @@ export function ReportDetailModal({ open, onOpenChange, report }: ReportDetailMo
                   )}
                 </div>
                 <p className="text-sm text-muted-foreground font-normal">
-                  Relatório detalhado do Gerente Comercial
+                  {format(new Date(report.week_start), "dd 'de' MMMM", { locale: ptBR })} - {format(new Date(report.week_end), "dd 'de' MMMM 'de' yyyy", { locale: ptBR })}
                 </p>
               </div>
             </DialogTitle>
             <Button 
               onClick={generatePDF} 
               disabled={generatingPdf}
-              className="ml-4"
             >
               {generatingPdf ? (
                 <>
@@ -173,275 +145,367 @@ export function ReportDetailModal({ open, onOpenChange, report }: ReportDetailMo
           </div>
         </DialogHeader>
 
+        {/* Document Preview - Continuous Scroll */}
         <ScrollArea className="flex-1 h-full">
-          <div className="p-4 pb-8 bg-background">
-            <Tabs defaultValue="resumo" className="w-full">
-              <TabsList className="grid w-full grid-cols-4 mb-4">
-                <TabsTrigger value="resumo">Resumo</TabsTrigger>
-                <TabsTrigger value="criterios">Critérios</TabsTrigger>
-                <TabsTrigger value="agentes">Agentes</TabsTrigger>
-                <TabsTrigger value="insights">Insights</TabsTrigger>
-              </TabsList>
+          <div className="p-6 space-y-8 max-w-3xl mx-auto">
+            
+            {/* Cover Section */}
+            <div className="text-center py-8 border-b">
+              <Badge className="mb-4 bg-primary/10 text-primary border-primary/20">
+                Relatório Semanal
+              </Badge>
+              <h1 className="text-3xl font-bold mb-2">Análise Comercial</h1>
+              <p className="text-muted-foreground mb-6">Gerente Comercial com Inteligência Artificial</p>
+              
+              <Badge 
+                variant="outline" 
+                className={cn("text-lg px-6 py-2", classificationColors[report.classification || ''] || '')}
+              >
+                {report.classification === 'SEM_DADOS' ? 'Sem Dados' : report.classification || 'N/A'}
+              </Badge>
+            </div>
 
-              {/* Resumo Tab */}
-              <TabsContent value="resumo" className="space-y-4">
-                {/* Metrics Cards */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                  <Card>
-                    <CardContent className="p-4 text-center">
-                      <div className="text-3xl font-bold text-primary">
-                        {report.average_score?.toFixed(1) || 'N/A'}
-                      </div>
-                      <div className="text-sm text-muted-foreground flex items-center justify-center gap-1">
-                        <Award className="w-4 h-4" />
-                        Nota Média
-                      </div>
-                    </CardContent>
-                  </Card>
+            {/* Key Metrics */}
+            <section>
+              <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                <Award className="w-5 h-5 text-primary" />
+                Métricas Principais
+              </h2>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <Card>
+                  <CardContent className="p-4 text-center">
+                    <div className="text-3xl font-bold text-primary">
+                      {report.average_score?.toFixed(1) || 'N/A'}
+                    </div>
+                    <div className="text-sm text-muted-foreground">Nota Média</div>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="p-4 text-center">
+                    <div className="text-3xl font-bold">{report.total_conversations}</div>
+                    <div className="text-sm text-muted-foreground">Conversas</div>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="p-4 text-center">
+                    <div className="text-3xl font-bold text-success">{report.qualified_leads}</div>
+                    <div className="text-sm text-muted-foreground">Leads Qualificados</div>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="p-4 text-center">
+                    <div className="text-3xl font-bold text-amber-500">{report.closed_deals}</div>
+                    <div className="text-sm text-muted-foreground">Vendas Fechadas</div>
+                  </CardContent>
+                </Card>
+              </div>
+            </section>
 
-                  <Card>
-                    <CardContent className="p-4 text-center">
-                      <div className="text-3xl font-bold">
-                        {report.total_conversations}
-                      </div>
-                      <div className="text-sm text-muted-foreground flex items-center justify-center gap-1">
-                        <MessageSquare className="w-4 h-4" />
-                        Conversas
-                      </div>
-                    </CardContent>
-                  </Card>
+            <Separator />
 
-                  <Card>
-                    <CardContent className="p-4 text-center">
-                      <div className="text-3xl font-bold text-success">
-                        {report.qualified_leads}
+            {/* Executive Summary */}
+            <section>
+              <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                <FileText className="w-5 h-5 text-primary" />
+                Sumário Executivo
+              </h2>
+              <Card>
+                <CardContent className="p-6 space-y-4">
+                  {hasAIContent && content?.executive_summary ? (
+                    <p className="text-sm leading-relaxed whitespace-pre-line">
+                      {content.executive_summary}
+                    </p>
+                  ) : (
+                    <p className="text-sm leading-relaxed text-muted-foreground">
+                      Durante o período de {format(new Date(report.week_start), "dd 'de' MMMM", { locale: ptBR })} a {format(new Date(report.week_end), "dd 'de' MMMM 'de' yyyy", { locale: ptBR })}, a equipe comercial realizou {report.total_conversations} atendimentos, obtendo uma nota média de {report.average_score?.toFixed(1) || 0}/10.
+                    </p>
+                  )}
+                  
+                  {hasAIContent && content?.period_overview && (
+                    <>
+                      <Separator />
+                      <div>
+                        <h4 className="font-medium mb-2">Visão Geral do Período</h4>
+                        <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-line">
+                          {content.period_overview}
+                        </p>
                       </div>
-                      <div className="text-sm text-muted-foreground flex items-center justify-center gap-1">
-                        <Users className="w-4 h-4" />
-                        Leads Qualificados
-                      </div>
-                    </CardContent>
-                  </Card>
+                    </>
+                  )}
+                </CardContent>
+              </Card>
+            </section>
 
-                  <Card>
-                    <CardContent className="p-4 text-center">
-                      <div className="text-3xl font-bold text-amber-500">
-                        {report.closed_deals}
-                      </div>
-                      <div className="text-sm text-muted-foreground flex items-center justify-center gap-1">
-                        <Target className="w-4 h-4" />
-                        Vendas Fechadas
-                      </div>
-                    </CardContent>
-                  </Card>
-                </div>
+            <Separator />
 
-                {/* Classification Badge */}
-                <div className="flex justify-center">
-                  <Badge 
-                    variant="outline" 
-                    className={cn("text-lg px-4 py-2", classificationColors[report.classification || ''] || '')}
-                  >
-                    {report.classification === 'SEM_DADOS' ? 'Sem Dados' : report.classification || 'N/A'}
-                  </Badge>
-                </div>
-
-                {/* Strengths & Weaknesses */}
-                <div className="grid md:grid-cols-2 gap-4">
-                  <Card className="border-success/20">
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-base flex items-center gap-2 text-success">
-                        <TrendingUp className="w-4 h-4" />
-                        Pontos Fortes
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      {report.strengths && report.strengths.length > 0 ? (
-                        <ul className="space-y-2">
-                          {report.strengths.map((strength, i) => (
-                            <li key={i} className="flex items-start gap-2 text-sm">
-                              <span className="text-success mt-1">•</span>
-                              {strength}
-                            </li>
-                          ))}
-                        </ul>
-                      ) : (
-                        <p className="text-sm text-muted-foreground">Nenhum ponto forte identificado</p>
-                      )}
-                    </CardContent>
-                  </Card>
-
-                  <Card className="border-destructive/20">
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-base flex items-center gap-2 text-destructive">
-                        <TrendingDown className="w-4 h-4" />
-                        Pontos a Melhorar
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      {report.weaknesses && report.weaknesses.length > 0 ? (
-                        <ul className="space-y-2">
-                          {report.weaknesses.map((weakness, i) => (
-                            <li key={i} className="flex items-start gap-2 text-sm">
-                              <span className="text-destructive mt-1">•</span>
-                              {weakness}
-                            </li>
-                          ))}
-                        </ul>
-                      ) : (
-                        <p className="text-sm text-muted-foreground">Nenhum ponto a melhorar identificado</p>
-                      )}
-                    </CardContent>
-                  </Card>
-                </div>
-              </TabsContent>
-
-              {/* Critérios Tab */}
-              <TabsContent value="criterios" className="space-y-4">
-                {radarData.length > 0 ? (
-                  <>
-                    {/* Radar Chart */}
-                    <Card>
-                      <CardHeader>
-                        <CardTitle className="text-base">Gráfico de Critérios</CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="h-[300px]">
-                          <ResponsiveContainer width="100%" height="100%">
-                            <RadarChart data={radarData}>
-                              <PolarGrid />
-                              <PolarAngleAxis dataKey="criteria" tick={{ fontSize: 12 }} />
-                              <PolarRadiusAxis angle={30} domain={[0, 10]} />
-                              <Radar
-                                name="Score"
-                                dataKey="score"
-                                stroke="hsl(var(--primary))"
-                                fill="hsl(var(--primary))"
-                                fillOpacity={0.5}
-                              />
-                            </RadarChart>
-                          </ResponsiveContainer>
+            {/* Criteria Analysis */}
+            <section>
+              <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                <Target className="w-5 h-5 text-primary" />
+                Análise de Critérios
+              </h2>
+              <div className="space-y-4">
+                {Object.entries(report.criteria_scores || {}).map(([key, value]) => {
+                  const aiAnalysis = hasAIContent && content?.criteria_analysis?.[key];
+                  
+                  return (
+                    <Card key={key}>
+                      <CardContent className="p-4">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="font-medium">{criteriaLabels[key] || key}</span>
+                          <span className="text-lg font-bold text-primary">{value.toFixed(1)}/10</span>
                         </div>
-                      </CardContent>
-                    </Card>
-
-                    {/* Criteria Progress Bars */}
-                    <Card>
-                      <CardHeader>
-                        <CardTitle className="text-base">Detalhamento por Critério</CardTitle>
-                      </CardHeader>
-                      <CardContent className="space-y-4">
-                        {Object.entries(report.criteria_scores || {}).map(([key, value]) => (
-                          <div key={key} className="space-y-1">
-                            <div className="flex justify-between text-sm">
-                              <span>{criteriaLabels[key] || key}</span>
-                              <span className="font-medium">{value.toFixed(1)}/10</span>
+                        <Progress value={value * 10} className="h-2 mb-3" />
+                        
+                        {aiAnalysis ? (
+                          <div className="space-y-2 text-sm">
+                            <p className="text-muted-foreground">{aiAnalysis.analysis}</p>
+                            <div className="flex gap-4 text-xs">
+                              <span className="text-primary">
+                                <strong>Impacto:</strong> {aiAnalysis.impact}
+                              </span>
                             </div>
-                            <Progress value={value * 10} className="h-2" />
+                            <p className="text-success text-xs">
+                              <strong>Recomendação:</strong> {aiAnalysis.recommendation}
+                            </p>
                           </div>
-                        ))}
+                        ) : (
+                          <p className="text-sm text-muted-foreground">
+                            {value >= 7 
+                              ? `Bom desempenho neste critério.`
+                              : `Oportunidade de melhoria identificada.`}
+                          </p>
+                        )}
                       </CardContent>
                     </Card>
-                  </>
-                ) : (
-                  <Card>
-                    <CardContent className="p-8 text-center">
-                      <p className="text-muted-foreground">Nenhum critério avaliado neste relatório</p>
-                    </CardContent>
-                  </Card>
-                )}
-              </TabsContent>
+                  );
+                })}
+              </div>
+            </section>
 
-              {/* Agentes Tab */}
-              <TabsContent value="agentes" className="space-y-4">
-                {report.agents_analysis && report.agents_analysis.length > 0 ? (
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="text-base flex items-center gap-2">
-                        <Users className="w-4 h-4" />
-                        Performance dos Agentes
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Agente</TableHead>
-                            <TableHead>Nível</TableHead>
-                            <TableHead className="text-center">Score</TableHead>
-                            <TableHead>Recomendação</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {report.agents_analysis.map((agent: any, i) => (
-                            <TableRow key={i}>
-                              <TableCell className="font-medium">
-                                {agent.agent_name || agent.name || 'Agente'}
-                              </TableCell>
-                              <TableCell>
-                                <Badge 
-                                  variant="outline" 
-                                  className={cn("text-xs", levelColors[agent.level] || 'bg-slate-500/10 text-slate-600 border-slate-500/20')}
-                                >
-                                  {agent.level || 'N/A'}
-                                </Badge>
-                              </TableCell>
-                              <TableCell className="text-center font-medium">
-                                {(agent.average_score ?? agent.score)?.toFixed(1) || '0.0'}
-                              </TableCell>
-                              <TableCell className="text-sm text-muted-foreground max-w-xs truncate">
-                                {agent.recommendation || `${agent.total_conversations || 0} conversas`}
-                              </TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    </CardContent>
-                  </Card>
-                ) : (
-                  <Card>
-                    <CardContent className="p-8 text-center">
-                      <Users className="w-12 h-12 mx-auto mb-3 text-muted-foreground opacity-50" />
-                      <p className="text-muted-foreground">Nenhum agente analisado neste relatório</p>
-                    </CardContent>
-                  </Card>
-                )}
-              </TabsContent>
+            <Separator />
 
-              {/* Insights Tab */}
-              <TabsContent value="insights" className="space-y-4">
-                {report.insights && report.insights.length > 0 ? (
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="text-base flex items-center gap-2">
-                        <Lightbulb className="w-4 h-4 text-amber-500" />
-                        Insights e Recomendações
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <ul className="space-y-3">
-                        {report.insights.map((insight, i) => (
-                          <li 
-                            key={i} 
-                            className="flex items-start gap-3 p-3 bg-muted/50 rounded-lg"
-                          >
-                            <Lightbulb className="w-5 h-5 text-amber-500 mt-0.5 flex-shrink-0" />
-                            <span className="text-sm">{insight}</span>
+            {/* Strengths & Weaknesses */}
+            <section>
+              <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                <TrendingUp className="w-5 h-5 text-primary" />
+                Pontos Fortes e Fracos
+              </h2>
+              <div className="grid md:grid-cols-2 gap-4">
+                {/* Strengths */}
+                <Card className="border-success/20">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-base flex items-center gap-2 text-success">
+                      <CheckCircle2 className="w-4 h-4" />
+                      Pontos Fortes
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    {hasAIContent && content?.strengths_detailed?.length > 0 ? (
+                      content.strengths_detailed.map((strength, i) => (
+                        <div key={i} className="space-y-1">
+                          <p className="font-medium text-sm">{strength.title}</p>
+                          <p className="text-xs text-muted-foreground">{strength.description}</p>
+                          <p className="text-xs text-success/80 italic">Evidência: {strength.evidence}</p>
+                        </div>
+                      ))
+                    ) : report.strengths?.length > 0 ? (
+                      report.strengths.map((s, i) => (
+                        <p key={i} className="text-sm flex items-start gap-2">
+                          <span className="text-success mt-0.5">•</span>
+                          {s}
+                        </p>
+                      ))
+                    ) : (
+                      <p className="text-sm text-muted-foreground">Nenhum ponto forte identificado</p>
+                    )}
+                  </CardContent>
+                </Card>
+
+                {/* Weaknesses */}
+                <Card className="border-destructive/20">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-base flex items-center gap-2 text-destructive">
+                      <AlertTriangle className="w-4 h-4" />
+                      Pontos a Melhorar
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    {hasAIContent && content?.weaknesses_detailed?.length > 0 ? (
+                      content.weaknesses_detailed.map((weakness, i) => (
+                        <div key={i} className="space-y-1">
+                          <p className="font-medium text-sm">{weakness.title}</p>
+                          <p className="text-xs text-muted-foreground">{weakness.description}</p>
+                          <p className="text-xs text-destructive/80">Impacto: {weakness.impact}</p>
+                          <p className="text-xs text-primary">Ação: {weakness.recommendation}</p>
+                        </div>
+                      ))
+                    ) : report.weaknesses?.length > 0 ? (
+                      report.weaknesses.map((w, i) => (
+                        <p key={i} className="text-sm flex items-start gap-2">
+                          <span className="text-destructive mt-0.5">•</span>
+                          {w}
+                        </p>
+                      ))
+                    ) : (
+                      <p className="text-sm text-muted-foreground">Nenhum ponto a melhorar identificado</p>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
+            </section>
+
+            <Separator />
+
+            {/* Agents Performance */}
+            {((hasAIContent && content?.agents_detailed?.length > 0) || report.agents_analysis?.length > 0) && (
+              <>
+                <section>
+                  <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                    <Users className="w-5 h-5 text-primary" />
+                    Performance dos Agentes
+                  </h2>
+                  <div className="space-y-4">
+                    {hasAIContent && content?.agents_detailed?.length > 0 ? (
+                      content.agents_detailed.map((agent, i) => (
+                        <Card key={i}>
+                          <CardContent className="p-4">
+                            <div className="flex items-center justify-between mb-3">
+                              <span className="font-medium">{agent.agent_name}</span>
+                              <Badge variant="outline" className={cn(
+                                agent.score >= 8 ? 'bg-success/10 text-success border-success/20' :
+                                agent.score >= 6 ? 'bg-primary/10 text-primary border-primary/20' :
+                                agent.score >= 4 ? 'bg-warning/10 text-warning border-warning/20' :
+                                'bg-destructive/10 text-destructive border-destructive/20'
+                              )}>
+                                {agent.score?.toFixed(1) || '0.0'}/10
+                              </Badge>
+                            </div>
+                            <p className="text-sm text-muted-foreground mb-3">{agent.analysis}</p>
+                            <div className="grid md:grid-cols-2 gap-3 text-xs">
+                              <div>
+                                <p className="font-medium text-success mb-1">Pontos Fortes:</p>
+                                <ul className="list-disc list-inside text-muted-foreground">
+                                  {agent.strengths?.map((s, j) => <li key={j}>{s}</li>)}
+                                </ul>
+                              </div>
+                              <div>
+                                <p className="font-medium text-warning mb-1">Áreas de Desenvolvimento:</p>
+                                <ul className="list-disc list-inside text-muted-foreground">
+                                  {agent.development_areas?.map((d, j) => <li key={j}>{d}</li>)}
+                                </ul>
+                              </div>
+                            </div>
+                            <p className="text-xs text-primary mt-2">
+                              <strong>Plano de Ação:</strong> {agent.action_plan}
+                            </p>
+                          </CardContent>
+                        </Card>
+                      ))
+                    ) : (
+                      report.agents_analysis?.map((agent: any, i) => (
+                        <Card key={i}>
+                          <CardContent className="p-4">
+                            <div className="flex items-center justify-between">
+                              <span className="font-medium">{agent.agent_name || agent.name || 'Agente'}</span>
+                              <span className="font-bold">
+                                {(agent.average_score ?? agent.score)?.toFixed(1) || '0.0'}/10
+                              </span>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      ))
+                    )}
+                  </div>
+                </section>
+                <Separator />
+              </>
+            )}
+
+            {/* Insights */}
+            <section>
+              <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                <Lightbulb className="w-5 h-5 text-amber-500" />
+                Insights e Recomendações
+              </h2>
+              <div className="space-y-3">
+                {hasAIContent && content?.insights_detailed?.length > 0 ? (
+                  content.insights_detailed.map((item, i) => (
+                    <Card key={i} className="border-l-4 border-l-primary">
+                      <CardContent className="p-4">
+                        <p className="font-medium text-sm mb-2">{item.insight}</p>
+                        <p className="text-xs text-muted-foreground mb-2">{item.context}</p>
+                        <p className="text-xs text-primary flex items-center gap-1">
+                          <ArrowRight className="w-3 h-3" />
+                          {item.action_suggested}
+                        </p>
+                      </CardContent>
+                    </Card>
+                  ))
+                ) : report.insights?.length > 0 ? (
+                  report.insights.map((insight, i) => (
+                    <Card key={i} className="border-l-4 border-l-primary">
+                      <CardContent className="p-4">
+                        <p className="text-sm">{insight}</p>
+                      </CardContent>
+                    </Card>
+                  ))
+                ) : (
+                  <p className="text-sm text-muted-foreground">Nenhum insight gerado</p>
+                )}
+              </div>
+            </section>
+
+            <Separator />
+
+            {/* Conclusion */}
+            <section>
+              <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                <CheckCircle2 className="w-5 h-5 text-primary" />
+                Conclusão
+              </h2>
+              <Card>
+                <CardContent className="p-6 space-y-4">
+                  {hasAIContent && content?.conclusion ? (
+                    <p className="text-sm leading-relaxed whitespace-pre-line">
+                      {content.conclusion}
+                    </p>
+                  ) : (
+                    <p className="text-sm leading-relaxed text-muted-foreground">
+                      O período analisado apresentou {report.total_conversations} atendimentos com classificação {report.classification}.
+                    </p>
+                  )}
+
+                  {hasAIContent && content?.next_steps?.length > 0 && (
+                    <div>
+                      <h4 className="font-medium mb-2">Próximos Passos</h4>
+                      <ul className="space-y-1">
+                        {content.next_steps.map((step, i) => (
+                          <li key={i} className="text-sm flex items-start gap-2">
+                            <span className="text-primary font-bold">{i + 1}.</span>
+                            {step}
                           </li>
                         ))}
                       </ul>
-                    </CardContent>
-                  </Card>
-                ) : (
-                  <Card>
-                    <CardContent className="p-8 text-center">
-                      <Lightbulb className="w-12 h-12 mx-auto mb-3 text-muted-foreground opacity-50" />
-                      <p className="text-muted-foreground">Nenhum insight gerado para este relatório</p>
-                    </CardContent>
-                  </Card>
-                )}
-              </TabsContent>
-            </Tabs>
+                    </div>
+                  )}
+
+                  {hasAIContent && content?.final_message && (
+                    <div className="bg-primary/5 border border-primary/20 rounded-lg p-4 mt-4">
+                      <p className="text-sm text-primary italic text-center">
+                        "{content.final_message}"
+                      </p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </section>
+
+            {/* Footer */}
+            <div className="text-center text-xs text-muted-foreground py-4 border-t">
+              <p>Documento gerado em {format(new Date(), "dd 'de' MMMM 'de' yyyy 'às' HH:mm", { locale: ptBR })}</p>
+              <p className="mt-1">Confidencial - Uso Interno</p>
+            </div>
           </div>
         </ScrollArea>
       </DialogContent>
