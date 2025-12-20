@@ -29,6 +29,7 @@ import { AudioFilePreview } from '@/components/inbox/AudioFilePreview';
 import { CreateGroupModal } from '@/components/internal-chat/CreateGroupModal';
 import { GroupInfoModal } from '@/components/internal-chat/GroupInfoModal';
 import { AddGroupMembersModal } from '@/components/internal-chat/AddGroupMembersModal';
+import { ChatActions } from '@/components/internal-chat/ChatActions';
 
 // Import mentions
 import { MentionPicker, MentionText } from '@/components/mentions';
@@ -721,15 +722,11 @@ export default function InternalChat() {
                     );
                   })()}
                 </div>
-                {selectedRoom.type === 'group' && (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => setIsGroupInfoOpen(true)}
-                  >
-                    <MoreVertical className="w-5 h-5" />
-                  </Button>
-                )}
+                <ChatActions
+                  room={selectedRoom}
+                  currentUserName={profile?.full_name}
+                  onGroupInfoClick={() => setIsGroupInfoOpen(true)}
+                />
               </div>
 
               {/* Messages area */}

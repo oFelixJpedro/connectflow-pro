@@ -197,7 +197,7 @@ export function ConversationList({
 
       {/* Conversation List */}
       <ScrollArea className="flex-1">
-        <div className="divide-y divide-border">
+        <div className="p-2 space-y-1">
           {isLoading ? (
             <div className="p-8 text-center">
               <div className="animate-spin w-6 h-6 border-2 border-primary border-t-transparent rounded-full mx-auto mb-2" />
@@ -223,29 +223,15 @@ export function ConversationList({
               const isUnread = hasRealUnread || isMarkedAsUnread;
               const isSelected = selectedId === conversation.id;
 
-              // Left border logic:
-              // - selected => green
-              // - not selected + unread => blue
-              // - not selected + read => light gray (pastel)
-              const borderLeftColor = isSelected
-                ? 'hsl(var(--success))'
-                : isUnread
-                  ? 'hsl(var(--primary))'
-                  : 'hsl(var(--border))';
-
               return (
                 <div
                   key={conversation.id}
                   onClick={() => onSelect(conversation)}
-                  style={{ borderLeftColor, borderLeftStyle: 'solid' }}
                   className={cn(
-                    'conversation-item p-4 relative transition-colors duration-200 border-l-4',
-                    // Background colors based on state
+                    'conversation-item p-3 relative transition-colors duration-200 rounded-lg cursor-pointer',
                     isSelected
-                      ? 'bg-[hsl(var(--conv-selected-bg))]'
-                      : isUnread
-                        ? 'bg-[hsl(var(--conv-unread-bg))]'
-                        : 'bg-transparent'
+                      ? 'bg-[#EAF7FF] dark:bg-primary/10'
+                      : 'hover:bg-[#F7F9FA] dark:hover:bg-muted/50 bg-transparent'
                   )}
                 >
                   <div className="flex gap-3">
@@ -283,7 +269,10 @@ export function ConversationList({
                           {isAdminOrOwner && isFollowed(conversation.id) && (
                             <Star className="w-3.5 h-3.5 text-violet-500 fill-violet-500 flex-shrink-0" />
                           )}
-                          <p className="font-medium text-sm text-foreground truncate">
+                          <p className={cn(
+                            "text-sm text-foreground truncate",
+                            isUnread ? "font-bold" : "font-medium"
+                          )}>
                             {conversation.contact?.name || conversation.contact?.phoneNumber}
                           </p>
                         </div>
@@ -292,7 +281,10 @@ export function ConversationList({
                         </span>
                       </div>
                       
-                      <p className="text-xs text-muted-foreground truncate mt-0.5">
+                      <p className={cn(
+                        "text-xs truncate mt-0.5",
+                        isUnread ? "text-foreground font-semibold" : "text-muted-foreground"
+                      )}>
                         {conversation.contact?.phoneNumber}
                       </p>
 

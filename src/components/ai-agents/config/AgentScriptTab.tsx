@@ -14,7 +14,7 @@ interface AgentScriptTabProps {
   medias?: AgentMedia[];
 }
 
-const DEFAULT_SCRIPT_TEMPLATE = `# ROTEIRO DE ATENDIMENTO
+const DEFAULT_SCRIPT_TEMPLATE = `# FLUXO DE ATENDIMENTO
 
 ---
 
@@ -202,7 +202,7 @@ export function AgentScriptTab({ content, onChange, agentId, medias = [] }: Agen
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <Label className="text-base font-medium">Roteiro de Atendimento</Label>
+          <Label className="text-base font-medium">Fluxo de Atendimento</Label>
           <p className="text-sm text-muted-foreground mt-1">
             Defina o fluxo de atendimento do agente passo a passo
           </p>
@@ -241,7 +241,7 @@ export function AgentScriptTab({ content, onChange, agentId, medias = [] }: Agen
       <MarkdownEditor
         value={content}
         onChange={onChange}
-        placeholder="Digite o roteiro de atendimento aqui..."
+        placeholder="Digite o fluxo de atendimento aqui..."
         minHeight="400px"
         enableSlashCommands={true}
         enableMediaTrigger={true}

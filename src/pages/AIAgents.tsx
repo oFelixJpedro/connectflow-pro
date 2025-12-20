@@ -1,13 +1,13 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Bot, Plus, BookTemplate, Bell, RotateCcw, Search, Power, Settings, Trash2 } from 'lucide-react';
+import { Bot, Plus, BookTemplate, RotateCcw, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Switch } from '@/components/ui/switch';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { AgentGridCard } from '@/components/ai-agents/AgentGridCard';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -95,16 +95,6 @@ export default function AIAgents() {
     a.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case 'active':
-        return <Badge className="bg-emerald-500/20 text-emerald-600 border-emerald-500/30">Ativo</Badge>;
-      case 'paused':
-        return <Badge className="bg-amber-500/20 text-amber-600 border-amber-500/30">Pausado</Badge>;
-      default:
-        return <Badge variant="secondary">Inativo</Badge>;
-    }
-  };
 
   return (
     <div className="flex h-full">
@@ -181,82 +171,31 @@ export default function AIAgents() {
                 <CollapsibleTrigger className="flex items-center gap-2 text-sm font-semibold text-muted-foreground uppercase tracking-wide hover:text-foreground transition-colors">
                   <span>Agentes Principais ({filteredPrimary.length})</span>
                 </CollapsibleTrigger>
-                <CollapsibleContent className="mt-4 space-y-4">
+                <CollapsibleContent className="mt-4">
                   {filteredPrimary.length === 0 ? (
-                    <Card className="border-dashed">
-                      <CardContent className="flex flex-col items-center justify-center py-8">
-                        <Bot className="w-12 h-12 text-muted-foreground mb-3" />
-                        <p className="text-muted-foreground text-center">
-                          Nenhum agente principal criado.<br />
-                          Clique em "Novo Agente" para começar.
-                        </p>
-                      </CardContent>
-                    </Card>
-                  ) : (
-                    filteredPrimary.map((agent) => (
-                      <Card 
-                        key={agent.id} 
-                        className="cursor-pointer hover:border-primary/50 transition-colors relative"
-                        onClick={() => navigate(`/ai-agents/${agent.id}`)}
-                      >
-                        <CardHeader className="pb-3">
-                          <div className="flex items-start justify-between">
-                            <div className="flex items-center gap-3">
-                              <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
-                                <Bot className="w-5 h-5 text-primary" />
-                              </div>
-                              <div>
-                                <CardTitle className="text-lg">{agent.name}</CardTitle>
-                                {agent.description && (
-                                  <p className="text-sm text-muted-foreground line-clamp-1 mt-0.5">
-                                    {agent.description}
-                                  </p>
-                                )}
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-3">
-                              {getStatusBadge(agent.status)}
-                              <Switch
-                                checked={agent.status === 'active'}
-                                onClick={(e) => handleToggleStatus(agent, e)}
-                              />
-                            </div>
-                          </div>
-                        </CardHeader>
-                        <CardContent>
-                          <div className="flex items-end justify-between">
-                            <div className="flex-1">
-                              {agent.connections && agent.connections.length > 0 && (
-                                <div className="space-y-2">
-                                  <p className="text-xs font-medium text-muted-foreground uppercase">
-                                    Conexões Vinculadas ({agent.connections.length})
-                                  </p>
-                                  <div className="flex flex-wrap gap-2">
-                                    {agent.connections.slice(0, 3).map((conn) => (
-                                      <Badge key={conn.id} variant="outline" className="text-xs">
-                                        {conn.connection?.name || 'Conexão'} • {conn.connection?.phone_number}
-                                      </Badge>
-                                    ))}
-                                    {agent.connections.length > 3 && (
-                                      <Badge variant="outline" className="text-xs">
-                                        +{agent.connections.length - 3} mais
-                                      </Badge>
-                                    )}
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                            <button
-                              onClick={(e) => handleDeleteClick(agent, e)}
-                              className="p-2 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors group"
-                              title="Excluir agente"
-                            >
-                              <Trash2 className="w-5 h-5 text-red-500 group-hover:text-red-600" />
-                            </button>
-                          </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                      <Card className="border-dashed min-h-[180px] flex items-center justify-center">
+                        <CardContent className="flex flex-col items-center justify-center py-6 text-center">
+                          <Bot className="w-10 h-10 text-muted-foreground mb-2" />
+                          <p className="text-sm text-muted-foreground">
+                            Nenhum agente principal criado.<br />
+                            Clique em "Novo Agente" para começar.
+                          </p>
                         </CardContent>
                       </Card>
-                    ))
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                      {filteredPrimary.map((agent) => (
+                        <AgentGridCard
+                          key={agent.id}
+                          agent={agent}
+                          onNavigate={(id) => navigate(`/ai-agents/${id}`)}
+                          onToggleStatus={handleToggleStatus}
+                          onDelete={handleDeleteClick}
+                        />
+                      ))}
+                    </div>
                   )}
                 </CollapsibleContent>
               </Collapsible>
@@ -273,54 +212,18 @@ export default function AIAgents() {
                       Acesse a configuração de um agente multiagente para adicionar sub-agentes.
                     </p>
                   ) : (
-                    <div className="space-y-3">
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                       {filteredSecondary.map((agent) => {
-                        // Encontrar o agente pai
                         const parentAgent = primaryAgents.find(p => p.id === agent.parent_agent_id);
-                        
                         return (
-                          <Card 
+                          <AgentGridCard
                             key={agent.id}
-                            className="cursor-pointer hover:border-primary/50 transition-colors relative"
-                            onClick={() => navigate(`/ai-agents/${agent.id}`)}
-                          >
-                            <CardContent className="p-4">
-                              <div className="flex items-center gap-4">
-                                <div className="w-10 h-10 rounded-full bg-secondary flex items-center justify-center shrink-0">
-                                  <Bot className="w-5 h-5 text-secondary-foreground" />
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                  <div className="flex items-center gap-2">
-                                    <p className="font-medium truncate">{agent.name}</p>
-                                    {getStatusBadge(agent.status)}
-                                  </div>
-                                  {parentAgent && (
-                                    <p className="text-xs text-muted-foreground mt-0.5">
-                                      Sub-agente de <span className="font-medium">{parentAgent.name}</span>
-                                    </p>
-                                  )}
-                                  {agent.description && !parentAgent && (
-                                    <p className="text-xs text-muted-foreground truncate mt-0.5">
-                                      {agent.description}
-                                    </p>
-                                  )}
-                                </div>
-                                <div className="flex items-center gap-2 shrink-0">
-                                  <Switch
-                                    checked={agent.status === 'active'}
-                                    onClick={(e) => handleToggleStatus(agent, e)}
-                                  />
-                                  <button
-                                    onClick={(e) => handleDeleteClick(agent, e)}
-                                    className="p-2 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors"
-                                    title="Excluir agente"
-                                  >
-                                    <Trash2 className="w-4 h-4 text-red-500" />
-                                  </button>
-                                </div>
-                              </div>
-                            </CardContent>
-                          </Card>
+                            agent={agent}
+                            onNavigate={(id) => navigate(`/ai-agents/${id}`)}
+                            onToggleStatus={handleToggleStatus}
+                            onDelete={handleDeleteClick}
+                            parentAgentName={parentAgent?.name}
+                          />
                         );
                       })}
                     </div>

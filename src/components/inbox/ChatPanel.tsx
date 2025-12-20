@@ -83,16 +83,17 @@ interface ChatPanelProps {
   onOpenContactDetails?: () => void;
   onSendReaction?: (messageId: string, emoji: string, remove?: boolean) => Promise<boolean>;
   onRegisterScrollToMessage?: (fn: (messageId: string) => void) => void;
+  onMessagesUpdate?: (messages: Message[]) => void;
   isLoadingMessages?: boolean;
   isSendingMessage?: boolean;
   isRestricted?: boolean;
 }
 
-const statusIcons = {
+const statusIcons: Record<string, React.ReactNode> = {
   pending: <Clock className="w-3 h-3 animate-pulse" />,
-  sent: <Check className="w-3 h-3" />,
+  sent: <CheckCheck className="w-3 h-3" />,
   delivered: <CheckCheck className="w-3 h-3" />,
-  read: <CheckCheck className="w-3 h-3 text-primary" />,
+  read: <CheckCheck className="w-3 h-3" />,
   failed: <AlertCircle className="w-3 h-3 text-destructive" />,
 };
 
@@ -116,6 +117,7 @@ export function ChatPanel({
   onOpenContactDetails,
   onSendReaction,
   onRegisterScrollToMessage,
+  onMessagesUpdate,
   isLoadingMessages = false,
   isSendingMessage = false,
   isRestricted = false,
@@ -350,26 +352,60 @@ export function ChatPanel({
   // Save transcription to message metadata
   const handleTranscriptionComplete = async (messageId: string, text: string) => {
     try {
-      // Find the message to get current metadata
       const message = messages.find(m => m.id === messageId);
       const currentMetadata = (message?.metadata as Record<string, unknown>) || {};
       
-      // Update message with transcription in metadata
-      const { error } = await supabase
+      const updatedMetadata = { 
+        ...currentMetadata, 
+        transcription: text 
+      };
+      
+      // Update message with transcription and verify it was saved
+      const { data, error } = await supabase
         .from('messages')
-        .update({ 
-          metadata: { 
-            ...currentMetadata, 
-            transcription: text 
-          } 
-        })
-        .eq('id', messageId);
+        .update({ metadata: updatedMetadata })
+        .eq('id', messageId)
+        .select('id, metadata');
         
       if (error) {
-        console.error('Erro ao salvar transcrição:', error);
+        console.error('❌ Erro ao salvar transcrição:', error);
+        toast({
+          title: 'Erro ao salvar transcrição',
+          description: 'A transcrição pode não persistir após recarregar.',
+          variant: 'destructive',
+        });
+        return;
       }
+      
+      // Verify the update actually affected a row
+      if (!data || data.length === 0) {
+        console.error('❌ Transcrição não foi salva (nenhuma linha afetada)');
+        toast({
+          title: 'Permissão negada',
+          description: 'Não foi possível salvar a transcrição.',
+          variant: 'destructive',
+        });
+        return;
+      }
+      
+      // Update local state to persist transcription without reload
+      if (onMessagesUpdate) {
+        const updatedMessages = messages.map(m => 
+          m.id === messageId 
+            ? { ...m, metadata: updatedMetadata }
+            : m
+        );
+        onMessagesUpdate(updatedMessages);
+      }
+      
+      console.log('✅ Transcrição salva no banco de dados:', data[0]?.id);
     } catch (error) {
       console.error('Erro ao salvar transcrição:', error);
+      toast({
+        title: 'Erro ao salvar transcrição',
+        description: 'Ocorreu um erro inesperado.',
+        variant: 'destructive',
+      });
     }
   };
 
@@ -1358,16 +1394,40 @@ export function ChatPanel({
 
                   {/* Messages grouped by time intervals */}
                   <div className="space-y-1">
-                    {groupMessagesByTimeInterval(dateMessages).map((timeGroup, groupIndex) => (
+                    {groupMessagesByTimeInterval(dateMessages).map((timeGroup, groupIndex) => {
+                      // Get the last outbound message status for this group
+                      const lastOutboundMessage = timeGroup.messages
+                        .filter(m => m.direction === 'outbound' && !m.isInternalNote)
+                        .pop();
+                      const isOutboundGroup = timeGroup.messages[0]?.direction === 'outbound';
+                      
+                      return (
                       <div key={`group-${groupIndex}`} className="space-y-0.5">
                         {/* Time group header - align based on message direction */}
                         <div className={cn(
-                          "flex items-center my-2",
-                          timeGroup.messages[0]?.direction === 'outbound' ? 'justify-end' : 'justify-start'
+                          "flex items-center gap-1 my-2",
+                          isOutboundGroup ? 'justify-end' : 'justify-start'
                         )}>
                           <span className="text-[10px] text-muted-foreground">
                             {formatMessageTime(timeGroup.timestamp)}
                           </span>
+                          {/* Status icons next to time for outbound messages */}
+                          {isOutboundGroup && lastOutboundMessage && (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span className={cn(
+                                  'text-muted-foreground cursor-default',
+                                  lastOutboundMessage.status === 'read' && 'text-primary',
+                                  lastOutboundMessage.status === 'failed' && 'text-destructive'
+                                )}>
+                                  {statusIcons[lastOutboundMessage.status]}
+                                </span>
+                              </TooltipTrigger>
+                              <TooltipContent side="left">
+                                {statusTooltips[lastOutboundMessage.status] || lastOutboundMessage.status}
+                              </TooltipContent>
+                            </Tooltip>
+                          )}
                         </div>
                         
                         {/* Messages in this time group */}
@@ -1672,25 +1732,7 @@ export function ChatPanel({
                               )
                             )}
                             
-                            {/* Message footer - show status only on last message of group */}
-                            {isLastInGroup && isOutbound && ((message.messageType !== 'audio' && message.messageType !== 'image' && message.messageType !== 'video' && message.messageType !== 'document') || (!message.mediaUrl)) && (
-                              <div className="flex items-center justify-end gap-1 mt-0.5">
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <span className={cn(
-                                      'text-[hsl(var(--chat-bubble-outgoing-foreground))]/70 cursor-default',
-                                      message.status === 'read' && 'text-primary',
-                                      message.status === 'failed' && 'text-destructive'
-                                    )}>
-                                      {statusIcons[message.status]}
-                                    </span>
-                                  </TooltipTrigger>
-                                  <TooltipContent side="left">
-                                    {statusTooltips[message.status] || message.status}
-                                  </TooltipContent>
-                                </Tooltip>
-                              </div>
-                            )}
+                            {/* Status is now shown next to the time group header */}
 
                             {/* Message reactions */}
                             {message.reactions && message.reactions.length > 0 && (
@@ -1756,7 +1798,8 @@ export function ChatPanel({
                       );
                     })}
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               ))}
