@@ -229,10 +229,9 @@ export function ConversationList({
                   onClick={() => onSelect(conversation)}
                   className={cn(
                     'conversation-item p-3 relative transition-colors duration-200 rounded-lg cursor-pointer',
-                    'hover:bg-[#F7F9FA] dark:hover:bg-muted/50',
                     isSelected
                       ? 'bg-[#EAF7FF] dark:bg-primary/10'
-                      : 'bg-transparent'
+                      : 'hover:bg-[#F7F9FA] dark:hover:bg-muted/50 bg-transparent'
                   )}
                 >
                   <div className="flex gap-3">
