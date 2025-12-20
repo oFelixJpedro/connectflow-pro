@@ -50,6 +50,13 @@ interface AggregatedInsights {
   qualified_leads_percent: number;
 }
 
+export interface CRMStageMapData {
+  stageId: string;
+  stageName: string;
+  stageColor: string;
+  countByState: Record<StateCode, number>;
+}
+
 interface CommercialData {
   averageScore: number;
   classification: 'EXCEPCIONAL' | 'BOM' | 'REGULAR' | 'RUIM' | 'CRÍTICO';
