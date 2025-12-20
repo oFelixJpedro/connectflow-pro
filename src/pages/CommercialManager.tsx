@@ -47,12 +47,12 @@ export default function CommercialManager() {
       {/* Page Header */}
       <div className="flex flex-col gap-3 md:gap-4">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-          <div className="flex items-center gap-3">
+          <div>
             <Select value={viewMode} onValueChange={handleViewChange}>
-              <SelectTrigger className="w-[220px]">
+              <SelectTrigger className="w-[220px] border-none shadow-none text-xl md:text-2xl font-bold bg-transparent h-auto p-0 focus:ring-0">
                 <SelectValue />
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent className="bg-popover">
                 <SelectItem value="dashboard">
                   <div className="flex items-center gap-2">
                     <LayoutDashboard className="w-4 h-4" />
