@@ -1,4 +1,5 @@
-import { Library, Download, Calendar, Loader2, Clock, CheckCircle, Zap } from 'lucide-react';
+import { useState } from 'react';
+import { Library, Download, Calendar, Loader2, CheckCircle, Zap, Eye } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -22,7 +23,8 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import { useReportsData } from '@/hooks/useReportsData';
+import { useReportsData, CommercialReport } from '@/hooks/useReportsData';
+import { ReportDetailModal } from './ReportDetailModal';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
@@ -63,6 +65,9 @@ interface ReportsModalProps {
 }
 
 export function ReportsModal({ open, onOpenChange }: ReportsModalProps) {
+  const [selectedReport, setSelectedReport] = useState<CommercialReport | null>(null);
+  const [detailModalOpen, setDetailModalOpen] = useState(false);
+  
   const {
     loading,
     reports,
@@ -75,6 +80,11 @@ export function ReportsModal({ open, onOpenChange }: ReportsModalProps) {
     generatingAnticipated,
     generateAnticipatedReport,
   } = useReportsData();
+
+  const handleViewDetails = (report: CommercialReport) => {
+    setSelectedReport(report);
+    setDetailModalOpen(true);
+  };
 
   const currentYear = new Date().getFullYear();
   const years = Array.from({ length: 5 }, (_, i) => currentYear - i);
@@ -270,11 +280,10 @@ export function ReportsModal({ open, onOpenChange }: ReportsModalProps) {
                       <Button 
                         variant="outline" 
                         size="sm"
-                        onClick={() => downloadReport(report)}
-                        disabled={!report.pdf_url}
+                        onClick={() => handleViewDetails(report)}
                       >
-                        <Download className="w-4 h-4 mr-1" />
-                        PDF
+                        <Eye className="w-4 h-4 mr-1" />
+                        Detalhes
                       </Button>
                     </div>
                   </div>
@@ -284,6 +293,13 @@ export function ReportsModal({ open, onOpenChange }: ReportsModalProps) {
           )}
         </div>
       </DialogContent>
+
+      {/* Report Detail Modal */}
+      <ReportDetailModal 
+        open={detailModalOpen}
+        onOpenChange={setDetailModalOpen}
+        report={selectedReport}
+      />
     </Dialog>
   );
 }
