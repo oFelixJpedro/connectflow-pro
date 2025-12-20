@@ -83,6 +83,7 @@ interface ChatPanelProps {
   onOpenContactDetails?: () => void;
   onSendReaction?: (messageId: string, emoji: string, remove?: boolean) => Promise<boolean>;
   onRegisterScrollToMessage?: (fn: (messageId: string) => void) => void;
+  onMessagesUpdate?: (messages: Message[]) => void;
   isLoadingMessages?: boolean;
   isSendingMessage?: boolean;
   isRestricted?: boolean;
@@ -116,6 +117,7 @@ export function ChatPanel({
   onOpenContactDetails,
   onSendReaction,
   onRegisterScrollToMessage,
+  onMessagesUpdate,
   isLoadingMessages = false,
   isSendingMessage = false,
   isRestricted = false,
@@ -354,22 +356,45 @@ export function ChatPanel({
       const message = messages.find(m => m.id === messageId);
       const currentMetadata = (message?.metadata as Record<string, unknown>) || {};
       
+      const updatedMetadata = { 
+        ...currentMetadata, 
+        transcription: text 
+      };
+      
       // Update message with transcription in metadata
       const { error } = await supabase
         .from('messages')
-        .update({ 
-          metadata: { 
-            ...currentMetadata, 
-            transcription: text 
-          } 
-        })
+        .update({ metadata: updatedMetadata })
         .eq('id', messageId);
         
       if (error) {
         console.error('Erro ao salvar transcrição:', error);
+        toast({
+          title: 'Erro ao salvar transcrição',
+          description: 'A transcrição pode não persistir após recarregar.',
+          variant: 'destructive',
+        });
+        return;
       }
+      
+      // Update local state to persist transcription without reload
+      if (onMessagesUpdate) {
+        const updatedMessages = messages.map(m => 
+          m.id === messageId 
+            ? { ...m, metadata: updatedMetadata }
+            : m
+        );
+        onMessagesUpdate(updatedMessages);
+      }
+      
+      console.log('✅ Transcrição salva no banco de dados');
     } catch (error) {
       console.error('Erro ao salvar transcrição:', error);
+      toast({
+        title: 'Erro ao salvar transcrição',
+        description: 'Ocorreu um erro inesperado.',
+        variant: 'destructive',
+      });
     }
   };
 

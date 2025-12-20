@@ -1572,6 +1572,7 @@ export function useInboxData() {
     conversations,
     selectedConversation,
     messages,
+    setMessages,
     tabUnreadCounts,
     
     // Loading states
