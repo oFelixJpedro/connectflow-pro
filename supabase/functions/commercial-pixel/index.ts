@@ -158,22 +158,99 @@ ${message_content}`;
           const geminiData = await geminiResponse.json();
           const responseText = geminiData.candidates?.[0]?.content?.parts?.[0]?.text || '';
           
+          // Debug: Log raw response
+          console.log('📄 [PIXEL] Gemini raw response (first 500 chars):', responseText.substring(0, 500));
+          
+          // Clean markdown formatting before extracting JSON
+          let cleanedResponse = responseText
+            .replace(/```json\s*/gi, '')
+            .replace(/```\s*/gi, '')
+            .trim();
+          
           // Extract JSON from response
-          const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+          const jsonMatch = cleanedResponse.match(/\{[\s\S]*\}/);
           if (jsonMatch) {
             try {
               aiAnalysis = JSON.parse(jsonMatch[0]);
-              console.log('✅ [PIXEL] AI Analysis:', JSON.stringify(aiAnalysis));
+              console.log('✅ [PIXEL] AI Analysis parsed successfully:', JSON.stringify(aiAnalysis));
             } catch (parseError) {
-              console.log('⚠️ [PIXEL] Failed to parse AI response as JSON');
+              console.log('⚠️ [PIXEL] Failed to parse AI response as JSON:', parseError);
+              console.log('⚠️ [PIXEL] Attempted to parse:', jsonMatch[0].substring(0, 200));
             }
+          } else {
+            console.log('⚠️ [PIXEL] No JSON found in cleaned response');
+            console.log('⚠️ [PIXEL] Cleaned response:', cleanedResponse.substring(0, 300));
           }
         } else {
-          console.log('⚠️ [PIXEL] Gemini API error:', geminiResponse.status);
+          const errorText = await geminiResponse.text();
+          console.log('⚠️ [PIXEL] Gemini API error:', geminiResponse.status, errorText.substring(0, 200));
         }
       } catch (aiError) {
         console.log('⚠️ [PIXEL] AI analysis error:', aiError);
       }
+    }
+
+    // FALLBACK: If AI analysis failed but we have message content, use rule-based analysis
+    if (!aiAnalysis && message_content && message_type === 'text') {
+      console.log('🔄 [PIXEL] Using fallback rule-based analysis');
+      
+      const contentLower = message_content.toLowerCase();
+      const existingStatus = existingMetrics?.lead_status || 'unknown';
+      
+      // Simple rule-based classification
+      let fallbackStatus = existingStatus;
+      let fallbackInterest = 3;
+      let fallbackSentiment = 'neutral';
+      let fallbackProbability = existingMetrics?.close_probability || 10;
+      
+      // Positive signals (warming/hot indicators)
+      const positiveSignals = ['interesse', 'gostei', 'quero', 'preço', 'valor', 'como funciona', 
+        'pode me explicar', 'gostaria', 'queria', 'vamos', 'fechar', 'contrato', 'pagamento'];
+      const negativeSignals = ['não tenho interesse', 'não quero', 'não preciso', 'obrigado mas não',
+        'não é para mim', 'desculpa', 'errou'];
+      const hotSignals = ['fechar', 'contrato', 'pagar', 'comprar', 'assinar', 'enviar proposta',
+        'quanto fica', 'forma de pagamento', 'prazo'];
+      
+      const hasPositive = positiveSignals.some(s => contentLower.includes(s));
+      const hasNegative = negativeSignals.some(s => contentLower.includes(s));
+      const hasHot = hotSignals.some(s => contentLower.includes(s));
+      
+      if (hasNegative) {
+        fallbackStatus = 'cold';
+        fallbackSentiment = 'negative';
+        fallbackInterest = 1;
+        fallbackProbability = 5;
+      } else if (hasHot && isInbound) {
+        fallbackStatus = 'hot';
+        fallbackSentiment = 'positive';
+        fallbackInterest = 5;
+        fallbackProbability = 70;
+      } else if (hasPositive && isInbound) {
+        fallbackStatus = existingStatus === 'unknown' ? 'warming' : existingStatus;
+        fallbackSentiment = 'positive';
+        fallbackInterest = 4;
+        fallbackProbability = Math.max(fallbackProbability, 30);
+      } else if (isInbound && existingStatus === 'unknown') {
+        // New conversation from client
+        fallbackStatus = 'warming';
+        fallbackProbability = 20;
+      }
+      
+      aiAnalysis = {
+        sentiment: fallbackSentiment,
+        interest_level: fallbackInterest,
+        lead_status: fallbackStatus,
+        close_probability: fallbackProbability,
+        deal_signals: hasHot ? ['interesse em fechamento'] : [],
+        objections: hasNegative ? ['demonstrou desinteresse'] : [],
+        pain_points: [],
+        is_closing_signal: hasHot,
+        is_disqualification_signal: hasNegative,
+        predicted_outcome: hasHot ? 'likely_close' : hasNegative ? 'likely_lost' : 'needs_followup',
+        _fallback: true
+      };
+      
+      console.log('🔄 [PIXEL] Fallback analysis result:', JSON.stringify(aiAnalysis));
     }
 
     // Apply AI analysis to metrics if available
