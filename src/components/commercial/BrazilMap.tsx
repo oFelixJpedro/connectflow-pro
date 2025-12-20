@@ -29,6 +29,13 @@ export function BrazilMap({ contactsByState, dealsByState }: BrazilMapProps) {
     return data;
   }, [dataByState]);
 
+  // Calculate max value for domain - ensures all zeros show as white
+  const maxValue = useMemo(() => {
+    const values = Object.values(dataByState).filter(v => v !== undefined) as number[];
+    const max = Math.max(...values, 0);
+    return max > 0 ? max : 1; // Use 1 as fallback to ensure proper scaling
+  }, [dataByState]);
+
   // Create metadata for tooltips
   const metadata = useMemo(() => {
     const meta: Record<string, { name: string; value: number }> = {};
@@ -99,6 +106,7 @@ export function BrazilMap({ contactsByState, dealsByState }: BrazilMapProps) {
                 data={heatmapData} 
                 metadata={metadata}
                 colorRange={['#F8FAFC', '#1E40AF']}
+                domain={[0, maxValue]}
               >
                 <Tooltip
                   float
