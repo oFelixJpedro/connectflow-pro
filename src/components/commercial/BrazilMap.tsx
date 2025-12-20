@@ -93,9 +93,13 @@ export function BrazilMap({ contactsByState, dealsByState }: BrazilMapProps) {
       <CardContent>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           {/* Map */}
-          <div className="relative flex items-center justify-center min-h-[300px]">
+          <div className="relative flex items-center justify-center min-h-[300px] brazil-map-container">
             <div className="w-full max-w-[400px]">
-              <BrazilHeatmap data={heatmapData} metadata={metadata}>
+              <BrazilHeatmap 
+                data={heatmapData} 
+                metadata={metadata}
+                colorRange={['#F8FAFC', '#1E40AF']}
+              >
                 <Tooltip
                   float
                   trigger="hover"
