@@ -273,7 +273,7 @@ lead_interest_level: 1-5 (1 = nenhum interesse, 5 = muito interessado)`;
 
           try {
             const geminiResponse = await fetch(
-              `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiApiKey}`,
+              `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${geminiApiKey}`,
               {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -447,7 +447,7 @@ Responda APENAS em JSON válido:
 
         try {
           const insightsResponse = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiApiKey}`,
+            `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${geminiApiKey}`,
             {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
