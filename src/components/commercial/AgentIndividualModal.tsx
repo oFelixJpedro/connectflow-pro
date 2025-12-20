@@ -238,6 +238,7 @@ export function AgentIndividualModal({ open, onOpenChange, agent }: AgentIndivid
                         <CriteriaRadarChart 
                           scores={data.metrics.criteriaScores}
                           loading={false}
+                          showCard={false}
                         />
                       </CardContent>
                     </Card>
