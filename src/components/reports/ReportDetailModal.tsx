@@ -64,6 +64,14 @@ const classificationColors: Record<string, string> = {
 };
 
 const criteriaLabels: Record<string, string> = {
+  // Português (como vem do banco)
+  tempoResposta: 'Tempo de Resposta',
+  comunicacao: 'Comunicação',
+  objetividade: 'Objetividade',
+  humanizacao: 'Humanização',
+  fechamento: 'Fechamento',
+  objecoes: 'Tratamento de Objeções',
+  // Inglês (fallback)
   response_time: 'Tempo de Resposta',
   communication: 'Comunicação',
   objectivity: 'Objetividade',
@@ -142,7 +150,7 @@ export function ReportDetailModal({ open, onOpenChange, report }: ReportDetailMo
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+      <DialogContent className="max-w-4xl h-[90vh] overflow-hidden flex flex-col">
         <DialogHeader className="flex-shrink-0">
           <div className="flex items-center justify-between">
             <DialogTitle className="flex items-center gap-3">
@@ -189,8 +197,8 @@ export function ReportDetailModal({ open, onOpenChange, report }: ReportDetailMo
           </div>
         </DialogHeader>
 
-        <ScrollArea className="flex-1">
-          <div ref={contentRef} className="p-4 bg-background">
+        <ScrollArea className="flex-1 h-full">
+          <div ref={contentRef} className="p-4 pb-8 bg-background">
             <Tabs defaultValue="resumo" className="w-full">
               <TabsList className="grid w-full grid-cols-4 mb-4">
                 <TabsTrigger value="resumo">Resumo</TabsTrigger>
@@ -389,22 +397,24 @@ export function ReportDetailModal({ open, onOpenChange, report }: ReportDetailMo
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {report.agents_analysis.map((agent, i) => (
+                          {report.agents_analysis.map((agent: any, i) => (
                             <TableRow key={i}>
-                              <TableCell className="font-medium">{agent.name}</TableCell>
+                              <TableCell className="font-medium">
+                                {agent.agent_name || agent.name || 'Agente'}
+                              </TableCell>
                               <TableCell>
                                 <Badge 
                                   variant="outline" 
-                                  className={cn("text-xs", levelColors[agent.level] || '')}
+                                  className={cn("text-xs", levelColors[agent.level] || 'bg-slate-500/10 text-slate-600 border-slate-500/20')}
                                 >
-                                  {agent.level}
+                                  {agent.level || 'N/A'}
                                 </Badge>
                               </TableCell>
                               <TableCell className="text-center font-medium">
-                                {agent.score?.toFixed(1)}
+                                {(agent.average_score ?? agent.score)?.toFixed(1) || '0.0'}
                               </TableCell>
                               <TableCell className="text-sm text-muted-foreground max-w-xs truncate">
-                                {agent.recommendation}
+                                {agent.recommendation || `${agent.total_conversations || 0} conversas`}
                               </TableCell>
                             </TableRow>
                           ))}
