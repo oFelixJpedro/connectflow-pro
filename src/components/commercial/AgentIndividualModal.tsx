@@ -28,7 +28,7 @@ import {
 import { cn } from '@/lib/utils';
 import { CriteriaRadarChart } from './CriteriaRadarChart';
 import { AgentAlertsSection } from './AgentAlertsSection';
-import { AlertChatPreviewModal } from './AlertChatPreviewModal';
+import { ConversationPreviewModal } from '@/components/crm/ConversationPreviewModal';
 import { useAgentIndividualData, type AgentAlert } from '@/hooks/useAgentIndividualData';
 
 interface AgentData {
@@ -330,11 +330,13 @@ export function AgentIndividualModal({ open, onOpenChange, agent }: AgentIndivid
         </DialogContent>
       </Dialog>
 
-      {/* Chat Preview Modal */}
-      <AlertChatPreviewModal
+      {/* Chat Preview Modal - Using unified CRM modal */}
+      <ConversationPreviewModal
         open={chatPreviewOpen}
         onOpenChange={setChatPreviewOpen}
-        alert={selectedAlert}
+        contactId={selectedAlert?.contact_id || ''}
+        contactName={selectedAlert?.contact?.name || undefined}
+        contactPhone={selectedAlert?.contact?.phone_number}
       />
     </>
   );
