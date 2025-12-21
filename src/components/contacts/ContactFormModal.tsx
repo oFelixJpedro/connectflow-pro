@@ -39,6 +39,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useAudioRecorder } from '@/hooks/useAudioRecorder';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
+import { formatPhoneForDisplay, isValidBrazilianPhone } from '@/lib/phoneUtils';
+import { toast } from 'sonner';
 
 interface ContactFormModalProps {
   open: boolean;
@@ -316,6 +318,13 @@ export function ContactFormModal({
     e.preventDefault();
     
     if (!formData.phone_number.replace(/\D/g, '')) {
+      toast.error('Número de telefone é obrigatório');
+      return;
+    }
+
+    // Validate phone number format
+    if (!isValidBrazilianPhone(formData.phone_number)) {
+      toast.error('Número de telefone inválido. Verifique o DDD e o número.');
       return;
     }
 
@@ -466,11 +475,14 @@ export function ContactFormModal({
     }));
   };
 
-  const formatPhoneNumber = (value: string) => {
+  const formatPhoneInput = (value: string) => {
     const digits = value.replace(/\D/g, '');
+    // Allow typing without auto-formatting to not interfere with user input
+    // Just limit to reasonable length
     if (digits.length <= 2) return digits;
     if (digits.length <= 7) return `(${digits.slice(0, 2)}) ${digits.slice(2)}`;
     if (digits.length <= 11) return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
+    if (digits.length <= 13) return `+${digits.slice(0, 2)} (${digits.slice(2, 4)}) ${digits.slice(4, 9)}-${digits.slice(9, 13)}`;
     return `+${digits.slice(0, 2)} (${digits.slice(2, 4)}) ${digits.slice(4, 9)}-${digits.slice(9, 13)}`;
   };
 
@@ -635,7 +647,7 @@ export function ContactFormModal({
               <Label htmlFor="phone">Telefone *</Label>
               <Input
                 id="phone"
-                value={formatPhoneNumber(formData.phone_number)}
+                value={formatPhoneInput(formData.phone_number)}
                 onChange={(e) => setFormData(prev => ({ ...prev, phone_number: e.target.value }))}
                 placeholder="(00) 00000-0000"
                 required
