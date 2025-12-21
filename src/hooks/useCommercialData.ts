@@ -161,7 +161,10 @@ export function useCommercialData(filter?: CommercialFilter) {
   const [evaluating, setEvaluating] = useState(false);
   
   // Track if filter is active to control realtime behavior
-  const hasActiveFilter = filter?.type === 'connection' && !!filter.connectionId;
+  // Consider both connection filter AND date filter (non-default dates)
+  const hasConnectionFilter = filter?.type === 'connection' && !!filter.connectionId;
+  const hasDateFilter = !!(filter?.startDate && filter?.endDate);
+  const hasActiveFilter = hasConnectionFilter || hasDateFilter;
   const filterRef = useRef(filter);
   filterRef.current = filter;
   
@@ -405,8 +408,10 @@ export function useCommercialData(filter?: CommercialFilter) {
           filter: `company_id=eq.${profile.company_id}`,
         },
         (payload) => {
-          // Only update from realtime if no filter is active
-          if (filterRef.current?.type === 'connection' && filterRef.current?.connectionId) {
+          // Only update from realtime if no filter is active (connection OR date)
+          const hasConnFilter = filterRef.current?.type === 'connection' && filterRef.current?.connectionId;
+          const hasDateFilterActive = !!(filterRef.current?.startDate && filterRef.current?.endDate);
+          if (hasConnFilter || hasDateFilterActive) {
             console.log('📊 [REALTIME] Ignoring dashboard update - filter is active');
             return;
           }
@@ -530,10 +535,15 @@ export function useCommercialData(filter?: CommercialFilter) {
           return;
         }
 
-        // Calculate filtered live metrics when filter is active
+        // Calculate filtered live metrics when ANY filter is active (connection OR date)
+        // This ensures date-filtered views calculate metrics from filtered conversations only
         if (hasActiveFilter && conversationIds.length > 0) {
+          console.log('📊 Calculating filtered live metrics for', conversationIds.length, 'conversations');
           const filteredMetrics = await calculateFilteredLiveMetrics(conversationIds);
           setLiveMetrics(filteredMetrics);
+        } else if (hasActiveFilter && conversationIds.length === 0) {
+          // No conversations in filter range - show empty metrics
+          setLiveMetrics(EMPTY_LIVE_METRICS);
         }
         // NOTE: When no filter is active, live metrics are fetched by the dedicated useEffect
         // that handles realtime subscription - no duplicate call needed here
