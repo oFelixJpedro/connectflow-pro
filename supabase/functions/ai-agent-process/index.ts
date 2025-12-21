@@ -2,6 +2,19 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { Redis } from "https://esm.sh/@upstash/redis@1.28.0";
 
+// ═══════════════════════════════════════════════════════════════════
+// IMPORT SHARED MEDIA CACHE UTILITIES
+// ═══════════════════════════════════════════════════════════════════
+import {
+  sha256,
+  getCachedAnalysis,
+  saveCacheAnalysis,
+  transcribeAudio,
+  SUPPORTED_VIDEO_MIMES,
+  SUPPORTED_DOCUMENT_MIMES,
+  inferMimeTypeFromFileName
+} from "../_shared/media-cache.ts";
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -22,12 +35,11 @@ try {
 // Helper to create idempotency key from batch
 function createBatchHash(conversationId: string, messages: any[]): string {
   const content = messages.map(m => `${m.type}:${m.content || m.mediaUrl || ''}`).join('|');
-  // Simple hash for deduplication
   let hash = 0;
   for (let i = 0; i < content.length; i++) {
     const char = content.charCodeAt(i);
     hash = ((hash << 5) - hash) + char;
-    hash = hash & hash; // Convert to 32bit integer
+    hash = hash & hash;
   }
   return `ai-process:${conversationId}:${Math.abs(hash).toString(36)}`;
 }
@@ -45,13 +57,11 @@ async function copyMediaToPublicBucket(
   try {
     console.log(`📋 Copiando mídia para bucket público: ${mediaKey}`);
     
-    // If URL is already from whatsapp-media (public), return as is
     if (privateUrl.includes('/whatsapp-media/') && !privateUrl.includes('token=')) {
       console.log(`✅ Mídia já está no bucket público`);
       return privateUrl;
     }
     
-    // Download from private bucket using signed URL
     const response = await fetch(privateUrl);
     if (!response.ok) {
       console.error(`❌ Erro ao baixar mídia: ${response.status}`);
@@ -61,7 +71,6 @@ async function copyMediaToPublicBucket(
     const arrayBuffer = await response.arrayBuffer();
     const contentType = mimeType || response.headers.get('content-type') || 'application/octet-stream';
     
-    // Generate unique path in public bucket
     const extMap: Record<string, string> = {
       'image/jpeg': 'jpg', 'image/jpg': 'jpg', 'image/png': 'png', 'image/gif': 'gif', 'image/webp': 'webp',
       'video/mp4': 'mp4', 'video/webm': 'webm', 'video/quicktime': 'mov',
@@ -72,7 +81,6 @@ async function copyMediaToPublicBucket(
     const ext = extMap[contentType] || contentType.split('/')[1] || 'bin';
     const uniquePath = `ai-agent/${agentId}/${mediaKey}-${Date.now()}.${ext}`;
     
-    // Upload to public bucket
     const { error } = await supabase.storage
       .from('whatsapp-media')
       .upload(uniquePath, new Uint8Array(arrayBuffer), {
@@ -85,7 +93,6 @@ async function copyMediaToPublicBucket(
       return null;
     }
     
-    // Get public URL
     const { data: { publicUrl } } = supabase.storage
       .from('whatsapp-media')
       .getPublicUrl(uniquePath);
@@ -135,7 +142,6 @@ interface ConversationContext {
   ultima_atualizacao: string;
 }
 
-// Helper function to create empty context
 function createEmptyContext(): ConversationContext {
   return {
     lead: {},
@@ -152,11 +158,9 @@ function createEmptyContext(): ConversationContext {
   };
 }
 
-// Helper function to merge contexts (new info takes precedence, arrays are concatenated uniquely)
 function mergeContext(existing: ConversationContext, newInfo: Partial<ConversationContext>): ConversationContext {
   const merged = { ...existing };
   
-  // Merge lead info
   if (newInfo.lead) {
     merged.lead = { ...merged.lead };
     for (const [key, value] of Object.entries(newInfo.lead)) {
@@ -166,7 +170,6 @@ function mergeContext(existing: ConversationContext, newInfo: Partial<Conversati
     }
   }
   
-  // Merge interesse
   if (newInfo.interesse) {
     merged.interesse = { ...merged.interesse };
     if (newInfo.interesse.principal) {
@@ -181,7 +184,6 @@ function mergeContext(existing: ConversationContext, newInfo: Partial<Conversati
     }
   }
   
-  // Merge qualificacao
   if (newInfo.qualificacao) {
     merged.qualificacao = { ...merged.qualificacao };
     if (newInfo.qualificacao.perguntas_respondidas?.length) {
@@ -190,7 +192,6 @@ function mergeContext(existing: ConversationContext, newInfo: Partial<Conversati
       ];
     }
     if (newInfo.qualificacao.informacoes_pendentes?.length) {
-      // Remove from pending if already answered
       const answered = new Set(merged.qualificacao.perguntas_respondidas);
       merged.qualificacao.informacoes_pendentes = [
         ...new Set([...merged.qualificacao.informacoes_pendentes, ...newInfo.qualificacao.informacoes_pendentes])
@@ -201,22 +202,18 @@ function mergeContext(existing: ConversationContext, newInfo: Partial<Conversati
     }
   }
   
-  // Merge situacao
   if (newInfo.situacao) {
     merged.situacao = { ...merged.situacao, ...newInfo.situacao };
   }
   
-  // Merge objecoes (unique)
   if (newInfo.objecoes?.length) {
     merged.objecoes = [...new Set([...merged.objecoes, ...newInfo.objecoes])];
   }
   
-  // Merge historico_resumido (append new items, keep last 20)
   if (newInfo.historico_resumido?.length) {
     merged.historico_resumido = [...merged.historico_resumido, ...newInfo.historico_resumido].slice(-20);
   }
   
-  // Merge acoes_executadas (append new items)
   if (newInfo.acoes_executadas?.length) {
     merged.acoes_executadas = [...merged.acoes_executadas, ...newInfo.acoes_executadas];
   }
@@ -226,11 +223,9 @@ function mergeContext(existing: ConversationContext, newInfo: Partial<Conversati
   return merged;
 }
 
-// Format context for system prompt injection
 function formatContextForPrompt(context: ConversationContext): string {
   const parts: string[] = [];
   
-  // Lead info
   const leadEntries = Object.entries(context.lead).filter(([_, v]) => v);
   if (leadEntries.length > 0) {
     parts.push('### INFORMAÇÕES DO LEAD (já coletadas - NÃO pergunte novamente):');
@@ -239,7 +234,6 @@ function formatContextForPrompt(context: ConversationContext): string {
     }
   }
   
-  // Interesse
   if (context.interesse.principal) {
     parts.push(`\n### INTERESSE IDENTIFICADO:`);
     parts.push(`- Principal: ${context.interesse.principal}`);
@@ -251,7 +245,6 @@ function formatContextForPrompt(context: ConversationContext): string {
     }
   }
   
-  // Qualificação
   if (context.qualificacao.perguntas_respondidas.length > 0 || context.qualificacao.nivel) {
     parts.push(`\n### QUALIFICAÇÃO:`);
     if (context.qualificacao.nivel) {
@@ -265,7 +258,6 @@ function formatContextForPrompt(context: ConversationContext): string {
     }
   }
   
-  // Situação
   if (context.situacao.problema_relatado || context.situacao.urgencia) {
     parts.push(`\n### SITUAÇÃO:`);
     if (context.situacao.problema_relatado) {
@@ -279,7 +271,6 @@ function formatContextForPrompt(context: ConversationContext): string {
     }
   }
   
-  // Objeções
   if (context.objecoes.length > 0) {
     parts.push(`\n### OBJEÇÕES LEVANTADAS:`);
     for (const objecao of context.objecoes) {
@@ -287,7 +278,6 @@ function formatContextForPrompt(context: ConversationContext): string {
     }
   }
   
-  // Histórico resumido (últimas 5 interações)
   if (context.historico_resumido.length > 0) {
     parts.push(`\n### RESUMO DA CONVERSA (últimas interações):`);
     for (const item of context.historico_resumido.slice(-5)) {
@@ -355,225 +345,82 @@ REGRAS:
 Retorne APENAS o JSON, sem explicações.`;
 }
 
-// Helper function to convert ArrayBuffer to base64
-function arrayBufferToBase64(buffer: ArrayBuffer): string {
-  let binary = '';
-  const bytes = new Uint8Array(buffer);
-  for (let i = 0; i < bytes.byteLength; i++) {
-    binary += String.fromCharCode(bytes[i]);
-  }
-  return btoa(binary);
-}
-
-// Helper function to fetch image as base64
-async function fetchImageAsBase64(imageUrl: string): Promise<{ base64: string; mimeType: string } | null> {
+// ═══════════════════════════════════════════════════════════════════
+// ANALYZE MEDIA WITH URL CONTEXT TOOL + CACHE
+// ═══════════════════════════════════════════════════════════════════
+async function analyzeMediaWithUrlContext(
+  supabase: any,
+  mediaUrl: string,
+  mediaType: 'image' | 'video' | 'document',
+  companyId: string,
+  apiKey: string,
+  contextPrompt: string,
+  fileName?: string
+): Promise<string | null> {
   try {
-    const response = await fetch(imageUrl);
-    if (!response.ok) return null;
+    console.log(`🔍 [URL_CONTEXT] Analisando ${mediaType}: ${mediaUrl.substring(0, 60)}...`);
     
-    const arrayBuffer = await response.arrayBuffer();
-    const base64 = arrayBufferToBase64(arrayBuffer);
-    const contentType = response.headers.get('content-type') || 'image/jpeg';
+    // 1. Check cache first
+    const cached = await getCachedAnalysis(supabase, mediaUrl, companyId);
+    if (cached) {
+      console.log(`✅ [URL_CONTEXT] Cache HIT para ${mediaType}`);
+      return cached;
+    }
+    console.log(`📡 [URL_CONTEXT] Cache MISS - chamando Gemini com URL Context Tool`);
     
-    return { base64, mimeType: contentType };
-  } catch (error) {
-    console.error('❌ Erro ao baixar imagem:', error);
-    return null;
-  }
-}
+    // 2. Build the prompt with URL for Gemini to fetch
+    const mediaInstructions = mediaType === 'image' 
+      ? 'Analise esta imagem detalhadamente. Descreva o que você vê.'
+      : mediaType === 'video'
+      ? 'Analise este vídeo detalhadamente. Descreva o conteúdo visual e de áudio.'
+      : `Analise este documento${fileName ? ` "${fileName}"` : ''}. Extraia as informações mais relevantes.`;
+    
+    const fullPrompt = `${contextPrompt}
 
-// Supported video MIME types by Gemini
-const SUPPORTED_VIDEO_MIMES = [
-  'video/mp4', 'video/mpeg', 'video/mov', 'video/avi', 'video/x-flv',
-  'video/mpg', 'video/webm', 'video/wmv', 'video/3gpp', 'video/quicktime',
-  'video/x-msvideo', 'video/x-matroska'
-];
+${mediaInstructions}
 
-// Supported document MIME types by Gemini
-const SUPPORTED_DOCUMENT_MIMES = [
-  'application/pdf',
-  'application/msword',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  'application/vnd.ms-excel',
-  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  'application/vnd.ms-powerpoint',
-  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-  'text/plain', 'text/csv', 'text/html', 'text/markdown', 'text/rtf',
-  'application/rtf', 'application/x-javascript', 'text/javascript',
-  'application/json', 'text/xml', 'application/xml'
-];
+URL da mídia para analisar: ${mediaUrl}`;
 
-// Helper function to fetch video as base64 (max 20MB for inline_data)
-async function fetchVideoAsBase64(videoUrl: string): Promise<{ base64: string; mimeType: string } | null> {
-  try {
-    console.log('🎬 Baixando vídeo:', videoUrl.substring(0, 80) + '...');
-    
-    const response = await fetch(videoUrl);
-    if (!response.ok) {
-      console.log('❌ Falha ao baixar vídeo:', response.status);
-      return null;
-    }
-    
-    const arrayBuffer = await response.arrayBuffer();
-    
-    // Check size limit (20MB for inline_data)
-    if (arrayBuffer.byteLength > 20 * 1024 * 1024) {
-      console.log('⚠️ Vídeo muito grande para análise inline:', (arrayBuffer.byteLength / 1024 / 1024).toFixed(2), 'MB');
-      return null;
-    }
-    
-    const base64 = arrayBufferToBase64(arrayBuffer);
-    const contentType = response.headers.get('content-type') || 'video/mp4';
-    
-    // Normalize mime type
-    let mimeType = 'video/mp4';
-    if (contentType.includes('webm')) mimeType = 'video/webm';
-    else if (contentType.includes('quicktime') || contentType.includes('mov')) mimeType = 'video/quicktime';
-    else if (contentType.includes('avi') || contentType.includes('x-msvideo')) mimeType = 'video/x-msvideo';
-    else if (contentType.includes('3gpp')) mimeType = 'video/3gpp';
-    else if (contentType.includes('mpeg')) mimeType = 'video/mpeg';
-    else if (contentType.includes('matroska') || contentType.includes('mkv')) mimeType = 'video/x-matroska';
-    else if (contentType.includes('wmv')) mimeType = 'video/x-ms-wmv';
-    else if (contentType.includes('flv')) mimeType = 'video/x-flv';
-    else if (contentType.includes('mp4')) mimeType = 'video/mp4';
-    
-    console.log('✅ Vídeo convertido para base64, tipo:', mimeType, 'tamanho:', (arrayBuffer.byteLength / 1024 / 1024).toFixed(2), 'MB');
-    return { base64, mimeType };
-  } catch (error) {
-    console.error('❌ Erro ao baixar vídeo:', error);
-    return null;
-  }
-}
-
-// Helper function to fetch document as base64 (max 20MB for inline_data)
-async function fetchDocumentAsBase64(docUrl: string, fileName?: string): Promise<{ base64: string; mimeType: string } | null> {
-  try {
-    console.log('📄 Baixando documento:', docUrl.substring(0, 80) + '...');
-    
-    const response = await fetch(docUrl);
-    if (!response.ok) {
-      console.log('❌ Falha ao baixar documento:', response.status);
-      return null;
-    }
-    
-    const arrayBuffer = await response.arrayBuffer();
-    
-    // Check size limit (20MB for inline_data)
-    if (arrayBuffer.byteLength > 20 * 1024 * 1024) {
-      console.log('⚠️ Documento muito grande para análise inline:', (arrayBuffer.byteLength / 1024 / 1024).toFixed(2), 'MB');
-      return null;
-    }
-    
-    const base64 = arrayBufferToBase64(arrayBuffer);
-    let contentType = response.headers.get('content-type') || 'application/octet-stream';
-    
-    // Try to infer mime type from filename if content-type is generic
-    if (contentType === 'application/octet-stream' && fileName) {
-      const ext = fileName.split('.').pop()?.toLowerCase();
-      const mimeMap: Record<string, string> = {
-        'pdf': 'application/pdf',
-        'doc': 'application/msword',
-        'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        'xls': 'application/vnd.ms-excel',
-        'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        'ppt': 'application/vnd.ms-powerpoint',
-        'pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-        'txt': 'text/plain',
-        'csv': 'text/csv',
-        'html': 'text/html',
-        'htm': 'text/html',
-        'md': 'text/markdown',
-        'rtf': 'application/rtf',
-        'json': 'application/json',
-        'xml': 'application/xml',
-        'js': 'application/x-javascript'
-      };
-      if (ext && mimeMap[ext]) {
-        contentType = mimeMap[ext];
-      }
-    }
-    
-    // Verify it's a supported mime type
-    if (!SUPPORTED_DOCUMENT_MIMES.some(m => contentType.includes(m.split('/')[1]))) {
-      console.log('⚠️ Tipo de documento não suportado:', contentType);
-      return null;
-    }
-    
-    console.log('✅ Documento convertido para base64, tipo:', contentType, 'tamanho:', (arrayBuffer.byteLength / 1024 / 1024).toFixed(2), 'MB');
-    return { base64, mimeType: contentType };
-  } catch (error) {
-    console.error('❌ Erro ao baixar documento:', error);
-    return null;
-  }
-}
-
-// Helper function to transcribe audio using Gemini 3 Flash Preview
-async function transcribeAudio(audioUrl: string, apiKey: string): Promise<string | null> {
-  try {
-    console.log('🎤 Transcrevendo áudio com Gemini 3 Flash Preview:', audioUrl.substring(0, 80) + '...');
-    
-    const audioResponse = await fetch(audioUrl);
-    if (!audioResponse.ok) {
-      console.log('❌ Falha ao baixar áudio:', audioResponse.status);
-      return null;
-    }
-    
-    const audioBuffer = await audioResponse.arrayBuffer();
-    const audioBase64 = arrayBufferToBase64(audioBuffer);
-    const contentType = audioResponse.headers.get('content-type') || 'audio/ogg';
-    
-    // Map content type to Gemini's expected MIME types
-    let mimeType = 'audio/ogg';
-    if (contentType.includes('mp3') || contentType.includes('mpeg')) mimeType = 'audio/mp3';
-    else if (contentType.includes('wav')) mimeType = 'audio/wav';
-    else if (contentType.includes('webm')) mimeType = 'audio/webm';
-    else if (contentType.includes('m4a') || contentType.includes('mp4')) mimeType = 'audio/mp4';
-    else if (contentType.includes('ogg')) mimeType = 'audio/ogg';
-    
-    const geminiResponse = await fetch(
+    // 3. Call Gemini with URL Context Tool
+    const response = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           contents: [{
-            parts: [
-              {
-                inline_data: {
-                  mime_type: mimeType,
-                  data: audioBase64
-                }
-              },
-              {
-                text: "Transcreva o áudio em português brasileiro. Retorne APENAS o texto transcrito, sem formatação, explicações ou comentários adicionais."
-              }
-            ]
+            parts: [{ text: fullPrompt }]
           }],
+          tools: [{ url_context: {} }],
           generationConfig: {
-            temperature: 0.1,
-            maxOutputTokens: 2000
+            temperature: 0.3,
+            maxOutputTokens: 2048
           }
         })
       }
     );
-    
-    if (!geminiResponse.ok) {
-      const errorText = await geminiResponse.text();
-      console.log('❌ Erro na transcrição Gemini:', geminiResponse.status, errorText);
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`❌ [URL_CONTEXT] Erro Gemini: ${response.status}`, errorText);
       return null;
     }
+
+    const result = await response.json();
+    const analysisText = result.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
     
-    const result = await geminiResponse.json();
-    const transcription = result.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-    
-    if (transcription) {
-      console.log('✅ Áudio transcrito:', transcription.substring(0, 50) + '...');
-      return transcription;
+    if (analysisText) {
+      console.log(`✅ [URL_CONTEXT] Análise obtida (${analysisText.length} chars)`);
+      
+      // 4. Save to cache
+      await saveCacheAnalysis(supabase, mediaUrl, companyId, mediaType, analysisText);
+      
+      return analysisText;
     }
     
     return null;
   } catch (error) {
-    console.error('❌ Erro ao transcrever áudio:', error);
+    console.error(`❌ [URL_CONTEXT] Erro ao analisar ${mediaType}:`, error);
     return null;
   }
 }
@@ -581,7 +428,7 @@ async function transcribeAudio(audioUrl: string, apiKey: string): Promise<string
 serve(async (req) => {
   console.log('\n');
   console.log('╔══════════════════════════════════════════════════════════════════╗');
-  console.log('║              🤖 AI AGENT PROCESS                                 ║');
+  console.log('║              🤖 AI AGENT PROCESS (OPTIMIZED)                     ║');
   console.log('╚══════════════════════════════════════════════════════════════════╝');
 
   if (req.method === 'OPTIONS') {
@@ -591,19 +438,17 @@ serve(async (req) => {
   try {
     const requestBody = await req.json();
     
-    // Support both single message (legacy) and batch of messages (new)
     const { 
       connectionId, 
       conversationId, 
-      messages, // New: array of messages from batch
-      messageContent, // Legacy: single message content
+      messages,
+      messageContent,
       contactName,
       contactPhone,
       messageType,
       mediaUrl
     } = requestBody;
 
-    // Determine if this is a batch request or legacy single message
     const isBatchRequest = Array.isArray(messages) && messages.length > 0;
     
     console.log('📥 Input:', { 
@@ -622,7 +467,7 @@ serve(async (req) => {
     }
 
     // ═══════════════════════════════════════════════════════════════════════════════
-    // 🔒 IDEMPOTENCY CHECK - Prevent duplicate processing of same batch
+    // 🔒 IDEMPOTENCY CHECK
     // ═══════════════════════════════════════════════════════════════════════════════
     const messagesToProcess = isBatchRequest ? messages : [{ type: messageType || 'text', content: messageContent, mediaUrl }];
     const idempotencyKey = createBatchHash(conversationId, messagesToProcess);
@@ -637,8 +482,6 @@ serve(async (req) => {
             { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
           );
         }
-        
-        // Mark as processing with 5 minute TTL
         await redis.setex(idempotencyKey, 300, 'processing');
         console.log(`✅ [IDEMPOTENCY] Marked batch as processing: ${idempotencyKey}`);
       } catch (redisError) {
@@ -715,7 +558,6 @@ serve(async (req) => {
       );
     }
 
-    // Check if paused
     if (agent.paused_until) {
       const pausedUntil = new Date(agent.paused_until);
       if (pausedUntil > new Date()) {
@@ -726,6 +568,15 @@ serve(async (req) => {
         );
       }
     }
+
+    // Get company ID early for cache operations
+    const { data: connData } = await supabase
+      .from('whatsapp_connections')
+      .select('company_id')
+      .eq('id', connectionId)
+      .single();
+    
+    const companyId = connData?.company_id || '';
 
     // 3️⃣ Check conversation state
     console.log('\n┌─────────────────────────────────────────────────────────────────┐');
@@ -743,7 +594,7 @@ serve(async (req) => {
     console.log('📋 Conversa ativa:', isConversationActive);
     console.log('📋 Sub-agente atual:', convState?.current_sub_agent_id || 'nenhum');
 
-    // 🔄 CRITICAL: If there's an active sub-agent, load and use its prompts
+    // 🔄 Load sub-agent if active
     if (convState?.current_sub_agent_id) {
       console.log('\n┌─────────────────────────────────────────────────────────────────┐');
       console.log('│ 🔄  CARREGANDO SUB-AGENTE                                       │');
@@ -771,11 +622,9 @@ serve(async (req) => {
       } else if (subAgent) {
         if (subAgent.status === 'active') {
           activeSubAgent = subAgent;
-          // Use sub-agent prompts while keeping parent agent's audio/delay settings
-          // CRÍTICO: Incluir ID do sub-agente para que busca de mídia funcione corretamente
           agent = {
             ...agent,
-            id: subAgent.id,  // ← ID do sub-agente para buscar mídia corretamente
+            id: subAgent.id,
             name: subAgent.name,
             script_content: subAgent.script_content || agent.script_content,
             rules_content: subAgent.rules_content || agent.rules_content,
@@ -786,10 +635,8 @@ serve(async (req) => {
           };
           console.log('✅ Sub-agente carregado:', subAgent.name);
           console.log('🆔 Agent ID atualizado para sub-agente:', agent.id);
-          console.log('📝 Usando prompts do sub-agente');
         } else {
           console.log('⚠️ Sub-agente inativo:', subAgent.name, '| Status:', subAgent.status);
-          // Clear the sub-agent reference since it's inactive
           await supabase
             .from('ai_conversation_states')
             .update({ current_sub_agent_id: null })
@@ -875,126 +722,137 @@ serve(async (req) => {
           .from('ai_conversation_states')
           .update({ 
             status: 'active', 
-            agent_id: agent.id,
             activated_at: new Date().toISOString() 
           })
-          .eq('id', convState.id);
+          .eq('conversation_id', conversationId);
         console.log('✅ Estado da conversa atualizado para ativo');
       }
     }
 
-    // 6️⃣ Generate AI Response
+    // 6️⃣ Load conversation history
     console.log('\n┌─────────────────────────────────────────────────────────────────┐');
-    console.log('│ 4️⃣  GERAR RESPOSTA COM IA                                       │');
+    console.log('│ 4️⃣  CARREGAR HISTÓRICO DA CONVERSA                              │');
     console.log('└─────────────────────────────────────────────────────────────────┘');
 
-    const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY');
-    if (!GEMINI_API_KEY) {
-      console.log('❌ GEMINI_API_KEY não configurada');
-      return new Response(
-        JSON.stringify({ success: false, error: 'Gemini API key not configured' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    // Get conversation history for context (including all message types)
-    const { data: recentMessages } = await supabase
+    const { data: historyMessages } = await supabase
       .from('messages')
-      .select('content, direction, message_type, created_at, metadata, media_url')
+      .select('content, direction, sender_type, message_type, media_url, created_at, metadata, is_internal_note')
       .eq('conversation_id', conversationId)
-      .eq('is_deleted', false)
-      .order('created_at', { ascending: false })
-      .limit(30);
+      .eq('is_internal_note', false)
+      .order('created_at', { ascending: true })
+      .limit(50);
 
-    // Collect media URLs for potential multimodal analysis
+    const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY')!;
+    
+    // Build conversation history with media analysis using URL Context Tool + Cache
+    const conversationHistory: Array<{ role: 'user' | 'assistant'; content: string }> = [];
     const imageUrls: string[] = [];
     const videoUrls: string[] = [];
-    const documentData: { url: string; fileName: string }[] = [];
+    const documentData: Array<{ url: string; fileName?: string }> = [];
 
-    const conversationHistory = (recentMessages || [])
-      .reverse()
-      .map(m => {
-        const metadata = m.metadata as any;
-        let messageText = '';
+    if (historyMessages) {
+      for (const msg of historyMessages) {
+        if (!msg.content && !msg.media_url) continue;
         
-        if (m.message_type === 'text') {
-          messageText = m.content || '';
-        } else if (m.message_type === 'audio') {
-          if (metadata?.transcription) {
-            messageText = `[Áudio transcrito]: ${metadata.transcription}`;
-          } else if (m.content) {
-            messageText = m.content;
-          } else {
-            messageText = '[Mensagem de áudio]';
-          }
-        } else if (m.message_type === 'image') {
-          // Collect image URLs for multimodal analysis
-          if (m.media_url && m.direction === 'inbound') {
-            imageUrls.push(m.media_url);
-          }
-          messageText = m.content 
-            ? `[Imagem com legenda]: ${m.content}` 
-            : '[Cliente enviou uma imagem]';
-        } else if (m.message_type === 'video') {
-          // Collect video URLs for multimodal analysis
-          if (m.media_url && m.direction === 'inbound') {
-            videoUrls.push(m.media_url);
-          }
-          messageText = m.content 
-            ? `[Vídeo com legenda]: ${m.content}` 
-            : '[Cliente enviou um vídeo]';
-        } else if (m.message_type === 'document') {
-          const fileName = metadata?.fileName || metadata?.file_name || 'documento';
-          // Collect document data for multimodal analysis
-          if (m.media_url && m.direction === 'inbound') {
-            documentData.push({ url: m.media_url, fileName });
-          }
-          messageText = m.content 
-            ? `[Documento "${fileName}"]: ${m.content}` 
-            : `[Cliente enviou documento: ${fileName}]`;
-        } else if (m.message_type === 'sticker') {
-          messageText = '[Cliente enviou um sticker]';
-        } else {
-          messageText = m.content || `[Mensagem do tipo ${m.message_type}]`;
+        const role: 'user' | 'assistant' = msg.direction === 'inbound' ? 'user' : 'assistant';
+        let content = msg.content || '';
+        
+        // Handle media types with URL Context Tool + Cache
+        if (msg.message_type === 'audio' && msg.media_url) {
+          const transcription = await transcribeAudio(
+            msg.media_url, 
+            GEMINI_API_KEY,
+            supabase,
+            companyId
+          );
+          content = transcription || '[Áudio não transcrito]';
+        } else if (msg.message_type === 'image' && msg.media_url) {
+          imageUrls.push(msg.media_url);
+          const analysis = await analyzeMediaWithUrlContext(
+            supabase,
+            msg.media_url,
+            'image',
+            companyId,
+            GEMINI_API_KEY,
+            'Descreva esta imagem de forma concisa para contexto de atendimento.',
+          );
+          content = analysis 
+            ? `[Imagem: ${analysis}]${content ? ` - ${content}` : ''}`
+            : content || '[Imagem enviada]';
+        } else if (msg.message_type === 'video' && msg.media_url) {
+          videoUrls.push(msg.media_url);
+          const analysis = await analyzeMediaWithUrlContext(
+            supabase,
+            msg.media_url,
+            'video',
+            companyId,
+            GEMINI_API_KEY,
+            'Descreva este vídeo de forma concisa para contexto de atendimento.',
+          );
+          content = analysis 
+            ? `[Vídeo: ${analysis}]${content ? ` - ${content}` : ''}`
+            : content || '[Vídeo enviado]';
+        } else if (msg.message_type === 'document' && msg.media_url) {
+          const meta = msg.metadata as any;
+          const fileName = meta?.fileName || meta?.file_name || 'documento';
+          documentData.push({ url: msg.media_url, fileName });
+          const analysis = await analyzeMediaWithUrlContext(
+            supabase,
+            msg.media_url,
+            'document',
+            companyId,
+            GEMINI_API_KEY,
+            `Extraia informações relevantes deste documento para atendimento.`,
+            fileName
+          );
+          content = analysis 
+            ? `[Documento "${fileName}": ${analysis}]${content ? ` - ${content}` : ''}`
+            : content || `[Documento "${fileName}" enviado]`;
+        } else if (msg.message_type === 'sticker') {
+          content = '[Figurinha enviada]';
         }
         
-        return messageText ? {
-          role: m.direction === 'inbound' ? 'user' : 'assistant',
-          content: messageText
-        } : null;
-      })
-      .filter(Boolean);
+        if (content) {
+          conversationHistory.push({ role, content });
+        }
+      }
+    }
+    
+    console.log('📚 Histórico processado:', conversationHistory.length, 'mensagens');
+    console.log('🖼️ Imagens:', imageUrls.length, '| 🎬 Vídeos:', videoUrls.length, '| 📄 Documentos:', documentData.length);
 
-    // Check if current message is image/audio/video/document that needs special processing
-    // For batch requests, check the last message type
-    let currentMessageIsImage = messageType === 'image';
-    let currentMessageIsAudio = messageType === 'audio';
-    let currentMessageIsVideo = messageType === 'video';
-    let currentMessageIsDocument = messageType === 'document';
+    // 7️⃣ Process current message(s)
+    console.log('\n┌─────────────────────────────────────────────────────────────────┐');
+    console.log('│ 5️⃣  PROCESSAR MENSAGEM ATUAL                                    │');
+    console.log('└─────────────────────────────────────────────────────────────────┘');
+
+    let processedMessageContent = '';
+    let currentMessageIsImage = false;
+    let currentMessageIsAudio = false;
+    let currentMessageIsVideo = false;
+    let currentMessageIsDocument = false;
     let actualMediaUrl = mediaUrl;
     let currentDocumentFileName = '';
-    
-    // Process batch messages if this is a batch request
-    let processedMessageContent = messageContent || '';
-    
+
     if (isBatchRequest) {
-      // Combine all messages from the batch into context
       const batchContents: string[] = [];
       
       for (const msg of messages) {
         if (msg.type === 'text' && msg.content) {
           batchContents.push(msg.content);
         } else if (msg.type === 'audio') {
-          // Transcribe audio if we have URL
-          if (msg.mediaUrl) {
-            const transcription = await transcribeAudio(msg.mediaUrl, GEMINI_API_KEY);
-            if (transcription) {
-              batchContents.push(`[Áudio transcrito]: ${transcription}`);
-            } else {
-              batchContents.push('[Mensagem de áudio]');
-            }
-          } else {
-            batchContents.push(msg.content || '[Mensagem de áudio]');
+          currentMessageIsAudio = true;
+          if (msg.mediaUrl) actualMediaUrl = msg.mediaUrl;
+          if (msg.content) {
+            batchContents.push(msg.content);
+          } else if (msg.mediaUrl) {
+            const transcription = await transcribeAudio(
+              msg.mediaUrl, 
+              GEMINI_API_KEY,
+              supabase,
+              companyId
+            );
+            batchContents.push(transcription || '[Áudio recebido]');
           }
         } else if (msg.type === 'image') {
           currentMessageIsImage = true;
@@ -1012,10 +870,8 @@ serve(async (req) => {
         }
       }
       
-      // Join all messages with newline for context
       processedMessageContent = batchContents.join('\n');
       
-      // Check last message type for special processing
       const lastMsg = messages[messages.length - 1];
       if (lastMsg) {
         currentMessageIsImage = lastMsg.type === 'image';
@@ -1028,14 +884,12 @@ serve(async (req) => {
       
       console.log('📦 Batch combined:', processedMessageContent.substring(0, 100) + '...');
     } else {
-      // Legacy single message processing
       processedMessageContent = messageContent || '';
     }
     
-    // Get the actual mediaUrl if not provided (media may have been processed in background)
+    // Get media URL if not provided
     const needsMediaUrl = currentMessageIsImage || currentMessageIsAudio || currentMessageIsVideo || currentMessageIsDocument;
     if (needsMediaUrl && !actualMediaUrl) {
-      // Fetch the most recent message to get the media_url
       const { data: latestMsg } = await supabase
         .from('messages')
         .select('media_url, metadata')
@@ -1049,7 +903,6 @@ serve(async (req) => {
       if (latestMsg?.media_url) {
         actualMediaUrl = latestMsg.media_url;
         console.log('📎 Media URL obtida do banco:', actualMediaUrl.substring(0, 50) + '...');
-        // Get document filename from metadata if applicable
         if (currentMessageIsDocument && latestMsg.metadata) {
           const meta = latestMsg.metadata as any;
           currentDocumentFileName = meta?.fileName || meta?.file_name || 'documento';
@@ -1060,7 +913,12 @@ serve(async (req) => {
     // Handle audio transcription for current message (legacy mode)
     if (!isBatchRequest && currentMessageIsAudio && actualMediaUrl && !processedMessageContent) {
       console.log('🎤 Transcrevendo áudio do cliente...');
-      const transcription = await transcribeAudio(actualMediaUrl, GEMINI_API_KEY);
+      const transcription = await transcribeAudio(
+        actualMediaUrl, 
+        GEMINI_API_KEY,
+        supabase,
+        companyId
+      );
       if (transcription) {
         processedMessageContent = transcription;
         console.log('✅ Transcrição obtida:', transcription.substring(0, 50) + '...');
@@ -1071,7 +929,6 @@ serve(async (req) => {
 
     // Add current image to analysis list
     if (currentMessageIsImage && actualMediaUrl) {
-      // Add current image if not already in the list
       if (!imageUrls.includes(actualMediaUrl)) {
         imageUrls.push(actualMediaUrl);
       }
@@ -1087,7 +944,6 @@ serve(async (req) => {
     const existingMetadata = (convState?.metadata as Record<string, unknown>) || {};
     let conversationContext: ConversationContext = existingMetadata.context as ConversationContext || createEmptyContext();
     
-    // Update lead info from known data if not already set
     if (contactName && !conversationContext.lead.nome) {
       conversationContext.lead.nome = contactName;
     }
@@ -1104,13 +960,13 @@ serve(async (req) => {
     }
 
     // ═══════════════════════════════════════════════════════════════════
-    // LOAD REAL DATA FOR AVAILABLE ACTIONS (PHASE 1: ERROR-PROOF SYSTEM)
+    // LOAD REAL DATA FOR AVAILABLE ACTIONS
     // ═══════════════════════════════════════════════════════════════════
     console.log('\n┌─────────────────────────────────────────────────────────────────┐');
     console.log('│ 🎯 CARREGAR DADOS REAIS PARA AÇÕES                              │');
     console.log('└─────────────────────────────────────────────────────────────────┘');
 
-    // Load CRM stages (Kanban columns) for this connection
+    // Load CRM stages
     let availableCrmStages: { id: string; name: string; normalized: string }[] = [];
     const { data: kanbanBoard } = await supabase
       .from('kanban_boards')
@@ -1137,17 +993,10 @@ serve(async (req) => {
     }
     console.log('📊 Etapas CRM disponíveis:', availableCrmStages.length);
 
-    // Load existing tags from contacts in this company
-    const { data: companyData } = await supabase
-      .from('whatsapp_connections')
-      .select('company_id')
-      .eq('id', connectionId)
-      .single();
-    
-    const connectionCompanyId = companyData?.company_id;
+    // Load existing tags
+    const connectionCompanyId = companyId;
     let availableTags: string[] = [];
     if (connectionCompanyId) {
-      // Load tags from tags table (not from contacts)
       const { data: tagsData, error: tagsError } = await supabase
         .from('tags')
         .select('name')
@@ -1161,7 +1010,7 @@ serve(async (req) => {
     }
     console.log('🏷️ Etiquetas disponíveis:', availableTags.length);
 
-    // Load active AI agents (sub-agents) for this company WITH specialty metadata
+    // Load active AI agents (sub-agents)
     let availableAgents: { 
       name: string; 
       description: string | null;
@@ -1175,7 +1024,7 @@ serve(async (req) => {
         .select('name, description, specialty_keywords, qualification_summary, disqualification_signs')
         .eq('company_id', connectionCompanyId)
         .eq('status', 'active')
-        .neq('id', agent.id); // Exclude current agent
+        .neq('id', agent.id);
       
       if (agents) {
         availableAgents = agents.map(a => ({ 
@@ -1189,7 +1038,7 @@ serve(async (req) => {
     }
     console.log('🤖 Agentes disponíveis:', availableAgents.length);
 
-    // Load departments for this connection
+    // Load departments
     let availableDepartments: { name: string }[] = [];
     const { data: departments } = await supabase
       .from('departments')
@@ -1227,7 +1076,7 @@ serve(async (req) => {
 
     const dynamicTools: any[] = [];
 
-    // Tool: mudar_etapa_crm - Only if there are CRM stages
+    // Tool: mudar_etapa_crm
     if (availableCrmStages.length > 0) {
       dynamicTools.push({
         type: "function",
@@ -1239,7 +1088,7 @@ serve(async (req) => {
             stage_name: {
               type: "string",
               enum: availableCrmStages.map(s => s.name),
-              description: `Nome EXATO da etapa destino. Opções disponíveis: ${availableCrmStages.map(s => `"${s.name}"`).join(', ')}. Use o nome EXATAMENTE como mostrado.`
+              description: `Nome EXATO da etapa destino. Opções disponíveis: ${availableCrmStages.map(s => `"${s.name}"`).join(', ')}.`
             }
           },
           required: ["stage_name"]
@@ -1247,7 +1096,7 @@ serve(async (req) => {
       });
     }
 
-    // Tool: adicionar_etiqueta - With enum if tags exist, otherwise string
+    // Tool: adicionar_etiqueta
     dynamicTools.push({
       type: "function",
       name: "adicionar_etiqueta",
@@ -1267,9 +1116,8 @@ serve(async (req) => {
       }
     });
 
-    // Tool: transferir_agente - Only if there are other agents
+    // Tool: transferir_agente
     if (availableAgents.length > 0) {
-      // Build enhanced agent descriptions with specialty info
       const agentDescriptions = availableAgents.map(a => {
         let desc = `"${a.name}"`;
         if (a.qualification_summary) {
@@ -1298,7 +1146,7 @@ serve(async (req) => {
       });
     }
 
-    // Tool: atribuir_departamento - Only if there are departments
+    // Tool: atribuir_departamento
     if (availableDepartments.length > 0) {
       dynamicTools.push({
         type: "function",
@@ -1318,7 +1166,7 @@ serve(async (req) => {
       });
     }
 
-    // Tool: transferir_usuario - Free text (search by name)
+    // Tool: transferir_usuario
     dynamicTools.push({
       type: "function",
       name: "transferir_usuario",
@@ -1335,7 +1183,7 @@ serve(async (req) => {
       }
     });
 
-    // Tool: notificar_equipe - Free text message
+    // Tool: notificar_equipe
     dynamicTools.push({
       type: "function",
       name: "notificar_equipe",
@@ -1352,7 +1200,7 @@ serve(async (req) => {
       }
     });
 
-    // Tool: desativar_agente - No parameters
+    // Tool: desativar_agente
     dynamicTools.push({
       type: "function",
       name: "desativar_agente",
@@ -1363,7 +1211,7 @@ serve(async (req) => {
       }
     });
 
-    // Tool: atribuir_origem - Free text
+    // Tool: atribuir_origem
     dynamicTools.push({
       type: "function",
       name: "atribuir_origem",
@@ -1422,88 +1270,58 @@ ${agent.faq_content}
       systemPrompt += '\n';
     }
 
-    // Inject contract link with clear instructions
-    const contractLink = agent.contract_link;
-    if (contractLink) {
+    if (agent.contract_link) {
       systemPrompt += `## 📄 LINK DO CONTRATO
-O link do contrato para enviar ao cliente é: ${contractLink}
-
-⚠️ INSTRUÇÕES IMPORTANTES:
-- Quando o cliente pedir o contrato, modelo de contrato, ou quando for apropriado enviar o link do contrato, envie EXATAMENTE este link: ${contractLink}
-- NÃO use placeholders como [LINK], [LINK_CONTRATO], [LINK_DO_CONTRATO], etc.
-- Envie o link diretamente na sua mensagem para o cliente poder clicar.
-- Você pode apresentar o link de forma natural, como: "Aqui está o link do contrato: ${contractLink}"
+O link do contrato para enviar ao cliente é: ${agent.contract_link}
 
 `;
     }
 
-    // INJECT STRUCTURED CONTEXT INTO PROMPT
     if (contextSummary) {
-      systemPrompt += `## 🧠 MEMÓRIA DA CONVERSA (INFORMAÇÕES JÁ COLETADAS)
+      systemPrompt += `## 🧠 MEMÓRIA DA CONVERSA (INFORMAÇÕES JÁ COLETADAS - NÃO PERGUNTE NOVAMENTE)
 ${contextSummary}
 
-⚠️ ATENÇÃO: As informações acima já foram coletadas em interações anteriores. 
-NÃO pergunte novamente por informações que você já tem!
+`;
+    }
+
+    if (isUsingSubAgent) {
+      systemPrompt += `## ℹ️ CONTEXTO DO SUB-AGENTE
+Você é um agente especializado (${agent.name}). O cliente foi transferido para você por outro agente.
+Continue o atendimento de forma natural, sem repetir saudações extensas.
 
 `;
     }
 
-    systemPrompt += `## CONTEXTO ATUAL
-- Cliente: ${conversationContext.lead.nome || contactName || 'Cliente'}
-- Telefone: ${contactPhone || 'N/A'}
-- Canal: WhatsApp
-- Mensagens já processadas: ${convState?.messages_processed || 0}
-- É primeira interação: ${isFirstInteraction ? 'Sim' : 'Não'}
-${isUsingSubAgent ? `- Você é o sub-agente especializado: ${activeSubAgent.name}` : ''}
-${conversationContext.interesse.principal ? `- Interesse identificado: ${conversationContext.interesse.principal}` : ''}
-${conversationContext.qualificacao.nivel ? `- Nível do lead: ${conversationContext.qualificacao.nivel}` : ''}
+    systemPrompt += `## 🎯 AÇÕES DISPONÍVEIS (use ferramentas de função quando aplicável)
 
-## COMANDOS DISPONÍVEIS
-Quando apropriado, INCLUA os comandos abaixo NO INÍCIO da sua resposta (eles serão automaticamente removidos antes de enviar ao cliente):
-
-- /adicionar_etiqueta:nome-da-etiqueta → Adiciona uma etiqueta ao contato
-- /transferir_agente:Nome do Agente → Transfere para outro agente de IA
-- /transferir_usuario:Nome do Usuário → Transfere para um atendente humano
-- /mudar_etapa_crm:nome-da-etapa → Move o card do cliente no CRM
-- /atribuir_departamento:Nome do Departamento → Atribui a conversa a um departamento
-- /notificar_equipe:mensagem → Notifica a equipe interna
-- /desativar_agente → Desativa a IA permanentemente nesta conversa
-
-## ⚠️ OPÇÕES VÁLIDAS PARA COMANDOS (USE EXATAMENTE COMO ESCRITO)
-
-### ETAPAS DO CRM (para /mudar_etapa_crm):
+### ETAPAS CRM (para mover o lead no funil):
 ${availableCrmStages.length > 0 
-  ? availableCrmStages.map(s => `- "${s.name}" → /mudar_etapa_crm:${s.name}`).join('\n')
-  : '- (Nenhuma etapa configurada no CRM)'}
+  ? availableCrmStages.map(s => `- "${s.name}"`).join('\n')
+  : '- (Nenhuma etapa configurada)'}
 
-### ETIQUETAS (para /adicionar_etiqueta):
+### ETIQUETAS (para marcar interesse/categoria):
 ${availableTags.length > 0 
-  ? availableTags.map(t => `- ${t}`).join('\n')
-  : '- (Nenhuma etiqueta cadastrada ainda - você pode criar novas)'}
+  ? availableTags.map(t => `- "${t}"`).join('\n')
+  : '- (Nenhuma etiqueta cadastrada - você pode criar novas)'}
 
-### AGENTES DE IA (para /transferir_agente):
+### AGENTES ESPECIALIZADOS (para /transferir_agente):
 ${availableAgents.length > 0 
-  ? availableAgents.map(a => `- "${a.name}"${a.description ? ` - ${a.description}` : ''}`).join('\n')
-  : '- (Nenhum outro agente disponível)'}
+  ? availableAgents.map(a => {
+    const parts = [`- **${a.name}**`];
+    if (a.specialty_keywords?.length) {
+      parts.push(`  - Palavras-chave: ${a.specialty_keywords.join(', ')}`);
+    }
+    if (a.qualification_summary) {
+      parts.push(`  - Se encaixa quando: ${a.qualification_summary}`);
+    }
+    if (a.disqualification_signs) {
+      parts.push(`  - **NÃO se encaixa se**: ${a.disqualification_signs}`);
+    }
+    return parts.join('\n');
+  }).join('\n\n')
+  : '- (Nenhum agente adicional)'}
 
-${availableAgents.length > 0 && availableAgents.some(a => a.qualification_summary || a.disqualification_signs) ? `
-## 🎯 ESPECIALIDADES DOS AGENTES (para transferência inteligente)
-Use estas informações para identificar quando transferir o lead para outro agente especializado:
-
-${availableAgents.filter(a => a.qualification_summary || a.disqualification_signs || a.specialty_keywords?.length > 0).map(a => {
-  const parts = [`### ${a.name}`];
-  if (a.specialty_keywords?.length > 0) {
-    parts.push(`- **Palavras-chave**: ${a.specialty_keywords.join(', ')}`);
-  }
-  if (a.qualification_summary) {
-    parts.push(`- **Perfil ideal**: ${a.qualification_summary}`);
-  }
-  if (a.disqualification_signs) {
-    parts.push(`- **NÃO se encaixa se**: ${a.disqualification_signs}`);
-  }
-  return parts.join('\n');
-}).join('\n\n')}
-
+${availableAgents.length > 0 ? `
 ⚠️ REGRAS DE REDIRECIONAMENTO INTELIGENTE:
 1. Se o lead mencionar palavras-chave de outro agente, considere transferir
 2. Se o lead NÃO se encaixa no seu perfil mas se encaixa em outro, transfira com: /transferir_agente:Nome do Agente
@@ -1525,17 +1343,13 @@ ${availableMedias.length > 0
 - Para enviar uma mídia ao cliente, use EXATAMENTE a tag: {{tipo:chave}}
 - NUNCA use placeholders como [LINK], [LINK_CONTRATO], [LINK_DO_VÍDEO], [VÍDEO], etc.
 - Se o roteiro mencionar "enviar vídeo", "enviar contrato" ou similar, USE A TAG DA MÍDIA CORRESPONDENTE
-- Exemplo: Se há {{video:tutorial-assinatura}}, use exatamente essa tag quando for enviar o vídeo
 - A mídia será enviada AUTOMATICAMENTE como um arquivo separado para o cliente
 - NUNCA descreva ou comente sobre o arquivo - apenas inclua a tag na sua resposta
 
 CRÍTICO SOBRE COMANDOS:
 - Use APENAS os nomes listados acima - eles existem no sistema
 - Se a etapa, etiqueta ou agente NÃO estiver na lista, NÃO tente usar
-- Coloque os comandos no INÍCIO da resposta, cada um em uma linha separada
 - Para etiquetas: use nomes SEM acentos e em minúsculo (ex: salario-maternidade)
-- Os comandos serão REMOVIDOS automaticamente antes de enviar a mensagem ao cliente
-- SEMPRE use comandos quando o roteiro indicar (ex: ao identificar o interesse, adicione a etiqueta)
 
 ## REGRAS CRÍTICAS (OBRIGATÓRIAS)
 1. ${isFirstInteraction ? 'Esta é a primeira interação - você pode se apresentar e cumprimentar' : 'NUNCA repita saudações como "Prazer em te conhecer" ou "Olá, tudo bem?" - a conversa já está em andamento'}
@@ -1546,23 +1360,19 @@ CRÍTICO SOBRE COMANDOS:
 6. Use conectores naturais como: "Certo", "Entendi", "Perfeito", "Tudo bem"
 7. Faça apenas UMA pergunta por mensagem - aguarde a resposta antes de prosseguir
 
-## 🚫 REGRAS ANTI-REPETIÇÃO (CRÍTICO - VOCÊ SERÁ AVALIADO NISSO)
+## 🚫 REGRAS ANTI-REPETIÇÃO (CRÍTICO)
 1. NUNCA use "Perfeito" mais de 2 vezes na mesma conversa - VARIE suas confirmações
 2. Alternativas para "Perfeito": "Certo", "Entendi", "Anotei", "Combinado", "Ótimo", "Tudo certo", "Beleza"
-3. NUNCA confirme informações que o cliente ACABOU de dar claramente - é redundante e irritante
-4. Se o cliente diz "Félix" quando você pergunta o nome, NÃO responda "Félix, certo?" - apenas prossiga
-5. Mantenha respostas em UMA ÚNICA mensagem - não fragmente em múltiplas mensagens curtas
-6. NUNCA repita a mesma estrutura de frase em mensagens consecutivas
-7. Seja CONCISO - evite verbosidade desnecessária
-8. Quando o cliente confirmar algo ("sim", "ok", "pode ser"), PROSSIGA para o próximo passo imediatamente
-9. Evite frases genéricas como "Fico feliz em ajudar" repetidamente
+3. NUNCA confirme informações que o cliente ACABOU de dar claramente - é redundante
+4. Mantenha respostas em UMA ÚNICA mensagem - não fragmente em múltiplas mensagens curtas
+5. NUNCA repita a mesma estrutura de frase em mensagens consecutivas
+6. Seja CONCISO - evite verbosidade desnecessária
 
 ## 🛑 REGRAS DE ENCERRAMENTO (CRÍTICO)
 1. Quando o cliente CONFIRMAR o agendamento/contrato/ação final, ENCERRE a conversa
 2. Após confirmação final: agradeça brevemente e diga que a equipe entrará em contato
 3. EXECUTE /desativar_agente IMEDIATAMENTE após a despedida final
 4. NÃO faça perguntas adicionais após o cliente confirmar que pode encerrar
-5. Se o cliente disser "ok, pode encerrar" ou similar, ENCERRE IMEDIATAMENTE
 
 ## INSTRUÇÕES GERAIS
 1. Responda de forma natural e humana - evite parecer robótico ou repetitivo
@@ -1576,16 +1386,13 @@ CRÍTICO SOBRE COMANDOS:
 
     console.log('📝 System prompt criado (' + systemPrompt.length + ' chars)');
     console.log('📝 Histórico:', conversationHistory.length, 'mensagens');
-    console.log('🖼️ Imagens para análise:', imageUrls.length);
-    console.log('🎬 Vídeos para análise:', videoUrls.length);
-    console.log('📄 Documentos para análise:', documentData.length);
 
     const agentTemperature = agent.temperature ?? 1.0;
     console.log('🌡️ Temperatura configurada:', agentTemperature);
 
     let aiResponse: string = '';
     let modelUsed: string = 'gemini-3-flash-preview';
-    let toolCallsFromApi: any[] = []; // Store tool calls from API response
+    let toolCallsFromApi: any[] = [];
 
     // Determine if we should use multimodal analysis (image, video or document)
     const shouldUseMultimodalImage = currentMessageIsImage && actualMediaUrl;
@@ -1600,150 +1407,120 @@ CRÍTICO SOBRE COMANDOS:
         `${m.role === 'user' ? '[CLIENTE]' : '[AGENTE]'}: ${m.content}`
       ).join('\n');
       
-      let mediaData: { base64: string; mimeType: string } | null = null;
-      let mediaPrompt: string;
+      // Use URL Context Tool for multimodal analysis instead of Base64
+      const mediaType = shouldUseMultimodalImage ? 'image' : shouldUseMultimodalVideo ? 'video' : 'document';
+      console.log(`📡 Usando URL Context Tool para análise de ${mediaType}`);
       
-      if (shouldUseMultimodalImage) {
-        // Image analysis
-        console.log('🖼️ Usando Gemini 3 Flash Preview para análise de imagem');
-        mediaData = await fetchImageAsBase64(actualMediaUrl);
-        mediaPrompt = `${systemPrompt}\n\nHistórico da conversa:\n${historyText}\n\nO cliente acabou de enviar esta imagem${processedMessageContent ? ` com a seguinte mensagem: "${processedMessageContent}"` : ''}. Analise a imagem e responda de forma adequada ao contexto.`;
-        
-      } else if (shouldUseMultimodalVideo) {
-        // Video analysis
-        console.log('🎬 Usando Gemini 3 Flash Preview para análise de vídeo');
-        mediaData = await fetchVideoAsBase64(actualMediaUrl);
-        mediaPrompt = `${systemPrompt}\n\nHistórico da conversa:\n${historyText}\n\nO cliente acabou de enviar este vídeo${processedMessageContent ? ` com a seguinte mensagem: "${processedMessageContent}"` : ''}. Analise o conteúdo visual e de áudio do vídeo e responda de forma adequada ao contexto. Descreva o que você vê e ouve no vídeo se for relevante para a conversa.`;
-        
-      } else if (shouldUseMultimodalDocument) {
-        // Document analysis
-        console.log('📄 Usando Gemini 3 Flash Preview para análise de documento');
-        mediaData = await fetchDocumentAsBase64(actualMediaUrl, currentDocumentFileName);
-        const docName = currentDocumentFileName || 'documento';
-        mediaPrompt = `${systemPrompt}\n\nHistórico da conversa:\n${historyText}\n\nO cliente acabou de enviar o documento "${docName}"${processedMessageContent ? ` com a seguinte mensagem: "${processedMessageContent}"` : ''}. Analise o conteúdo do documento e responda de forma adequada ao contexto. Extraia informações relevantes do documento se necessário.`;
-        
-      } else {
-        mediaPrompt = '';
-      }
+      const mediaAnalysis = await analyzeMediaWithUrlContext(
+        supabase,
+        actualMediaUrl,
+        mediaType as 'image' | 'video' | 'document',
+        companyId,
+        GEMINI_API_KEY,
+        `Analise esta mídia no contexto de atendimento ao cliente.`,
+        currentDocumentFileName || undefined
+      );
       
-      if (!mediaData) {
-        const mediaType = shouldUseMultimodalImage ? 'imagem' : shouldUseMultimodalVideo ? 'vídeo' : 'documento';
-        console.log(`❌ Não foi possível baixar o ${mediaType}`);
-        await supabase.from('ai_agent_logs').insert({
-          agent_id: agent.id,
-          conversation_id: conversationId,
-          action_type: 'response_error',
-          input_text: processedMessageContent,
-          error_message: `Failed to fetch ${mediaType}`,
-          metadata: { messageType, hasMedia: true, mediaType }
-        });
+      if (mediaAnalysis) {
+        // Build prompt with analysis result
+        const mediaContext = shouldUseMultimodalImage 
+          ? `[Imagem analisada: ${mediaAnalysis}]`
+          : shouldUseMultimodalVideo
+          ? `[Vídeo analisado: ${mediaAnalysis}]`
+          : `[Documento "${currentDocumentFileName}" analisado: ${mediaAnalysis}]`;
         
-        // Fallback: continue without multimodal analysis
-        console.log(`⚠️ Continuando sem análise multimodal - usando texto como fallback`);
-        const fallbackContent = shouldUseMultimodalImage ? '[Cliente enviou uma imagem que não pôde ser analisada]' :
-                               shouldUseMultimodalVideo ? '[Cliente enviou um vídeo que não pôde ser analisado]' :
-                               `[Cliente enviou documento "${currentDocumentFileName}" que não pôde ser analisado]`;
-        processedMessageContent = fallbackContent + (processedMessageContent ? ` - Mensagem do cliente: ${processedMessageContent}` : '');
-        // Continue to text-only processing below
-      } else {
-        // Process with multimodal
-        const response = await fetch(
+        const fullPrompt = `${systemPrompt}
+
+Histórico da conversa:
+${historyText}
+
+[CLIENTE]: ${mediaContext}${processedMessageContent ? ` - Mensagem: "${processedMessageContent}"` : ''}
+
+Gere a resposta do atendente. Se precisar executar ações (mover no CRM, adicionar etiqueta, etc), use as ferramentas disponíveis:`;
+
+        // Convert tools to Gemini format
+        const geminiTools = dynamicTools.length > 0 ? [{
+          function_declarations: dynamicTools.map(tool => ({
+            name: tool.name,
+            description: tool.description,
+            parameters: tool.parameters
+          }))
+        }] : undefined;
+
+        const requestBody: any = {
+          contents: [{
+            parts: [{ text: fullPrompt }]
+          }],
+          generationConfig: {
+            temperature: agentTemperature,
+            maxOutputTokens: 4096
+          }
+        };
+
+        if (geminiTools) {
+          requestBody.tools = geminiTools;
+          requestBody.tool_config = { function_calling_config: { mode: 'AUTO' } };
+        }
+
+        const geminiResponse = await fetch(
           `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${GEMINI_API_KEY}`,
           {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              contents: [{
-                parts: [
-                  {
-                    inline_data: {
-                      mime_type: mediaData.mimeType,
-                      data: mediaData.base64
-                    }
-                  },
-                  { text: mediaPrompt }
-                ]
-              }],
-        generationConfig: {
-          temperature: agentTemperature,
-          maxOutputTokens: 8192
-        }
-            })
+            body: JSON.stringify(requestBody)
           }
         );
 
-        if (!response.ok) {
-          const errorText = await response.text();
-          const mediaType = shouldUseMultimodalImage ? 'image' : shouldUseMultimodalVideo ? 'video' : 'document';
-          console.log(`❌ Gemini multimodal error (${mediaType}):`, response.status, errorText);
+        if (geminiResponse.ok) {
+          const aiData = await geminiResponse.json();
+          const candidate = aiData.candidates?.[0];
+          const parts = candidate?.content?.parts || [];
           
-          await supabase.from('ai_agent_logs').insert({
-            agent_id: agent.id,
-            conversation_id: conversationId,
-            action_type: 'response_error',
-            input_text: processedMessageContent,
-            error_message: `Gemini multimodal error: ${response.status}`,
-            metadata: { errorDetails: errorText, messageType, mediaType }
-          });
-
-          return new Response(
-            JSON.stringify({ success: false, error: 'AI API error' }),
-            { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-          );
-        }
-
-        const aiData = await response.json();
-        const mediaType = shouldUseMultimodalImage ? 'imagem' : shouldUseMultimodalVideo ? 'vídeo' : 'documento';
-        console.log(`📦 Resposta Gemini (${mediaType}):`, JSON.stringify(aiData, null, 2).substring(0, 500) + '...');
-        aiResponse = aiData.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
-        
-        // Retry with lower temperature if empty
-        if (!aiResponse) {
-          console.log('⚠️ Resposta multimodal vazia - tentando retry com temperatura 0.5');
-          const retryResponse = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${GEMINI_API_KEY}`,
-            {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                contents: [{
-                  parts: [
-                    { inline_data: { mime_type: mediaData.mimeType, data: mediaData.base64 } },
-                    { text: mediaPrompt }
-                  ]
-                }],
-              generationConfig: { temperature: 0.5, maxOutputTokens: 8192 }
-              })
+          for (const part of parts) {
+            if (part.text) {
+              aiResponse = part.text.trim();
             }
-          );
-          
-          if (retryResponse.ok) {
-            const retryData = await retryResponse.json();
-            console.log('🔄 Retry multimodal result:', JSON.stringify(retryData, null, 2).substring(0, 500) + '...');
-            aiResponse = retryData.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
+            if (part.functionCall) {
+              console.log(`🔧 Function call encontrado: ${part.functionCall.name}`, part.functionCall.args);
+              toolCallsFromApi.push({
+                name: part.functionCall.name,
+                arguments: part.functionCall.args || {}
+              });
+            }
           }
+        } else {
+          console.log('❌ Erro na resposta multimodal com URL Context Tool:', geminiResponse.status);
         }
+      } else {
+        console.log('⚠️ Análise de mídia falhou, usando fallback texto');
+        const fallbackContent = shouldUseMultimodalImage ? '[Cliente enviou uma imagem que não pôde ser analisada]' :
+                               shouldUseMultimodalVideo ? '[Cliente enviou um vídeo que não pôde ser analisado]' :
+                               `[Cliente enviou documento "${currentDocumentFileName}" que não pôde ser analisado]`;
+        processedMessageContent = fallbackContent + (processedMessageContent ? ` - Mensagem do cliente: ${processedMessageContent}` : '');
       }
     }
     
-    // If multimodal didn't produce a response (either not multimodal or fallback), use text-only
+    // If multimodal didn't produce a response, use text-only
     if (!aiResponse) {
-      // Use Gemini 3 Flash Preview with Function Calling
       console.log('📝 Usando Gemini 3 Flash Preview com Function Calling');
       console.log('🔧 Tools disponíveis:', dynamicTools.length);
       modelUsed = 'gemini-3-flash-preview';
       
-      // Build conversation context as single prompt
       const conversationContextForPrompt = conversationHistory
         .filter(msg => msg !== null)
         .map(msg => `${msg!.role === 'assistant' ? '[ATENDENTE]' : '[CLIENTE]'}: ${msg!.content}`)
         .join('\n');
       
-      const fullPrompt = `${systemPrompt}\n\nHistórico da conversa:\n${conversationContextForPrompt}\n\n[CLIENTE]: ${processedMessageContent || '[Mensagem sem texto]'}\n\nGere a resposta do atendente. Se precisar executar ações (mover no CRM, adicionar etiqueta, etc), use as ferramentas disponíveis:`;
+      const fullPrompt = `${systemPrompt}
+
+Histórico da conversa:
+${conversationContextForPrompt}
+
+[CLIENTE]: ${processedMessageContent || '[Mensagem sem texto]'}
+
+Gere a resposta do atendente. Se precisar executar ações (mover no CRM, adicionar etiqueta, etc), use as ferramentas disponíveis:`;
       
-      const agentTemperature = agent.temperature ?? 1.0;
-      
-      // Convert OpenAI tool format to Gemini function_declarations format
+      // Convert tools to Gemini format
       const geminiTools = dynamicTools.length > 0 ? [{
         function_declarations: dynamicTools.map(tool => ({
           name: tool.name,
@@ -1752,18 +1529,16 @@ CRÍTICO SOBRE COMANDOS:
         }))
       }] : undefined;
       
-      // Build request body
       const requestBody: any = {
         contents: [{
           parts: [{ text: fullPrompt }]
         }],
-      generationConfig: {
+        generationConfig: {
           temperature: agentTemperature,
-          maxOutputTokens: 8192
+          maxOutputTokens: 4096
         }
       };
 
-      // Add tools if available
       if (geminiTools) {
         requestBody.tools = geminiTools;
         requestBody.tool_config = { function_calling_config: { mode: 'AUTO' } };
@@ -1800,7 +1575,6 @@ CRÍTICO SOBRE COMANDOS:
       const aiData = await geminiResponse.json();
       console.log('📦 Resposta Gemini (texto + tools):', JSON.stringify(aiData, null, 2).substring(0, 500) + '...');
       
-      // Extract text response and function calls from Gemini response
       const candidate = aiData.candidates?.[0];
       const parts = candidate?.content?.parts || [];
       
@@ -1845,104 +1619,63 @@ CRÍTICO SOBRE COMANDOS:
       
       // Fallback with even lower temperature if still empty
       if (!aiResponse) {
-        console.log('⚠️ Ainda vazio - tentando fallback com temperatura 0.3');
+        console.log('⚠️ Ainda sem resposta - fallback final com temp 0.2');
         const fallbackResponse = await fetch(
           `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${GEMINI_API_KEY}`,
           {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              contents: [{ parts: [{ text: fullPrompt }] }],
-              generationConfig: { temperature: 0.3, maxOutputTokens: 1500 }
+              contents: [{ 
+                parts: [{ 
+                  text: `${systemPrompt}\n\nO cliente disse: "${processedMessageContent || 'Olá'}"\n\nResponda de forma breve e profissional:` 
+                }] 
+              }],
+              generationConfig: { temperature: 0.2, maxOutputTokens: 500 }
             })
           }
         );
         
         if (fallbackResponse.ok) {
           const fallbackData = await fallbackResponse.json();
-          console.log('✅ Fallback result:', JSON.stringify(fallbackData, null, 2).substring(0, 500) + '...');
-          aiResponse = fallbackData.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
+          aiResponse = fallbackData.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || 
+            'Olá! Como posso ajudá-lo hoje?';
         }
       }
     }
 
-    if (!aiResponse) {
-      console.log('❌ Nenhuma resposta gerada após todos os retries');
-      await supabase.from('ai_agent_logs').insert({
-        agent_id: agent.id,
-        conversation_id: conversationId,
-        action_type: 'response_error',
-        input_text: processedMessageContent,
-        error_message: 'No response generated after all retries',
-        metadata: { attemptedRetry: true, attemptedFallback: true }
-      });
-      
-      return new Response(
-        JSON.stringify({ success: false, error: 'No response generated' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
+    console.log('\n✅ RESPOSTA GERADA');
+    console.log('📝 Modelo:', modelUsed);
+    console.log('📝 Preview:', aiResponse.substring(0, 100) + '...');
 
-    console.log('✅ Resposta gerada:', aiResponse.substring(0, 100) + '...');
-
-    // 7️⃣ Parse and execute slash commands from response
-    console.log('\n┌─────────────────────────────────────────────────────────────────┐');
-    console.log('│ 5️⃣  PROCESSAR COMANDOS SLASH NA RESPOSTA                        │');
-    console.log('└─────────────────────────────────────────────────────────────────┘');
-
-    // Get conversation details for command execution
+    // Get conversation and contact info for command handlers
     const { data: conversationData } = await supabase
       .from('conversations')
-      .select('contact_id, company_id, whatsapp_connection_id')
+      .select('contact_id, whatsapp_connection_id, whatsapp_connections!inner(company_id)')
       .eq('id', conversationId)
       .single();
-
+    
     const contactId = conversationData?.contact_id;
-    const companyId = conversationData?.company_id;
+    const connectionCompanyIdFromConv = (conversationData?.whatsapp_connections as any)?.company_id;
 
-    // 🚀 FLAGS PARA RESPOSTA IMEDIATA APÓS TRANSFERÊNCIA DE AGENTE
+    // Variables for agent transfer handling
     let agentTransferOccurred = false;
     let transferredToAgentId: string | null = null;
     let transferredToAgentName: string | null = null;
 
-    // Command handlers
+    // ═══════════════════════════════════════════════════════════════════
+    // COMMAND HANDLERS
+    // ═══════════════════════════════════════════════════════════════════
     const commandHandlers: Record<string, (value: string) => Promise<void>> = {
-      // Add tag to contact - with validation against tags table
+      // Add tag
       'adicionar_etiqueta': async (tagName: string) => {
-        if (!contactId || !companyId) return;
-        console.log('🏷️ Tentando adicionar etiqueta:', tagName);
+        if (!contactId) return;
+        console.log('🏷️ Adicionando etiqueta:', tagName);
         
-        // Validate tag exists in the tags table
-        const { data: existingTag, error: tagError } = await supabase
-          .from('tags')
-          .select('name')
-          .eq('company_id', companyId)
-          .ilike('name', tagName)
-          .maybeSingle();
+        const normalizedTag = tagName.toLowerCase()
+          .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+          .replace(/\s+/g, '-');
         
-        if (tagError) {
-          console.log('⚠️ Erro ao buscar etiqueta:', tagError.message);
-          return;
-        }
-        
-        if (!existingTag) {
-          // Tag doesn't exist - log warning and DO NOT add
-          console.log(`⚠️ [TAG] Etiqueta "${tagName}" não existe na tabela tags. Ignorando.`);
-          
-          // Debug: list available tags for this company
-          const { data: availableTags } = await supabase
-            .from('tags')
-            .select('name')
-            .eq('company_id', companyId);
-          console.log('📋 [TAG] Etiquetas disponíveis:', availableTags?.map(t => t.name).join(', ') || 'nenhuma');
-          return;
-        }
-        
-        // Use the exact name from the database
-        const validTagName = existingTag.name;
-        console.log('✅ [TAG] Etiqueta válida encontrada:', validTagName);
-        
-        // Get current tags
         const { data: contact } = await supabase
           .from('contacts')
           .select('tags')
@@ -1950,55 +1683,30 @@ CRÍTICO SOBRE COMANDOS:
           .single();
         
         const currentTags = contact?.tags || [];
-        if (!currentTags.includes(validTagName)) {
+        if (!currentTags.includes(normalizedTag)) {
           await supabase
             .from('contacts')
-            .update({ tags: [...currentTags, validTagName] })
+            .update({ tags: [...currentTags, normalizedTag] })
             .eq('id', contactId);
-          console.log('✅ Etiqueta adicionada com sucesso:', validTagName);
+          console.log('✅ Etiqueta adicionada');
         } else {
-          console.log('ℹ️ Contato já possui esta etiqueta:', validTagName);
+          console.log('ℹ️ Etiqueta já existe');
         }
       },
 
-      // Transfer to another AI agent (sub-agent)
+      // Transfer to AI agent
       'transferir_agente': async (agentIdentifier: string) => {
-        console.log('🤖 [TRANSFER] Iniciando transferência para agente:', agentIdentifier);
-        console.log('🔍 [TRANSFER] Company ID:', companyId);
+        console.log('🤖 [TRANSFER] Transferindo para agente:', agentIdentifier);
+        console.log('🏢 [TRANSFER] Company ID:', connectionCompanyIdFromConv);
         
-        // Validate if identifier is a UUID
-        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-        const isUuid = uuidRegex.test(agentIdentifier);
-        
-        let targetAgent = null;
-        let agentError = null;
-        
-        if (isUuid) {
-          // Search by exact UUID
-          console.log('🔍 [TRANSFER] Buscando por UUID:', agentIdentifier);
-          const result = await supabase
-            .from('ai_agents')
-            .select('id, name, parent_agent_id')
-            .eq('id', agentIdentifier)
-            .eq('company_id', companyId)
-            .eq('status', 'active')
-            .maybeSingle();
-          targetAgent = result.data;
-          agentError = result.error;
-        } else {
-          // Search by name using ILIKE with % wildcard (PostgreSQL standard)
-          console.log('🔍 [TRANSFER] Buscando por nome:', agentIdentifier);
-          const result = await supabase
-            .from('ai_agents')
-            .select('id, name, parent_agent_id')
-            .ilike('name', `%${agentIdentifier}%`)
-            .eq('company_id', companyId)
-            .eq('status', 'active')
-            .limit(1)
-            .maybeSingle();
-          targetAgent = result.data;
-          agentError = result.error;
-        }
+        const { data: targetAgent, error: agentError } = await supabase
+          .from('ai_agents')
+          .select('id, name')
+          .eq('company_id', connectionCompanyIdFromConv)
+          .eq('status', 'active')
+          .ilike('name', `%${agentIdentifier}%`)
+          .limit(1)
+          .maybeSingle();
         
         if (agentError) {
           console.log('❌ [TRANSFER] Erro na busca de agente:', agentError.message);
@@ -2019,8 +1727,6 @@ CRÍTICO SOBRE COMANDOS:
             console.log('❌ [TRANSFER] Erro ao atualizar estado:', updateError.message);
           } else {
             console.log('✅ [TRANSFER] Transferido com sucesso para:', targetAgent.name, '| ID:', targetAgent.id);
-            
-            // 🚀 MARCAR FLAG PARA RESPOSTA IMEDIATA DO NOVO AGENTE
             agentTransferOccurred = true;
             transferredToAgentId = targetAgent.id;
             transferredToAgentName = targetAgent.name;
@@ -2029,11 +1735,10 @@ CRÍTICO SOBRE COMANDOS:
         } else {
           console.log('⚠️ [TRANSFER] Agente não encontrado:', agentIdentifier);
           
-          // Debug: list all active agents for this company
           const { data: allAgents } = await supabase
             .from('ai_agents')
             .select('id, name, status')
-            .eq('company_id', companyId)
+            .eq('company_id', connectionCompanyIdFromConv)
             .eq('status', 'active');
           console.log('📋 [TRANSFER] Agentes ativos disponíveis:', allAgents?.map(a => a.name).join(', ') || 'nenhum');
         }
@@ -2043,18 +1748,16 @@ CRÍTICO SOBRE COMANDOS:
       'transferir_usuario': async (userIdentifier: string) => {
         console.log('👤 Transferindo para usuário:', userIdentifier);
         
-        // Find user by name
         const { data: targetUser } = await supabase
           .from('profiles')
           .select('id, full_name')
           .ilike('full_name', `%${userIdentifier}%`)
-          .eq('company_id', companyId)
+          .eq('company_id', connectionCompanyIdFromConv)
           .eq('active', true)
           .limit(1)
           .maybeSingle();
         
         if (targetUser) {
-          // Assign conversation to user and deactivate AI
           await supabase
             .from('conversations')
             .update({ 
@@ -2104,7 +1807,6 @@ CRÍTICO SOBRE COMANDOS:
         if (!contactId) return;
         console.log('📊 Mudando etapa CRM:', stageName);
         
-        // Find the kanban card for this contact
         const { data: card } = await supabase
           .from('kanban_cards')
           .select('id, column_id, kanban_columns!inner(board_id)')
@@ -2115,15 +1817,13 @@ CRÍTICO SOBRE COMANDOS:
         if (card) {
           const boardId = (card as any).kanban_columns.board_id;
           
-          // Normalize input for comparison
           const normalizedInput = stageName.toLowerCase()
             .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
             .replace(/\s+/g, '-');
           
-          // First try exact match, then try normalized match, then ilike
           let targetColumn = null;
           
-          // 1. Try exact match by name
+          // Try exact match
           const { data: exactMatch } = await supabase
             .from('kanban_columns')
             .select('id, name')
@@ -2136,7 +1836,7 @@ CRÍTICO SOBRE COMANDOS:
             targetColumn = exactMatch;
             console.log('✅ Match exato encontrado:', exactMatch.name);
           } else {
-            // 2. Try case-insensitive ilike match
+            // Try ilike match
             const { data: ilikeMatch } = await supabase
               .from('kanban_columns')
               .select('id, name')
@@ -2149,7 +1849,7 @@ CRÍTICO SOBRE COMANDOS:
               targetColumn = ilikeMatch;
               console.log('✅ Match ilike encontrado:', ilikeMatch.name);
             } else {
-              // 3. Try partial match
+              // Try partial match
               const { data: partialMatch } = await supabase
                 .from('kanban_columns')
                 .select('id, name')
@@ -2162,7 +1862,7 @@ CRÍTICO SOBRE COMANDOS:
                 targetColumn = partialMatch;
                 console.log('✅ Match parcial encontrado:', partialMatch.name);
               } else {
-                // 4. Load all columns and try normalized comparison
+                // Try normalized comparison
                 const { data: allColumns } = await supabase
                   .from('kanban_columns')
                   .select('id, name')
@@ -2201,35 +1901,15 @@ CRÍTICO SOBRE COMANDOS:
         }
       },
 
-      // Notify team - Creates real notifications for admins/owners
+      // Notify team
       'notificar_equipe': async (message: string) => {
         console.log('🔔 [NOTIFICAR_EQUIPE] Iniciando notificação:', message);
         
         try {
-          // Step 1: Get company ID from connection
-          const { data: connData, error: connError } = await supabase
-            .from('whatsapp_connections')
-            .select('company_id')
-            .eq('id', connectionId)
-            .single();
-          
-          if (connError) {
-            console.log('❌ [NOTIFICAR_EQUIPE] Erro ao buscar connection:', connError.message);
-            return;
-          }
-          
-          if (!connData?.company_id) {
-            console.log('⚠️ [NOTIFICAR_EQUIPE] Company não encontrada para connection:', connectionId);
-            return;
-          }
-          
-          console.log('🏢 [NOTIFICAR_EQUIPE] Company ID:', connData.company_id);
-          
-          // Step 2: Get all profiles from this company (separate query to avoid JOIN issues)
           const { data: companyProfiles, error: profilesError } = await supabase
             .from('profiles')
             .select('id, full_name, email')
-            .eq('company_id', connData.company_id)
+            .eq('company_id', connectionCompanyIdFromConv)
             .eq('active', true);
           
           if (profilesError) {
@@ -2245,9 +1925,7 @@ CRÍTICO SOBRE COMANDOS:
           }
           
           const userIds = companyProfiles.map(p => p.id);
-          console.log('👤 [NOTIFICAR_EQUIPE] User IDs para verificar roles:', userIds.join(', '));
           
-          // Step 3: Get admins/owners from user_roles (separate query to avoid JOIN issues)
           const { data: adminRoles, error: rolesError } = await supabase
             .from('user_roles')
             .select('user_id, role')
@@ -2259,42 +1937,32 @@ CRÍTICO SOBRE COMANDOS:
             return;
           }
           
-          console.log(`🔑 [NOTIFICAR_EQUIPE] Roles encontrados:`, JSON.stringify(adminRoles));
-          
           const companyAdmins = adminRoles || [];
           console.log(`📢 [NOTIFICAR_EQUIPE] Total de ${companyAdmins.length} admins/owners para notificar`);
           
           if (companyAdmins.length === 0) {
-            console.log('⚠️ [NOTIFICAR_EQUIPE] Nenhum admin/owner encontrado - verifique a tabela user_roles');
+            console.log('⚠️ [NOTIFICAR_EQUIPE] Nenhum admin/owner encontrado');
             return;
           }
           
-          // Step 4: Get contact info for context
-          const { data: convData, error: convError } = await supabase
+          const { data: convData } = await supabase
             .from('conversations')
             .select('contact_id, contacts(name, phone_number)')
             .eq('id', conversationId)
             .single();
-          
-          if (convError) {
-            console.log('⚠️ [NOTIFICAR_EQUIPE] Erro ao buscar conversa:', convError.message);
-          }
           
           const contactInfo = convData?.contacts as any;
           const notificationMessage = `🤖 Notificação do Agente IA: ${message}${
             contactInfo ? `\n👤 Cliente: ${contactInfo.name || contactInfo.phone_number}` : ''
           }`;
           
-          console.log('📝 [NOTIFICAR_EQUIPE] Mensagem de notificação:', notificationMessage);
-          
-          // Step 5: Create mention notifications for each admin
           let successCount = 0;
           for (const admin of companyAdmins) {
             const { error: insertError } = await supabase.from('mention_notifications').insert({
               mentioned_user_id: admin.user_id,
-              mentioner_user_id: admin.user_id, // Self-mention for system notification
-              message_id: crypto.randomUUID(), // Placeholder since this is a system notification
-              source_type: 'internal_note', // Valid value for the constraint
+              mentioner_user_id: admin.user_id,
+              message_id: crypto.randomUUID(),
+              source_type: 'internal_note',
               conversation_id: conversationId,
               has_access: true,
               is_read: false
@@ -2308,20 +1976,15 @@ CRÍTICO SOBRE COMANDOS:
             }
           }
           
-          // Step 6: Create an internal note in the conversation for audit trail
-          const { error: noteError } = await supabase.from('messages').insert({
+          await supabase.from('messages').insert({
             conversation_id: conversationId,
             content: notificationMessage,
             direction: 'outbound',
-            sender_type: 'system', // Valid enum value
+            sender_type: 'system',
             message_type: 'text',
             is_internal_note: true,
             status: 'sent'
           });
-          
-          if (noteError) {
-            console.log('⚠️ [NOTIFICAR_EQUIPE] Erro ao criar nota interna:', noteError.message);
-          }
           
           console.log(`✅ [NOTIFICAR_EQUIPE] Notificações criadas: ${successCount}/${companyAdmins.length}`);
         } catch (notifyError) {
@@ -2333,7 +1996,6 @@ CRÍTICO SOBRE COMANDOS:
       'atribuir_departamento': async (deptName: string) => {
         console.log('🏢 Atribuindo departamento:', deptName);
         
-        // Find department by name
         const { data: dept } = await supabase
           .from('departments')
           .select('id')
@@ -2371,7 +2033,7 @@ CRÍTICO SOBRE COMANDOS:
     };
 
     // ═══════════════════════════════════════════════════════════════════
-    // PROCESS TOOL CALLS FROM API (PRIMARY METHOD)
+    // PROCESS TOOL CALLS FROM API
     // ═══════════════════════════════════════════════════════════════════
     console.log('\n┌─────────────────────────────────────────────────────────────────┐');
     console.log('│ 🔧 PROCESSAR TOOL CALLS DA API                                  │');
@@ -2380,7 +2042,7 @@ CRÍTICO SOBRE COMANDOS:
     let cleanResponse = aiResponse;
     const executedCommands: string[] = [];
 
-    // Execute tool calls from API response FIRST (structured, validated)
+    // Execute tool calls from API response
     if (toolCallsFromApi.length > 0) {
       console.log(`🔧 Executando ${toolCallsFromApi.length} tool calls da API:`);
       
@@ -2391,8 +2053,8 @@ CRÍTICO SOBRE COMANDOS:
         try {
           switch (name) {
             case 'mudar_etapa_crm':
-              await commandHandlers['mudar_etapa_crm'](args.stage_slug);
-              executedCommands.push(`mudar_etapa_crm:${args.stage_slug} (tool)`);
+              await commandHandlers['mudar_etapa_crm'](args.stage_name || args.stage_slug);
+              executedCommands.push(`mudar_etapa_crm:${args.stage_name || args.stage_slug} (tool)`);
               break;
               
             case 'adicionar_etiqueta':
@@ -2417,12 +2079,12 @@ CRÍTICO SOBRE COMANDOS:
               
             case 'notificar_equipe':
               await commandHandlers['notificar_equipe'](args.message);
-              executedCommands.push(`notificar_equipe:${args.message} (tool)`);
+              executedCommands.push(`notificar_equipe (tool)`);
               break;
               
             case 'desativar_agente':
               await commandHandlers['desativar_agente']('');
-              executedCommands.push('desativar_agente (tool)');
+              executedCommands.push(`desativar_agente (tool)`);
               break;
               
             case 'atribuir_origem':
@@ -2431,73 +2093,44 @@ CRÍTICO SOBRE COMANDOS:
               break;
               
             default:
-              console.log(`⚠️ Tool desconhecida: ${name}`);
+              console.log(`⚠️ Tool não implementada: ${name}`);
           }
-        } catch (err) {
-          console.error(`❌ Erro ao executar tool ${name}:`, err);
+        } catch (toolError) {
+          console.error(`❌ Erro ao executar tool ${name}:`, toolError);
         }
       }
-    } else {
-      console.log('ℹ️ Nenhum tool call da API');
     }
 
     // ═══════════════════════════════════════════════════════════════════
-    // FALLBACK: PROCESS SLASH COMMANDS IN TEXT (LEGACY/BACKUP)
+    // PROCESS LEGACY SLASH COMMANDS FROM TEXT (FALLBACK)
     // ═══════════════════════════════════════════════════════════════════
     console.log('\n┌─────────────────────────────────────────────────────────────────┐');
-    console.log('│ 📝 FALLBACK: COMANDOS SLASH NO TEXTO                           │');
+    console.log('│ 📝 PROCESSAR SLASH COMMANDS DO TEXTO (FALLBACK)                 │');
     console.log('└─────────────────────────────────────────────────────────────────┘');
 
-    // Parse and execute commands (fallback for slash commands in text)
-    // Supports both bracketed [Value With Spaces] and simple values
-    // Regex patterns updated to capture values with spaces until newline or next command
-    const commandPatterns = [
-      { pattern: /\/adicionar_etiqueta:(?:\[([^\]]+)\]|([^\n\/]+?)(?=\n|\/[a-z_]+:|$))/gi, handler: 'adicionar_etiqueta' },
-      { pattern: /\/transferir_agente:(?:\[([^\]]+)\]|([^\n\/]+?)(?=\n|\/[a-z_]+:|$))/gi, handler: 'transferir_agente' },
-      { pattern: /\/transferir_usuario:(?:\[([^\]]+)\]|([^\n\/]+?)(?=\n|\/[a-z_]+:|$))/gi, handler: 'transferir_usuario' },
-      { pattern: /\/atribuir_origem:(?:\[([^\]]+)\]|([^\n\/]+?)(?=\n|\/[a-z_]+:|$))/gi, handler: 'atribuir_origem' },
-      { pattern: /\/mudar_etapa_crm:(?:\[([^\]]+)\]|([^\n\/]+?)(?=\n|\/[a-z_]+:|$))/gi, handler: 'mudar_etapa_crm' },
-      { pattern: /\/notificar_equipe:(?:\[([^\]]+)\]|([^\n]+?)(?=\n|\/[a-z_]+:|$))/gi, handler: 'notificar_equipe' },
-      { pattern: /\/atribuir_departamento:(?:\[([^\]]+)\]|([^\n\/]+?)(?=\n|\/[a-z_]+:|$))/gi, handler: 'atribuir_departamento' },
-      { pattern: /\/desativar_agente/gi, handler: 'desativar_agente' },
-    ];
-
+    const slashCommandPattern = /\/(adicionar_etiqueta|transferir_agente|transferir_usuario|atribuir_origem|mudar_etapa_crm|notificar_equipe|atribuir_departamento|desativar_agente):?([^\n\/]*)?/gi;
+    let match;
     let slashCommandsFound = 0;
-    for (const { pattern, handler } of commandPatterns) {
-      const matches = [...aiResponse.matchAll(pattern)];
-      for (const match of matches) {
-        slashCommandsFound++;
-        // Extract value from bracketed group (match[1]) or simple group (match[2])
-        // Normalize multiple spaces and trim
-        const value = (match[1] || match[2] || '').replace(/\s+/g, ' ').trim();
-        
-        // Check if this command was already executed via tool call
-        const alreadyExecuted = executedCommands.some(cmd => 
-          cmd.startsWith(`${handler}:${value}`) || 
-          (handler === 'desativar_agente' && cmd.includes('desativar_agente'))
-        );
-        
-        if (!alreadyExecuted) {
-          try {
-            await commandHandlers[handler](value);
-            executedCommands.push(`${handler}:${value} (regex)`);
-            console.log(`✅ Comando regex executado: ${handler}:${value}`);
-          } catch (err) {
-            console.error(`❌ Erro ao executar comando ${handler}:`, err);
-          }
-        } else {
-          console.log(`⏭️ Comando já executado via tool: ${handler}:${value}`);
-        }
-        
-        // Always remove command from response text
-        cleanResponse = cleanResponse.replace(match[0], '').trim();
+
+    while ((match = slashCommandPattern.exec(cleanResponse)) !== null) {
+      slashCommandsFound++;
+      const [fullMatch, command, value] = match;
+      const handler = commandHandlers[command.toLowerCase()];
+      
+      if (handler) {
+        console.log(`📌 Slash command encontrado: /${command}:${value || ''}`);
+        await handler((value || '').trim());
+        executedCommands.push(`${command}:${value || ''} (slash)`);
       }
+      
+      // Remove command from response
+      cleanResponse = cleanResponse.replace(fullMatch, '').trim();
     }
 
-    // 🧹 LIMPEZA DE COMANDOS INVÁLIDOS
-    // Remove any remaining slash commands that weren't recognized (supports bracketed values)
-    const invalidCommandPattern = /\/[a-z_]+(?::(?:\[[^\]]+\]|[^\n]+))?/gi;
+    // Remove any remaining invalid commands
+    const invalidCommandPattern = /\/[a-zA-Z_]+:?[^\n\/]*/gi;
     const invalidCommands = [...cleanResponse.matchAll(invalidCommandPattern)];
+    
     if (invalidCommands.length > 0) {
       console.log(`⚠️ Removendo ${invalidCommands.length} comando(s) inválido(s):`);
       for (const match of invalidCommands) {
@@ -2532,7 +2165,6 @@ CRÍTICO SOBRE COMANDOS:
       console.log('└─────────────────────────────────────────────────────────────────┘');
       console.log('🤖 Novo agente:', transferredToAgentName, '| ID:', transferredToAgentId);
       
-      // Carregar dados completos do novo agente
       const { data: newAgent, error: newAgentError } = await supabase
         .from('ai_agents')
         .select(`
@@ -2549,7 +2181,6 @@ CRÍTICO SOBRE COMANDOS:
       if (newAgent && !newAgentError) {
         console.log('✅ Dados do novo agente carregados');
         
-        // Construir prompt simplificado para o novo agente
         const newAgentCompanyInfo = newAgent.company_info || {};
         let newAgentSystemPrompt = `Você é ${newAgent.name}, um assistente virtual especializado.
 
@@ -2592,7 +2223,6 @@ O link do contrato para enviar ao cliente é: ${newAgent.contract_link}
 `;
         }
         
-        // Adicionar contexto da conversa
         if (contextSummary) {
           newAgentSystemPrompt += `## 🧠 MEMÓRIA DA CONVERSA (INFORMAÇÕES JÁ COLETADAS)
 ${contextSummary}
@@ -2616,25 +2246,26 @@ ${contextSummary}
 
         console.log('📝 Prompt do novo agente criado (' + newAgentSystemPrompt.length + ' chars)');
         
-        // Gerar resposta do novo agente
         const newAgentTemperature = newAgent.temperature ?? 1.0;
-        const newAgentApiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${GEMINI_API_KEY}`;
         
         try {
-          const newAgentApiResponse = await fetch(newAgentApiUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              contents: [{
-                role: 'user',
-                parts: [{ text: newAgentSystemPrompt }]
-              }],
-              generationConfig: {
-                temperature: newAgentTemperature,
-                maxOutputTokens: 1024
-              }
-            })
-          });
+          const newAgentApiResponse = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${GEMINI_API_KEY}`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                contents: [{
+                  role: 'user',
+                  parts: [{ text: newAgentSystemPrompt }]
+                }],
+                generationConfig: {
+                  temperature: newAgentTemperature,
+                  maxOutputTokens: 1024
+                }
+              })
+            }
+          );
           
           const newAgentResult = await newAgentApiResponse.json();
           const newAiResponse = newAgentResult.candidates?.[0]?.content?.parts?.[0]?.text || '';
@@ -2643,37 +2274,8 @@ ${contextSummary}
             console.log('✅ Resposta do novo agente gerada');
             console.log('📝 Preview:', newAiResponse.substring(0, 100) + '...');
             
-            // Combinar resposta: mensagem de transferência + resposta do novo agente
-            // Limpar a resposta do agente anterior (remover texto após menção de transferência se necessário)
-            const transferPatterns = [
-              /vou\s+te\s+transferir/gi,
-              /transferindo\s+para/gi,
-              /vou\s+transferir\s+você/gi,
-              /deixa\s+eu\s+te\s+transferir/gi,
-              /encaminhando\s+para/gi
-            ];
-            
-            let previousAgentMessage = cleanResponse;
-            for (const pattern of transferPatterns) {
-              const match = previousAgentMessage.match(pattern);
-              if (match) {
-                // Encontrar onde a mensagem de transferência termina
-                const idx = previousAgentMessage.search(pattern);
-                // Pegar apenas até o fim da frase que menciona a transferência
-                const afterPattern = previousAgentMessage.substring(idx);
-                const sentenceEnd = afterPattern.search(/[.!?]\s*$/);
-                if (sentenceEnd > 0) {
-                  previousAgentMessage = previousAgentMessage.substring(0, idx + sentenceEnd + 1);
-                }
-                break;
-              }
-            }
-            
-            // Usar apenas a resposta do novo agente (não concatenar com separador)
-            // O agente anterior já indicou a transferência, a mensagem do novo agente é a continuação natural
             cleanResponse = newAiResponse.trim();
             
-            // Atualizar referência do agente para o return
             agent = {
               ...agent,
               id: newAgent.id,
@@ -2695,7 +2297,6 @@ ${contextSummary}
           }
         } catch (newAgentError) {
           console.error('❌ Erro ao gerar resposta do novo agente:', newAgentError);
-          // Manter a resposta original em caso de erro
         }
       } else {
         console.log('⚠️ Não foi possível carregar dados do novo agente:', newAgentError?.message);
@@ -2715,7 +2316,6 @@ ${contextSummary}
       const [fullMatch, mediaType, mediaKey] = match;
       console.log(`📎 Tag de mídia encontrada: ${mediaType}:${mediaKey}`);
       
-      // Fetch media from database
       const { data: media } = await supabase
         .from('ai_agent_media')
         .select('*')
@@ -2726,22 +2326,18 @@ ${contextSummary}
       if (media) {
         let mediaUrl = media.media_url || undefined;
         
-        // Copy from private bucket to public bucket for permanent URLs
         if (mediaUrl && mediaUrl.includes('/ai-agent-media/')) {
           try {
-            // Extract storage path from full URL
             const urlParts = mediaUrl.split('/ai-agent-media/');
             if (urlParts.length > 1) {
               const storagePath = decodeURIComponent(urlParts[1].split('?')[0]);
               console.log(`🔑 Gerando signed URL temporária para copiar: ${storagePath}`);
               
-              // Generate temporary signed URL for download (5 min is enough)
               const { data: signedUrlData, error: signedUrlError } = await supabase.storage
                 .from('ai-agent-media')
                 .createSignedUrl(storagePath, 300);
               
               if (signedUrlData?.signedUrl) {
-                // Copy to public bucket and get permanent URL
                 const publicUrl = await copyMediaToPublicBucket(
                   supabase,
                   signedUrlData.signedUrl,
@@ -2751,13 +2347,12 @@ ${contextSummary}
                 );
                 
                 if (publicUrl) {
-                  mediaUrl = publicUrl; // Use permanent public URL
+                  mediaUrl = publicUrl;
                   console.log(`✅ URL permanente gerada: ${publicUrl.substring(0, 60)}...`);
                 } else {
-                  // Fallback: use signed URL with longer TTL if copy fails
                   const { data: fallbackUrl } = await supabase.storage
                     .from('ai-agent-media')
-                    .createSignedUrl(storagePath, 86400); // 24h fallback
+                    .createSignedUrl(storagePath, 86400);
                   if (fallbackUrl?.signedUrl) {
                     mediaUrl = fallbackUrl.signedUrl;
                     console.log(`⚠️ Usando signed URL de 24h como fallback`);
@@ -2784,18 +2379,15 @@ ${contextSummary}
         console.log(`⚠️ Mídia não encontrada: ${mediaKey}`);
       }
       
-      // Remove tag from response
       cleanResponse = cleanResponse.replace(fullMatch, '').trim();
     }
 
-    // Clean up multiple spaces and empty lines again after removing media tags
     cleanResponse = cleanResponse.replace(/\n\s*\n/g, '\n').trim();
 
     if (mediasToSend.length > 0) {
       console.log(`📦 Total de mídias para enviar: ${mediasToSend.length}`);
     }
 
-    // Use cleaned response
     aiResponse = cleanResponse;
 
     // ═══════════════════════════════════════════════════════════════════
@@ -2808,7 +2400,6 @@ ${contextSummary}
     let updatedContext = conversationContext;
     
     try {
-      // Make extraction call to AI
       const extractionPrompt = buildExtractionPrompt(
         processedMessageContent || messageContent || '',
         aiResponse,
@@ -2827,7 +2418,7 @@ ${contextSummary}
               parts: [{ text: extractionPrompt }]
             }],
             generationConfig: {
-              temperature: 0.1, // Low temperature for consistent extraction
+              temperature: 0.1,
               maxOutputTokens: 1000
             }
           })
@@ -2840,9 +2431,7 @@ ${contextSummary}
         
         console.log('📝 Resposta da extração:', extractedText.substring(0, 200) + '...');
         
-        // Parse the JSON response
         try {
-          // Clean up potential markdown code blocks
           const cleanedJson = extractedText
             .replace(/```json\n?/g, '')
             .replace(/```\n?/g, '')
@@ -2850,12 +2439,10 @@ ${contextSummary}
           
           const extractedInfo = JSON.parse(cleanedJson) as Partial<ConversationContext>;
           
-          // Add executed commands to context
           if (executedCommands.length > 0) {
             extractedInfo.acoes_executadas = executedCommands;
           }
           
-          // Merge with existing context
           updatedContext = mergeContext(conversationContext, extractedInfo);
           
           console.log('✅ Contexto atualizado com sucesso');
@@ -2866,14 +2453,12 @@ ${contextSummary}
           
         } catch (parseError) {
           console.log('⚠️ Erro ao parsear JSON da extração (não fatal):', parseError);
-          // Continue with existing context
         }
       } else {
         console.log('⚠️ Extração falhou (não fatal):', extractionResponse.status);
       }
     } catch (extractionError) {
       console.log('⚠️ Erro na extração de contexto (não fatal):', extractionError);
-      // Continue with existing context - extraction failure shouldn't block the response
     }
 
     // 8️⃣ Update conversation state WITH CONTEXT
@@ -2894,72 +2479,49 @@ ${contextSummary}
     
     console.log('✅ Estado da conversa e contexto salvos');
 
-    // 9️⃣ Log the interaction
+    // Log successful response
     await supabase.from('ai_agent_logs').insert({
       agent_id: agent.id,
       conversation_id: conversationId,
       action_type: 'response_generated',
-      input_text: processedMessageContent || messageContent,
-      output_text: aiResponse,
-      tokens_used: 0,
-      processing_time_ms: 0,
-      metadata: {
-        model: modelUsed,
-        contactName,
-        wasAlreadyActive: isConversationActive,
-        messageType,
-        hasImage: shouldUseMultimodal,
-        wasTranscribed: currentMessageIsAudio,
-        executedCommands: executedCommands.length > 0 ? executedCommands : undefined,
-        toolCallsCount: toolCallsFromApi.length,
-        toolCallsUsed: toolCallsFromApi.length > 0,
-        contextUpdated: true,
-        agentTransferOccurred,
-        transferredToAgentId: agentTransferOccurred ? transferredToAgentId : undefined,
-        transferredToAgentName: agentTransferOccurred ? transferredToAgentName : undefined
+      input_text: processedMessageContent?.substring(0, 500),
+      output_text: aiResponse?.substring(0, 500),
+      metadata: { 
+        model: modelUsed, 
+        hasMedia: mediasToSend.length > 0,
+        toolCalls: toolCallsFromApi.length,
+        commandsExecuted: executedCommands.length,
+        usedUrlContextTool: true
       }
     });
 
-    // 🔟 Return response with delay info and audio config
-    // Determine if audio should be generated based on audio settings
-    const shouldGenerateAudio = 
-      agent.audio_enabled === true && 
-      agent.voice_name && 
-      agent.audio_respond_with_audio === true && 
-      messageType === 'audio';
-
-    console.log('🔊 Audio config:', {
-      audio_enabled: agent.audio_enabled,
-      audio_respond_with_audio: agent.audio_respond_with_audio,
-      voice_name: agent.voice_name,
-      messageType,
-      shouldGenerateAudio
-    });
+    console.log('\n╔══════════════════════════════════════════════════════════════════╗');
+    console.log('║              ✅ AI AGENT PROCESS CONCLUÍDO                       ║');
+    console.log('╚══════════════════════════════════════════════════════════════════╝');
 
     return new Response(
       JSON.stringify({
         success: true,
         response: aiResponse,
+        medias: mediasToSend.length > 0 ? mediasToSend : undefined,
         agentId: agent.id,
         agentName: agent.name,
         delaySeconds: agent.delay_seconds || 0,
-        voiceName: shouldGenerateAudio ? agent.voice_name : null,
-        shouldGenerateAudio,
+        audioEnabled: agent.audio_enabled || false,
+        voiceName: agent.voice_name,
+        audioAlwaysRespondAudio: agent.audio_always_respond_audio || false,
+        audioRespondWithAudio: agent.audio_respond_with_audio || false,
         speechSpeed: agent.speech_speed || 1.0,
         audioTemperature: agent.audio_temperature || 0.7,
-        languageCode: agent.language_code || 'pt-BR',
-        mediasToSend: mediasToSend.length > 0 ? mediasToSend : undefined
+        languageCode: agent.language_code || 'pt-BR'
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
 
   } catch (error) {
-    console.error('❌ AI Agent Process error:', error);
+    console.error('❌ Erro fatal no ai-agent-process:', error);
     return new Response(
-      JSON.stringify({ 
-        success: false, 
-        error: error instanceof Error ? error.message : 'Unknown error' 
-      }),
+      JSON.stringify({ success: false, error: error instanceof Error ? error.message : 'Unknown error' }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }

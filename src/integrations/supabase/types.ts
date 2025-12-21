@@ -1650,6 +1650,65 @@ export type Database = {
           },
         ]
       }
+      insights_jobs: {
+        Row: {
+          company_id: string
+          completed_at: string | null
+          created_at: string | null
+          current_step: string | null
+          error_message: string | null
+          expires_at: string | null
+          filters: Json
+          id: string
+          job_type: string
+          progress: number | null
+          requested_by: string | null
+          result: Json | null
+          started_at: string | null
+          status: string
+        }
+        Insert: {
+          company_id: string
+          completed_at?: string | null
+          created_at?: string | null
+          current_step?: string | null
+          error_message?: string | null
+          expires_at?: string | null
+          filters?: Json
+          id?: string
+          job_type?: string
+          progress?: number | null
+          requested_by?: string | null
+          result?: Json | null
+          started_at?: string | null
+          status?: string
+        }
+        Update: {
+          company_id?: string
+          completed_at?: string | null
+          created_at?: string | null
+          current_step?: string | null
+          error_message?: string | null
+          expires_at?: string | null
+          filters?: Json
+          id?: string
+          job_type?: string
+          progress?: number | null
+          requested_by?: string | null
+          result?: Json | null
+          started_at?: string | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "insights_jobs_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       internal_chat_messages: {
         Row: {
           content: string | null
@@ -2160,6 +2219,50 @@ export type Database = {
             columns: ["board_id"]
             isOneToOne: false
             referencedRelation: "kanban_boards"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      media_analysis_cache: {
+        Row: {
+          analysis_result: Json | null
+          company_id: string
+          created_at: string | null
+          expires_at: string | null
+          hit_count: number | null
+          id: string
+          media_type: string
+          url: string
+          url_hash: string
+        }
+        Insert: {
+          analysis_result?: Json | null
+          company_id: string
+          created_at?: string | null
+          expires_at?: string | null
+          hit_count?: number | null
+          id?: string
+          media_type: string
+          url: string
+          url_hash: string
+        }
+        Update: {
+          analysis_result?: Json | null
+          company_id?: string
+          created_at?: string | null
+          expires_at?: string | null
+          hit_count?: number | null
+          id?: string
+          media_type?: string
+          url?: string
+          url_hash?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "media_analysis_cache_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
             referencedColumns: ["id"]
           },
         ]
@@ -2863,6 +2966,8 @@ export type Database = {
         Args: { p_column_id: string }
         Returns: boolean
       }
+      cleanup_expired_insights_jobs: { Args: never; Returns: number }
+      cleanup_expired_media_cache: { Args: never; Returns: number }
       create_internal_chat_room: {
         Args: { p_description?: string; p_name?: string; p_type: string }
         Returns: string
@@ -2890,6 +2995,10 @@ export type Database = {
           _user_id: string
         }
         Returns: boolean
+      }
+      increment_cache_hit: {
+        Args: { p_company_id: string; p_url_hash: string }
+        Returns: undefined
       }
       is_admin_or_owner: { Args: never; Returns: boolean }
       reset_daily_dashboard_counters: { Args: never; Returns: undefined }
