@@ -164,6 +164,9 @@ export function useCommercialData(filter?: CommercialFilter) {
   const hasActiveFilter = filter?.type === 'connection' && !!filter.connectionId;
   const filterRef = useRef(filter);
   filterRef.current = filter;
+  
+  // Prevent concurrent calls to fetchCompanyLiveMetrics
+  const isFetchingLiveMetricsRef = useRef(false);
 
   const isAdmin = userRole?.role === 'owner' || userRole?.role === 'admin';
 
@@ -294,7 +297,9 @@ export function useCommercialData(filter?: CommercialFilter) {
 
   // Fetch live metrics from company_live_dashboard (for general/unfiltered view)
   const fetchCompanyLiveMetrics = useCallback(async () => {
-    if (!profile?.company_id || !isAdmin) return;
+    if (!profile?.company_id || !isAdmin || isFetchingLiveMetricsRef.current) return;
+    
+    isFetchingLiveMetricsRef.current = true;
 
     try {
       const { data: dashboard } = await supabase
@@ -343,6 +348,8 @@ export function useCommercialData(filter?: CommercialFilter) {
       }
     } catch (error) {
       console.error('Error fetching live metrics:', error);
+    } finally {
+      isFetchingLiveMetricsRef.current = false;
     }
   }, [profile?.company_id, isAdmin]);
 
@@ -496,10 +503,9 @@ export function useCommercialData(filter?: CommercialFilter) {
         if (hasActiveFilter && conversationIds.length > 0) {
           const filteredMetrics = await calculateFilteredLiveMetrics(conversationIds);
           setLiveMetrics(filteredMetrics);
-        } else if (!hasActiveFilter) {
-          // Fetch company-wide metrics when no filter
-          await fetchCompanyLiveMetrics();
         }
+        // NOTE: When no filter is active, live metrics are fetched by the dedicated useEffect
+        // that handles realtime subscription - no duplicate call needed here
 
         // Extract contact IDs from filtered conversations
         const contactPhones = conversations?.map(c => (c.contact as any)?.phone_number).filter(Boolean) || [];
