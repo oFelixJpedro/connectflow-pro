@@ -495,23 +495,128 @@ serve(async (req) => {
         updated_at: new Date().toISOString()
       }, { onConflict: 'company_id' });
 
-    // Analyze ALL text messages (inbound AND outbound) to track conversation flow
+    // Analyze ALL messages (inbound AND outbound) to track conversation flow - INCLUDING MEDIA
     let aiAnalysis: any = null;
+    const supportedMediaTypes = ['image', 'audio', 'video', 'document'];
+    const hasMedia = message_type && supportedMediaTypes.includes(message_type);
     
-    if (geminiApiKey && message_content && message_type === 'text') {
+    if (geminiApiKey && (message_content || hasMedia)) {
       // Get last 5 messages for context
       const { data: recentMessages } = await supabase
         .from('messages')
-        .select('content, direction, sender_type, message_type')
+        .select('content, direction, sender_type, message_type, media_url, metadata')
         .eq('conversation_id', conversation_id)
         .order('created_at', { ascending: false })
         .limit(5);
 
+      // Build context including media descriptions
       const contextMessages = (recentMessages || [])
         .reverse()
-        .filter((m: any) => m.content)
-        .map((m: any) => `${m.direction === 'inbound' ? 'Cliente' : 'Vendedor'}: ${m.content}`)
+        .map((m: any) => {
+          const sender = m.direction === 'inbound' ? 'Cliente' : 'Vendedor';
+          if (m.content) {
+            return `${sender}: ${m.content}`;
+          } else if (m.message_type === 'audio') {
+            return `${sender}: [Enviou um áudio]`;
+          } else if (m.message_type === 'image') {
+            return `${sender}: [Enviou uma imagem]`;
+          } else if (m.message_type === 'video') {
+            return `${sender}: [Enviou um vídeo]`;
+          } else if (m.message_type === 'document') {
+            const fileName = m.metadata?.fileName || 'documento';
+            return `${sender}: [Enviou um documento: ${fileName}]`;
+          }
+          return null;
+        })
+        .filter(Boolean)
         .join('\n');
+
+      // Get media_url for current message if it's media
+      let currentMediaUrl: string | null = null;
+      let currentMetadata: any = null;
+      
+      if (hasMedia) {
+        const { data: currentMsg } = await supabase
+          .from('messages')
+          .select('media_url, metadata')
+          .eq('conversation_id', conversation_id)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        
+        currentMediaUrl = currentMsg?.media_url;
+        currentMetadata = currentMsg?.metadata;
+        console.log(`📎 [PIXEL] Current message is ${message_type}, media_url: ${currentMediaUrl ? 'found' : 'not found'}`);
+      }
+
+      // Process media content
+      let processedContent = message_content || '';
+      const mediaParts: any[] = [];
+      
+      // Process audio - transcribe it
+      if (message_type === 'audio' && currentMediaUrl) {
+        console.log('🎤 [PIXEL] Transcribing audio for real-time analysis...');
+        const transcription = await transcribeAudio(currentMediaUrl, geminiApiKey);
+        if (transcription) {
+          processedContent = `[Áudio transcrito]: "${transcription}"`;
+          console.log('✅ [PIXEL] Audio transcribed:', transcription.substring(0, 100));
+        } else {
+          processedContent = '[Áudio - transcrição não disponível]';
+        }
+      }
+      
+      // Process image - fetch and add to multimodal
+      if (message_type === 'image' && currentMediaUrl) {
+        console.log('🖼️ [PIXEL] Fetching image for real-time analysis...');
+        const imageData = await fetchImageAsBase64(currentMediaUrl);
+        if (imageData) {
+          mediaParts.push({
+            inline_data: {
+              mime_type: imageData.mimeType,
+              data: imageData.data
+            }
+          });
+          console.log('✅ [PIXEL] Image fetched successfully');
+        }
+        processedContent = message_content || '[Imagem enviada - analisar visualmente]';
+      }
+      
+      // Process video - fetch and add to multimodal
+      if (message_type === 'video' && currentMediaUrl) {
+        console.log('🎬 [PIXEL] Fetching video for real-time analysis...');
+        const videoData = await fetchVideoAsBase64(currentMediaUrl);
+        if (videoData) {
+          mediaParts.push({
+            inline_data: {
+              mime_type: videoData.mimeType,
+              data: videoData.data
+            }
+          });
+          console.log('✅ [PIXEL] Video fetched successfully');
+        }
+        processedContent = message_content || '[Vídeo enviado - analisar visualmente]';
+      }
+      
+      // Process document - fetch and add to multimodal
+      if (message_type === 'document' && currentMediaUrl) {
+        console.log('📄 [PIXEL] Fetching document for real-time analysis...');
+        const fileName = currentMetadata?.fileName;
+        const docData = await fetchDocumentAsBase64(currentMediaUrl, fileName);
+        if (docData) {
+          mediaParts.push({
+            inline_data: {
+              mime_type: docData.mimeType,
+              data: docData.data
+            }
+          });
+          console.log('✅ [PIXEL] Document fetched successfully');
+        }
+        processedContent = message_content || `[Documento enviado: ${fileName || 'arquivo'}]`;
+      }
+
+      const messageDescription = hasMedia && !message_content 
+        ? `${processedContent}` 
+        : message_content || processedContent;
 
       const fullPrompt = `${ANALYSIS_PROMPT}
 
@@ -519,18 +624,28 @@ Contexto da conversa (últimas mensagens):
 ${contextMessages}
 
 Mensagem atual do ${isInbound ? 'cliente' : 'vendedor'}:
-${message_content}`;
+${messageDescription}
+
+${hasMedia ? `IMPORTANTE: Esta mensagem contém mídia (${message_type}). Analise o conteúdo visual/áudio se disponível para entender melhor a intenção do lead.` : ''}`;
 
       console.log('🤖 [PIXEL] Calling Gemini for message analysis...');
-      aiAnalysis = await callGemini(fullPrompt, geminiApiKey);
+      
+      // Use multimodal if we have media parts, otherwise text-only
+      if (mediaParts.length > 0) {
+        console.log(`🖼️ [PIXEL] Using multimodal analysis with ${mediaParts.length} media part(s)`);
+        mediaParts.unshift({ text: fullPrompt });
+        aiAnalysis = await callGeminiMultimodal(mediaParts, geminiApiKey);
+      } else {
+        aiAnalysis = await callGemini(fullPrompt, geminiApiKey);
+      }
       
       if (aiAnalysis) {
         console.log('✅ [PIXEL] AI Analysis parsed successfully:', JSON.stringify(aiAnalysis));
       }
     }
 
-    // FALLBACK: If AI analysis failed but we have message content, use rule-based analysis
-    if (!aiAnalysis && message_content && message_type === 'text') {
+    // FALLBACK: If AI analysis failed but we have message content or media, use rule-based analysis
+    if (!aiAnalysis && (message_content || hasMedia)) {
       console.log('🔄 [PIXEL] Using fallback rule-based analysis');
       
       const contentLower = message_content.toLowerCase();
@@ -671,7 +786,9 @@ ${message_content}`;
     // =====================================================
     // AGENT BEHAVIOR DETECTION (for outbound messages only)
     // =====================================================
-    if (!isInbound && geminiApiKey && message_content && message_type === 'text') {
+    // Analyze outbound messages including media (agent might send inappropriate images/docs)
+    const outboundHasContent = message_content || hasMedia;
+    if (!isInbound && geminiApiKey && outboundHasContent) {
       // Get conversation details to find the agent
       const { data: convDetails } = await supabase
         .from('conversations')
@@ -683,16 +800,27 @@ ${message_content}`;
         // Get last 5 messages for context
         const { data: contextMessages } = await supabase
           .from('messages')
-          .select('content, direction, sender_type')
+          .select('content, direction, sender_type, message_type')
           .eq('conversation_id', conversation_id)
           .order('created_at', { ascending: false })
           .limit(5);
 
         const contextText = (contextMessages || [])
           .reverse()
-          .filter((m: any) => m.content)
-          .map((m: any) => `${m.direction === 'inbound' ? 'Cliente' : 'Vendedor'}: ${m.content}`)
+          .map((m: any) => {
+            const sender = m.direction === 'inbound' ? 'Cliente' : 'Vendedor';
+            if (m.content) return `${sender}: ${m.content}`;
+            if (m.message_type) return `${sender}: [Enviou ${m.message_type}]`;
+            return null;
+          })
+          .filter(Boolean)
           .join('\n');
+
+        // Describe the current message for behavior analysis
+        let messageForBehavior = message_content || '';
+        if (hasMedia && !message_content) {
+          messageForBehavior = `[Vendedor enviou: ${message_type}]`;
+        }
 
         const behaviorPrompt = `${BEHAVIOR_PROMPT}
 
@@ -700,13 +828,19 @@ Contexto da conversa:
 ${contextText}
 
 Mensagem do vendedor a analisar:
-${message_content}`;
+${messageForBehavior}
+
+${hasMedia ? `NOTA: O vendedor enviou uma mídia (${message_type}). Considere se o tipo de mídia é apropriado para o contexto comercial.` : ''}`;
 
         console.log('🔍 [PIXEL] Analyzing agent behavior...');
         const behaviorResult = await callGemini(behaviorPrompt, geminiApiKey);
 
         if (behaviorResult && behaviorResult.has_issue && behaviorResult.alert_type && behaviorResult.confidence >= 0.7) {
           console.log('⚠️ [PIXEL] Behavior issue detected:', behaviorResult);
+
+          const messageExcerpt = message_content 
+            ? message_content.substring(0, 200) 
+            : `[Mídia: ${message_type}]`;
 
           // Insert behavior alert
           await supabase.from('agent_behavior_alerts').insert({
@@ -718,7 +852,7 @@ ${message_content}`;
             severity: behaviorResult.severity || 'medium',
             title: behaviorResult.title || 'Comportamento detectado',
             description: behaviorResult.description || '',
-            message_excerpt: message_content.substring(0, 200),
+            message_excerpt: messageExcerpt,
             ai_confidence: behaviorResult.confidence,
             lead_was_rude: behaviorResult.lead_was_rude || false,
             detected_at: new Date().toISOString()
