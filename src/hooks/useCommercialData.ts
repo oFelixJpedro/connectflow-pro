@@ -322,19 +322,40 @@ export function useCommercialData(filter?: CommercialFilter) {
 
         if (convError) throw convError;
 
-        // Fetch all contacts for geographic data
-        const { data: contacts, error: contactsError } = await supabase
+        // Extract conversation IDs for filtering related data
+        const conversationIds = conversations?.map(c => c.id) || [];
+        
+        // Extract contact IDs from filtered conversations
+        const contactIds = conversations?.map(c => (c.contact as any)?.id).filter(Boolean) || [];
+        const contactPhones = conversations?.map(c => (c.contact as any)?.phone_number).filter(Boolean) || [];
+
+        // Fetch contacts for geographic data - filtered by conversations when connection filter is active
+        let contactsQuery = supabase
           .from('contacts')
           .select('phone_number')
           .eq('company_id', profile.company_id);
 
+        // If filtering by connection, only get contacts from filtered conversations
+        if (filter?.type === 'connection' && filter.connectionId && contactPhones.length > 0) {
+          contactsQuery = contactsQuery.in('phone_number', contactPhones);
+        }
+
+        const { data: contacts, error: contactsError } = await contactsQuery;
+
         if (contactsError) throw contactsError;
 
-        // Fetch live metrics for closed deals (from Kanban or AI detection)
-        const { data: liveMetricsData } = await supabase
+        // Fetch live metrics for closed deals - filtered by conversations when needed
+        let liveMetricsQuery = supabase
           .from('conversation_live_metrics')
           .select('lead_status, conversation_id')
           .eq('company_id', profile.company_id);
+
+        // If filtering by connection, only get metrics from filtered conversations
+        if (filter?.type === 'connection' && filter.connectionId && conversationIds.length > 0) {
+          liveMetricsQuery = liveMetricsQuery.in('conversation_id', conversationIds);
+        }
+
+        const { data: liveMetricsData } = await liveMetricsQuery;
 
         // Count closed deals from live metrics (AI-detected or Kanban confirmed)
         const closedDealsFromAI = liveMetricsData?.filter(
@@ -342,7 +363,6 @@ export function useCommercialData(filter?: CommercialFilter) {
         ).length || 0;
 
         // Fetch messages to calculate real response time
-        const conversationIds = conversations?.map(c => c.id) || [];
         let avgResponseTimeMinutes = 0;
         
         if (conversationIds.length > 0) {
@@ -458,11 +478,25 @@ export function useCommercialData(filter?: CommercialFilter) {
           }
         });
 
-        // Fetch evaluations for agent scoring
-        const { data: evaluations } = await supabase
+        // Fetch evaluations for agent scoring - filtered by period and connection
+        let evaluationsQuery = supabase
           .from('conversation_evaluations')
           .select('*')
           .eq('company_id', profile.company_id);
+
+        // Apply period filter
+        if (startDate && endDate) {
+          evaluationsQuery = evaluationsQuery
+            .gte('created_at', startDate.toISOString())
+            .lte('created_at', endDate.toISOString());
+        }
+
+        // If filtering by connection, only get evaluations from filtered conversations
+        if (filter?.type === 'connection' && filter.connectionId && conversationIds.length > 0) {
+          evaluationsQuery = evaluationsQuery.in('conversation_id', conversationIds);
+        }
+
+        const { data: evaluations } = await evaluationsQuery;
 
         // Build agent analysis with real evaluation data
         const agentsAnalysis: AgentAnalysis[] = agents?.map(agent => {

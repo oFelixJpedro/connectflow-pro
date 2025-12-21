@@ -391,6 +391,18 @@ export default function CommercialManager() {
                     numberOfMonths={2}
                     locale={ptBR}
                     className="pointer-events-auto"
+                    disabled={(date) => {
+                      const today = new Date();
+                      today.setHours(23, 59, 59, 999);
+                      
+                      // Minimum date: company creation date or fallback
+                      const minDate = company?.created_at 
+                        ? new Date(company.created_at) 
+                        : new Date('2020-01-01');
+                      minDate.setHours(0, 0, 0, 0);
+                      
+                      return date > today || date < minDate;
+                    }}
                   />
                 </PopoverContent>
               </Popover>
