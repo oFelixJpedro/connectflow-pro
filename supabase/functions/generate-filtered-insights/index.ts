@@ -7,6 +7,71 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// ============= Media Cache Functions =============
+
+async function sha256(text: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(text);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function getCachedAnalysis(
+  supabase: any, 
+  url: string, 
+  companyId: string
+): Promise<any | null> {
+  try {
+    const urlHash = await sha256(url);
+    
+    const { data, error } = await supabase
+      .from('media_analysis_cache')
+      .select('analysis_result')
+      .eq('url_hash', urlHash)
+      .eq('company_id', companyId)
+      .gt('expires_at', new Date().toISOString())
+      .single();
+    
+    if (error || !data) return null;
+    
+    // Increment hit count (fire and forget)
+    supabase.rpc('increment_cache_hit', { p_url_hash: urlHash, p_company_id: companyId }).then(() => {});
+    
+    console.log(`[Cache] HIT for ${url.substring(0, 50)}...`);
+    return data.analysis_result;
+  } catch {
+    return null;
+  }
+}
+
+async function saveCacheAnalysis(
+  supabase: any,
+  url: string,
+  companyId: string,
+  mediaType: string,
+  result: any
+): Promise<void> {
+  try {
+    const urlHash = await sha256(url);
+    
+    await supabase
+      .from('media_analysis_cache')
+      .upsert({
+        url_hash: urlHash,
+        url,
+        company_id: companyId,
+        media_type: mediaType,
+        analysis_result: result,
+        expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(), // 7 days
+      }, { onConflict: 'url_hash,company_id' });
+    
+    console.log(`[Cache] SAVED for ${url.substring(0, 50)}...`);
+  } catch (error) {
+    console.error('[Cache] Error saving:', error);
+  }
+}
+
 // ============= Interfaces =============
 
 interface CriteriaScores {
@@ -160,12 +225,14 @@ async function transcribeAudio(audioUrl: string, geminiApiKey: string): Promise<
 
 // NOTA: Vídeos agora usam URL Context Tool (sem download)
 
-// ============= Batch Analysis Function (URL Context Tool) =============
+// ============= Batch Analysis Function (URL Context Tool with Cache) =============
 
 async function analyzeConversationBatch(
   batch: ConversationWithMedia[],
   batchIndex: number,
-  geminiApiKey: string
+  geminiApiKey: string,
+  supabase?: any,
+  companyId?: string
 ): Promise<BatchAnalysisResult> {
   console.log(`[Batch ${batchIndex}] Starting analysis of ${batch.length} conversations`);
   
@@ -183,6 +250,10 @@ async function analyzeConversationBatch(
     mediaStats: { total: 0, images: 0, videos: 0, audios: 0, documents: 0 },
   };
   
+  const cacheEnabled = !!supabase && !!companyId;
+  const cachedResults: { url: string; analysis: any }[] = [];
+  const urlsToAnalyze: { url: string; type: string; convId: string }[] = [];
+  
   try {
     const mediaStats = { total: 0, images: 0, videos: 0, audios: 0, documents: 0 };
     
@@ -197,23 +268,38 @@ async function analyzeConversationBatch(
     const MAX_VIDEOS = 3; // URL Context Tool
     const MAX_AUDIOS = 2; // Limite reduzido para economizar memória
     
-    // Process each conversation
+    // Process each conversation - check cache first
     for (const conv of batch) {
       const convMedias = conv.medias.slice(0, 10); // Max 10 medias per conversation
       
       for (const media of convMedias) {
         mediaStats.total++;
         
+        // Check cache if enabled
+        if (cacheEnabled) {
+          const cached = await getCachedAnalysis(supabase, media.url, companyId);
+          if (cached) {
+            cachedResults.push({ url: media.url, analysis: cached });
+            if (media.type === 'image') mediaStats.images++;
+            else if (media.type === 'document') mediaStats.documents++;
+            else if (media.type === 'video') mediaStats.videos++;
+            continue; // Skip to next media, this one is cached
+          }
+        }
+        
         if (media.type === 'image' && imageUrls.length < MAX_IMAGES) {
           mediaStats.images++;
           imageUrls.push({ url: media.url, convId: conv.conversationId });
+          urlsToAnalyze.push({ url: media.url, type: 'image', convId: conv.conversationId });
         } else if (media.type === 'document' && documentUrls.length < MAX_DOCUMENTS) {
           mediaStats.documents++;
           documentUrls.push({ url: media.url, convId: conv.conversationId });
+          urlsToAnalyze.push({ url: media.url, type: 'document', convId: conv.conversationId });
         } else if (media.type === 'video' && videoUrls.length < MAX_VIDEOS) {
           // URL Context Tool para vídeos (sem download)
           mediaStats.videos++;
           videoUrls.push({ url: media.url, convId: conv.conversationId });
+          urlsToAnalyze.push({ url: media.url, type: 'video', convId: conv.conversationId });
         } else if (media.type === 'audio' && audioTranscriptions.length < MAX_AUDIOS) {
           // Transcrição de áudio (ainda precisa de download)
           const transcription = await transcribeAudio(media.url, geminiApiKey);
@@ -383,7 +469,21 @@ IMPORTANTE:
       result.mediaStats = mediaStats;
       result.batchIndex = batchIndex;
       
-      console.log(`[Batch ${batchIndex}] Success: ${result.problematicMedias?.length || 0} problematic medias found`);
+      console.log(`[Batch ${batchIndex}] Success: ${result.problematicMedias?.length || 0} problematic medias found, cached: ${cachedResults.length}`);
+      
+      // Save analyzed URLs to cache (fire and forget)
+      if (cacheEnabled && urlsToAnalyze.length > 0) {
+        const simplifiedResult = {
+          analyzed: true,
+          hasProblems: (result.problematicMedias?.length || 0) > 0,
+          batchIndex,
+        };
+        for (const urlData of urlsToAnalyze) {
+          saveCacheAnalysis(supabase, urlData.url, companyId, urlData.type, simplifiedResult)
+            .catch(err => console.error('[Cache] Save error:', err));
+        }
+        console.log(`[Batch ${batchIndex}] Caching ${urlsToAnalyze.length} new media URLs`);
+      }
       
       return result;
     } catch (parseError) {
@@ -617,6 +717,16 @@ serve(async (req) => {
       throw new Error('Unauthorized');
     }
 
+    // Get user's company_id for cache
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('company_id')
+      .eq('id', user.id)
+      .single();
+    
+    const companyId = profile?.company_id;
+    console.log(`[generate-filtered-insights] User company_id: ${companyId}`);
+
     const { conversationsWithMedia, evaluations, criteriaScores, filterDescription } = await req.json() as {
       conversationsWithMedia?: ConversationWithMedia[];
       evaluations?: EvaluationData[]; // Legacy support
@@ -656,13 +766,13 @@ serve(async (req) => {
       ? conversationsWithMedia.reduce((sum, c) => sum + (c.evaluation.overall_score || 0), 0) / conversationsWithMedia.length
       : legacyEvaluations.reduce((sum, e) => sum + (e.overall_score || 0), 0) / legacyEvaluations.length;
 
-    console.log(`[generate-filtered-insights] Processing ${totalEvaluations} conversations, hasMedia: ${hasMediaData}`);
+    console.log(`[generate-filtered-insights] Processing ${totalEvaluations} conversations, hasMedia: ${hasMediaData}, cacheEnabled: ${!!companyId}`);
 
-    // If we have media data, use modular batch processing
+    // If we have media data, use modular batch processing with cache
     if (hasMediaData) {
       // Divide into batches of 10 conversations
       const batches = chunkArray(conversationsWithMedia, 10);
-      console.log(`[generate-filtered-insights] Created ${batches.length} batches`);
+      console.log(`[generate-filtered-insights] Created ${batches.length} batches, cache enabled: ${!!companyId}`);
       
       const batchResults: BatchAnalysisResult[] = [];
       
@@ -672,7 +782,7 @@ serve(async (req) => {
         console.log(`[generate-filtered-insights] Processing wave ${Math.floor(waveStart / 3) + 1} with ${wave.length} batches`);
         
         const wavePromises = wave.map((batch, i) => 
-          analyzeConversationBatch(batch, waveStart + i, geminiApiKey)
+          analyzeConversationBatch(batch, waveStart + i, geminiApiKey, supabase, companyId)
         );
         
         const waveResults = await Promise.all(wavePromises);

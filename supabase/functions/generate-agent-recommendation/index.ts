@@ -1,10 +1,76 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
+
+// ============= Media Cache Functions =============
+
+async function sha256(text: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(text);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function getCachedAnalysis(
+  supabase: any, 
+  url: string, 
+  companyId: string
+): Promise<any | null> {
+  try {
+    const urlHash = await sha256(url);
+    
+    const { data, error } = await supabase
+      .from('media_analysis_cache')
+      .select('analysis_result')
+      .eq('url_hash', urlHash)
+      .eq('company_id', companyId)
+      .gt('expires_at', new Date().toISOString())
+      .single();
+    
+    if (error || !data) return null;
+    
+    // Increment hit count (fire and forget)
+    supabase.rpc('increment_cache_hit', { p_url_hash: urlHash, p_company_id: companyId }).then(() => {});
+    
+    console.log(`[Cache] HIT for ${url.substring(0, 50)}...`);
+    return data.analysis_result;
+  } catch {
+    return null;
+  }
+}
+
+async function saveCacheAnalysis(
+  supabase: any,
+  url: string,
+  companyId: string,
+  mediaType: string,
+  result: any
+): Promise<void> {
+  try {
+    const urlHash = await sha256(url);
+    
+    await supabase
+      .from('media_analysis_cache')
+      .upsert({
+        url_hash: urlHash,
+        url,
+        company_id: companyId,
+        media_type: mediaType,
+        analysis_result: result,
+        expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(), // 7 days
+      }, { onConflict: 'url_hash,company_id' });
+    
+    console.log(`[Cache] SAVED for ${url.substring(0, 50)}...`);
+  } catch (error) {
+    console.error('[Cache] Error saving:', error);
+  }
+}
 
 // ==================== INTERFACES ====================
 
@@ -150,15 +216,21 @@ function chunkArray<T>(array: T[], chunkSize: number): T[][] {
 
 // NOTA: Vídeos agora usam URL Context Tool (sem download)
 
-// ==================== ETAPA 1: ANÁLISE POR BATCH (URL Context Tool) ====================
+// ==================== ETAPA 1: ANÁLISE POR BATCH (URL Context Tool with Cache) ====================
 
 async function analyzeConversationBatch(
   conversations: ConversationWithMedia[],
   batchIndex: number,
-  geminiApiKey: string
+  geminiApiKey: string,
+  supabase?: any,
+  companyId?: string
 ): Promise<BatchAnalysisResult> {
   try {
     console.log(`[generate-agent-recommendation] 📦 Analyzing batch ${batchIndex + 1} with ${conversations.length} conversations`);
+    
+    const cacheEnabled = !!supabase && !!companyId;
+    const cachedResults: { url: string; analysis: any }[] = [];
+    const urlsToAnalyze: { url: string; type: string; convId: string }[] = [];
     
     let mediaCount = { images: 0, videos: 0, documents: 0, audios: 0 };
     const audioTranscriptions: string[] = [];
@@ -173,21 +245,36 @@ async function analyzeConversationBatch(
     const MAX_VIDEOS_PER_BATCH = 3; // URL Context Tool
     const MAX_AUDIOS_PER_BATCH = 2; // Limite reduzido para economizar memória
 
-    // Processa todas as mídias das conversas do batch
+    // Processa todas as mídias das conversas do batch - check cache first
     for (const conv of conversations) {
       for (const media of conv.medias) {
         try {
+          // Check cache if enabled
+          if (cacheEnabled) {
+            const cached = await getCachedAnalysis(supabase, media.url, companyId);
+            if (cached) {
+              cachedResults.push({ url: media.url, analysis: cached });
+              if (media.type === 'image') mediaCount.images++;
+              else if (media.type === 'document') mediaCount.documents++;
+              else if (media.type === 'video') mediaCount.videos++;
+              continue; // Skip to next media, this one is cached
+            }
+          }
+          
           if (media.type === 'image' && imageUrls.length < MAX_IMAGES) {
             // Collect URL for URL Context Tool
             imageUrls.push({ url: media.url, convId: conv.conversationId.substring(0, 8) });
             mediaCount.images++;
+            urlsToAnalyze.push({ url: media.url, type: 'image', convId: conv.conversationId });
           } else if (media.type === 'document' && documentUrls.length < MAX_DOCUMENTS) {
             documentUrls.push({ url: media.url, convId: conv.conversationId.substring(0, 8) });
             mediaCount.documents++;
+            urlsToAnalyze.push({ url: media.url, type: 'document', convId: conv.conversationId });
           } else if (media.type === 'video' && videoUrls.length < MAX_VIDEOS_PER_BATCH) {
             // URL Context Tool para vídeos (sem download)
             videoUrls.push({ url: media.url, convId: conv.conversationId.substring(0, 8) });
             mediaCount.videos++;
+            urlsToAnalyze.push({ url: media.url, type: 'video', convId: conv.conversationId });
           } else if (media.type === 'audio' && mediaCount.audios < MAX_AUDIOS_PER_BATCH) {
             // Áudio ainda precisa de transcrição (download necessário)
             const transcription = await transcribeAudio(media.url, geminiApiKey);
@@ -354,6 +441,22 @@ Se não houver problemas, retorne array vazio em "problematicas".`;
       }
       
       const parsed = JSON.parse(cleanJson);
+      
+      console.log(`[generate-agent-recommendation] ✅ Batch ${batchIndex + 1} parsed, cached: ${cachedResults.length}`);
+      
+      // Save analyzed URLs to cache (fire and forget)
+      if (cacheEnabled && urlsToAnalyze.length > 0) {
+        const simplifiedResult = {
+          analyzed: true,
+          hasProblems: (parsed.problematicas?.length || 0) > 0,
+          batchIndex,
+        };
+        for (const urlData of urlsToAnalyze) {
+          saveCacheAnalysis(supabase, urlData.url, companyId, urlData.type, simplifiedResult)
+            .catch(err => console.error('[Cache] Save error:', err));
+        }
+        console.log(`[generate-agent-recommendation] 💾 Caching ${urlsToAnalyze.length} new media URLs`);
+      }
       
       return {
         batchIndex,
@@ -543,16 +646,24 @@ serve(async (req) => {
   }
 
   try {
-    const data: AgentRecommendationRequest = await req.json();
+    // Create Supabase client for cache
+    const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
+    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? Deno.env.get('SUPABASE_ANON_KEY') ?? '';
+    const supabase = createClient(supabaseUrl, supabaseKey);
+    
+    const data: AgentRecommendationRequest & { companyId?: string } = await req.json();
     
     console.log('[generate-agent-recommendation] 🚀 Starting for:', data.agentName);
     console.log('[generate-agent-recommendation] Conversations with media:', data.conversationsWithMedia?.length || 0);
     console.log('[generate-agent-recommendation] Legacy media samples:', data.mediaSamples?.length || 0);
+    console.log('[generate-agent-recommendation] Company ID for cache:', data.companyId || 'not provided');
 
     const geminiApiKey = Deno.env.get('GEMINI_API_KEY');
     if (!geminiApiKey) {
       throw new Error('GEMINI_API_KEY not configured');
     }
+    
+    const companyId = data.companyId;
 
     let batchResults: BatchAnalysisResult[] = [];
     
@@ -562,14 +673,14 @@ serve(async (req) => {
       const BATCH_SIZE = 10;
       const conversationBatches = chunkArray(data.conversationsWithMedia, BATCH_SIZE);
       
-      console.log('[generate-agent-recommendation] 📦 Processing', conversationBatches.length, 'batches');
+      console.log('[generate-agent-recommendation] 📦 Processing', conversationBatches.length, 'batches, cache enabled:', !!companyId);
 
       // Processa batches em paralelo (máx 3 simultâneos para não sobrecarregar)
       const MAX_PARALLEL = 3;
       for (let i = 0; i < conversationBatches.length; i += MAX_PARALLEL) {
         const batchPromises = conversationBatches
           .slice(i, i + MAX_PARALLEL)
-          .map((batch, idx) => analyzeConversationBatch(batch, i + idx, geminiApiKey));
+          .map((batch, idx) => analyzeConversationBatch(batch, i + idx, geminiApiKey, supabase, companyId));
         
         const results = await Promise.all(batchPromises);
         batchResults.push(...results);
@@ -585,7 +696,7 @@ serve(async (req) => {
         medias: data.mediaSamples,
       };
       
-      const result = await analyzeConversationBatch([singleConversation], 0, geminiApiKey);
+      const result = await analyzeConversationBatch([singleConversation], 0, geminiApiKey, supabase, companyId);
       batchResults.push(result);
     }
 
