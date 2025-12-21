@@ -815,10 +815,15 @@ ${hasMedia ? `IMPORTANTE: Esta mensagem contém mídia (${message_type}). Analis
         // Get last 5 messages for context
         const { data: contextMessages } = await supabase
           .from('messages')
-          .select('content, direction, sender_type, message_type')
+          .select('content, direction, sender_type, message_type, media_url, metadata')
           .eq('conversation_id', conversation_id)
           .order('created_at', { ascending: false })
           .limit(5);
+
+        // Get the latest message (the one being analyzed) for media URL
+        const latestMessage = contextMessages?.[0];
+        const behaviorMediaUrl = latestMessage?.media_url;
+        const behaviorMetadata = latestMessage?.metadata;
 
         const contextText = (contextMessages || [])
           .reverse()
@@ -845,17 +850,91 @@ ${contextText}
 Mensagem do vendedor a analisar:
 ${messageForBehavior}
 
-${hasMedia ? `NOTA: O vendedor enviou uma mídia (${message_type}). Considere se o tipo de mídia é apropriado para o contexto comercial.` : ''}`;
+${hasMedia ? `NOTA: O vendedor enviou uma mídia (${message_type}). Considere se o tipo de mídia é apropriado para o contexto comercial. Descreva o conteúdo no campo media_description.` : ''}`;
 
         console.log('🔍 [PIXEL] Analyzing agent behavior...');
-        const behaviorResult = await callGemini(behaviorPrompt, geminiApiKey);
+        
+        // Use multimodal analysis for media content to get actual description
+        let behaviorResult;
+        if (hasMedia && behaviorMediaUrl) {
+          console.log('🖼️ [PIXEL] Using multimodal analysis for behavior with media:', message_type, 'URL:', behaviorMediaUrl);
+          
+          // Build multimodal parts array
+          const behaviorParts: any[] = [{ text: behaviorPrompt }];
+          
+          // Fetch and add media to parts based on type
+          try {
+            if (message_type === 'audio') {
+              // Transcribe audio for behavior analysis
+              const transcription = await transcribeAudio(behaviorMediaUrl, geminiApiKey);
+              if (transcription) {
+                behaviorParts[0] = { text: `${behaviorPrompt}\n\nTranscrição do áudio enviado: "${transcription}"` };
+                console.log('🎤 [PIXEL] Audio transcribed for behavior:', transcription.substring(0, 100));
+              }
+            } else if (message_type === 'image' || message_type === 'sticker') {
+              const imageData = await fetchImageAsBase64(behaviorMediaUrl);
+              if (imageData) {
+                behaviorParts.push({
+                  inline_data: {
+                    mime_type: imageData.mimeType,
+                    data: imageData.data
+                  }
+                });
+                console.log('🖼️ [PIXEL] Image added to behavior analysis');
+              }
+            } else if (message_type === 'video') {
+              const videoData = await fetchVideoAsBase64(behaviorMediaUrl);
+              if (videoData) {
+                behaviorParts.push({
+                  inline_data: {
+                    mime_type: videoData.mimeType,
+                    data: videoData.data
+                  }
+                });
+                console.log('🎥 [PIXEL] Video added to behavior analysis');
+              }
+            } else if (message_type === 'document') {
+              const fileName = behaviorMetadata?.fileName;
+              const docData = await fetchDocumentAsBase64(behaviorMediaUrl, fileName);
+              if (docData) {
+                behaviorParts.push({
+                  inline_data: {
+                    mime_type: docData.mimeType,
+                    data: docData.data
+                  }
+                });
+                console.log('📄 [PIXEL] Document added to behavior analysis');
+              }
+            }
+          } catch (mediaError) {
+            console.log('⚠️ [PIXEL] Error fetching media for behavior analysis:', mediaError);
+          }
+          
+          // Call multimodal if we have media parts, otherwise fallback to text-only
+          if (behaviorParts.length > 1 || message_type === 'audio') {
+            behaviorResult = await callGeminiMultimodal(behaviorParts, geminiApiKey);
+          } else {
+            behaviorResult = await callGemini(behaviorPrompt, geminiApiKey);
+          }
+        } else {
+          behaviorResult = await callGemini(behaviorPrompt, geminiApiKey);
+        }
 
         if (behaviorResult && behaviorResult.has_issue && behaviorResult.alert_type && behaviorResult.confidence >= 0.7) {
           console.log('⚠️ [PIXEL] Behavior issue detected:', behaviorResult);
 
-          const messageExcerpt = message_content 
-            ? message_content.substring(0, 200) 
-            : `[Mídia: ${message_type}]`;
+          // Build message_excerpt with media description if available
+          let messageExcerpt = '';
+          if (message_content) {
+            messageExcerpt = message_content.substring(0, 200);
+          } else if (behaviorResult.media_description) {
+            // Use AI's description of the media content
+            messageExcerpt = `[${message_type}] ${behaviorResult.media_description}`.substring(0, 200);
+            console.log('📝 [PIXEL] Using media description for excerpt:', messageExcerpt);
+          } else {
+            // Fallback to generic placeholder
+            messageExcerpt = `[Mídia: ${message_type}]`;
+          }
 
           // Insert behavior alert
           await supabase.from('agent_behavior_alerts').insert({
@@ -873,7 +952,7 @@ ${hasMedia ? `NOTA: O vendedor enviou uma mídia (${message_type}). Considere se
             detected_at: new Date().toISOString()
           });
 
-          console.log('✅ [PIXEL] Behavior alert saved');
+          console.log('✅ [PIXEL] Behavior alert saved with excerpt:', messageExcerpt);
         }
       }
     }
