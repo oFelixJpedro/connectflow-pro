@@ -199,11 +199,21 @@ export const fetchUniqueContactsFromLogs = async (
     );
     
     const lastLog = sortedLogs[0];
-    const isDeleted = sortedLogs.some(log => log.event_type === 'deleted');
+    
+    // Find the most recent deletion and creation events
+    const lastDeletionEvent = sortedLogs.find(log => log.event_type === 'deleted');
+    const lastCreationEvent = sortedLogs.find(log => 
+      log.event_type === 'created' || log.event_type === 'imported'
+    );
+    
+    // Contact is deleted only if the last deletion is more recent than the last creation
+    const isDeleted = lastDeletionEvent 
+      ? !lastCreationEvent || new Date(lastDeletionEvent.created_at).getTime() > new Date(lastCreationEvent.created_at).getTime()
+      : false;
     
     // Get the most recent snapshot (before deletion if deleted)
     const mostRecentSnapshot = isDeleted
-      ? sortedLogs.find(log => log.event_type === 'deleted')?.contact_snapshot || lastLog.contact_snapshot
+      ? lastDeletionEvent?.contact_snapshot || lastLog.contact_snapshot
       : lastLog.contact_snapshot;
 
     uniqueContacts.push({
