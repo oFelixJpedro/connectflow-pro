@@ -2164,6 +2164,50 @@ export type Database = {
           },
         ]
       }
+      media_analysis_cache: {
+        Row: {
+          analysis_result: Json | null
+          company_id: string
+          created_at: string | null
+          expires_at: string | null
+          hit_count: number | null
+          id: string
+          media_type: string
+          url: string
+          url_hash: string
+        }
+        Insert: {
+          analysis_result?: Json | null
+          company_id: string
+          created_at?: string | null
+          expires_at?: string | null
+          hit_count?: number | null
+          id?: string
+          media_type: string
+          url: string
+          url_hash: string
+        }
+        Update: {
+          analysis_result?: Json | null
+          company_id?: string
+          created_at?: string | null
+          expires_at?: string | null
+          hit_count?: number | null
+          id?: string
+          media_type?: string
+          url?: string
+          url_hash?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "media_analysis_cache_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       mention_notifications: {
         Row: {
           conversation_id: string | null
@@ -2863,6 +2907,7 @@ export type Database = {
         Args: { p_column_id: string }
         Returns: boolean
       }
+      cleanup_expired_media_cache: { Args: never; Returns: number }
       create_internal_chat_room: {
         Args: { p_description?: string; p_name?: string; p_type: string }
         Returns: string
@@ -2890,6 +2935,10 @@ export type Database = {
           _user_id: string
         }
         Returns: boolean
+      }
+      increment_cache_hit: {
+        Args: { p_company_id: string; p_url_hash: string }
+        Returns: undefined
       }
       is_admin_or_owner: { Args: never; Returns: boolean }
       reset_daily_dashboard_counters: { Args: never; Returns: undefined }
