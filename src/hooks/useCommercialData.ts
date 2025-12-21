@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { getStateFromPhone, StateCode } from '@/lib/dddMapping';
@@ -99,6 +99,50 @@ const DEFAULT_INSIGHTS: AggregatedInsights = {
   qualified_leads_percent: 0,
 };
 
+const EMPTY_LIVE_METRICS: LiveMetrics = {
+  activeConversations: 0,
+  hotLeads: 0,
+  warmLeads: 0,
+  coldLeads: 0,
+  todayMessages: 0,
+  todayNewConversations: 0,
+  todayContractsClosed: 0,
+  todayLeadsLost: 0,
+  currentAvgResponseTime: 0,
+  currentAvgSentiment: 'neutral',
+  topObjections: [],
+  topPainPoints: [],
+};
+
+const EMPTY_COMMERCIAL_DATA: CommercialData = {
+  averageScore: 0,
+  classification: 'CRÍTICO',
+  qualifiedLeadsPercent: 0,
+  conversionRate: 0,
+  totalConversations: 0,
+  totalLeads: 0,
+  closedDeals: 0,
+  avgResponseTimeMinutes: 0,
+  criteriaScores: {
+    communication: 0,
+    objectivity: 0,
+    humanization: 0,
+    objection_handling: 0,
+    closing: 0,
+    response_time: 0,
+  },
+  strengths: ['Nenhuma conversa encontrada neste filtro'],
+  weaknesses: [],
+  positivePatterns: [],
+  negativePatterns: [],
+  insights: ['Selecione outro filtro ou aguarde novas conversas'],
+  criticalIssues: [],
+  finalRecommendation: 'Sem dados suficientes para análise.',
+  agentsAnalysis: [],
+  contactsByState: {} as Record<StateCode, number>,
+  dealsByState: {} as Record<StateCode, number>,
+};
+
 export interface CommercialFilter {
   type: 'general' | 'connection';
   connectionId?: string;
@@ -115,6 +159,11 @@ export function useCommercialData(filter?: CommercialFilter) {
   const [aggregatedInsights, setAggregatedInsights] = useState<AggregatedInsights>(DEFAULT_INSIGHTS);
   const [lastUpdated, setLastUpdated] = useState(new Date());
   const [evaluating, setEvaluating] = useState(false);
+  
+  // Track if filter is active to control realtime behavior
+  const hasActiveFilter = filter?.type === 'connection' && !!filter.connectionId;
+  const filterRef = useRef(filter);
+  filterRef.current = filter;
 
   const isAdmin = userRole?.role === 'owner' || userRole?.role === 'admin';
 
@@ -145,8 +194,106 @@ export function useCommercialData(filter?: CommercialFilter) {
     }
   };
 
-  // Fetch live metrics and aggregated insights from company_live_dashboard
-  const fetchLiveMetrics = useCallback(async () => {
+  // Calculate live metrics from conversation_live_metrics for filtered data
+  const calculateFilteredLiveMetrics = async (conversationIds: string[]): Promise<LiveMetrics> => {
+    if (!profile?.company_id || conversationIds.length === 0) {
+      return EMPTY_LIVE_METRICS;
+    }
+
+    try {
+      // Fetch conversation_live_metrics for filtered conversations
+      const { data: metrics } = await supabase
+        .from('conversation_live_metrics')
+        .select('*')
+        .in('conversation_id', conversationIds);
+
+      if (!metrics || metrics.length === 0) {
+        return EMPTY_LIVE_METRICS;
+      }
+
+      // Count lead statuses
+      const hotLeads = metrics.filter(m => m.lead_status === 'hot').length;
+      const warmLeads = metrics.filter(m => m.lead_status === 'warm').length;
+      const coldLeads = metrics.filter(m => m.lead_status === 'cold').length;
+      const closedWon = metrics.filter(m => m.lead_status === 'closed_won').length;
+      const closedLost = metrics.filter(m => m.lead_status === 'closed_lost').length;
+
+      // Calculate average response time
+      const responseTimes = metrics
+        .filter(m => m.avg_response_time_seconds && m.avg_response_time_seconds > 0)
+        .map(m => m.avg_response_time_seconds!);
+      const avgResponseTime = responseTimes.length > 0
+        ? Math.round(responseTimes.reduce((a, b) => a + b, 0) / responseTimes.length / 60) // Convert to minutes
+        : 0;
+
+      // Get most common sentiment
+      const sentimentCounts: Record<string, number> = {};
+      metrics.forEach(m => {
+        const sentiment = m.current_sentiment || 'neutral';
+        sentimentCounts[sentiment] = (sentimentCounts[sentiment] || 0) + 1;
+      });
+      const avgSentiment = Object.entries(sentimentCounts)
+        .sort((a, b) => b[1] - a[1])[0]?.[0] || 'neutral';
+
+      // Aggregate objections and pain points
+      const allObjections: string[] = [];
+      const allPainPoints: string[] = [];
+      metrics.forEach(m => {
+        if (m.objections_detected) allObjections.push(...m.objections_detected);
+        if (m.pain_points) allPainPoints.push(...m.pain_points);
+      });
+
+      // Get top 5 most common
+      const getTop5 = (arr: string[]) => {
+        const counts: Record<string, number> = {};
+        arr.forEach(item => { counts[item] = (counts[item] || 0) + 1; });
+        return Object.entries(counts)
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 5)
+          .map(([item]) => item);
+      };
+
+      // Count today's data from filtered conversations
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const todayISO = today.toISOString();
+
+      const { data: todayConvs } = await supabase
+        .from('conversations')
+        .select('id, created_at, status')
+        .in('id', conversationIds)
+        .gte('created_at', todayISO);
+
+      const { count: todayMessagesCount } = await supabase
+        .from('messages')
+        .select('id', { count: 'exact', head: true })
+        .in('conversation_id', conversationIds)
+        .gte('created_at', todayISO);
+
+      return {
+        activeConversations: metrics.filter(m => 
+          m.lead_status && !['closed_won', 'closed_lost'].includes(m.lead_status)
+        ).length,
+        hotLeads,
+        warmLeads,
+        coldLeads,
+        todayMessages: todayMessagesCount || 0,
+        todayNewConversations: todayConvs?.length || 0,
+        todayContractsClosed: closedWon,
+        todayLeadsLost: closedLost,
+        currentAvgResponseTime: avgResponseTime,
+        currentAvgSentiment: avgSentiment,
+        topObjections: getTop5(allObjections),
+        topPainPoints: getTop5(allPainPoints),
+      };
+    } catch (error) {
+      console.error('Error calculating filtered live metrics:', error);
+      return EMPTY_LIVE_METRICS;
+    }
+  };
+
+  // Fetch live metrics from company_live_dashboard (for general/unfiltered view)
+  const fetchCompanyLiveMetrics = useCallback(async () => {
     if (!profile?.company_id || !isAdmin) return;
 
     try {
@@ -199,11 +346,14 @@ export function useCommercialData(filter?: CommercialFilter) {
     }
   }, [profile?.company_id, isAdmin]);
 
-  // Set up realtime subscription for live updates
+  // Set up realtime subscription for live updates (only when no filter active)
   useEffect(() => {
     if (!profile?.company_id || !isAdmin) return;
 
-    fetchLiveMetrics();
+    // Only fetch company-wide metrics when no filter is active
+    if (!hasActiveFilter) {
+      fetchCompanyLiveMetrics();
+    }
 
     // Subscribe to realtime updates on company_live_dashboard
     const channel = supabase
@@ -217,6 +367,12 @@ export function useCommercialData(filter?: CommercialFilter) {
           filter: `company_id=eq.${profile.company_id}`,
         },
         (payload) => {
+          // Only update from realtime if no filter is active
+          if (filterRef.current?.type === 'connection' && filterRef.current?.connectionId) {
+            console.log('📊 [REALTIME] Ignoring dashboard update - filter is active');
+            return;
+          }
+
           console.log('📊 [REALTIME] Dashboard updated:', payload);
           const newData = payload.new as any;
           if (newData) {
@@ -266,7 +422,7 @@ export function useCommercialData(filter?: CommercialFilter) {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [profile?.company_id, isAdmin, fetchLiveMetrics]);
+  }, [profile?.company_id, isAdmin, fetchCompanyLiveMetrics, hasActiveFilter]);
 
   useEffect(() => {
     if (!profile?.company_id || !isAdmin) {
@@ -325,8 +481,27 @@ export function useCommercialData(filter?: CommercialFilter) {
         // Extract conversation IDs for filtering related data
         const conversationIds = conversations?.map(c => c.id) || [];
         
+        // EARLY RETURN: If filter is active and no conversations found, return empty data
+        if (hasActiveFilter && conversationIds.length === 0) {
+          console.log('📊 No conversations found for active filter - returning empty data');
+          setData(EMPTY_COMMERCIAL_DATA);
+          setLiveMetrics(EMPTY_LIVE_METRICS);
+          setAggregatedInsights(DEFAULT_INSIGHTS);
+          setLastUpdated(new Date());
+          setLoading(false);
+          return;
+        }
+
+        // Calculate filtered live metrics when filter is active
+        if (hasActiveFilter && conversationIds.length > 0) {
+          const filteredMetrics = await calculateFilteredLiveMetrics(conversationIds);
+          setLiveMetrics(filteredMetrics);
+        } else if (!hasActiveFilter) {
+          // Fetch company-wide metrics when no filter
+          await fetchCompanyLiveMetrics();
+        }
+
         // Extract contact IDs from filtered conversations
-        const contactIds = conversations?.map(c => (c.contact as any)?.id).filter(Boolean) || [];
         const contactPhones = conversations?.map(c => (c.contact as any)?.phone_number).filter(Boolean) || [];
 
         // Fetch contacts for geographic data - filtered by conversations when connection filter is active
@@ -336,7 +511,7 @@ export function useCommercialData(filter?: CommercialFilter) {
           .eq('company_id', profile.company_id);
 
         // If filtering by connection, only get contacts from filtered conversations
-        if (filter?.type === 'connection' && filter.connectionId && contactPhones.length > 0) {
+        if (hasActiveFilter && contactPhones.length > 0) {
           contactsQuery = contactsQuery.in('phone_number', contactPhones);
         }
 
@@ -351,7 +526,7 @@ export function useCommercialData(filter?: CommercialFilter) {
           .eq('company_id', profile.company_id);
 
         // If filtering by connection, only get metrics from filtered conversations
-        if (filter?.type === 'connection' && filter.connectionId && conversationIds.length > 0) {
+        if (hasActiveFilter && conversationIds.length > 0) {
           liveMetricsQuery = liveMetricsQuery.in('conversation_id', conversationIds);
         }
 
@@ -492,7 +667,7 @@ export function useCommercialData(filter?: CommercialFilter) {
         }
 
         // If filtering by connection, only get evaluations from filtered conversations
-        if (filter?.type === 'connection' && filter.connectionId && conversationIds.length > 0) {
+        if (hasActiveFilter && conversationIds.length > 0) {
           evaluationsQuery = evaluationsQuery.in('conversation_id', conversationIds);
         }
 
@@ -544,8 +719,9 @@ export function useCommercialData(filter?: CommercialFilter) {
           ? Math.round((closedDealsFromAI / totalConversations) * 100 * 10) / 10 
           : 0;
 
-        // Use aggregated insights from realtime if available, otherwise calculate from evaluations
-        const useAggregatedInsights = aggregatedInsights.average_score > 0;
+        // Use aggregated insights from realtime if available and no filter active
+        // When filter is active, calculate from filtered evaluations only
+        const useAggregatedInsights = !hasActiveFilter && aggregatedInsights.average_score > 0;
         
         let averageScore: number;
         let criteriaScores: CriteriaScores;
@@ -571,7 +747,7 @@ export function useCommercialData(filter?: CommercialFilter) {
           criticalIssues = aggregatedInsights.critical_issues;
           finalRecommendation = aggregatedInsights.final_recommendation;
         } else if (evaluations && evaluations.length > 0) {
-          // Calculate from evaluations if no aggregated insights yet
+          // Calculate from evaluations if filter active or no aggregated insights yet
           const scores = {
             communication: 0,
             objectivity: 0,
@@ -641,7 +817,6 @@ export function useCommercialData(filter?: CommercialFilter) {
             .map(([w]) => w);
 
           // Create distinct positive/negative patterns from evaluations
-          // Don't just copy strengths/weaknesses - extract patterns from actual scores
           positivePatterns = [];
           negativePatterns = [];
           
@@ -672,7 +847,9 @@ export function useCommercialData(filter?: CommercialFilter) {
             criticalIssues.push('Tempo de resposta precisa ser analisado pela IA');
           }
 
-          finalRecommendation = 'Aguardando análise de IA para recomendação personalizada...';
+          finalRecommendation = hasActiveFilter 
+            ? 'Dados calculados a partir das conversas filtradas.'
+            : 'Aguardando análise de IA para recomendação personalizada...';
         } else {
           // No data yet
           criteriaScores = {
@@ -685,13 +862,19 @@ export function useCommercialData(filter?: CommercialFilter) {
           };
           averageScore = 0;
           qualifiedLeadsPercent = 0;
-          allStrengths = ['Aguardando conversas para análise'];
+          allStrengths = hasActiveFilter 
+            ? ['Nenhuma avaliação encontrada neste filtro'] 
+            : ['Aguardando conversas para análise'];
           allWeaknesses = ['Dados insuficientes'];
           positivePatterns = [];
           negativePatterns = [];
-          insights = ['Envie mensagens para a IA começar a gerar insights automáticos'];
+          insights = hasActiveFilter 
+            ? ['Selecione outro filtro ou aguarde novas conversas avaliadas']
+            : ['Envie mensagens para a IA começar a gerar insights automáticos'];
           criticalIssues = [];
-          finalRecommendation = 'A IA irá gerar recomendações automaticamente conforme as conversas acontecem.';
+          finalRecommendation = hasActiveFilter
+            ? 'Sem avaliações para este filtro.'
+            : 'A IA irá gerar recomendações automaticamente conforme as conversas acontecem.';
         }
 
         const classification: CommercialData['classification'] = 
@@ -731,7 +914,7 @@ export function useCommercialData(filter?: CommercialFilter) {
     };
 
     fetchData();
-  }, [profile?.company_id, isAdmin, aggregatedInsights, filter?.type, filter?.connectionId, filter?.departmentId, filter?.startDate, filter?.endDate]);
+  }, [profile?.company_id, isAdmin, aggregatedInsights, filter?.type, filter?.connectionId, filter?.departmentId, filter?.startDate, filter?.endDate, hasActiveFilter, fetchCompanyLiveMetrics]);
 
   return {
     loading,
