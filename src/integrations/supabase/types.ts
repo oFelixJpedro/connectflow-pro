@@ -874,6 +874,60 @@ export type Database = {
           },
         ]
       }
+      contact_logs: {
+        Row: {
+          company_id: string
+          contact_id: string | null
+          contact_snapshot: Json
+          created_at: string
+          event_data: Json | null
+          event_type: string
+          id: string
+          is_automatic: boolean | null
+          performed_by: string | null
+          performed_by_name: string | null
+        }
+        Insert: {
+          company_id: string
+          contact_id?: string | null
+          contact_snapshot?: Json
+          created_at?: string
+          event_data?: Json | null
+          event_type: string
+          id?: string
+          is_automatic?: boolean | null
+          performed_by?: string | null
+          performed_by_name?: string | null
+        }
+        Update: {
+          company_id?: string
+          contact_id?: string | null
+          contact_snapshot?: Json
+          created_at?: string
+          event_data?: Json | null
+          event_type?: string
+          id?: string
+          is_automatic?: boolean | null
+          performed_by?: string | null
+          performed_by_name?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contact_logs_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contact_logs_performed_by_fkey"
+            columns: ["performed_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       contacts: {
         Row: {
           avatar_url: string | null
