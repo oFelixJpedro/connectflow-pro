@@ -225,7 +225,7 @@ export default function Dashboard() {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-medium text-muted-foreground">
-                      Conversas Hoje
+                      Novas Conversas
                     </p>
                     <p className="text-3xl font-bold text-foreground mt-1">
                       {metrics.todayConversations}
@@ -258,14 +258,14 @@ export default function Dashboard() {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-medium text-muted-foreground">
-                      Conversas Abertas
+                      Em Andamento
                     </p>
                     <p className="text-3xl font-bold text-foreground mt-1">
                       {metrics.openConversations}
                     </p>
                     <div className="flex items-center gap-1 mt-2">
                       <span className="text-sm text-muted-foreground">
-                        Aguardando atendimento
+                        Não finalizadas
                       </span>
                     </div>
                   </div>
