@@ -4,6 +4,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
 import type { Json } from '@/integrations/supabase/types';
 import { logContactEvent, ContactSnapshot } from '@/lib/contactHistory';
+import { normalizePhoneNumber } from '@/lib/phoneUtils';
 
 export interface Contact {
   id: string;
@@ -537,6 +538,13 @@ export function useContactsData() {
   const createContact = async (data: ContactFormData): Promise<Contact | null> => {
     if (!profile?.company_id) return null;
 
+    // Normalize the phone number
+    const normalizedPhone = normalizePhoneNumber(data.phone_number);
+    if (!normalizedPhone) {
+      toast.error('Número de telefone inválido. Verifique o DDD e o número.');
+      return null;
+    }
+
     try {
       // Create the contact
       const { data: newContact, error } = await supabase
@@ -544,7 +552,7 @@ export function useContactsData() {
         .insert({
           company_id: profile.company_id,
           name: data.name || null,
-          phone_number: data.phone_number.replace(/\D/g, ''),
+          phone_number: normalizedPhone,
           email: data.email || null,
           tags: data.tags,
           notes: data.notes || null
@@ -1132,12 +1140,13 @@ export function useContactsData() {
 
           for (let i = 1; i < lines.length; i++) {
             const values = lines[i].match(/(".*?"|[^,]+)/g)?.map(v => v.replace(/^"|"$/g, '').trim()) || [];
-            const phone = values[phoneIndex]?.replace(/\D/g, '');
+            const rawPhone = values[phoneIndex] || '';
+            const normalizedPhone = normalizePhoneNumber(rawPhone);
             
-            if (phone && phone.length >= 10) {
+            if (normalizedPhone) {
               contactsToImport.push({
                 company_id: profile.company_id,
-                phone_number: phone,
+                phone_number: normalizedPhone,
                 name: nameIndex >= 0 ? values[nameIndex] || null : null,
                 email: emailIndex >= 0 ? values[emailIndex] || null : null,
                 tags: tagsIndex >= 0 && values[tagsIndex] ? values[tagsIndex].split(/[,;]/).map(t => t.trim()).filter(Boolean) : [],
