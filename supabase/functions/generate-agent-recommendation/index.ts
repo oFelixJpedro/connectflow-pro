@@ -41,9 +41,9 @@ serve(async (req) => {
     
     console.log('[generate-agent-recommendation] Generating for:', data.agentName);
 
-    const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
-    if (!openAIApiKey) {
-      throw new Error('OpenAI API key not configured');
+    const geminiApiKey = Deno.env.get('GEMINI_API_KEY');
+    if (!geminiApiKey) {
+      throw new Error('GEMINI_API_KEY not configured');
     }
 
     // Build a detailed prompt with all agent data
@@ -112,34 +112,35 @@ Se houver alertas críticos, comece abordando-os. Se a performance estiver decli
 **Formato:** 3-4 parágrafos, máximo 250 palavras, em português brasileiro.
 **IMPORTANTE:** Não use bullet points, escreva em texto corrido e fluido.`;
 
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    const systemPrompt = 'Você é um consultor de gestão de vendas experiente. Suas recomendações são sempre específicas, acionáveis e baseadas em dados. Você nunca dá conselhos genéricos.';
+
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${geminiApiKey}`, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${openAIApiKey}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'gpt-4o-mini',
-        messages: [
-          { 
-            role: 'system', 
-            content: 'Você é um consultor de gestão de vendas experiente. Suas recomendações são sempre específicas, acionáveis e baseadas em dados. Você nunca dá conselhos genéricos.' 
-          },
-          { role: 'user', content: prompt }
+        contents: [
+          {
+            role: 'user',
+            parts: [{ text: `${systemPrompt}\n\n${prompt}` }]
+          }
         ],
-        temperature: 0.7,
-        max_tokens: 500,
+        generationConfig: {
+          temperature: 0.7,
+          maxOutputTokens: 1024,
+        },
       }),
     });
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('[generate-agent-recommendation] OpenAI error:', response.status, errorText);
-      throw new Error(`OpenAI API error: ${response.status}`);
+      console.error('[generate-agent-recommendation] Gemini error:', response.status, errorText);
+      throw new Error(`Gemini API error: ${response.status}`);
     }
 
     const result = await response.json();
-    const recommendation = result.choices[0]?.message?.content?.trim() || '';
+    const recommendation = result.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
 
     console.log('[generate-agent-recommendation] Generated recommendation length:', recommendation.length);
 
