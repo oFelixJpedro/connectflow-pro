@@ -923,6 +923,8 @@ serve(async (req) => {
     aiProcessed: 0,
     aiFailed: 0,
     batchesProcessed: 0,
+    insightsProcessed: 0,
+    insightsFailed: 0,
     startTime: Date.now()
   }
   
@@ -1082,12 +1084,230 @@ serve(async (req) => {
       }
     }
     
+    // ═══════════════════════════════════════════════════════════════
+    // PROCESS INSIGHTS JOBS - 1 job at a time (heavy processing)
+    // ═══════════════════════════════════════════════════════════════
+    const insightsQueueKey = 'queue:insights'
+    const insightsItems = await redis.lrange(insightsQueueKey, 0, 0) // 1 at a time
+    
+    console.log(`📥 [QUEUE] Found ${insightsItems.length} insights job(s)`)
+    
+    for (const rawItem of insightsItems) {
+      try {
+        const item = typeof rawItem === 'string' ? JSON.parse(rawItem) : rawItem
+        const { jobId, companyId, filters } = item
+        
+        console.log(`📊 [INSIGHTS] Processing job ${jobId}`)
+        
+        // Update status to processing
+        await supabase
+          .from('insights_jobs')
+          .update({ 
+            status: 'processing', 
+            started_at: new Date().toISOString(),
+            current_step: 'Iniciando análise...'
+          })
+          .eq('id', jobId)
+        
+        await redis.set(`job:status:${jobId}`, JSON.stringify({
+          status: 'processing',
+          progress: 5,
+          currentStep: 'Iniciando análise...'
+        }), { ex: 86400 })
+        
+        // Get evaluations and criteria from filters
+        const { evaluations, criteriaScores, filterDescription, conversationIds } = filters
+        
+        if (!evaluations || evaluations.length === 0) {
+          throw new Error('No evaluations provided')
+        }
+        
+        // Update progress - preparing data
+        await redis.set(`job:status:${jobId}`, JSON.stringify({
+          status: 'processing',
+          progress: 15,
+          currentStep: `Preparando ${evaluations.length} avaliações...`
+        }), { ex: 86400 })
+        
+        // Fetch media for conversations
+        const { data: messagesWithMedia } = await supabase
+          .from('messages')
+          .select('conversation_id, media_url, media_mime_type, message_type')
+          .eq('direction', 'outbound')
+          .in('conversation_id', conversationIds || evaluations.map((e: any) => e.conversation_id))
+          .not('media_url', 'is', null)
+        
+        await redis.set(`job:status:${jobId}`, JSON.stringify({
+          status: 'processing',
+          progress: 25,
+          currentStep: 'Buscando dados de contatos...'
+        }), { ex: 86400 })
+        
+        // Get contact names
+        const convIds = conversationIds || evaluations.map((e: any) => e.conversation_id)
+        const { data: conversationsData } = await supabase
+          .from('conversations')
+          .select('id, contact:contacts(name)')
+          .in('id', convIds)
+        
+        const contactNames: Record<string, string> = {}
+        conversationsData?.forEach((c: any) => {
+          const contact = c.contact as any
+          if (contact?.name) {
+            contactNames[c.id] = contact.name
+          }
+        })
+        
+        // Helper to determine media type
+        const getMediaType = (mimeType: string, messageType: string): 'image' | 'video' | 'audio' | 'document' => {
+          if (messageType === 'image' || mimeType?.startsWith('image/')) return 'image'
+          if (messageType === 'video' || mimeType?.startsWith('video/')) return 'video'
+          if (messageType === 'audio' || messageType === 'ptt' || mimeType?.startsWith('audio/')) return 'audio'
+          return 'document'
+        }
+        
+        // Group media by conversation
+        const mediaByConversation: Record<string, any[]> = {}
+        messagesWithMedia?.forEach((msg: any) => {
+          if (!mediaByConversation[msg.conversation_id]) {
+            mediaByConversation[msg.conversation_id] = []
+          }
+          mediaByConversation[msg.conversation_id].push({
+            url: msg.media_url!,
+            mimeType: msg.media_mime_type || 'application/octet-stream',
+            type: getMediaType(msg.media_mime_type || '', msg.message_type || ''),
+          })
+        })
+        
+        await redis.set(`job:status:${jobId}`, JSON.stringify({
+          status: 'processing',
+          progress: 35,
+          currentStep: 'Preparando dados para análise de IA...'
+        }), { ex: 86400 })
+        
+        // Build conversationsWithMedia array
+        const conversationsWithMedia = evaluations.slice(0, 100).map((e: any) => ({
+          conversationId: e.conversation_id,
+          contactName: contactNames[e.conversation_id],
+          evaluation: {
+            conversation_id: e.conversation_id,
+            overall_score: e.overall_score,
+            communication_score: e.communication_score,
+            objectivity_score: e.objectivity_score,
+            humanization_score: e.humanization_score,
+            objection_handling_score: e.objection_handling_score,
+            closing_score: e.closing_score,
+            response_time_score: e.response_time_score,
+            strengths: e.strengths,
+            improvements: e.improvements,
+            ai_summary: e.ai_summary,
+            lead_qualification: e.lead_qualification,
+          },
+          medias: (mediaByConversation[e.conversation_id] || []).slice(0, 10),
+        }))
+        
+        const totalMedias = conversationsWithMedia.reduce((sum: number, c: any) => sum + c.medias.length, 0)
+        console.log(`📊 [INSIGHTS] Sending ${conversationsWithMedia.length} conversations with ${totalMedias} medias to AI`)
+        
+        await redis.set(`job:status:${jobId}`, JSON.stringify({
+          status: 'processing',
+          progress: 50,
+          currentStep: 'Chamando IA para análise...'
+        }), { ex: 86400 })
+        
+        // Call generate-filtered-insights
+        const { data: result, error: insightsError } = await supabase.functions.invoke('generate-filtered-insights', {
+          body: {
+            conversationsWithMedia,
+            criteriaScores,
+            filterDescription,
+          },
+        })
+        
+        if (insightsError) {
+          throw new Error(`AI Error: ${insightsError.message}`)
+        }
+        
+        await redis.set(`job:status:${jobId}`, JSON.stringify({
+          status: 'processing',
+          progress: 90,
+          currentStep: 'Finalizando análise...'
+        }), { ex: 86400 })
+        
+        // Prepare final result
+        const finalResult = {
+          strengths: result?.strengths || [],
+          weaknesses: result?.weaknesses || [],
+          positivePatterns: result?.positivePatterns || [],
+          negativePatterns: result?.negativePatterns || [],
+          insights: result?.insights || [],
+          criticalIssues: result?.criticalIssues || [],
+          finalRecommendation: result?.finalRecommendation || '',
+          mediaStats: result?.mediaStats,
+        }
+        
+        // Update job as completed
+        await supabase
+          .from('insights_jobs')
+          .update({
+            status: 'completed',
+            result: finalResult,
+            completed_at: new Date().toISOString(),
+            progress: 100,
+            current_step: 'Concluído'
+          })
+          .eq('id', jobId)
+        
+        await redis.set(`job:status:${jobId}`, JSON.stringify({
+          status: 'completed',
+          progress: 100,
+          currentStep: 'Concluído'
+        }), { ex: 86400 })
+        
+        // Remove from queue
+        await redis.lrem(insightsQueueKey, 1, rawItem)
+        
+        stats.insightsProcessed++
+        console.log(`✅ [INSIGHTS] Job ${jobId} completed successfully`)
+        
+      } catch (err) {
+        console.error(`❌ [INSIGHTS] Error processing job:`, err)
+        
+        const item = typeof rawItem === 'string' ? JSON.parse(rawItem) : rawItem
+        const { jobId } = item
+        
+        // Update job as failed
+        await supabase
+          .from('insights_jobs')
+          .update({
+            status: 'failed',
+            error_message: err instanceof Error ? err.message : 'Unknown error',
+            completed_at: new Date().toISOString(),
+            current_step: 'Erro'
+          })
+          .eq('id', jobId)
+        
+        await redis.set(`job:status:${jobId}`, JSON.stringify({
+          status: 'failed',
+          progress: 0,
+          currentStep: 'Erro no processamento'
+        }), { ex: 86400 })
+        
+        // Remove from queue
+        await redis.lrem(insightsQueueKey, 1, rawItem)
+        
+        stats.insightsFailed++
+      }
+    }
+    
     // Update stats in Redis
     await redis.hincrby('queue:stats', 'media_processed', stats.mediaProcessed)
     await redis.hincrby('queue:stats', 'media_failed', stats.mediaFailed)
     await redis.hincrby('queue:stats', 'ai_processed', stats.aiProcessed)
     await redis.hincrby('queue:stats', 'ai_failed', stats.aiFailed)
     await redis.hincrby('queue:stats', 'batches_processed', stats.batchesProcessed)
+    await redis.hincrby('queue:stats', 'insights_processed', stats.insightsProcessed)
+    await redis.hincrby('queue:stats', 'insights_failed', stats.insightsFailed)
     await redis.set('queue:stats:last_run', new Date().toISOString())
     
     const duration = Date.now() - stats.startTime
@@ -1096,6 +1316,7 @@ serve(async (req) => {
     console.log(`   Media: ${stats.mediaProcessed} processed, ${stats.mediaFailed} failed`)
     console.log(`   AI: ${stats.aiProcessed} processed, ${stats.aiFailed} failed`)
     console.log(`   Batches: ${stats.batchesProcessed} processed`)
+    console.log(`   Insights: ${stats.insightsProcessed} processed, ${stats.insightsFailed} failed`)
     
     return new Response(
       JSON.stringify({ 

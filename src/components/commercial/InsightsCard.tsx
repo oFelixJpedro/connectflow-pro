@@ -1,6 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Progress } from '@/components/ui/progress';
 import { 
   Lightbulb, 
   CheckCircle2, 
@@ -8,13 +9,16 @@ import {
   TrendingUp, 
   TrendingDown,
   AlertCircle,
-  MessageSquare
+  MessageSquare,
+  Loader2
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface InsightsCardProps {
   loading: boolean;
   insightsLoading?: boolean; // Separate loading state for AI insights
+  insightsProgress?: number; // Progress percentage (0-100)
+  insightsCurrentStep?: string; // Current step description
   strengths: string[];
   weaknesses: string[];
   positivePatterns: string[];
@@ -41,6 +45,8 @@ function InsightsSkeleton() {
 export function InsightsCard({
   loading,
   insightsLoading = false,
+  insightsProgress = 0,
+  insightsCurrentStep = '',
   strengths,
   weaknesses,
   positivePatterns,
@@ -49,6 +55,9 @@ export function InsightsCard({
   criticalIssues,
   finalRecommendation,
 }: InsightsCardProps) {
+  // Show progress bar when async processing is active
+  const showProgressBar = insightsLoading && insightsProgress > 0 && insightsProgress < 100;
+  
   if (loading) {
     return (
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -78,6 +87,23 @@ export function InsightsCard({
 
   return (
     <div className="space-y-4">
+      {/* Async Processing Progress Bar */}
+      {showProgressBar && (
+        <Card className="border-primary/30 bg-primary/5">
+          <CardContent className="pt-4 space-y-3">
+            <div className="flex items-center gap-2">
+              <Loader2 className="w-4 h-4 animate-spin text-primary" />
+              <span className="text-sm font-medium text-primary">
+                Processando análise de IA...
+              </span>
+            </div>
+            <Progress value={insightsProgress} className="h-2" />
+            <p className="text-xs text-muted-foreground">
+              {insightsCurrentStep || `${insightsProgress}% concluído`}
+            </p>
+          </CardContent>
+        </Card>
+      )}
       {/* Strengths and Weaknesses */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Strengths */}
