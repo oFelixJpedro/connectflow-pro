@@ -148,34 +148,7 @@ function chunkArray<T>(array: T[], chunkSize: number): T[][] {
   return chunks;
 }
 
-// Download video and return base64 (for inline_data)
-async function fetchVideoAsBase64(videoUrl: string, apiKey: string): Promise<{ base64: string; mimeType: string } | null> {
-  try {
-    console.log(`[generate-agent-recommendation] 🎬 Downloading video: ${videoUrl.substring(0, 50)}...`);
-    
-    const response = await fetch(videoUrl);
-    if (!response.ok) {
-      console.error(`[generate-agent-recommendation] ❌ Failed to fetch video: ${response.status}`);
-      return null;
-    }
-    
-    const contentLength = response.headers.get('content-length');
-    if (contentLength && parseInt(contentLength) > 30 * 1024 * 1024) { // 30MB limit
-      console.log(`[generate-agent-recommendation] ⚠️ Video too large, skipping`);
-      return null;
-    }
-    
-    const buffer = await response.arrayBuffer();
-    const base64 = arrayBufferToBase64(buffer);
-    const mimeType = response.headers.get('content-type') || 'video/mp4';
-    
-    console.log(`[generate-agent-recommendation] ✅ Video downloaded: ${(buffer.byteLength / 1024 / 1024).toFixed(2)}MB`);
-    return { base64, mimeType };
-  } catch (error) {
-    console.error('[generate-agent-recommendation] ❌ Error downloading video:', error);
-    return null;
-  }
-}
+// NOTA: Vídeos agora usam URL Context Tool (sem download)
 
 // ==================== ETAPA 1: ANÁLISE POR BATCH (URL Context Tool) ====================
 
@@ -190,15 +163,15 @@ async function analyzeConversationBatch(
     let mediaCount = { images: 0, videos: 0, documents: 0, audios: 0 };
     const audioTranscriptions: string[] = [];
     
-    // Collect URLs for URL Context Tool
+    // Collect URLs for URL Context Tool (todas as mídias visuais)
     const imageUrls: { url: string; convId: string }[] = [];
     const documentUrls: { url: string; convId: string }[] = [];
-    const videoParts: any[] = []; // For inline_data
+    const videoUrls: { url: string; convId: string }[] = []; // URL Context Tool
     
     const MAX_IMAGES = 15;
     const MAX_DOCUMENTS = 5;
-    const MAX_VIDEOS_PER_BATCH = 2;
-    const MAX_AUDIOS_PER_BATCH = 3;
+    const MAX_VIDEOS_PER_BATCH = 3; // URL Context Tool
+    const MAX_AUDIOS_PER_BATCH = 2; // Limite reduzido para economizar memória
 
     // Processa todas as mídias das conversas do batch
     for (const conv of conversations) {
@@ -211,20 +184,12 @@ async function analyzeConversationBatch(
           } else if (media.type === 'document' && documentUrls.length < MAX_DOCUMENTS) {
             documentUrls.push({ url: media.url, convId: conv.conversationId.substring(0, 8) });
             mediaCount.documents++;
-          } else if (media.type === 'video' && mediaCount.videos < MAX_VIDEOS_PER_BATCH) {
-            // Download video for inline_data
-            const videoData = await fetchVideoAsBase64(media.url, geminiApiKey);
-            if (videoData) {
-              videoParts.push({
-                inline_data: {
-                  mime_type: videoData.mimeType,
-                  data: videoData.base64
-                }
-              });
-              mediaCount.videos++;
-            }
+          } else if (media.type === 'video' && videoUrls.length < MAX_VIDEOS_PER_BATCH) {
+            // URL Context Tool para vídeos (sem download)
+            videoUrls.push({ url: media.url, convId: conv.conversationId.substring(0, 8) });
+            mediaCount.videos++;
           } else if (media.type === 'audio' && mediaCount.audios < MAX_AUDIOS_PER_BATCH) {
-            // Áudio ainda precisa de transcrição
+            // Áudio ainda precisa de transcrição (download necessário)
             const transcription = await transcribeAudio(media.url, geminiApiKey);
             if (transcription) {
               audioTranscriptions.push(`[Áudio da conversa ${conv.conversationId.substring(0, 8)}]: ${transcription}`);
@@ -251,12 +216,18 @@ async function analyzeConversationBatch(
       };
     }
 
-    // Build media URLs section for URL Context Tool
+    // Build media URLs section for URL Context Tool (todas as mídias visuais)
     let mediaUrlsSection = '';
     if (imageUrls.length > 0) {
       mediaUrlsSection += '\n## IMAGENS PARA ANALISAR:\n';
       imageUrls.forEach((img, i) => {
         mediaUrlsSection += `${i + 1}. [Conv ${img.convId}]: ${img.url}\n`;
+      });
+    }
+    if (videoUrls.length > 0) {
+      mediaUrlsSection += '\n## VÍDEOS PARA ANALISAR:\n';
+      videoUrls.forEach((vid, i) => {
+        mediaUrlsSection += `${i + 1}. [Conv ${vid.convId}]: ${vid.url}\n`;
       });
     }
     if (documentUrls.length > 0) {
@@ -309,14 +280,11 @@ Retorne APENAS um JSON válido (sem markdown, sem \`\`\`) no formato:
 
 Se não houver problemas, retorne array vazio em "problematicas".`;
 
-    // Build parts array
-    const parts: any[] = [];
-    
-    // Add video inline_data parts first
-    parts.push(...videoParts);
-    
-    // Add prompt
-    parts.push({ text: batchPrompt });
+    // Build parts array - apenas texto (URLs no prompt para URL Context Tool)
+    const parts: any[] = [{ text: batchPrompt }];
+
+    const hasUrlsToAnalyze = imageUrls.length > 0 || videoUrls.length > 0 || documentUrls.length > 0;
+    console.log(`[generate-agent-recommendation] 📊 Batch ${batchIndex + 1}: ${imageUrls.length} images, ${videoUrls.length} videos, ${documentUrls.length} docs via URL Context`);
 
     // Build request with URL Context Tool
     const requestBody: any = {
@@ -328,7 +296,7 @@ Se não houver problemas, retorne array vazio em "problematicas".`;
     };
     
     // Add URL Context Tool if we have URLs to analyze
-    if (imageUrls.length > 0 || documentUrls.length > 0) {
+    if (hasUrlsToAnalyze) {
       requestBody.tools = [{ url_context: {} }];
     }
 
