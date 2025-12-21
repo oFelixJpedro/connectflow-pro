@@ -97,7 +97,7 @@ async function transcribeAudio(audioUrl: string, apiKey: string): Promise<string
     const contentType = audioResponse.headers.get('content-type') || 'audio/ogg';
     
     const geminiResponse = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -148,7 +148,36 @@ function chunkArray<T>(array: T[], chunkSize: number): T[][] {
   return chunks;
 }
 
-// ==================== ETAPA 1: ANÁLISE POR BATCH ====================
+// Download video and return base64 (for inline_data)
+async function fetchVideoAsBase64(videoUrl: string, apiKey: string): Promise<{ base64: string; mimeType: string } | null> {
+  try {
+    console.log(`[generate-agent-recommendation] 🎬 Downloading video: ${videoUrl.substring(0, 50)}...`);
+    
+    const response = await fetch(videoUrl);
+    if (!response.ok) {
+      console.error(`[generate-agent-recommendation] ❌ Failed to fetch video: ${response.status}`);
+      return null;
+    }
+    
+    const contentLength = response.headers.get('content-length');
+    if (contentLength && parseInt(contentLength) > 30 * 1024 * 1024) { // 30MB limit
+      console.log(`[generate-agent-recommendation] ⚠️ Video too large, skipping`);
+      return null;
+    }
+    
+    const buffer = await response.arrayBuffer();
+    const base64 = arrayBufferToBase64(buffer);
+    const mimeType = response.headers.get('content-type') || 'video/mp4';
+    
+    console.log(`[generate-agent-recommendation] ✅ Video downloaded: ${(buffer.byteLength / 1024 / 1024).toFixed(2)}MB`);
+    return { base64, mimeType };
+  } catch (error) {
+    console.error('[generate-agent-recommendation] ❌ Error downloading video:', error);
+    return null;
+  }
+}
+
+// ==================== ETAPA 1: ANÁLISE POR BATCH (URL Context Tool) ====================
 
 async function analyzeConversationBatch(
   conversations: ConversationWithMedia[],
@@ -158,49 +187,48 @@ async function analyzeConversationBatch(
   try {
     console.log(`[generate-agent-recommendation] 📦 Analyzing batch ${batchIndex + 1} with ${conversations.length} conversations`);
     
-    const parts: any[] = [];
     let mediaCount = { images: 0, videos: 0, documents: 0, audios: 0 };
     const audioTranscriptions: string[] = [];
-    let audioProcessed = 0;
-    const MAX_AUDIOS_PER_BATCH = 3;
+    
+    // Collect URLs for URL Context Tool
+    const imageUrls: { url: string; convId: string }[] = [];
+    const documentUrls: { url: string; convId: string }[] = [];
+    const videoParts: any[] = []; // For inline_data
+    
+    const MAX_IMAGES = 15;
+    const MAX_DOCUMENTS = 5;
     const MAX_VIDEOS_PER_BATCH = 2;
+    const MAX_AUDIOS_PER_BATCH = 3;
 
     // Processa todas as mídias das conversas do batch
     for (const conv of conversations) {
       for (const media of conv.medias) {
         try {
-          if (media.type === 'image') {
-            // Usa fileUri - Gemini baixa direto da URL
-            parts.push({
-              fileData: {
-                fileUri: media.url,
-                mimeType: media.mimeType || 'image/jpeg'
-              }
-            });
+          if (media.type === 'image' && imageUrls.length < MAX_IMAGES) {
+            // Collect URL for URL Context Tool
+            imageUrls.push({ url: media.url, convId: conv.conversationId.substring(0, 8) });
             mediaCount.images++;
-          } else if (media.type === 'video' && mediaCount.videos < MAX_VIDEOS_PER_BATCH) {
-            parts.push({
-              fileData: {
-                fileUri: media.url,
-                mimeType: media.mimeType || 'video/mp4'
-              }
-            });
-            mediaCount.videos++;
-          } else if (media.type === 'document') {
-            parts.push({
-              fileData: {
-                fileUri: media.url,
-                mimeType: media.mimeType || 'application/pdf'
-              }
-            });
+          } else if (media.type === 'document' && documentUrls.length < MAX_DOCUMENTS) {
+            documentUrls.push({ url: media.url, convId: conv.conversationId.substring(0, 8) });
             mediaCount.documents++;
-          } else if (media.type === 'audio' && audioProcessed < MAX_AUDIOS_PER_BATCH) {
+          } else if (media.type === 'video' && mediaCount.videos < MAX_VIDEOS_PER_BATCH) {
+            // Download video for inline_data
+            const videoData = await fetchVideoAsBase64(media.url, geminiApiKey);
+            if (videoData) {
+              videoParts.push({
+                inline_data: {
+                  mime_type: videoData.mimeType,
+                  data: videoData.base64
+                }
+              });
+              mediaCount.videos++;
+            }
+          } else if (media.type === 'audio' && mediaCount.audios < MAX_AUDIOS_PER_BATCH) {
             // Áudio ainda precisa de transcrição
             const transcription = await transcribeAudio(media.url, geminiApiKey);
             if (transcription) {
               audioTranscriptions.push(`[Áudio da conversa ${conv.conversationId.substring(0, 8)}]: ${transcription}`);
               mediaCount.audios++;
-              audioProcessed++;
             }
           }
         } catch (error) {
@@ -223,6 +251,21 @@ async function analyzeConversationBatch(
       };
     }
 
+    // Build media URLs section for URL Context Tool
+    let mediaUrlsSection = '';
+    if (imageUrls.length > 0) {
+      mediaUrlsSection += '\n## IMAGENS PARA ANALISAR:\n';
+      imageUrls.forEach((img, i) => {
+        mediaUrlsSection += `${i + 1}. [Conv ${img.convId}]: ${img.url}\n`;
+      });
+    }
+    if (documentUrls.length > 0) {
+      mediaUrlsSection += '\n## DOCUMENTOS PARA ANALISAR:\n';
+      documentUrls.forEach((doc, i) => {
+        mediaUrlsSection += `${i + 1}. [Conv ${doc.convId}]: ${doc.url}\n`;
+      });
+    }
+
     // Prompt para análise do batch
     const batchPrompt = `Você é um analista de qualidade de atendimento comercial.
 
@@ -233,12 +276,13 @@ Analise as mídias enviadas pelo vendedor nestas ${conversations.length} convers
 - Vídeos: ${mediaCount.videos}
 - Documentos: ${mediaCount.documents}
 - Áudios transcritos: ${mediaCount.audios}
+${mediaUrlsSection}
 
 ${audioTranscriptions.length > 0 ? `## TRANSCRIÇÕES DE ÁUDIOS:\n${audioTranscriptions.join('\n\n')}` : ''}
 
 ## INSTRUÇÕES
 
-Para CADA mídia visual (imagem/vídeo/documento), analise:
+Para CADA mídia (imagem/vídeo/documento), analise:
 1. O que é o conteúdo? Descreva brevemente.
 2. É relevante para um contexto de vendas? (catálogo, proposta, produto, etc.)
 3. Há algo problemático? (pessoal, inapropriado, irrelevante, baixa qualidade)
@@ -265,21 +309,36 @@ Retorne APENAS um JSON válido (sem markdown, sem \`\`\`) no formato:
 
 Se não houver problemas, retorne array vazio em "problematicas".`;
 
+    // Build parts array
+    const parts: any[] = [];
+    
+    // Add video inline_data parts first
+    parts.push(...videoParts);
+    
+    // Add prompt
     parts.push({ text: batchPrompt });
 
-    // Chama Gemini com fileUri (sem baixar as mídias)
+    // Build request with URL Context Tool
+    const requestBody: any = {
+      contents: [{ role: 'user', parts }],
+      generationConfig: {
+        temperature: 0.3,
+        maxOutputTokens: 4096,
+      },
+    };
+    
+    // Add URL Context Tool if we have URLs to analyze
+    if (imageUrls.length > 0 || documentUrls.length > 0) {
+      requestBody.tools = [{ url_context: {} }];
+    }
+
+    // Chama Gemini com URL Context Tool
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${geminiApiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiApiKey}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ role: 'user', parts }],
-          generationConfig: {
-            temperature: 0.3,
-            maxOutputTokens: 4096,
-          },
-        }),
+        body: JSON.stringify(requestBody),
       }
     );
 
@@ -459,7 +518,7 @@ ${totalMedias > 0 ? '6. **Inclua observações sobre as mídias** - padrões pos
 **Formato:** 3-4 parágrafos, 200-400 palavras, português brasileiro, texto corrido.`;
 
   const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${geminiApiKey}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiApiKey}`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
