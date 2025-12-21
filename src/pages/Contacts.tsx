@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { 
   Search, 
   Plus, 
@@ -15,7 +15,8 @@ import {
   Loader2,
   Smartphone,
   Users,
-  X
+  X,
+  History
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -54,6 +55,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { format } from 'date-fns';
@@ -61,8 +68,12 @@ import { ptBR } from 'date-fns/locale';
 import { useContactsData, Contact } from '@/hooks/useContactsData';
 import { ContactFormModal } from '@/components/contacts/ContactFormModal';
 import { StartConversationModal } from '@/components/contacts/StartConversationModal';
+import { ContactHistoryModal } from '@/components/contacts/ContactHistoryModal';
+import { useAuth } from '@/contexts/AuthContext';
+import { getContactLogsCount } from '@/lib/contactHistory';
 
 export default function Contacts() {
+  const { profile } = useAuth();
   const {
     contacts,
     tags,
@@ -83,6 +94,7 @@ export default function Contacts() {
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedContacts, setSelectedContacts] = useState<string[]>([]);
+  const [logsCount, setLogsCount] = useState(0);
   
   // Modal states
   const [formModalOpen, setFormModalOpen] = useState(false);
@@ -93,8 +105,16 @@ export default function Contacts() {
   const [contactToDelete, setContactToDelete] = useState<Contact | null>(null);
   const [bulkDeleteDialogOpen, setBulkDeleteDialogOpen] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [historyModalOpen, setHistoryModalOpen] = useState(false);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Load logs count
+  useEffect(() => {
+    if (profile?.company_id) {
+      getContactLogsCount(profile.company_id).then(setLogsCount);
+    }
+  }, [profile?.company_id]);
 
   const filteredContacts = contacts.filter((contact) => {
     if (!searchQuery) return true;
@@ -302,7 +322,7 @@ export default function Contacts() {
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3 md:gap-4">
         <Card>
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
@@ -355,6 +375,31 @@ export default function Contacts() {
             </div>
           </CardContent>
         </Card>
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Card 
+                className="cursor-pointer hover:bg-muted/50 transition-colors"
+                onClick={() => setHistoryModalOpen(true)}
+              >
+                <CardContent className="pt-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm text-muted-foreground">Histórico</p>
+                      <p className="text-2xl font-bold">{logsCount}</p>
+                    </div>
+                    <div className="w-10 h-10 bg-slate-100 dark:bg-slate-800 rounded-lg flex items-center justify-center">
+                      <History className="w-5 h-5 text-slate-600 dark:text-slate-400" />
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>Ver histórico de todos os contatos</p>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
       </div>
 
       {/* Filters */}
@@ -654,6 +699,12 @@ export default function Contacts() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Contact History Modal */}
+      <ContactHistoryModal 
+        open={historyModalOpen} 
+        onOpenChange={setHistoryModalOpen} 
+      />
     </div>
   );
 }

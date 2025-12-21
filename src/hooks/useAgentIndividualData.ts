@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -48,22 +48,88 @@ export interface AgentIndividualData {
   metrics: AgentIndividualMetrics;
   alerts: AgentAlert[];
   personalizedRecommendation: string;
+  hasMoreAlerts: boolean;
+  totalAlerts: number;
 }
+
+const ALERTS_PER_PAGE = 20;
 
 export function useAgentIndividualData(agentId: string | null) {
   const { profile } = useAuth();
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [data, setData] = useState<AgentIndividualData | null>(null);
+  const [alertsOffset, setAlertsOffset] = useState(0);
+
+  const fetchAlerts = useCallback(async (offset: number, existingAlerts: AgentAlert[] = []) => {
+    if (!agentId || !profile?.company_id) return { alerts: existingAlerts, hasMore: false, total: 0 };
+
+    // First get total count
+    const { count: totalCount } = await supabase
+      .from('agent_behavior_alerts')
+      .select('*', { count: 'exact', head: true })
+      .eq('company_id', profile.company_id)
+      .eq('agent_id', agentId);
+
+    // Then fetch paginated data
+    const { data: alerts } = await supabase
+      .from('agent_behavior_alerts')
+      .select(`
+        *,
+        contact:contact_id (
+          id,
+          name,
+          phone_number
+        )
+      `)
+      .eq('company_id', profile.company_id)
+      .eq('agent_id', agentId)
+      .order('detected_at', { ascending: false })
+      .range(offset, offset + ALERTS_PER_PAGE - 1);
+
+    const newAlerts = (alerts || []).map(a => ({
+      ...a,
+      contact: a.contact as AgentAlert['contact'],
+    })) as AgentAlert[];
+
+    const allAlerts = offset === 0 ? newAlerts : [...existingAlerts, ...newAlerts];
+    const hasMore = allAlerts.length < (totalCount || 0);
+
+    return { alerts: allAlerts, hasMore, total: totalCount || 0 };
+  }, [agentId, profile?.company_id]);
+
+  const loadMoreAlerts = useCallback(async () => {
+    if (!data || loadingMore || !data.hasMoreAlerts) return;
+    
+    setLoadingMore(true);
+    try {
+      const newOffset = alertsOffset + ALERTS_PER_PAGE;
+      const { alerts, hasMore, total } = await fetchAlerts(newOffset, data.alerts);
+      
+      setAlertsOffset(newOffset);
+      setData(prev => prev ? {
+        ...prev,
+        alerts,
+        hasMoreAlerts: hasMore,
+        totalAlerts: total,
+      } : null);
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [data, loadingMore, alertsOffset, fetchAlerts]);
 
   useEffect(() => {
     if (!agentId || !profile?.company_id) {
       setData(null);
       setLoading(false);
+      setAlertsOffset(0);
       return;
     }
 
     const fetchData = async () => {
       setLoading(true);
+      setAlertsOffset(0);
+      
       try {
         // Fetch agent's conversations
         const { data: conversations } = await supabase
@@ -95,21 +161,8 @@ export function useAgentIndividualData(agentId: string | null) {
           .in('conversation_id', conversationIds.length > 0 ? conversationIds : ['00000000-0000-0000-0000-000000000000'])
           .order('created_at', { ascending: true });
 
-        // Fetch alerts for this agent
-        const { data: alerts } = await supabase
-          .from('agent_behavior_alerts')
-          .select(`
-            *,
-            contact:contact_id (
-              id,
-              name,
-              phone_number
-            )
-          `)
-          .eq('company_id', profile.company_id)
-          .eq('agent_id', agentId)
-          .order('detected_at', { ascending: false })
-          .limit(20);
+        // Fetch first page of alerts
+        const { alerts, hasMore, total } = await fetchAlerts(0);
 
         // Calculate metrics
         const totalConversations = conversations?.length || 0;
@@ -228,11 +281,10 @@ export function useAgentIndividualData(agentId: string | null) {
             weaknesses: topWeaknesses,
             recentPerformance: avgScore >= 7 ? 'improving' : avgScore >= 5 ? 'stable' : 'declining',
           },
-          alerts: (alerts || []).map(a => ({
-            ...a,
-            contact: a.contact as AgentAlert['contact'],
-          })) as AgentAlert[],
+          alerts,
           personalizedRecommendation: recommendation,
+          hasMoreAlerts: hasMore,
+          totalAlerts: total,
         });
       } catch (error) {
         console.error('Error fetching agent individual data:', error);
@@ -243,7 +295,7 @@ export function useAgentIndividualData(agentId: string | null) {
     };
 
     fetchData();
-  }, [agentId, profile?.company_id]);
+  }, [agentId, profile?.company_id, fetchAlerts]);
 
-  return { loading, data };
+  return { loading, loadingMore, data, loadMoreAlerts };
 }

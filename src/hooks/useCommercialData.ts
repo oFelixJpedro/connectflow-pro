@@ -1,8 +1,27 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { getStateFromPhone, StateCode } from '@/lib/dddMapping';
 
+// Cache for filtered insights to avoid repeated API calls
+interface InsightsCache {
+  key: string;
+  data: FilteredAIInsights;
+  timestamp: number;
+}
+
+interface FilteredAIInsights {
+  strengths: string[];
+  weaknesses: string[];
+  positivePatterns: string[];
+  negativePatterns: string[];
+  insights: string[];
+  criticalIssues: string[];
+  finalRecommendation: string;
+}
+
+const insightsCache: InsightsCache | null = null;
+const CACHE_DURATION_MS = 5 * 60 * 1000; // 5 minutes
 interface CriteriaScores {
   communication: number;
   objectivity: number;
@@ -99,10 +118,54 @@ const DEFAULT_INSIGHTS: AggregatedInsights = {
   qualified_leads_percent: 0,
 };
 
+const EMPTY_LIVE_METRICS: LiveMetrics = {
+  activeConversations: 0,
+  hotLeads: 0,
+  warmLeads: 0,
+  coldLeads: 0,
+  todayMessages: 0,
+  todayNewConversations: 0,
+  todayContractsClosed: 0,
+  todayLeadsLost: 0,
+  currentAvgResponseTime: 0,
+  currentAvgSentiment: 'neutral',
+  topObjections: [],
+  topPainPoints: [],
+};
+
+const EMPTY_COMMERCIAL_DATA: CommercialData = {
+  averageScore: 0,
+  classification: 'CRÍTICO',
+  qualifiedLeadsPercent: 0,
+  conversionRate: 0,
+  totalConversations: 0,
+  totalLeads: 0,
+  closedDeals: 0,
+  avgResponseTimeMinutes: 0,
+  criteriaScores: {
+    communication: 0,
+    objectivity: 0,
+    humanization: 0,
+    objection_handling: 0,
+    closing: 0,
+    response_time: 0,
+  },
+  strengths: ['Nenhuma conversa encontrada neste filtro'],
+  weaknesses: [],
+  positivePatterns: [],
+  negativePatterns: [],
+  insights: ['Selecione outro filtro ou aguarde novas conversas'],
+  criticalIssues: [],
+  finalRecommendation: 'Sem dados suficientes para análise.',
+  agentsAnalysis: [],
+  contactsByState: {} as Record<StateCode, number>,
+  dealsByState: {} as Record<StateCode, number>,
+};
+
 export interface CommercialFilter {
-  type: 'general' | 'connection' | 'department';
+  type: 'general' | 'connection';
   connectionId?: string;
-  departmentId?: string;
+  departmentId?: string; // Sub-filter when connection is selected
   startDate?: Date;
   endDate?: Date;
 }
@@ -115,8 +178,108 @@ export function useCommercialData(filter?: CommercialFilter) {
   const [aggregatedInsights, setAggregatedInsights] = useState<AggregatedInsights>(DEFAULT_INSIGHTS);
   const [lastUpdated, setLastUpdated] = useState(new Date());
   const [evaluating, setEvaluating] = useState(false);
+  const [insightsLoading, setInsightsLoading] = useState(false);
+  
+  // Track if filter is active to control realtime behavior
+  // Consider both connection filter AND date filter (non-default dates)
+  const hasConnectionFilter = filter?.type === 'connection' && !!filter.connectionId;
+  const hasDateFilter = !!(filter?.startDate && filter?.endDate);
+  const hasActiveFilter = hasConnectionFilter || hasDateFilter;
+  const filterRef = useRef(filter);
+  filterRef.current = filter;
+  
+  // Prevent concurrent calls to fetchCompanyLiveMetrics
+  const isFetchingLiveMetricsRef = useRef(false);
+  
+  // Cache for filtered AI insights
+  const insightsCacheRef = useRef<InsightsCache | null>(null);
+  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const isAdmin = userRole?.role === 'owner' || userRole?.role === 'admin';
+  
+  // Generate cache key based on filter
+  const filterCacheKey = useMemo(() => {
+    return JSON.stringify({
+      connectionId: filter?.connectionId,
+      departmentId: filter?.departmentId,
+      startDate: filter?.startDate?.toISOString(),
+      endDate: filter?.endDate?.toISOString(),
+    });
+  }, [filter?.connectionId, filter?.departmentId, filter?.startDate, filter?.endDate]);
+  
+  // Function to fetch AI-generated insights for filtered data
+  const fetchFilteredInsights = useCallback(async (
+    evaluations: Array<{
+      conversation_id: string;
+      overall_score: number | null;
+      communication_score: number | null;
+      objectivity_score: number | null;
+      humanization_score: number | null;
+      objection_handling_score: number | null;
+      closing_score: number | null;
+      response_time_score: number | null;
+      strengths: string[] | null;
+      improvements: string[] | null;
+      ai_summary: string | null;
+      lead_qualification: string | null;
+    }>,
+    criteriaScores: CriteriaScores,
+    filterDescription?: string
+  ): Promise<FilteredAIInsights | null> => {
+    // Check cache first
+    const cached = insightsCacheRef.current;
+    if (cached && cached.key === filterCacheKey && Date.now() - cached.timestamp < CACHE_DURATION_MS) {
+      console.log('[useCommercialData] Using cached filtered insights');
+      return cached.data;
+    }
+    
+    if (evaluations.length === 0) return null;
+    
+    setInsightsLoading(true);
+    
+    try {
+      const { data: result, error } = await supabase.functions.invoke('generate-filtered-insights', {
+        body: {
+          evaluations: evaluations.slice(0, 20), // Limit to 20 evaluations
+          criteriaScores,
+          filterDescription,
+        },
+      });
+      
+      if (error) {
+        console.error('[useCommercialData] Error fetching filtered insights:', error);
+        return null;
+      }
+      
+      if (result && !result.error) {
+        const insights: FilteredAIInsights = {
+          strengths: result.strengths || [],
+          weaknesses: result.weaknesses || [],
+          positivePatterns: result.positivePatterns || [],
+          negativePatterns: result.negativePatterns || [],
+          insights: result.insights || [],
+          criticalIssues: result.criticalIssues || [],
+          finalRecommendation: result.finalRecommendation || '',
+        };
+        
+        // Update cache
+        insightsCacheRef.current = {
+          key: filterCacheKey,
+          data: insights,
+          timestamp: Date.now(),
+        };
+        
+        return insights;
+      }
+      
+      return null;
+    } catch (error) {
+      console.error('[useCommercialData] Error calling generate-filtered-insights:', error);
+      return null;
+    } finally {
+      setInsightsLoading(false);
+    }
+  }, [filterCacheKey]);
 
   const evaluateConversations = async () => {
     if (!profile?.company_id) return;
@@ -145,9 +308,109 @@ export function useCommercialData(filter?: CommercialFilter) {
     }
   };
 
-  // Fetch live metrics and aggregated insights from company_live_dashboard
-  const fetchLiveMetrics = useCallback(async () => {
-    if (!profile?.company_id || !isAdmin) return;
+  // Calculate live metrics from conversation_live_metrics for filtered data
+  const calculateFilteredLiveMetrics = async (conversationIds: string[]): Promise<LiveMetrics> => {
+    if (!profile?.company_id || conversationIds.length === 0) {
+      return EMPTY_LIVE_METRICS;
+    }
+
+    try {
+      // Fetch conversation_live_metrics for filtered conversations
+      const { data: metrics } = await supabase
+        .from('conversation_live_metrics')
+        .select('*')
+        .in('conversation_id', conversationIds);
+
+      if (!metrics || metrics.length === 0) {
+        return EMPTY_LIVE_METRICS;
+      }
+
+      // Count lead statuses
+      const hotLeads = metrics.filter(m => m.lead_status === 'hot').length;
+      const warmLeads = metrics.filter(m => m.lead_status === 'warm').length;
+      const coldLeads = metrics.filter(m => m.lead_status === 'cold').length;
+      const closedWon = metrics.filter(m => m.lead_status === 'closed_won').length;
+      const closedLost = metrics.filter(m => m.lead_status === 'closed_lost').length;
+
+      // Calculate average response time
+      const responseTimes = metrics
+        .filter(m => m.avg_response_time_seconds && m.avg_response_time_seconds > 0)
+        .map(m => m.avg_response_time_seconds!);
+      const avgResponseTime = responseTimes.length > 0
+        ? Math.round(responseTimes.reduce((a, b) => a + b, 0) / responseTimes.length / 60) // Convert to minutes
+        : 0;
+
+      // Get most common sentiment
+      const sentimentCounts: Record<string, number> = {};
+      metrics.forEach(m => {
+        const sentiment = m.current_sentiment || 'neutral';
+        sentimentCounts[sentiment] = (sentimentCounts[sentiment] || 0) + 1;
+      });
+      const avgSentiment = Object.entries(sentimentCounts)
+        .sort((a, b) => b[1] - a[1])[0]?.[0] || 'neutral';
+
+      // Aggregate objections and pain points
+      const allObjections: string[] = [];
+      const allPainPoints: string[] = [];
+      metrics.forEach(m => {
+        if (m.objections_detected) allObjections.push(...m.objections_detected);
+        if (m.pain_points) allPainPoints.push(...m.pain_points);
+      });
+
+      // Get top 5 most common
+      const getTop5 = (arr: string[]) => {
+        const counts: Record<string, number> = {};
+        arr.forEach(item => { counts[item] = (counts[item] || 0) + 1; });
+        return Object.entries(counts)
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 5)
+          .map(([item]) => item);
+      };
+
+      // Count today's data from filtered conversations
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const todayISO = today.toISOString();
+
+      const { data: todayConvs } = await supabase
+        .from('conversations')
+        .select('id, created_at, status')
+        .in('id', conversationIds)
+        .gte('created_at', todayISO);
+
+      const { count: todayMessagesCount } = await supabase
+        .from('messages')
+        .select('id', { count: 'exact', head: true })
+        .in('conversation_id', conversationIds)
+        .gte('created_at', todayISO);
+
+      return {
+        activeConversations: metrics.filter(m => 
+          m.lead_status && !['closed_won', 'closed_lost'].includes(m.lead_status)
+        ).length,
+        hotLeads,
+        warmLeads,
+        coldLeads,
+        todayMessages: todayMessagesCount || 0,
+        todayNewConversations: todayConvs?.length || 0,
+        todayContractsClosed: closedWon,
+        todayLeadsLost: closedLost,
+        currentAvgResponseTime: avgResponseTime,
+        currentAvgSentiment: avgSentiment,
+        topObjections: getTop5(allObjections),
+        topPainPoints: getTop5(allPainPoints),
+      };
+    } catch (error) {
+      console.error('Error calculating filtered live metrics:', error);
+      return EMPTY_LIVE_METRICS;
+    }
+  };
+
+  // Fetch live metrics from company_live_dashboard (for general/unfiltered view)
+  const fetchCompanyLiveMetrics = useCallback(async () => {
+    if (!profile?.company_id || !isAdmin || isFetchingLiveMetricsRef.current) return;
+    
+    isFetchingLiveMetricsRef.current = true;
 
     try {
       const { data: dashboard } = await supabase
@@ -156,6 +419,29 @@ export function useCommercialData(filter?: CommercialFilter) {
         .eq('company_id', profile.company_id)
         .maybeSingle();
 
+      // Calculate today's metrics dynamically (since company_live_dashboard may not be updated)
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const todayISO = today.toISOString();
+
+      // Fetch today's new conversations
+      const { count: todayNewConversations } = await supabase
+        .from('conversations')
+        .select('id', { count: 'exact', head: true })
+        .eq('company_id', profile.company_id)
+        .gte('created_at', todayISO);
+
+      // Fetch closed deals and lost leads from conversation_live_metrics
+      const { data: todayMetrics } = await supabase
+        .from('conversation_live_metrics')
+        .select('lead_status, updated_at')
+        .eq('company_id', profile.company_id)
+        .in('lead_status', ['closed_won', 'closed_lost'])
+        .gte('updated_at', todayISO);
+
+      const todayContractsClosed = todayMetrics?.filter(m => m.lead_status === 'closed_won').length || 0;
+      const todayLeadsLost = todayMetrics?.filter(m => m.lead_status === 'closed_lost').length || 0;
+
       if (dashboard) {
         setLiveMetrics({
           activeConversations: dashboard.active_conversations || 0,
@@ -163,9 +449,9 @@ export function useCommercialData(filter?: CommercialFilter) {
           warmLeads: dashboard.warm_leads || 0,
           coldLeads: dashboard.cold_leads || 0,
           todayMessages: dashboard.today_messages || 0,
-          todayNewConversations: dashboard.today_new_conversations || 0,
-          todayContractsClosed: dashboard.today_contracts_closed || 0,
-          todayLeadsLost: dashboard.today_leads_lost || 0,
+          todayNewConversations: todayNewConversations || dashboard.today_new_conversations || 0,
+          todayContractsClosed: todayContractsClosed || dashboard.today_contracts_closed || 0,
+          todayLeadsLost: todayLeadsLost || dashboard.today_leads_lost || 0,
           currentAvgResponseTime: dashboard.current_avg_response_time || 0,
           currentAvgSentiment: dashboard.current_avg_sentiment || 'neutral',
           topObjections: Array.isArray(dashboard.top_objections) 
@@ -193,17 +479,30 @@ export function useCommercialData(filter?: CommercialFilter) {
             qualified_leads_percent: insights.qualified_leads_percent || 0,
           });
         }
+      } else {
+        // No dashboard data, set with calculated values
+        setLiveMetrics({
+          ...EMPTY_LIVE_METRICS,
+          todayNewConversations: todayNewConversations || 0,
+          todayContractsClosed,
+          todayLeadsLost,
+        });
       }
     } catch (error) {
       console.error('Error fetching live metrics:', error);
+    } finally {
+      isFetchingLiveMetricsRef.current = false;
     }
   }, [profile?.company_id, isAdmin]);
 
-  // Set up realtime subscription for live updates
+  // Set up realtime subscription for live updates (only when no filter active)
   useEffect(() => {
     if (!profile?.company_id || !isAdmin) return;
 
-    fetchLiveMetrics();
+    // Only fetch company-wide metrics when no filter is active
+    if (!hasActiveFilter) {
+      fetchCompanyLiveMetrics();
+    }
 
     // Subscribe to realtime updates on company_live_dashboard
     const channel = supabase
@@ -217,6 +516,14 @@ export function useCommercialData(filter?: CommercialFilter) {
           filter: `company_id=eq.${profile.company_id}`,
         },
         (payload) => {
+          // Only update from realtime if no filter is active (connection OR date)
+          const hasConnFilter = filterRef.current?.type === 'connection' && filterRef.current?.connectionId;
+          const hasDateFilterActive = !!(filterRef.current?.startDate && filterRef.current?.endDate);
+          if (hasConnFilter || hasDateFilterActive) {
+            console.log('📊 [REALTIME] Ignoring dashboard update - filter is active');
+            return;
+          }
+
           console.log('📊 [REALTIME] Dashboard updated:', payload);
           const newData = payload.new as any;
           if (newData) {
@@ -266,7 +573,7 @@ export function useCommercialData(filter?: CommercialFilter) {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [profile?.company_id, isAdmin, fetchLiveMetrics]);
+  }, [profile?.company_id, isAdmin, fetchCompanyLiveMetrics, hasActiveFilter]);
 
   useEffect(() => {
     if (!profile?.company_id || !isAdmin) {
@@ -312,27 +619,73 @@ export function useCommercialData(filter?: CommercialFilter) {
         // Apply filters
         if (filter?.type === 'connection' && filter.connectionId) {
           conversationsQuery = conversationsQuery.eq('whatsapp_connection_id', filter.connectionId);
-        } else if (filter?.type === 'department' && filter.departmentId) {
-          conversationsQuery = conversationsQuery.eq('department_id', filter.departmentId);
+          // Apply department as sub-filter if present
+          if (filter.departmentId) {
+            conversationsQuery = conversationsQuery.eq('department_id', filter.departmentId);
+          }
         }
 
         const { data: conversations, error: convError } = await conversationsQuery;
 
         if (convError) throw convError;
 
-        // Fetch all contacts for geographic data
-        const { data: contacts, error: contactsError } = await supabase
+        // Extract conversation IDs for filtering related data
+        const conversationIds = conversations?.map(c => c.id) || [];
+        
+        // EARLY RETURN: If filter is active and no conversations found, return empty data
+        if (hasActiveFilter && conversationIds.length === 0) {
+          console.log('📊 No conversations found for active filter - returning empty data');
+          setData(EMPTY_COMMERCIAL_DATA);
+          setLiveMetrics(EMPTY_LIVE_METRICS);
+          setAggregatedInsights(DEFAULT_INSIGHTS);
+          setLastUpdated(new Date());
+          setLoading(false);
+          return;
+        }
+
+        // Calculate filtered live metrics when ANY filter is active (connection OR date)
+        // This ensures date-filtered views calculate metrics from filtered conversations only
+        if (hasActiveFilter && conversationIds.length > 0) {
+          console.log('📊 Calculating filtered live metrics for', conversationIds.length, 'conversations');
+          const filteredMetrics = await calculateFilteredLiveMetrics(conversationIds);
+          setLiveMetrics(filteredMetrics);
+        } else if (hasActiveFilter && conversationIds.length === 0) {
+          // No conversations in filter range - show empty metrics
+          setLiveMetrics(EMPTY_LIVE_METRICS);
+        }
+        // NOTE: When no filter is active, live metrics are fetched by the dedicated useEffect
+        // that handles realtime subscription - no duplicate call needed here
+
+        // Extract contact IDs from filtered conversations
+        const contactPhones = conversations?.map(c => (c.contact as any)?.phone_number).filter(Boolean) || [];
+
+        // Fetch contacts for geographic data - filtered by conversations when connection filter is active
+        let contactsQuery = supabase
           .from('contacts')
           .select('phone_number')
           .eq('company_id', profile.company_id);
 
+        // If filtering by connection, only get contacts from filtered conversations
+        if (hasActiveFilter && contactPhones.length > 0) {
+          contactsQuery = contactsQuery.in('phone_number', contactPhones);
+        }
+
+        const { data: contacts, error: contactsError } = await contactsQuery;
+
         if (contactsError) throw contactsError;
 
-        // Fetch live metrics for closed deals (from Kanban or AI detection)
-        const { data: liveMetricsData } = await supabase
+        // Fetch live metrics for closed deals - filtered by conversations when needed
+        let liveMetricsQuery = supabase
           .from('conversation_live_metrics')
           .select('lead_status, conversation_id')
           .eq('company_id', profile.company_id);
+
+        // If filtering by connection, only get metrics from filtered conversations
+        if (hasActiveFilter && conversationIds.length > 0) {
+          liveMetricsQuery = liveMetricsQuery.in('conversation_id', conversationIds);
+        }
+
+        const { data: liveMetricsData } = await liveMetricsQuery;
 
         // Count closed deals from live metrics (AI-detected or Kanban confirmed)
         const closedDealsFromAI = liveMetricsData?.filter(
@@ -340,7 +693,6 @@ export function useCommercialData(filter?: CommercialFilter) {
         ).length || 0;
 
         // Fetch messages to calculate real response time
-        const conversationIds = conversations?.map(c => c.id) || [];
         let avgResponseTimeMinutes = 0;
         
         if (conversationIds.length > 0) {
@@ -456,11 +808,25 @@ export function useCommercialData(filter?: CommercialFilter) {
           }
         });
 
-        // Fetch evaluations for agent scoring
-        const { data: evaluations } = await supabase
+        // Fetch evaluations for agent scoring - filtered by period and connection
+        let evaluationsQuery = supabase
           .from('conversation_evaluations')
           .select('*')
           .eq('company_id', profile.company_id);
+
+        // Apply period filter
+        if (startDate && endDate) {
+          evaluationsQuery = evaluationsQuery
+            .gte('created_at', startDate.toISOString())
+            .lte('created_at', endDate.toISOString());
+        }
+
+        // If filtering by connection, only get evaluations from filtered conversations
+        if (hasActiveFilter && conversationIds.length > 0) {
+          evaluationsQuery = evaluationsQuery.in('conversation_id', conversationIds);
+        }
+
+        const { data: evaluations } = await evaluationsQuery;
 
         // Build agent analysis with real evaluation data
         const agentsAnalysis: AgentAnalysis[] = agents?.map(agent => {
@@ -508,8 +874,9 @@ export function useCommercialData(filter?: CommercialFilter) {
           ? Math.round((closedDealsFromAI / totalConversations) * 100 * 10) / 10 
           : 0;
 
-        // Use aggregated insights from realtime if available, otherwise calculate from evaluations
-        const useAggregatedInsights = aggregatedInsights.average_score > 0;
+        // Use aggregated insights from realtime if available and no filter active
+        // When filter is active, calculate from filtered evaluations only
+        const useAggregatedInsights = !hasActiveFilter && aggregatedInsights.average_score > 0;
         
         let averageScore: number;
         let criteriaScores: CriteriaScores;
@@ -535,7 +902,7 @@ export function useCommercialData(filter?: CommercialFilter) {
           criticalIssues = aggregatedInsights.critical_issues;
           finalRecommendation = aggregatedInsights.final_recommendation;
         } else if (evaluations && evaluations.length > 0) {
-          // Calculate from evaluations if no aggregated insights yet
+          // Calculate from evaluations if filter active or no aggregated insights yet
           const scores = {
             communication: 0,
             objectivity: 0,
@@ -605,7 +972,6 @@ export function useCommercialData(filter?: CommercialFilter) {
             .map(([w]) => w);
 
           // Create distinct positive/negative patterns from evaluations
-          // Don't just copy strengths/weaknesses - extract patterns from actual scores
           positivePatterns = [];
           negativePatterns = [];
           
@@ -625,18 +991,81 @@ export function useCommercialData(filter?: CommercialFilter) {
           positivePatterns = positivePatterns.slice(0, 3);
           negativePatterns = negativePatterns.slice(0, 3);
 
-          // Generate basic insights until AI generates them
-          insights = [];
-          criticalIssues = [];
-          
-          if (criteriaScores.closing < 6) {
-            insights.push('Aguardando análise de IA para insights detalhados de fechamento');
+          // When filter is active, we'll fetch AI insights in a separate call
+          // For now, set placeholder values that will be replaced by AI
+          if (hasActiveFilter) {
+            // Build filter description for AI context
+            let filterDesc = '';
+            if (filter?.connectionId) {
+              filterDesc += 'Conexão específica selecionada. ';
+            }
+            if (filter?.departmentId) {
+              filterDesc += 'Departamento específico. ';
+            }
+            if (filter?.startDate && filter?.endDate) {
+              filterDesc += `Período: ${filter.startDate.toLocaleDateString('pt-BR')} a ${filter.endDate.toLocaleDateString('pt-BR')}`;
+            }
+            
+            // Call AI for filtered insights (debounced)
+            if (debounceTimerRef.current) {
+              clearTimeout(debounceTimerRef.current);
+            }
+            
+            debounceTimerRef.current = setTimeout(async () => {
+              const aiInsights = await fetchFilteredInsights(
+                evaluations.map(e => ({
+                  conversation_id: e.conversation_id,
+                  overall_score: e.overall_score,
+                  communication_score: e.communication_score,
+                  objectivity_score: e.objectivity_score,
+                  humanization_score: e.humanization_score,
+                  objection_handling_score: e.objection_handling_score,
+                  closing_score: e.closing_score,
+                  response_time_score: e.response_time_score,
+                  strengths: e.strengths as string[] | null,
+                  improvements: e.improvements as string[] | null,
+                  ai_summary: e.ai_summary,
+                  lead_qualification: e.lead_qualification,
+                })),
+                criteriaScores,
+                filterDesc
+              );
+              
+              if (aiInsights) {
+                // Update data with AI-generated insights
+                setData(prevData => prevData ? {
+                  ...prevData,
+                  strengths: aiInsights.strengths.length > 0 ? aiInsights.strengths : prevData.strengths,
+                  weaknesses: aiInsights.weaknesses.length > 0 ? aiInsights.weaknesses : prevData.weaknesses,
+                  positivePatterns: aiInsights.positivePatterns,
+                  negativePatterns: aiInsights.negativePatterns,
+                  insights: aiInsights.insights.length > 0 ? aiInsights.insights : prevData.insights,
+                  criticalIssues: aiInsights.criticalIssues,
+                  finalRecommendation: aiInsights.finalRecommendation || prevData.finalRecommendation,
+                } : prevData);
+              }
+            }, 500); // 500ms debounce
+            
+            // Set initial placeholder values while AI processes
+            positivePatterns = [];
+            negativePatterns = [];
+            insights = ['Gerando análise de IA para dados filtrados...'];
+            criticalIssues = [];
+            finalRecommendation = 'Analisando conversas filtradas...';
+          } else {
+            // Not filtered - use basic local calculations
+            insights = [];
+            criticalIssues = [];
+            
+            if (criteriaScores.closing < 6) {
+              insights.push('Aguardando análise de IA para insights detalhados de fechamento');
+            }
+            if (criteriaScores.response_time < 6) {
+              criticalIssues.push('Tempo de resposta precisa ser analisado pela IA');
+            }
+            
+            finalRecommendation = 'Aguardando análise de IA para recomendação personalizada...';
           }
-          if (criteriaScores.response_time < 6) {
-            criticalIssues.push('Tempo de resposta precisa ser analisado pela IA');
-          }
-
-          finalRecommendation = 'Aguardando análise de IA para recomendação personalizada...';
         } else {
           // No data yet
           criteriaScores = {
@@ -649,13 +1078,19 @@ export function useCommercialData(filter?: CommercialFilter) {
           };
           averageScore = 0;
           qualifiedLeadsPercent = 0;
-          allStrengths = ['Aguardando conversas para análise'];
+          allStrengths = hasActiveFilter 
+            ? ['Nenhuma avaliação encontrada neste filtro'] 
+            : ['Aguardando conversas para análise'];
           allWeaknesses = ['Dados insuficientes'];
           positivePatterns = [];
           negativePatterns = [];
-          insights = ['Envie mensagens para a IA começar a gerar insights automáticos'];
+          insights = hasActiveFilter 
+            ? ['Selecione outro filtro ou aguarde novas conversas avaliadas']
+            : ['Envie mensagens para a IA começar a gerar insights automáticos'];
           criticalIssues = [];
-          finalRecommendation = 'A IA irá gerar recomendações automaticamente conforme as conversas acontecem.';
+          finalRecommendation = hasActiveFilter
+            ? 'Sem avaliações para este filtro.'
+            : 'A IA irá gerar recomendações automaticamente conforme as conversas acontecem.';
         }
 
         const classification: CommercialData['classification'] = 
@@ -695,7 +1130,7 @@ export function useCommercialData(filter?: CommercialFilter) {
     };
 
     fetchData();
-  }, [profile?.company_id, isAdmin, aggregatedInsights, filter?.type, filter?.connectionId, filter?.departmentId, filter?.startDate, filter?.endDate]);
+  }, [profile?.company_id, isAdmin, aggregatedInsights, filter?.type, filter?.connectionId, filter?.departmentId, filter?.startDate, filter?.endDate, hasActiveFilter, fetchCompanyLiveMetrics, fetchFilteredInsights]);
 
   return {
     loading,
@@ -706,5 +1141,6 @@ export function useCommercialData(filter?: CommercialFilter) {
     isAdmin,
     evaluating,
     evaluateConversations,
+    insightsLoading,
   };
 }

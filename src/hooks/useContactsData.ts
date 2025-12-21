@@ -3,6 +3,8 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
 import type { Json } from '@/integrations/supabase/types';
+import { logContactEvent, ContactSnapshot } from '@/lib/contactHistory';
+import { normalizePhoneNumber } from '@/lib/phoneUtils';
 
 export interface Contact {
   id: string;
@@ -536,6 +538,13 @@ export function useContactsData() {
   const createContact = async (data: ContactFormData): Promise<Contact | null> => {
     if (!profile?.company_id) return null;
 
+    // Normalize the phone number
+    const normalizedPhone = normalizePhoneNumber(data.phone_number);
+    if (!normalizedPhone) {
+      toast.error('Número de telefone inválido. Verifique o DDD e o número.');
+      return null;
+    }
+
     try {
       // Create the contact
       const { data: newContact, error } = await supabase
@@ -543,7 +552,7 @@ export function useContactsData() {
         .insert({
           company_id: profile.company_id,
           name: data.name || null,
-          phone_number: data.phone_number.replace(/\D/g, ''),
+          phone_number: normalizedPhone,
           email: data.email || null,
           tags: data.tags,
           notes: data.notes || null
@@ -552,6 +561,23 @@ export function useContactsData() {
         .single();
 
       if (error) throw error;
+
+      // Log the creation event
+      const snapshot: ContactSnapshot = {
+        name: newContact.name,
+        phone_number: newContact.phone_number,
+        email: newContact.email
+      };
+      
+      await logContactEvent({
+        companyId: profile.company_id,
+        contactId: newContact.id,
+        contactSnapshot: snapshot,
+        eventType: 'created',
+        eventData: { tags: data.tags },
+        performedBy: profile.id,
+        performedByName: profile.full_name || profile.email
+      });
 
       // If connection is provided, create conversation and add to CRM
       if (data.connectionId) {
@@ -844,6 +870,9 @@ export function useContactsData() {
 
   const updateContact = async (id: string, data: ContactFormData): Promise<boolean> => {
     try {
+      // Get old contact for comparison
+      const oldContact = contacts.find(c => c.id === id);
+      
       const { error } = await supabase
         .from('contacts')
         .update({
@@ -852,13 +881,41 @@ export function useContactsData() {
           email: data.email || null,
           tags: data.tags,
           notes: data.notes || null,
-          // Mark name as manually edited if name was changed
           name_manually_edited: data.name ? true : false,
           updated_at: new Date().toISOString()
         })
         .eq('id', id);
 
       if (error) throw error;
+
+      // Log update event with changes
+      if (oldContact && profile?.company_id) {
+        const changes: Array<{ field: string; old_value: any; new_value: any }> = [];
+        
+        if (oldContact.name !== (data.name || null)) {
+          changes.push({ field: 'Nome', old_value: oldContact.name, new_value: data.name || null });
+        }
+        if (oldContact.email !== (data.email || null)) {
+          changes.push({ field: 'E-mail', old_value: oldContact.email, new_value: data.email || null });
+        }
+        if (JSON.stringify(oldContact.tags) !== JSON.stringify(data.tags)) {
+          changes.push({ field: 'Tags', old_value: oldContact.tags, new_value: data.tags });
+        }
+
+        await logContactEvent({
+          companyId: profile.company_id,
+          contactId: id,
+          contactSnapshot: {
+            name: data.name || null,
+            phone_number: data.phone_number.replace(/\D/g, ''),
+            email: data.email || null
+          },
+          eventType: 'updated',
+          eventData: { changes },
+          performedBy: profile.id,
+          performedByName: profile.full_name || profile.email
+        });
+      }
 
       setContacts(prev => prev.map(c => 
         c.id === id 
@@ -887,12 +944,31 @@ export function useContactsData() {
 
   const deleteContact = async (id: string): Promise<boolean> => {
     try {
+      // Get contact before deletion for snapshot
+      const contactToDelete = contacts.find(c => c.id === id);
+      
       const { error } = await supabase
         .from('contacts')
         .delete()
         .eq('id', id);
 
       if (error) throw error;
+
+      // Log deletion event
+      if (contactToDelete && profile?.company_id) {
+        await logContactEvent({
+          companyId: profile.company_id,
+          contactId: id,
+          contactSnapshot: {
+            name: contactToDelete.name,
+            phone_number: contactToDelete.phone_number,
+            email: contactToDelete.email
+          },
+          eventType: 'deleted',
+          performedBy: profile.id,
+          performedByName: profile.full_name || profile.email
+        });
+      }
 
       setContacts(prev => prev.filter(c => c.id !== id));
       setStats(prev => ({ ...prev, total: prev.total - 1 }));
@@ -907,12 +983,33 @@ export function useContactsData() {
 
   const deleteMultipleContacts = async (ids: string[]): Promise<boolean> => {
     try {
+      // Get contacts before deletion for snapshots
+      const contactsToDelete = contacts.filter(c => ids.includes(c.id));
+      
       const { error } = await supabase
         .from('contacts')
         .delete()
         .in('id', ids);
 
       if (error) throw error;
+
+      // Log deletion events
+      if (profile?.company_id) {
+        for (const contact of contactsToDelete) {
+          await logContactEvent({
+            companyId: profile.company_id,
+            contactId: contact.id,
+            contactSnapshot: {
+              name: contact.name,
+              phone_number: contact.phone_number,
+              email: contact.email
+            },
+            eventType: 'deleted',
+            performedBy: profile.id,
+            performedByName: profile.full_name || profile.email
+          });
+        }
+      }
 
       setContacts(prev => prev.filter(c => !ids.includes(c.id)));
       setStats(prev => ({ ...prev, total: prev.total - ids.length }));
@@ -1043,12 +1140,13 @@ export function useContactsData() {
 
           for (let i = 1; i < lines.length; i++) {
             const values = lines[i].match(/(".*?"|[^,]+)/g)?.map(v => v.replace(/^"|"$/g, '').trim()) || [];
-            const phone = values[phoneIndex]?.replace(/\D/g, '');
+            const rawPhone = values[phoneIndex] || '';
+            const normalizedPhone = normalizePhoneNumber(rawPhone);
             
-            if (phone && phone.length >= 10) {
+            if (normalizedPhone) {
               contactsToImport.push({
                 company_id: profile.company_id,
-                phone_number: phone,
+                phone_number: normalizedPhone,
                 name: nameIndex >= 0 ? values[nameIndex] || null : null,
                 email: emailIndex >= 0 ? values[emailIndex] || null : null,
                 tags: tagsIndex >= 0 && values[tagsIndex] ? values[tagsIndex].split(/[,;]/).map(t => t.trim()).filter(Boolean) : [],

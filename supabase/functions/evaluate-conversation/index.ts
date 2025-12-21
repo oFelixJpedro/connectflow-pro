@@ -23,13 +23,210 @@ interface EvaluationResult {
   lead_pain_points: string[];
 }
 
+// ==================== FUNÇÕES AUXILIARES PARA MÍDIA ====================
+
+function arrayBufferToBase64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  for (let i = 0; i < bytes.byteLength; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+}
+
+async function transcribeAudio(audioUrl: string, apiKey: string): Promise<string | null> {
+  try {
+    console.log('[evaluate-conversation] Transcribing audio:', audioUrl.substring(0, 50));
+    
+    const audioResponse = await fetch(audioUrl);
+    if (!audioResponse.ok) {
+      console.error('[evaluate-conversation] Failed to fetch audio:', audioResponse.status);
+      return null;
+    }
+    
+    const audioBuffer = await audioResponse.arrayBuffer();
+    const base64Audio = arrayBufferToBase64(audioBuffer);
+    const contentType = audioResponse.headers.get('content-type') || 'audio/ogg';
+    
+    const geminiResponse = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{
+            parts: [
+              {
+                inline_data: {
+                  mime_type: contentType,
+                  data: base64Audio
+                }
+              },
+              {
+                text: "Transcreva este áudio em português. Retorne APENAS a transcrição, sem comentários adicionais."
+              }
+            ]
+          }],
+          generationConfig: {
+            temperature: 0.1,
+            maxOutputTokens: 4096,
+          },
+        }),
+      }
+    );
+    
+    if (!geminiResponse.ok) {
+      console.error('[evaluate-conversation] Gemini transcription failed:', await geminiResponse.text());
+      return null;
+    }
+    
+    const data = await geminiResponse.json();
+    const transcription = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    
+    console.log('[evaluate-conversation] Audio transcribed successfully');
+    return transcription || null;
+  } catch (error) {
+    console.error('[evaluate-conversation] Error transcribing audio:', error);
+    return null;
+  }
+}
+
+async function fetchImageAsBase64(imageUrl: string): Promise<{ data: string; mimeType: string } | null> {
+  try {
+    console.log('[evaluate-conversation] Fetching image:', imageUrl.substring(0, 50));
+    
+    const response = await fetch(imageUrl);
+    if (!response.ok) {
+      console.error('[evaluate-conversation] Failed to fetch image:', response.status);
+      return null;
+    }
+    
+    const buffer = await response.arrayBuffer();
+    const base64 = arrayBufferToBase64(buffer);
+    const mimeType = response.headers.get('content-type') || 'image/jpeg';
+    
+    return { data: base64, mimeType };
+  } catch (error) {
+    console.error('[evaluate-conversation] Error fetching image:', error);
+    return null;
+  }
+}
+
+async function fetchVideoAsBase64(videoUrl: string): Promise<{ data: string; mimeType: string } | null> {
+  try {
+    console.log('[evaluate-conversation] Fetching video:', videoUrl.substring(0, 50));
+    
+    const response = await fetch(videoUrl);
+    if (!response.ok) {
+      console.error('[evaluate-conversation] Failed to fetch video:', response.status);
+      return null;
+    }
+    
+    const contentLength = response.headers.get('content-length');
+    const size = contentLength ? parseInt(contentLength, 10) : 0;
+    
+    // Limite de 20MB para vídeos
+    if (size > 20 * 1024 * 1024) {
+      console.log('[evaluate-conversation] Video too large, skipping:', size);
+      return null;
+    }
+    
+    const buffer = await response.arrayBuffer();
+    const base64 = arrayBufferToBase64(buffer);
+    const mimeType = response.headers.get('content-type') || 'video/mp4';
+    
+    return { data: base64, mimeType };
+  } catch (error) {
+    console.error('[evaluate-conversation] Error fetching video:', error);
+    return null;
+  }
+}
+
+const SUPPORTED_DOCUMENT_MIMES = [
+  'application/pdf',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'application/msword',
+  'application/vnd.ms-excel',
+  'application/vnd.ms-powerpoint',
+  'text/plain',
+  'text/csv',
+  'text/html',
+];
+
+async function fetchDocumentAsBase64(docUrl: string, fileName?: string): Promise<{ data: string; mimeType: string } | null> {
+  try {
+    console.log('[evaluate-conversation] Fetching document:', docUrl.substring(0, 50));
+    
+    const response = await fetch(docUrl);
+    if (!response.ok) {
+      console.error('[evaluate-conversation] Failed to fetch document:', response.status);
+      return null;
+    }
+    
+    const contentLength = response.headers.get('content-length');
+    const size = contentLength ? parseInt(contentLength, 10) : 0;
+    
+    // Limite de 20MB para documentos
+    if (size > 20 * 1024 * 1024) {
+      console.log('[evaluate-conversation] Document too large, skipping:', size);
+      return null;
+    }
+    
+    let mimeType = response.headers.get('content-type') || 'application/octet-stream';
+    
+    // Tentar inferir MIME type do nome do arquivo
+    if (fileName) {
+      const ext = fileName.split('.').pop()?.toLowerCase();
+      const mimeMap: Record<string, string> = {
+        'pdf': 'application/pdf',
+        'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        'doc': 'application/msword',
+        'xls': 'application/vnd.ms-excel',
+        'ppt': 'application/vnd.ms-powerpoint',
+        'txt': 'text/plain',
+        'csv': 'text/csv',
+        'html': 'text/html',
+      };
+      if (ext && mimeMap[ext]) {
+        mimeType = mimeMap[ext];
+      }
+    }
+    
+    // Verificar se o MIME type é suportado
+    if (!SUPPORTED_DOCUMENT_MIMES.some(m => mimeType.includes(m.split('/')[1]))) {
+      console.log('[evaluate-conversation] Unsupported document type:', mimeType);
+      return null;
+    }
+    
+    const buffer = await response.arrayBuffer();
+    const base64 = arrayBufferToBase64(buffer);
+    
+    return { data: base64, mimeType };
+  } catch (error) {
+    console.error('[evaluate-conversation] Error fetching document:', error);
+    return null;
+  }
+}
+
+// ==================== PROMPT DE AVALIAÇÃO ====================
+
 const EVALUATION_PROMPT = `Você é um especialista em análise de qualidade de atendimento comercial via WhatsApp.
+
+## IMPORTANTE - ANÁLISE DE MÍDIA
+- SE houver imagens anexadas, analise se o atendente utilizou recursos visuais adequadamente (catálogos, fotos de produtos, prints)
+- SE houver áudios transcritos, considere a comunicação verbal como parte da avaliação (tom, clareza, persuasão)
+- SE houver vídeos, avalie se foram usados de forma pertinente (demonstrações, apresentações)
+- SE houver documentos, verifique se materiais relevantes foram compartilhados (propostas, contratos, PDFs informativos)
 
 Analise a conversa abaixo e avalie o desempenho do atendente nos seguintes critérios (notas de 0 a 10):
 
-1. **Comunicação** (communication_score): Clareza, gramática, ortografia e qualidade da comunicação escrita
+1. **Comunicação** (communication_score): Clareza, gramática, ortografia e qualidade da comunicação escrita e verbal
 2. **Objetividade** (objectivity_score): Foco nos objetivos comerciais, sem enrolação ou desvios
-3. **Humanização** (humanization_score): Tratamento personalizado, empático, uso apropriado de emojis
+3. **Humanização** (humanization_score): Tratamento personalizado, empático, uso apropriado de emojis e recursos de mídia
 4. **Tratamento de Objeções** (objection_handling_score): Capacidade de contornar objeções do cliente
 5. **Fechamento** (closing_score): Uso de técnicas de fechamento de venda, call-to-action
 6. **Tempo de Resposta** (response_time_score): Baseado nos timestamps, agilidade nas respostas
@@ -172,10 +369,10 @@ serve(async (req) => {
           continue;
         }
 
-        // Buscar mensagens da conversa
+        // Buscar mensagens da conversa COM media_url e metadata
         const { data: messages, error: msgError } = await supabase
           .from('messages')
-          .select('content, direction, sender_type, created_at, message_type')
+          .select('content, direction, sender_type, created_at, message_type, media_url, metadata')
           .eq('conversation_id', convId)
           .eq('is_deleted', false)
           .order('created_at', { ascending: true });
@@ -192,18 +389,74 @@ serve(async (req) => {
           continue;
         }
 
-        // Formatar conversa para a IA
+        // Processar mensagens com suporte multimodal
         const contact = conversation.contact as any;
         const contactName = contact?.name || 'Cliente';
         
-        const formattedMessages = messages
-          .filter(m => m.content && m.message_type === 'text')
-          .map(m => {
-            const sender = m.direction === 'incoming' ? contactName : 'Atendente';
-            const time = new Date(m.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-            return `[${time}] ${sender}: ${m.content}`;
-          })
-          .join('\n');
+        const imageUrls: string[] = [];
+        const videoUrls: string[] = [];
+        const documentData: { url: string; fileName?: string }[] = [];
+        const processedMessages: string[] = [];
+
+        for (const m of messages) {
+          if (!m.content && !m.media_url) continue;
+          
+          const sender = m.direction === 'incoming' ? contactName : 'Atendente';
+          const time = new Date(m.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+          let content = m.content || '';
+          
+          switch (m.message_type) {
+            case 'audio':
+              if (m.media_url) {
+                const transcription = await transcribeAudio(m.media_url, geminiApiKey);
+                content = transcription 
+                  ? `[Áudio transcrito]: "${transcription}"`
+                  : '[Áudio - transcrição não disponível]';
+              }
+              break;
+              
+            case 'image':
+              if (m.media_url) {
+                imageUrls.push(m.media_url);
+                content = m.content 
+                  ? `[Imagem com legenda: "${m.content}"]`
+                  : '[Imagem enviada]';
+              }
+              break;
+              
+            case 'video':
+              if (m.media_url) {
+                videoUrls.push(m.media_url);
+                content = m.content 
+                  ? `[Vídeo com legenda: "${m.content}"]`
+                  : '[Vídeo enviado]';
+              }
+              break;
+              
+            case 'document':
+              if (m.media_url) {
+                const metadata = m.metadata as any;
+                const fileName = metadata?.fileName || metadata?.filename || 'documento';
+                documentData.push({ url: m.media_url, fileName });
+                content = `[Documento: ${fileName}]`;
+              }
+              break;
+              
+            case 'sticker':
+              content = '[Sticker/Figurinha]';
+              break;
+              
+            default: // text
+              // Mantém o content original
+              break;
+          }
+          
+          if (content) {
+            processedMessages.push(`[${time}] ${sender}: ${content}`);
+          }
+        }
+
+        const formattedMessages = processedMessages.join('\n');
 
         if (formattedMessages.length < 50) {
           console.log(`[evaluate-conversation] Conversation ${convId} has insufficient text content`);
@@ -211,18 +464,67 @@ serve(async (req) => {
           continue;
         }
 
-        const prompt = `${EVALUATION_PROMPT}\n\n--- CONVERSA ---\n${formattedMessages}\n--- FIM DA CONVERSA ---`;
-
-        // Chamar Gemini 3 Flash Preview
-        console.log(`[evaluate-conversation] Calling Gemini for conversation ${convId}`);
+        // Construir parts multimodal para Gemini
+        const parts: any[] = [];
         
+        // Adicionar texto do prompt + conversa
+        const textPrompt = `${EVALUATION_PROMPT}\n\n--- CONVERSA ---\n${formattedMessages}\n--- FIM DA CONVERSA ---`;
+        parts.push({ text: textPrompt });
+
+        // Adicionar imagens (máx 10 últimas)
+        let mediaCount = { images: 0, videos: 0, documents: 0 };
+        
+        for (const imageUrl of imageUrls.slice(-10)) {
+          const imageData = await fetchImageAsBase64(imageUrl);
+          if (imageData) {
+            parts.push({
+              inline_data: {
+                mime_type: imageData.mimeType,
+                data: imageData.data
+              }
+            });
+            mediaCount.images++;
+          }
+        }
+
+        // Adicionar vídeos (máx 3 últimos, ≤20MB cada)
+        for (const videoUrl of videoUrls.slice(-3)) {
+          const videoData = await fetchVideoAsBase64(videoUrl);
+          if (videoData) {
+            parts.push({
+              inline_data: {
+                mime_type: videoData.mimeType,
+                data: videoData.data
+              }
+            });
+            mediaCount.videos++;
+          }
+        }
+
+        // Adicionar documentos (máx 3 últimos, ≤20MB cada)
+        for (const doc of documentData.slice(-3)) {
+          const docData = await fetchDocumentAsBase64(doc.url, doc.fileName);
+          if (docData) {
+            parts.push({
+              inline_data: {
+                mime_type: docData.mimeType,
+                data: docData.data
+              }
+            });
+            mediaCount.documents++;
+          }
+        }
+
+        console.log(`[evaluate-conversation] Calling Gemini for conversation ${convId} with media:`, mediaCount);
+        
+        // Chamar Gemini 3 Flash Preview com multimodal
         const geminiResponse = await fetch(
           `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${geminiApiKey}`,
           {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              contents: [{ parts: [{ text: prompt }] }],
+              contents: [{ parts }],
               generationConfig: {
                 temperature: 0.3,
                 maxOutputTokens: 8192,

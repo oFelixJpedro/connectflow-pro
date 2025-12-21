@@ -77,7 +77,7 @@ function getInitials(name: string) {
 }
 
 export function AgentIndividualModal({ open, onOpenChange, agent }: AgentIndividualModalProps) {
-  const { loading, data } = useAgentIndividualData(agent?.id || null);
+  const { loading, loadingMore, data, loadMoreAlerts } = useAgentIndividualData(agent?.id || null);
   const [selectedAlert, setSelectedAlert] = useState<AgentAlert | null>(null);
   const [chatPreviewOpen, setChatPreviewOpen] = useState(false);
 
@@ -299,8 +299,12 @@ export function AgentIndividualModal({ open, onOpenChange, agent }: AgentIndivid
 
                   {/* Alerts Section */}
                   <AgentAlertsSection 
-                    alerts={data.alerts} 
+                    alerts={data.alerts}
+                    totalAlerts={data.totalAlerts}
+                    hasMore={data.hasMoreAlerts}
+                    loadingMore={loadingMore}
                     onViewConversation={handleViewConversation}
+                    onLoadMore={loadMoreAlerts}
                   />
 
                   {/* Personalized Recommendation */}

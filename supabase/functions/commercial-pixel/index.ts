@@ -19,11 +19,15 @@ Responda APENAS em JSON válido, sem markdown:
   "is_disqualification_signal": true/false,
   "lead_status": "cold" | "warming" | "hot" | "closed_won" | "closed_lost",
   "close_probability": 0-100,
-  "predicted_outcome": "likely_close" | "likely_lost" | "needs_followup" | "unknown"
+  "predicted_outcome": "likely_close" | "likely_lost" | "needs_followup" | "unknown",
+  "media_description": "descrição do conteúdo visual/áudio se presente, ou null se não houver mídia"
 }
 
 Sinais de fechamento incluem: pedido de preço, contrato, forma de pagamento, prazo de entrega, "vamos fechar", "pode enviar".
 Sinais de desqualificação: "não tenho interesse", "não é para mim", errou o número, spam.
+
+IMPORTANTE para mídia: Se houver imagem, vídeo ou documento na mensagem, descreva detalhadamente o que você vê no campo media_description.
+Exemplos: "Imagem de uma pizza margherita", "Contrato de prestação de serviços em PDF", "Foto de um carro sedan prata", "Captura de tela de um erro no sistema".
 `;
 
 // Prompt for conversation evaluation
@@ -66,7 +70,8 @@ Responda APENAS em JSON válido, sem markdown:
   "title": "título curto do problema",
   "description": "descrição do comportamento problemático",
   "lead_was_rude": true/false,
-  "confidence": 0.0-1.0
+  "confidence": 0.0-1.0,
+  "media_description": "descrição do conteúdo visual/áudio enviado pelo vendedor, ou null se não houver mídia"
 }
 
 Tipos de alerta:
@@ -76,12 +81,13 @@ Tipos de alerta:
 - slow_response: (não detectável aqui, será calculado separadamente)
 - sabotage: prejudicar propositalmente a venda, desincentivar compra
 - quality_issue: respostas confusas, erros graves, informações incorretas
-- unprofessional: comportamento inadequado, linguagem imprópria
+- unprofessional: comportamento inadequado, linguagem imprópria, imagens inapropriadas
 
 IMPORTANTE: 
 - Se o lead foi grosseiro/rude primeiro, NÃO é alerta (lead_was_rude=true, has_issue=false)
 - Respostas diretas e objetivas NÃO são lazy
 - Analise o CONTEXTO antes de julgar
+- Se houver mídia (imagem, vídeo, documento), descreva o conteúdo no campo media_description
 `;
 
 // Prompt for aggregated insights
@@ -99,6 +105,197 @@ Responda APENAS em JSON válido, sem markdown:
 
 Seja específico, acionável e baseado nos dados fornecidos. Evite generalidades.
 `;
+
+// ==================== FUNÇÕES AUXILIARES PARA MÍDIA ====================
+
+function arrayBufferToBase64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  for (let i = 0; i < bytes.byteLength; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+}
+
+async function transcribeAudio(audioUrl: string, apiKey: string): Promise<string | null> {
+  try {
+    console.log('🎙️ [PIXEL] Transcribing audio:', audioUrl.substring(0, 50));
+    
+    const audioResponse = await fetch(audioUrl);
+    if (!audioResponse.ok) {
+      console.error('❌ [PIXEL] Failed to fetch audio:', audioResponse.status);
+      return null;
+    }
+    
+    const audioBuffer = await audioResponse.arrayBuffer();
+    const base64Audio = arrayBufferToBase64(audioBuffer);
+    const contentType = audioResponse.headers.get('content-type') || 'audio/ogg';
+    
+    const geminiResponse = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{
+            parts: [
+              {
+                inline_data: {
+                  mime_type: contentType,
+                  data: base64Audio
+                }
+              },
+              {
+                text: "Transcreva este áudio em português. Retorne APENAS a transcrição, sem comentários adicionais."
+              }
+            ]
+          }],
+          generationConfig: {
+            temperature: 0.1,
+            maxOutputTokens: 4096,
+          },
+        }),
+      }
+    );
+    
+    if (!geminiResponse.ok) {
+      console.error('❌ [PIXEL] Gemini transcription failed:', await geminiResponse.text());
+      return null;
+    }
+    
+    const data = await geminiResponse.json();
+    const transcription = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    
+    console.log('✅ [PIXEL] Audio transcribed successfully');
+    return transcription || null;
+  } catch (error) {
+    console.error('❌ [PIXEL] Error transcribing audio:', error);
+    return null;
+  }
+}
+
+async function fetchImageAsBase64(imageUrl: string): Promise<{ data: string; mimeType: string } | null> {
+  try {
+    console.log('🖼️ [PIXEL] Fetching image:', imageUrl.substring(0, 50));
+    
+    const response = await fetch(imageUrl);
+    if (!response.ok) {
+      console.error('❌ [PIXEL] Failed to fetch image:', response.status);
+      return null;
+    }
+    
+    const buffer = await response.arrayBuffer();
+    const base64 = arrayBufferToBase64(buffer);
+    const mimeType = response.headers.get('content-type') || 'image/jpeg';
+    
+    return { data: base64, mimeType };
+  } catch (error) {
+    console.error('❌ [PIXEL] Error fetching image:', error);
+    return null;
+  }
+}
+
+async function fetchVideoAsBase64(videoUrl: string): Promise<{ data: string; mimeType: string } | null> {
+  try {
+    console.log('🎬 [PIXEL] Fetching video:', videoUrl.substring(0, 50));
+    
+    const response = await fetch(videoUrl);
+    if (!response.ok) {
+      console.error('❌ [PIXEL] Failed to fetch video:', response.status);
+      return null;
+    }
+    
+    const contentLength = response.headers.get('content-length');
+    const size = contentLength ? parseInt(contentLength, 10) : 0;
+    
+    // Limite de 20MB para vídeos
+    if (size > 20 * 1024 * 1024) {
+      console.log('⚠️ [PIXEL] Video too large, skipping:', size);
+      return null;
+    }
+    
+    const buffer = await response.arrayBuffer();
+    const base64 = arrayBufferToBase64(buffer);
+    const mimeType = response.headers.get('content-type') || 'video/mp4';
+    
+    return { data: base64, mimeType };
+  } catch (error) {
+    console.error('❌ [PIXEL] Error fetching video:', error);
+    return null;
+  }
+}
+
+const SUPPORTED_DOCUMENT_MIMES = [
+  'application/pdf',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'application/msword',
+  'application/vnd.ms-excel',
+  'application/vnd.ms-powerpoint',
+  'text/plain',
+  'text/csv',
+  'text/html',
+];
+
+async function fetchDocumentAsBase64(docUrl: string, fileName?: string): Promise<{ data: string; mimeType: string } | null> {
+  try {
+    console.log('📄 [PIXEL] Fetching document:', docUrl.substring(0, 50));
+    
+    const response = await fetch(docUrl);
+    if (!response.ok) {
+      console.error('❌ [PIXEL] Failed to fetch document:', response.status);
+      return null;
+    }
+    
+    const contentLength = response.headers.get('content-length');
+    const size = contentLength ? parseInt(contentLength, 10) : 0;
+    
+    // Limite de 20MB para documentos
+    if (size > 20 * 1024 * 1024) {
+      console.log('⚠️ [PIXEL] Document too large, skipping:', size);
+      return null;
+    }
+    
+    let mimeType = response.headers.get('content-type') || 'application/octet-stream';
+    
+    // Tentar inferir MIME type do nome do arquivo
+    if (fileName) {
+      const ext = fileName.split('.').pop()?.toLowerCase();
+      const mimeMap: Record<string, string> = {
+        'pdf': 'application/pdf',
+        'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        'doc': 'application/msword',
+        'xls': 'application/vnd.ms-excel',
+        'ppt': 'application/vnd.ms-powerpoint',
+        'txt': 'text/plain',
+        'csv': 'text/csv',
+        'html': 'text/html',
+      };
+      if (ext && mimeMap[ext]) {
+        mimeType = mimeMap[ext];
+      }
+    }
+    
+    // Verificar se o MIME type é suportado
+    if (!SUPPORTED_DOCUMENT_MIMES.some(m => mimeType.includes(m.split('/')[1]))) {
+      console.log('⚠️ [PIXEL] Unsupported document type:', mimeType);
+      return null;
+    }
+    
+    const buffer = await response.arrayBuffer();
+    const base64 = arrayBufferToBase64(buffer);
+    
+    return { data: base64, mimeType };
+  } catch (error) {
+    console.error('❌ [PIXEL] Error fetching document:', error);
+    return null;
+  }
+}
+
+// ==================== FIM FUNÇÕES DE MÍDIA ====================
 
 // Robust JSON parsing
 function parseAIResponse(responseText: string): any | null {
@@ -146,7 +343,7 @@ function parseAIResponse(responseText: string): any | null {
   return null;
 }
 
-// Call Gemini API
+// Call Gemini API (text only)
 async function callGemini(prompt: string, geminiApiKey: string): Promise<any | null> {
   try {
     const response = await fetch(
@@ -178,6 +375,42 @@ async function callGemini(prompt: string, geminiApiKey: string): Promise<any | n
     return parseAIResponse(responseText);
   } catch (error) {
     console.log('⚠️ [PIXEL] Gemini call error:', error);
+    return null;
+  }
+}
+
+// Call Gemini API with multimodal support (text + images/videos/documents)
+async function callGeminiMultimodal(parts: any[], geminiApiKey: string): Promise<any | null> {
+  try {
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiApiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts }],
+          generationConfig: {
+            temperature: 0.3,
+            maxOutputTokens: 8192
+          }
+        })
+      }
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.log('⚠️ [PIXEL] Gemini Multimodal API error:', response.status, errorText.substring(0, 200));
+      return null;
+    }
+
+    const data = await response.json();
+    const responseText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    
+    console.log('📄 [PIXEL] Gemini Multimodal response (first 300 chars):', responseText.substring(0, 300));
+    
+    return parseAIResponse(responseText);
+  } catch (error) {
+    console.log('⚠️ [PIXEL] Gemini Multimodal call error:', error);
     return null;
   }
 }
@@ -268,23 +501,128 @@ serve(async (req) => {
         updated_at: new Date().toISOString()
       }, { onConflict: 'company_id' });
 
-    // Analyze ALL text messages (inbound AND outbound) to track conversation flow
+    // Analyze ALL messages (inbound AND outbound) to track conversation flow - INCLUDING MEDIA
     let aiAnalysis: any = null;
+    const supportedMediaTypes = ['image', 'audio', 'video', 'document'];
+    const hasMedia = message_type && supportedMediaTypes.includes(message_type);
     
-    if (geminiApiKey && message_content && message_type === 'text') {
+    if (geminiApiKey && (message_content || hasMedia)) {
       // Get last 5 messages for context
       const { data: recentMessages } = await supabase
         .from('messages')
-        .select('content, direction, sender_type, message_type')
+        .select('content, direction, sender_type, message_type, media_url, metadata')
         .eq('conversation_id', conversation_id)
         .order('created_at', { ascending: false })
         .limit(5);
 
+      // Build context including media descriptions
       const contextMessages = (recentMessages || [])
         .reverse()
-        .filter((m: any) => m.content)
-        .map((m: any) => `${m.direction === 'inbound' ? 'Cliente' : 'Vendedor'}: ${m.content}`)
+        .map((m: any) => {
+          const sender = m.direction === 'inbound' ? 'Cliente' : 'Vendedor';
+          if (m.content) {
+            return `${sender}: ${m.content}`;
+          } else if (m.message_type === 'audio') {
+            return `${sender}: [Enviou um áudio]`;
+          } else if (m.message_type === 'image') {
+            return `${sender}: [Enviou uma imagem]`;
+          } else if (m.message_type === 'video') {
+            return `${sender}: [Enviou um vídeo]`;
+          } else if (m.message_type === 'document') {
+            const fileName = m.metadata?.fileName || 'documento';
+            return `${sender}: [Enviou um documento: ${fileName}]`;
+          }
+          return null;
+        })
+        .filter(Boolean)
         .join('\n');
+
+      // Get media_url for current message if it's media
+      let currentMediaUrl: string | null = null;
+      let currentMetadata: any = null;
+      
+      if (hasMedia) {
+        const { data: currentMsg } = await supabase
+          .from('messages')
+          .select('media_url, metadata')
+          .eq('conversation_id', conversation_id)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        
+        currentMediaUrl = currentMsg?.media_url;
+        currentMetadata = currentMsg?.metadata;
+        console.log(`📎 [PIXEL] Current message is ${message_type}, media_url: ${currentMediaUrl ? 'found' : 'not found'}`);
+      }
+
+      // Process media content
+      let processedContent = message_content || '';
+      const mediaParts: any[] = [];
+      
+      // Process audio - transcribe it
+      if (message_type === 'audio' && currentMediaUrl) {
+        console.log('🎤 [PIXEL] Transcribing audio for real-time analysis...');
+        const transcription = await transcribeAudio(currentMediaUrl, geminiApiKey);
+        if (transcription) {
+          processedContent = `[Áudio transcrito]: "${transcription}"`;
+          console.log('✅ [PIXEL] Audio transcribed:', transcription.substring(0, 100));
+        } else {
+          processedContent = '[Áudio - transcrição não disponível]';
+        }
+      }
+      
+      // Process image - fetch and add to multimodal
+      if (message_type === 'image' && currentMediaUrl) {
+        console.log('🖼️ [PIXEL] Fetching image for real-time analysis...');
+        const imageData = await fetchImageAsBase64(currentMediaUrl);
+        if (imageData) {
+          mediaParts.push({
+            inline_data: {
+              mime_type: imageData.mimeType,
+              data: imageData.data
+            }
+          });
+          console.log('✅ [PIXEL] Image fetched successfully');
+        }
+        processedContent = message_content || '[Imagem enviada - analisar visualmente]';
+      }
+      
+      // Process video - fetch and add to multimodal
+      if (message_type === 'video' && currentMediaUrl) {
+        console.log('🎬 [PIXEL] Fetching video for real-time analysis...');
+        const videoData = await fetchVideoAsBase64(currentMediaUrl);
+        if (videoData) {
+          mediaParts.push({
+            inline_data: {
+              mime_type: videoData.mimeType,
+              data: videoData.data
+            }
+          });
+          console.log('✅ [PIXEL] Video fetched successfully');
+        }
+        processedContent = message_content || '[Vídeo enviado - analisar visualmente]';
+      }
+      
+      // Process document - fetch and add to multimodal
+      if (message_type === 'document' && currentMediaUrl) {
+        console.log('📄 [PIXEL] Fetching document for real-time analysis...');
+        const fileName = currentMetadata?.fileName;
+        const docData = await fetchDocumentAsBase64(currentMediaUrl, fileName);
+        if (docData) {
+          mediaParts.push({
+            inline_data: {
+              mime_type: docData.mimeType,
+              data: docData.data
+            }
+          });
+          console.log('✅ [PIXEL] Document fetched successfully');
+        }
+        processedContent = message_content || `[Documento enviado: ${fileName || 'arquivo'}]`;
+      }
+
+      const messageDescription = hasMedia && !message_content 
+        ? `${processedContent}` 
+        : message_content || processedContent;
 
       const fullPrompt = `${ANALYSIS_PROMPT}
 
@@ -292,18 +630,28 @@ Contexto da conversa (últimas mensagens):
 ${contextMessages}
 
 Mensagem atual do ${isInbound ? 'cliente' : 'vendedor'}:
-${message_content}`;
+${messageDescription}
+
+${hasMedia ? `IMPORTANTE: Esta mensagem contém mídia (${message_type}). Analise o conteúdo visual/áudio se disponível para entender melhor a intenção do lead.` : ''}`;
 
       console.log('🤖 [PIXEL] Calling Gemini for message analysis...');
-      aiAnalysis = await callGemini(fullPrompt, geminiApiKey);
+      
+      // Use multimodal if we have media parts, otherwise text-only
+      if (mediaParts.length > 0) {
+        console.log(`🖼️ [PIXEL] Using multimodal analysis with ${mediaParts.length} media part(s)`);
+        mediaParts.unshift({ text: fullPrompt });
+        aiAnalysis = await callGeminiMultimodal(mediaParts, geminiApiKey);
+      } else {
+        aiAnalysis = await callGemini(fullPrompt, geminiApiKey);
+      }
       
       if (aiAnalysis) {
         console.log('✅ [PIXEL] AI Analysis parsed successfully:', JSON.stringify(aiAnalysis));
       }
     }
 
-    // FALLBACK: If AI analysis failed but we have message content, use rule-based analysis
-    if (!aiAnalysis && message_content && message_type === 'text') {
+    // FALLBACK: If AI analysis failed but we have message content or media, use rule-based analysis
+    if (!aiAnalysis && (message_content || hasMedia)) {
       console.log('🔄 [PIXEL] Using fallback rule-based analysis');
       
       const contentLower = message_content.toLowerCase();
@@ -371,6 +719,15 @@ ${message_content}`;
       metricsUpdate.interest_level = aiAnalysis.interest_level || 3;
       metricsUpdate.close_probability = aiAnalysis.close_probability || 0;
       metricsUpdate.predicted_outcome = aiAnalysis.predicted_outcome || null;
+      
+      // Store media description if present
+      if (aiAnalysis.media_description) {
+        console.log('🖼️ [PIXEL] Media description identified:', aiAnalysis.media_description);
+        // Store in deal_signals with prefix for easy identification
+        const existingSignals = existingMetrics?.deal_signals || [];
+        const mediaSignal = `[MÍDIA] ${aiAnalysis.media_description}`;
+        metricsUpdate.deal_signals = [...new Set([...existingSignals, mediaSignal])].slice(-10);
+      }
       
       // Update lead status (only escalate, don't downgrade without reason)
       const statusPriority: Record<string, number> = {
@@ -444,7 +801,9 @@ ${message_content}`;
     // =====================================================
     // AGENT BEHAVIOR DETECTION (for outbound messages only)
     // =====================================================
-    if (!isInbound && geminiApiKey && message_content && message_type === 'text') {
+    // Analyze outbound messages including media (agent might send inappropriate images/docs)
+    const outboundHasContent = message_content || hasMedia;
+    if (!isInbound && geminiApiKey && outboundHasContent) {
       // Get conversation details to find the agent
       const { data: convDetails } = await supabase
         .from('conversations')
@@ -456,16 +815,32 @@ ${message_content}`;
         // Get last 5 messages for context
         const { data: contextMessages } = await supabase
           .from('messages')
-          .select('content, direction, sender_type')
+          .select('content, direction, sender_type, message_type, media_url, metadata')
           .eq('conversation_id', conversation_id)
           .order('created_at', { ascending: false })
           .limit(5);
 
+        // Get the latest message (the one being analyzed) for media URL
+        const latestMessage = contextMessages?.[0];
+        const behaviorMediaUrl = latestMessage?.media_url;
+        const behaviorMetadata = latestMessage?.metadata;
+
         const contextText = (contextMessages || [])
           .reverse()
-          .filter((m: any) => m.content)
-          .map((m: any) => `${m.direction === 'inbound' ? 'Cliente' : 'Vendedor'}: ${m.content}`)
+          .map((m: any) => {
+            const sender = m.direction === 'inbound' ? 'Cliente' : 'Vendedor';
+            if (m.content) return `${sender}: ${m.content}`;
+            if (m.message_type) return `${sender}: [Enviou ${m.message_type}]`;
+            return null;
+          })
+          .filter(Boolean)
           .join('\n');
+
+        // Describe the current message for behavior analysis
+        let messageForBehavior = message_content || '';
+        if (hasMedia && !message_content) {
+          messageForBehavior = `[Vendedor enviou: ${message_type}]`;
+        }
 
         const behaviorPrompt = `${BEHAVIOR_PROMPT}
 
@@ -473,13 +848,93 @@ Contexto da conversa:
 ${contextText}
 
 Mensagem do vendedor a analisar:
-${message_content}`;
+${messageForBehavior}
+
+${hasMedia ? `NOTA: O vendedor enviou uma mídia (${message_type}). Considere se o tipo de mídia é apropriado para o contexto comercial. Descreva o conteúdo no campo media_description.` : ''}`;
 
         console.log('🔍 [PIXEL] Analyzing agent behavior...');
-        const behaviorResult = await callGemini(behaviorPrompt, geminiApiKey);
+        
+        // Use multimodal analysis for media content to get actual description
+        let behaviorResult;
+        if (hasMedia && behaviorMediaUrl) {
+          console.log('🖼️ [PIXEL] Using multimodal analysis for behavior with media:', message_type, 'URL:', behaviorMediaUrl);
+          
+          // Build multimodal parts array
+          const behaviorParts: any[] = [{ text: behaviorPrompt }];
+          
+          // Fetch and add media to parts based on type
+          try {
+            if (message_type === 'audio') {
+              // Transcribe audio for behavior analysis
+              const transcription = await transcribeAudio(behaviorMediaUrl, geminiApiKey);
+              if (transcription) {
+                behaviorParts[0] = { text: `${behaviorPrompt}\n\nTranscrição do áudio enviado: "${transcription}"` };
+                console.log('🎤 [PIXEL] Audio transcribed for behavior:', transcription.substring(0, 100));
+              }
+            } else if (message_type === 'image' || message_type === 'sticker') {
+              const imageData = await fetchImageAsBase64(behaviorMediaUrl);
+              if (imageData) {
+                behaviorParts.push({
+                  inline_data: {
+                    mime_type: imageData.mimeType,
+                    data: imageData.data
+                  }
+                });
+                console.log('🖼️ [PIXEL] Image added to behavior analysis');
+              }
+            } else if (message_type === 'video') {
+              const videoData = await fetchVideoAsBase64(behaviorMediaUrl);
+              if (videoData) {
+                behaviorParts.push({
+                  inline_data: {
+                    mime_type: videoData.mimeType,
+                    data: videoData.data
+                  }
+                });
+                console.log('🎥 [PIXEL] Video added to behavior analysis');
+              }
+            } else if (message_type === 'document') {
+              const fileName = behaviorMetadata?.fileName;
+              const docData = await fetchDocumentAsBase64(behaviorMediaUrl, fileName);
+              if (docData) {
+                behaviorParts.push({
+                  inline_data: {
+                    mime_type: docData.mimeType,
+                    data: docData.data
+                  }
+                });
+                console.log('📄 [PIXEL] Document added to behavior analysis');
+              }
+            }
+          } catch (mediaError) {
+            console.log('⚠️ [PIXEL] Error fetching media for behavior analysis:', mediaError);
+          }
+          
+          // Call multimodal if we have media parts, otherwise fallback to text-only
+          if (behaviorParts.length > 1 || message_type === 'audio') {
+            behaviorResult = await callGeminiMultimodal(behaviorParts, geminiApiKey);
+          } else {
+            behaviorResult = await callGemini(behaviorPrompt, geminiApiKey);
+          }
+        } else {
+          behaviorResult = await callGemini(behaviorPrompt, geminiApiKey);
+        }
 
         if (behaviorResult && behaviorResult.has_issue && behaviorResult.alert_type && behaviorResult.confidence >= 0.7) {
           console.log('⚠️ [PIXEL] Behavior issue detected:', behaviorResult);
+
+          // Build message_excerpt with media description if available
+          let messageExcerpt = '';
+          if (message_content) {
+            messageExcerpt = message_content.substring(0, 200);
+          } else if (behaviorResult.media_description) {
+            // Use AI's description of the media content
+            messageExcerpt = `[${message_type}] ${behaviorResult.media_description}`.substring(0, 200);
+            console.log('📝 [PIXEL] Using media description for excerpt:', messageExcerpt);
+          } else {
+            // Fallback to generic placeholder
+            messageExcerpt = `[Mídia: ${message_type}]`;
+          }
 
           // Insert behavior alert
           await supabase.from('agent_behavior_alerts').insert({
@@ -491,13 +946,13 @@ ${message_content}`;
             severity: behaviorResult.severity || 'medium',
             title: behaviorResult.title || 'Comportamento detectado',
             description: behaviorResult.description || '',
-            message_excerpt: message_content.substring(0, 200),
+            message_excerpt: messageExcerpt,
             ai_confidence: behaviorResult.confidence,
             lead_was_rude: behaviorResult.lead_was_rude || false,
             detected_at: new Date().toISOString()
           });
 
-          console.log('✅ [PIXEL] Behavior alert saved');
+          console.log('✅ [PIXEL] Behavior alert saved with excerpt:', messageExcerpt);
         }
       }
     }
@@ -571,35 +1026,157 @@ ${message_content}`;
     }
 
     // =====================================================
-    // AUTOMATIC CONVERSATION EVALUATION (every 10 messages)
+    // AUTOMATIC CONVERSATION EVALUATION (every 10 messages) - MULTIMODAL
     // =====================================================
     const EVALUATION_INTERVAL = 10;
     const shouldEvaluate = currentTotalMessages > 0 && currentTotalMessages % EVALUATION_INTERVAL === 0;
     
     if (shouldEvaluate && geminiApiKey) {
-      console.log(`📊 [PIXEL] Triggering automatic evaluation at ${currentTotalMessages} messages`);
+      console.log(`📊 [PIXEL] Triggering automatic MULTIMODAL evaluation at ${currentTotalMessages} messages`);
       
-      // Get full conversation for evaluation
+      // Get full conversation for evaluation WITH media fields
       const { data: allMessages } = await supabase
         .from('messages')
-        .select('content, direction, sender_type, created_at')
+        .select('content, direction, sender_type, created_at, message_type, media_url, metadata')
         .eq('conversation_id', conversation_id)
         .order('created_at', { ascending: true })
         .limit(50);
 
       if (allMessages && allMessages.length >= 5) {
-        const conversationText = allMessages
-          .filter((m: any) => m.content)
-          .map((m: any) => `${m.direction === 'inbound' ? 'Cliente' : 'Vendedor'}: ${m.content}`)
-          .join('\n');
+        // Process messages with multimodal support
+        const imageUrls: string[] = [];
+        const videoUrls: string[] = [];
+        const documentData: { url: string; fileName?: string }[] = [];
+        const processedMessages: string[] = [];
 
-        const evalPrompt = `${EVALUATION_PROMPT}
+        for (const m of allMessages) {
+          if (!m.content && !m.media_url) continue;
+          
+          const sender = m.direction === 'inbound' ? 'Cliente' : 'Vendedor';
+          const time = new Date(m.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+          let content = m.content || '';
+          
+          switch (m.message_type) {
+            case 'audio':
+              if (m.media_url) {
+                const transcription = await transcribeAudio(m.media_url, geminiApiKey);
+                content = transcription 
+                  ? `[Áudio transcrito]: "${transcription}"`
+                  : '[Áudio - transcrição não disponível]';
+              }
+              break;
+              
+            case 'image':
+              if (m.media_url) {
+                imageUrls.push(m.media_url);
+                content = m.content 
+                  ? `[Imagem com legenda: "${m.content}"]`
+                  : '[Imagem enviada]';
+              }
+              break;
+              
+            case 'video':
+              if (m.media_url) {
+                videoUrls.push(m.media_url);
+                content = m.content 
+                  ? `[Vídeo com legenda: "${m.content}"]`
+                  : '[Vídeo enviado]';
+              }
+              break;
+              
+            case 'document':
+              if (m.media_url) {
+                const metadata = m.metadata as any;
+                const fileName = metadata?.fileName || metadata?.filename || 'documento';
+                documentData.push({ url: m.media_url, fileName });
+                content = `[Documento: ${fileName}]`;
+              }
+              break;
+              
+            case 'sticker':
+              content = '[Sticker/Figurinha]';
+              break;
+              
+            default: // text
+              // Mantém o content original
+              break;
+          }
+          
+          if (content) {
+            processedMessages.push(`[${time}] ${sender}: ${content}`);
+          }
+        }
 
-Conversa completa:
-${conversationText}`;
+        const conversationText = processedMessages.join('\n');
 
-        console.log('🤖 [PIXEL] Calling Gemini for conversation evaluation...');
-        const evalResult = await callGemini(evalPrompt, geminiApiKey);
+        // Construir parts multimodal
+        const parts: any[] = [];
+        
+        // Adicionar texto do prompt + conversa
+        const textPrompt = `${EVALUATION_PROMPT}
+
+## IMPORTANTE - ANÁLISE DE MÍDIA
+- SE houver imagens anexadas, analise se o atendente utilizou recursos visuais adequadamente (catálogos, fotos de produtos, prints)
+- SE houver áudios transcritos, considere a comunicação verbal como parte da avaliação (tom, clareza, persuasão)
+- SE houver vídeos, avalie se foram usados de forma pertinente (demonstrações, apresentações)
+- SE houver documentos, verifique se materiais relevantes foram compartilhados (propostas, contratos, PDFs informativos)
+
+--- CONVERSA ---
+${conversationText}
+--- FIM DA CONVERSA ---`;
+        parts.push({ text: textPrompt });
+
+        // Adicionar imagens (máx 10 últimas)
+        let mediaCount = { images: 0, videos: 0, documents: 0 };
+        
+        for (const imageUrl of imageUrls.slice(-10)) {
+          const imageData = await fetchImageAsBase64(imageUrl);
+          if (imageData) {
+            parts.push({
+              inline_data: {
+                mime_type: imageData.mimeType,
+                data: imageData.data
+              }
+            });
+            mediaCount.images++;
+          }
+        }
+
+        // Adicionar vídeos (máx 3 últimos, ≤20MB cada)
+        for (const videoUrl of videoUrls.slice(-3)) {
+          const videoData = await fetchVideoAsBase64(videoUrl);
+          if (videoData) {
+            parts.push({
+              inline_data: {
+                mime_type: videoData.mimeType,
+                data: videoData.data
+              }
+            });
+            mediaCount.videos++;
+          }
+        }
+
+        // Adicionar documentos (máx 3 últimos, ≤20MB cada)
+        for (const doc of documentData.slice(-3)) {
+          const docData = await fetchDocumentAsBase64(doc.url, doc.fileName);
+          if (docData) {
+            parts.push({
+              inline_data: {
+                mime_type: docData.mimeType,
+                data: docData.data
+              }
+            });
+            mediaCount.documents++;
+          }
+        }
+
+        const hasMedia = mediaCount.images > 0 || mediaCount.videos > 0 || mediaCount.documents > 0;
+        console.log(`🤖 [PIXEL] Calling Gemini for evaluation with media:`, mediaCount);
+        
+        // Use multimodal call if there's media, otherwise use text-only
+        const evalResult = hasMedia 
+          ? await callGeminiMultimodal(parts, geminiApiKey)
+          : await callGemini(textPrompt, geminiApiKey);
         
         if (evalResult) {
           console.log('✅ [PIXEL] Evaluation result:', JSON.stringify(evalResult));
@@ -629,7 +1206,7 @@ ${conversationText}`;
           if (evalError) {
             console.log('⚠️ [PIXEL] Error saving evaluation:', evalError);
           } else {
-            console.log('✅ [PIXEL] Evaluation saved successfully');
+            console.log('✅ [PIXEL] Evaluation saved successfully (multimodal:', hasMedia, ')');
           }
         }
       }

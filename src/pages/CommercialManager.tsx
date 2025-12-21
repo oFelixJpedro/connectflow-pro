@@ -41,7 +41,7 @@ export default function CommercialManager() {
   const [customStartDate, setCustomStartDate] = useState<Date | undefined>();
   const [customEndDate, setCustomEndDate] = useState<Date | undefined>();
   const [datePickerOpen, setDatePickerOpen] = useState(false);
-  const { loading, data, liveMetrics, isAdmin } = useCommercialData(filter);
+  const { loading, data, liveMetrics, isAdmin, insightsLoading } = useCommercialData(filter);
   const [viewMode, setViewMode] = useState<'commercial' | 'dashboard'>('commercial');
   const [currentTime, setCurrentTime] = useState(new Date());
   const [reportsModalOpen, setReportsModalOpen] = useState(false);
@@ -74,12 +74,6 @@ export default function CommercialManager() {
             .eq('status', 'connected')
             .order('name');
           setConnections(data || []);
-        } else if (filter.type === 'department' && departments.length === 0) {
-          const { data } = await supabase
-            .from('departments')
-            .select('id, name')
-            .order('name');
-          setDepartments(data || []);
         }
       } catch (error) {
         console.error('Error loading filter data:', error);
@@ -89,7 +83,31 @@ export default function CommercialManager() {
     };
 
     loadFilterData();
-  }, [filter.type, company?.id, connections.length, departments.length]);
+  }, [filter.type, company?.id, connections.length]);
+
+  // Load departments when connection is selected
+  useEffect(() => {
+    if (!filter.connectionId) {
+      setDepartments([]);
+      return;
+    }
+
+    const loadDepartments = async () => {
+      try {
+        const { data } = await supabase
+          .from('departments')
+          .select('id, name')
+          .eq('whatsapp_connection_id', filter.connectionId)
+          .eq('active', true)
+          .order('name');
+        setDepartments(data || []);
+      } catch (error) {
+        console.error('Error loading departments:', error);
+      }
+    };
+
+    loadDepartments();
+  }, [filter.connectionId]);
 
   // Update filter when period changes
   useEffect(() => {
@@ -146,10 +164,12 @@ export default function CommercialManager() {
 
   const handleSecondaryFilterChange = (value: string) => {
     if (filter.type === 'connection') {
-      setFilter(prev => ({ ...prev, connectionId: value }));
-    } else if (filter.type === 'department') {
-      setFilter(prev => ({ ...prev, departmentId: value }));
+      setFilter(prev => ({ ...prev, connectionId: value, departmentId: undefined }));
     }
+  };
+
+  const handleDepartmentChange = (value: string) => {
+    setFilter(prev => ({ ...prev, departmentId: value === 'all' ? undefined : value }));
   };
 
   const handlePeriodChange = (preset: PeriodPreset) => {
@@ -184,16 +204,12 @@ export default function CommercialManager() {
 
   const getSecondaryValue = () => {
     if (filter.type === 'connection') return filter.connectionId || '';
-    if (filter.type === 'department') return filter.departmentId || '';
     return '';
   };
 
   const getSecondaryOptions = () => {
     if (filter.type === 'connection') {
       return connections.map(c => ({ value: c.id, label: `${c.name} (${c.phone_number})` }));
-    }
-    if (filter.type === 'department') {
-      return departments.map(d => ({ value: d.id, label: d.name }));
     }
     return [];
   };
@@ -204,7 +220,8 @@ export default function CommercialManager() {
   }
 
   const secondaryOptions = getSecondaryOptions();
-  const showSecondaryFilter = filter.type !== 'general';
+  const showSecondaryFilter = filter.type === 'connection';
+  const showDepartmentFilter = filter.type === 'connection' && filter.connectionId;
 
   return (
     <div className="h-full overflow-auto p-3 md:p-6 space-y-4 md:space-y-6">
@@ -275,12 +292,6 @@ export default function CommercialManager() {
                   Por Conexão
                 </div>
               </SelectItem>
-              <SelectItem value="department">
-                <div className="flex items-center gap-2">
-                  <Users className="w-4 h-4" />
-                  Por Departamento
-                </div>
-              </SelectItem>
             </SelectContent>
           </Select>
 
@@ -291,17 +302,47 @@ export default function CommercialManager() {
               disabled={loadingFilters}
             >
               <SelectTrigger className="w-[220px]">
-                <SelectValue placeholder={filter.type === 'connection' ? 'Selecionar conexão...' : 'Selecionar departamento...'} />
+                <SelectValue placeholder="Selecionar conexão..." />
               </SelectTrigger>
               <SelectContent className="bg-popover">
                 {secondaryOptions.length === 0 ? (
                   <div className="py-2 px-3 text-sm text-muted-foreground">
-                    {filter.type === 'connection' ? 'Nenhuma conexão ativa' : 'Nenhum departamento'}
+                    Nenhuma conexão ativa
                   </div>
                 ) : (
                   secondaryOptions.map(opt => (
                     <SelectItem key={opt.value} value={opt.value}>
                       {opt.label}
+                    </SelectItem>
+                  ))
+                )}
+              </SelectContent>
+            </Select>
+          )}
+
+          {showDepartmentFilter && (
+            <Select 
+              value={filter.departmentId || 'all'} 
+              onValueChange={handleDepartmentChange}
+            >
+              <SelectTrigger className="w-[200px]">
+                <div className="flex items-center gap-2">
+                  <Users className="w-4 h-4" />
+                  <SelectValue placeholder="Departamento..." />
+                </div>
+              </SelectTrigger>
+              <SelectContent className="bg-popover">
+                <SelectItem value="all">
+                  Todos departamentos
+                </SelectItem>
+                {departments.length === 0 ? (
+                  <div className="py-2 px-3 text-sm text-muted-foreground">
+                    Nenhum departamento
+                  </div>
+                ) : (
+                  departments.map(dept => (
+                    <SelectItem key={dept.id} value={dept.id}>
+                      {dept.name}
                     </SelectItem>
                   ))
                 )}
@@ -350,6 +391,18 @@ export default function CommercialManager() {
                     numberOfMonths={2}
                     locale={ptBR}
                     className="pointer-events-auto"
+                    disabled={(date) => {
+                      const today = new Date();
+                      today.setHours(23, 59, 59, 999);
+                      
+                      // Minimum date: company creation date or fallback
+                      const minDate = company?.created_at 
+                        ? new Date(company.created_at) 
+                        : new Date('2020-01-01');
+                      minDate.setHours(0, 0, 0, 0);
+                      
+                      return date > today || date < minDate;
+                    }}
                   />
                 </PopoverContent>
               </Popover>
@@ -398,6 +451,7 @@ export default function CommercialManager() {
       {/* Insights */}
       <InsightsCard
         loading={loading}
+        insightsLoading={insightsLoading}
         strengths={data?.strengths || []}
         weaknesses={data?.weaknesses || []}
         positivePatterns={data?.positivePatterns || []}
