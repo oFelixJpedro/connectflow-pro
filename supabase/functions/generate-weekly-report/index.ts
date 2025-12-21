@@ -59,76 +59,6 @@ interface MediaStatistics {
   top_media_types: string[];
 }
 
-async function getMediaStatistics(
-  supabase: any,
-  companyId: string,
-  weekStart: Date,
-  weekEnd: Date
-): Promise<MediaStatistics> {
-  try {
-    const { data: mediaCache, error } = await supabase
-      .from('media_analysis_cache')
-      .select('media_type, hit_count, created_at')
-      .eq('company_id', companyId)
-      .gte('created_at', weekStart.toISOString())
-      .lte('created_at', weekEnd.toISOString());
-
-    if (error || !mediaCache || mediaCache.length === 0) {
-      console.log('No media cache data found for period');
-      return {
-        total_analyzed: 0,
-        by_type: { image: 0, video: 0, document: 0, audio: 0 },
-        cache_hits: 0,
-        cache_efficiency_percent: 0,
-        top_media_types: []
-      };
-    }
-
-    // Aggregate statistics
-    const byType: Record<string, number> = { image: 0, video: 0, document: 0, audio: 0 };
-    let totalHits = 0;
-
-    for (const item of mediaCache) {
-      const mediaType = item.media_type?.toLowerCase() || 'unknown';
-      if (mediaType in byType) {
-        byType[mediaType]++;
-      }
-      totalHits += item.hit_count || 0;
-    }
-
-    const total = mediaCache.length;
-    
-    // Get top media types sorted by count
-    const topTypes = Object.entries(byType)
-      .sort((a, b) => b[1] - a[1])
-      .filter(([_, v]) => v > 0)
-      .slice(0, 3)
-      .map(([k]) => k);
-
-    // Cache efficiency: hits / (total new items + hits)
-    const efficiency = total > 0 ? Math.round((totalHits / (total + totalHits)) * 100) : 0;
-
-    console.log(`Media stats: ${total} items, ${totalHits} cache hits, ${efficiency}% efficiency`);
-
-    return {
-      total_analyzed: total,
-      by_type: byType as { image: number; video: number; document: number; audio: number },
-      cache_hits: totalHits,
-      cache_efficiency_percent: efficiency,
-      top_media_types: topTypes
-    };
-  } catch (error) {
-    console.error('Error fetching media statistics:', error);
-    return {
-      total_analyzed: 0,
-      by_type: { image: 0, video: 0, document: 0, audio: 0 },
-      cache_hits: 0,
-      cache_efficiency_percent: 0,
-      top_media_types: []
-    };
-  }
-}
-
 const DDD_TO_STATE: Record<string, string> = {
   '11': 'SP', '12': 'SP', '13': 'SP', '14': 'SP', '15': 'SP', '16': 'SP', '17': 'SP', '18': 'SP', '19': 'SP',
   '21': 'RJ', '22': 'RJ', '24': 'RJ',
@@ -174,6 +104,72 @@ function getClassification(score: number): string {
   return 'CRÍTICO';
 }
 
+async function getMediaStatistics(
+  supabase: any,
+  companyId: string,
+  weekStart: Date,
+  weekEnd: Date
+): Promise<MediaStatistics> {
+  try {
+    const { data: mediaCache, error } = await supabase
+      .from('media_analysis_cache')
+      .select('media_type, hit_count, created_at')
+      .eq('company_id', companyId)
+      .gte('created_at', weekStart.toISOString())
+      .lte('created_at', weekEnd.toISOString());
+
+    if (error || !mediaCache || mediaCache.length === 0) {
+      console.log('No media cache data found for period');
+      return {
+        total_analyzed: 0,
+        by_type: { image: 0, video: 0, document: 0, audio: 0 },
+        cache_hits: 0,
+        cache_efficiency_percent: 0,
+        top_media_types: []
+      };
+    }
+
+    const byType: Record<string, number> = { image: 0, video: 0, document: 0, audio: 0 };
+    let totalHits = 0;
+
+    for (const item of mediaCache) {
+      const mediaType = item.media_type?.toLowerCase() || 'unknown';
+      if (mediaType in byType) {
+        byType[mediaType]++;
+      }
+      totalHits += item.hit_count || 0;
+    }
+
+    const total = mediaCache.length;
+    const topTypes = Object.entries(byType)
+      .sort((a, b) => b[1] - a[1])
+      .filter(([_, v]) => v > 0)
+      .slice(0, 3)
+      .map(([k]) => k);
+
+    const efficiency = total > 0 ? Math.round((totalHits / (total + totalHits)) * 100) : 0;
+
+    console.log(`Media stats: ${total} items, ${totalHits} cache hits, ${efficiency}% efficiency`);
+
+    return {
+      total_analyzed: total,
+      by_type: byType as { image: number; video: number; document: number; audio: number },
+      cache_hits: totalHits,
+      cache_efficiency_percent: efficiency,
+      top_media_types: topTypes
+    };
+  } catch (error) {
+    console.error('Error fetching media statistics:', error);
+    return {
+      total_analyzed: 0,
+      by_type: { image: 0, video: 0, document: 0, audio: 0 },
+      cache_hits: 0,
+      cache_efficiency_percent: 0,
+      top_media_types: []
+    };
+  }
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -193,7 +189,6 @@ serve(async (req) => {
     // Calculate week range (last Monday to last Sunday)
     const now = new Date();
     const dayOfWeek = now.getDay();
-    const daysToLastMonday = dayOfWeek === 0 ? 6 : dayOfWeek + 6;
     
     const weekEnd = new Date(now);
     weekEnd.setDate(now.getDate() - (dayOfWeek === 0 ? 0 : dayOfWeek));
@@ -223,7 +218,7 @@ serve(async (req) => {
       try {
         console.log(`Processing company: ${company.name} (${company.id})`);
 
-        // Check if report already exists for this week (regular OR anticipated)
+        // Check if report already exists for this week
         const { data: existingReport } = await supabase
           .from('commercial_reports')
           .select('id, is_anticipated')
@@ -232,13 +227,12 @@ serve(async (req) => {
           .maybeSingle();
 
         if (existingReport) {
-          // If any report exists (anticipated or regular), skip generation
-          console.log(`Report already exists for company ${company.id} (anticipated: ${existingReport.is_anticipated || false})`);
+          console.log(`Report already exists for company ${company.id}`);
           results.push({ companyId: company.id, success: true });
           continue;
         }
 
-        // Fetch conversations for the week with messages
+        // Fetch conversations for the week
         const { data: conversations, error: convError } = await supabase
           .from('conversations')
           .select(`
@@ -259,8 +253,13 @@ serve(async (req) => {
 
         console.log(`Found ${conversations?.length || 0} conversations`);
 
+        // Fetch media statistics for the week
+        console.log('Fetching media statistics...');
+        const mediaStats = await getMediaStatistics(supabase, company.id, weekStart, weekEnd);
+        console.log('Media stats:', JSON.stringify(mediaStats));
+
         if (!conversations || conversations.length === 0) {
-          // Create empty report
+          // Create empty report with media stats
           await supabase.from('commercial_reports').insert({
             company_id: company.id,
             report_date: now.toISOString().split('T')[0],
@@ -273,6 +272,7 @@ serve(async (req) => {
             qualified_leads: 0,
             closed_deals: 0,
             conversion_rate: 0,
+            media_statistics: mediaStats,
           });
 
           results.push({ companyId: company.id, success: true });
@@ -289,7 +289,6 @@ serve(async (req) => {
             .order('created_at', { ascending: true })
             .limit(50);
 
-          // Get assigned user info
           let assignedUser = null;
           if (conv.assigned_user_id) {
             const { data: user } = await supabase
@@ -312,7 +311,7 @@ serve(async (req) => {
         const evaluations: EvaluationResult[] = [];
         
         for (const conv of conversationsWithMessages) {
-          if (conv.messages.length < 3) continue; // Skip conversations with too few messages
+          if (conv.messages.length < 3) continue;
 
           const conversationText = conv.messages
             .map(m => `[${m.direction === 'inbound' ? 'Cliente' : 'Atendente'}]: ${m.content || '[mídia]'}`)
@@ -378,13 +377,11 @@ lead_interest_level: 1-5 (1 = nenhum interesse, 5 = muito interessado)`;
             const geminiData = await geminiResponse.json();
             const responseText = geminiData.candidates?.[0]?.content?.parts?.[0]?.text || '';
             
-            // Extract JSON from response
             const jsonMatch = responseText.match(/\{[\s\S]*\}/);
             if (jsonMatch) {
               const evaluation = JSON.parse(jsonMatch[0]) as EvaluationResult;
               evaluations.push(evaluation);
 
-              // Save individual evaluation
               await supabase.from('conversation_evaluations').insert({
                 conversation_id: conv.id,
                 company_id: company.id,
@@ -439,12 +436,11 @@ lead_interest_level: 1-5 (1 = nenhum interesse, 5 = muito interessado)`;
           avgCriteria.tempoResposta /= count;
         }
 
-        // Count leads and qualifications
         const hotLeads = evaluations.filter(e => e.lead_qualification === 'hot').length;
         const warmLeads = evaluations.filter(e => e.lead_qualification === 'warm').length;
         const closedDeals = conversationsWithMessages.filter(c => c.status === 'closed').length;
 
-        // Calculate geographic distribution
+        // Geographic distribution
         const contactsByState: Record<string, number> = {};
         const dealsByState: Record<string, number> = {};
 
@@ -458,7 +454,7 @@ lead_interest_level: 1-5 (1 = nenhum interesse, 5 = muito interessado)`;
           }
         }
 
-        // Agent performance analysis
+        // Agent performance
         const agentStats: Record<string, { total: number; score: number; name: string }> = {};
         for (const conv of conversationsWithMessages) {
           if (conv.assigned_user_id && conv.assignedUser) {
@@ -473,7 +469,6 @@ lead_interest_level: 1-5 (1 = nenhum interesse, 5 = muito interessado)`;
           }
         }
 
-        // Match evaluations to agents
         for (let i = 0; i < conversationsWithMessages.length; i++) {
           const conv = conversationsWithMessages[i];
           const evaluation = evaluations[i];
@@ -489,7 +484,7 @@ lead_interest_level: 1-5 (1 = nenhum interesse, 5 = muito interessado)`;
           average_score: stats.total > 0 ? stats.score / stats.total : 0,
         }));
 
-        // Generate insights using Gemini
+        // Generate insights
         const insightsPrompt = `Baseado nas seguintes métricas de atendimento comercial, gere insights e recomendações:
 
 Score médio: ${avgScore.toFixed(1)}/10
@@ -498,6 +493,9 @@ Total de conversas: ${conversations.length}
 Leads qualificados (hot/warm): ${hotLeads + warmLeads}
 Negócios fechados: ${closedDeals}
 Taxa de conversão: ${conversations.length > 0 ? ((closedDeals / conversations.length) * 100).toFixed(1) : 0}%
+
+Mídias analisadas: ${mediaStats.total_analyzed}
+Cache hits: ${mediaStats.cache_hits} (${mediaStats.cache_efficiency_percent}% eficiência)
 
 Scores por critério:
 - Comunicação: ${avgCriteria.comunicacao.toFixed(1)}
@@ -556,7 +554,7 @@ Responda APENAS em JSON válido:
           console.error('Error generating insights:', insightsError);
         }
 
-        // Create the commercial report
+        // Create the commercial report with media statistics
         const { error: insertError } = await supabase.from('commercial_reports').insert({
           company_id: company.id,
           report_date: now.toISOString().split('T')[0],
@@ -580,6 +578,7 @@ Responda APENAS em JSON válido:
           critical_issues: reportInsights.critical_issues,
           insights: reportInsights.insights,
           final_recommendation: reportInsights.final_recommendation,
+          media_statistics: mediaStats,
         });
 
         if (insertError) {

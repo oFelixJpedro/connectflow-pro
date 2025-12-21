@@ -612,6 +612,7 @@ export type Database = {
           id: string
           insights: string[] | null
           is_anticipated: boolean | null
+          media_statistics: Json | null
           negative_patterns: string[] | null
           pdf_url: string | null
           positive_patterns: string[] | null
@@ -646,6 +647,7 @@ export type Database = {
           id?: string
           insights?: string[] | null
           is_anticipated?: boolean | null
+          media_statistics?: Json | null
           negative_patterns?: string[] | null
           pdf_url?: string | null
           positive_patterns?: string[] | null
@@ -680,6 +682,7 @@ export type Database = {
           id?: string
           insights?: string[] | null
           is_anticipated?: boolean | null
+          media_statistics?: Json | null
           negative_patterns?: string[] | null
           pdf_url?: string | null
           positive_patterns?: string[] | null
