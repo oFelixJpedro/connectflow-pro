@@ -292,6 +292,7 @@ Se não houver problemas, retorne array vazio em "problematicas".`;
       generationConfig: {
         temperature: 0.3,
         maxOutputTokens: 4096,
+        responseMimeType: "application/json", // Força JSON válido
       },
     };
     
@@ -329,10 +330,29 @@ Se não houver problemas, retorne array vazio em "problematicas".`;
     
     console.log(`[generate-agent-recommendation] ✅ Batch ${batchIndex + 1} response preview:`, responseText.substring(0, 200));
 
-    // Parse do JSON
+    // Parse do JSON (com responseMimeType, deve vir limpo)
     try {
-      // Remove possíveis marcadores de código
-      const cleanJson = responseText.replace(/```json\n?|\n?```/g, '').trim();
+      // Remove possíveis marcadores de código (fallback)
+      let cleanJson = responseText.trim();
+      if (cleanJson.startsWith('```json')) cleanJson = cleanJson.slice(7);
+      if (cleanJson.startsWith('```')) cleanJson = cleanJson.slice(3);
+      if (cleanJson.endsWith('```')) cleanJson = cleanJson.slice(0, -3);
+      cleanJson = cleanJson.trim();
+      
+      // Tenta reparar JSON truncado
+      if (!cleanJson.endsWith('}')) {
+        console.warn(`[generate-agent-recommendation] ⚠️ JSON appears truncated, attempting repair`);
+        // Tenta fechar arrays e objetos abertos
+        const openBraces = (cleanJson.match(/{/g) || []).length;
+        const closeBraces = (cleanJson.match(/}/g) || []).length;
+        const openBrackets = (cleanJson.match(/\[/g) || []).length;
+        const closeBrackets = (cleanJson.match(/]/g) || []).length;
+        
+        // Adiciona fechamentos faltantes
+        cleanJson += ']'.repeat(Math.max(0, openBrackets - closeBrackets));
+        cleanJson += '}'.repeat(Math.max(0, openBraces - closeBraces));
+      }
+      
       const parsed = JSON.parse(cleanJson);
       
       return {
@@ -348,6 +368,7 @@ Se não houver problemas, retorne array vazio em "problematicas".`;
       };
     } catch (parseError) {
       console.error(`[generate-agent-recommendation] ⚠️ Failed to parse batch ${batchIndex + 1} response:`, parseError);
+      console.error(`[generate-agent-recommendation] Raw response:`, responseText.substring(0, 500));
       return {
         batchIndex,
         totalMedias: totalMedia,
