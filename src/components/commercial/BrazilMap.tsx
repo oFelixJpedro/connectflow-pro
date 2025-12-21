@@ -124,10 +124,8 @@ export function BrazilMap({ contactsByState, dealsByState }: BrazilMapProps) {
   };
 
   const renderCRMSelector = () => {
-    if (filter !== 'crm_stage') return null;
-
     return (
-      <div className="mt-2 border border-border rounded-lg overflow-hidden bg-background max-w-[300px]">
+      <div className="border border-border rounded-lg overflow-hidden bg-background w-[280px]">
         {/* Header */}
         <div className="flex items-center gap-2 px-3 py-2 border-b border-border bg-muted/30">
           {crmSelectionStep === 'stage' && (
@@ -239,7 +237,11 @@ export function BrazilMap({ contactsByState, dealsByState }: BrazilMapProps) {
             </SelectContent>
           </Select>
         </div>
-        {renderCRMSelector()}
+        {filter === 'crm_stage' && (
+          <div className="flex justify-end mt-2">
+            {renderCRMSelector()}
+          </div>
+        )}
       </CardHeader>
       <CardContent>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
