@@ -100,9 +100,9 @@ const DEFAULT_INSIGHTS: AggregatedInsights = {
 };
 
 export interface CommercialFilter {
-  type: 'general' | 'connection' | 'department';
+  type: 'general' | 'connection';
   connectionId?: string;
-  departmentId?: string;
+  departmentId?: string; // Sub-filter when connection is selected
   startDate?: Date;
   endDate?: Date;
 }
@@ -312,8 +312,10 @@ export function useCommercialData(filter?: CommercialFilter) {
         // Apply filters
         if (filter?.type === 'connection' && filter.connectionId) {
           conversationsQuery = conversationsQuery.eq('whatsapp_connection_id', filter.connectionId);
-        } else if (filter?.type === 'department' && filter.departmentId) {
-          conversationsQuery = conversationsQuery.eq('department_id', filter.departmentId);
+          // Apply department as sub-filter if present
+          if (filter.departmentId) {
+            conversationsQuery = conversationsQuery.eq('department_id', filter.departmentId);
+          }
         }
 
         const { data: conversations, error: convError } = await conversationsQuery;
