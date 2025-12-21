@@ -130,7 +130,7 @@ Se houver alertas críticos, comece abordando-os. Se a performance estiver decli
         ],
         generationConfig: {
           temperature: 0.7,
-          maxOutputTokens: 2048,
+          maxOutputTokens: 4096,
         },
       }),
     });
