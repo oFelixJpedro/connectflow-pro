@@ -2,6 +2,14 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 
+export interface MediaSample {
+  url: string;
+  mimeType: string;
+  type: 'image' | 'video' | 'audio' | 'document';
+  direction: 'inbound' | 'outbound';
+  messageContent?: string;
+}
+
 export interface AgentAlert {
   id: string;
   agent_id: string;
@@ -125,7 +133,8 @@ export function useAgentIndividualData(agentId: string | null, agentName?: strin
     level: 'junior' | 'pleno' | 'senior',
     metrics: AgentIndividualMetrics,
     alerts: AgentAlert[],
-    totalAlerts: number
+    totalAlerts: number,
+    mediaSamples: MediaSample[] = []
   ): Promise<string> => {
     try {
       const criticalAlertsCount = alerts.filter(a => a.severity === 'critical' || a.severity === 'high').length;
@@ -148,6 +157,7 @@ export function useAgentIndividualData(agentId: string | null, agentName?: strin
           criticalAlertsCount,
           alertTypes,
           recentPerformance: metrics.recentPerformance,
+          mediaSamples,
         },
       });
 
@@ -224,6 +234,36 @@ export function useAgentIndividualData(agentId: string | null, agentName?: strin
           .select('conversation_id, sender_type, created_at')
           .in('conversation_id', conversationIds.length > 0 ? conversationIds : ['00000000-0000-0000-0000-000000000000'])
           .order('created_at', { ascending: true });
+
+        // Fetch media samples from agent's outbound messages (last 10)
+        const { data: mediaMessages } = await supabase
+          .from('messages')
+          .select('media_url, media_mime_type, message_type, direction, content')
+          .in('conversation_id', conversationIds.length > 0 ? conversationIds : ['00000000-0000-0000-0000-000000000000'])
+          .eq('direction', 'outbound')
+          .not('media_url', 'is', null)
+          .order('created_at', { ascending: false })
+          .limit(10);
+
+        // Map media messages to MediaSample format
+        const mediaSamples: MediaSample[] = (mediaMessages || [])
+          .filter(m => m.media_url)
+          .map(m => {
+            let type: MediaSample['type'] = 'image';
+            if (m.message_type === 'image') type = 'image';
+            else if (m.message_type === 'document') type = 'document';
+            // Fallback: check mimeType for audio/video
+            else if (m.media_mime_type?.startsWith('video/')) type = 'video';
+            else if (m.media_mime_type?.startsWith('audio/')) type = 'audio';
+            
+            return {
+              url: m.media_url!,
+              mimeType: m.media_mime_type || 'application/octet-stream',
+              type,
+              direction: m.direction as 'inbound' | 'outbound',
+              messageContent: m.content || undefined,
+            };
+          });
 
         // Fetch first page of alerts
         const { alerts, hasMore, total } = await fetchAlerts(0);
@@ -352,7 +392,8 @@ export function useAgentIndividualData(agentId: string | null, agentName?: strin
               agentLevel,
               metrics,
               alerts,
-              total
+              total,
+              mediaSamples
             );
             
             setData(prev => prev ? {
