@@ -54,10 +54,11 @@ export interface AgentIndividualData {
 
 const ALERTS_PER_PAGE = 20;
 
-export function useAgentIndividualData(agentId: string | null) {
+export function useAgentIndividualData(agentId: string | null, agentName?: string, agentLevel?: 'junior' | 'pleno' | 'senior') {
   const { profile } = useAuth();
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [recommendationLoading, setRecommendationLoading] = useState(false);
   const [data, setData] = useState<AgentIndividualData | null>(null);
   const [alertsOffset, setAlertsOffset] = useState(0);
 
@@ -117,6 +118,69 @@ export function useAgentIndividualData(agentId: string | null) {
       setLoadingMore(false);
     }
   }, [data, loadingMore, alertsOffset, fetchAlerts]);
+
+  // Function to generate AI recommendation
+  const generateAIRecommendation = useCallback(async (
+    name: string,
+    level: 'junior' | 'pleno' | 'senior',
+    metrics: AgentIndividualMetrics,
+    alerts: AgentAlert[],
+    totalAlerts: number
+  ): Promise<string> => {
+    try {
+      const criticalAlertsCount = alerts.filter(a => a.severity === 'critical' || a.severity === 'high').length;
+      const alertTypes = [...new Set(alerts.map(a => a.alert_type))];
+
+      const { data: responseData, error } = await supabase.functions.invoke('generate-agent-recommendation', {
+        body: {
+          agentName: name,
+          level,
+          overallScore: metrics.avgScore,
+          criteriaScores: metrics.criteriaScores,
+          conversionRate: metrics.conversionRate,
+          totalConversations: metrics.totalConversations,
+          closedDeals: metrics.closedDeals,
+          lostDeals: metrics.lostDeals,
+          avgResponseTime: metrics.avgResponseTime,
+          strengths: metrics.strengths,
+          weaknesses: metrics.weaknesses,
+          alertsCount: totalAlerts,
+          criticalAlertsCount,
+          alertTypes,
+          recentPerformance: metrics.recentPerformance,
+        },
+      });
+
+      if (error) {
+        console.error('Error generating AI recommendation:', error);
+        throw error;
+      }
+
+      return responseData?.recommendation || '';
+    } catch (error) {
+      console.error('Failed to generate AI recommendation:', error);
+      // Return a fallback recommendation
+      return generateFallbackRecommendation(metrics, totalAlerts);
+    }
+  }, []);
+
+  // Fallback recommendation if AI fails
+  const generateFallbackRecommendation = (metrics: AgentIndividualMetrics, totalAlerts: number): string => {
+    const criticalAlerts = totalAlerts;
+    const avgScore = metrics.avgScore;
+    const topWeaknesses = metrics.weaknesses;
+    const topStrengths = metrics.strengths;
+
+    if (criticalAlerts > 5) {
+      return `⚠️ Atenção imediata necessária: ${criticalAlerts} alerta(s) detectado(s). Recomenda-se reunião individual para feedback e correção de conduta.`;
+    } else if (avgScore < 5) {
+      return `📉 Performance abaixo do esperado. Recomenda-se treinamento focado em: ${topWeaknesses.join(', ') || 'técnicas de venda'}. Acompanhamento semanal sugerido.`;
+    } else if (avgScore < 7) {
+      return `📊 Performance estável com espaço para melhoria. Foco em: ${topWeaknesses.slice(0, 2).join(' e ') || 'aprimoramento contínuo'}. Pode assumir mais responsabilidades com supervisão.`;
+    } else {
+      return `✅ Excelente performance! Candidato a mentor de novos membros. Destaque em: ${topStrengths.slice(0, 2).join(' e ') || 'atendimento'}. Considerar para promoção.`;
+    }
+  };
 
   useEffect(() => {
     if (!agentId || !profile?.company_id) {
@@ -254,48 +318,68 @@ export function useAgentIndividualData(agentId: string | null) {
           .slice(0, 3)
           .map(([w]) => w);
 
-        // Generate personalized recommendation based on data
-        let recommendation = '';
-        const criticalAlerts = alerts?.filter(a => a.severity === 'critical' || a.severity === 'high').length || 0;
-        
-        if (criticalAlerts > 0) {
-          recommendation = `⚠️ Atenção imediata necessária: ${criticalAlerts} alerta(s) crítico(s) detectado(s). Recomenda-se reunião individual para feedback e correção de conduta.`;
-        } else if (avgScore < 5) {
-          recommendation = `📉 Performance abaixo do esperado. Recomenda-se treinamento focado em: ${topWeaknesses.join(', ') || 'técnicas de venda'}. Acompanhamento semanal sugerido.`;
-        } else if (avgScore < 7) {
-          recommendation = `📊 Performance estável com espaço para melhoria. Foco em: ${topWeaknesses.slice(0, 2).join(' e ') || 'aprimoramento contínuo'}. Pode assumir mais responsabilidades com supervisão.`;
-        } else {
-          recommendation = `✅ Excelente performance! Candidato a mentor de novos membros. Destaque em: ${topStrengths.slice(0, 2).join(' e ') || 'atendimento'}. Considerar para promoção.`;
-        }
+        const recentPerformance = avgScore >= 7 ? 'improving' : avgScore >= 5 ? 'stable' : 'declining';
 
+        const metrics: AgentIndividualMetrics = {
+          totalConversations,
+          closedDeals,
+          lostDeals,
+          conversionRate,
+          avgResponseTime,
+          avgScore,
+          criteriaScores,
+          strengths: topStrengths,
+          weaknesses: topWeaknesses,
+          recentPerformance,
+        };
+
+        // Set initial data with placeholder recommendation
         setData({
-          metrics: {
-            totalConversations,
-            closedDeals,
-            lostDeals,
-            conversionRate,
-            avgResponseTime,
-            avgScore,
-            criteriaScores,
-            strengths: topStrengths,
-            weaknesses: topWeaknesses,
-            recentPerformance: avgScore >= 7 ? 'improving' : avgScore >= 5 ? 'stable' : 'declining',
-          },
+          metrics,
           alerts,
-          personalizedRecommendation: recommendation,
+          personalizedRecommendation: '',
           hasMoreAlerts: hasMore,
           totalAlerts: total,
         });
+        setLoading(false);
+
+        // Now generate AI recommendation in background
+        if (agentName && agentLevel) {
+          setRecommendationLoading(true);
+          try {
+            const aiRecommendation = await generateAIRecommendation(
+              agentName,
+              agentLevel,
+              metrics,
+              alerts,
+              total
+            );
+            
+            setData(prev => prev ? {
+              ...prev,
+              personalizedRecommendation: aiRecommendation,
+            } : null);
+          } finally {
+            setRecommendationLoading(false);
+          }
+        } else {
+          // Use fallback if no agent info provided
+          const fallbackRec = generateFallbackRecommendation(metrics, total);
+          setData(prev => prev ? {
+            ...prev,
+            personalizedRecommendation: fallbackRec,
+          } : null);
+        }
+
       } catch (error) {
         console.error('Error fetching agent individual data:', error);
         setData(null);
-      } finally {
         setLoading(false);
       }
     };
 
     fetchData();
-  }, [agentId, profile?.company_id, fetchAlerts]);
+  }, [agentId, profile?.company_id, agentName, agentLevel, fetchAlerts, generateAIRecommendation]);
 
-  return { loading, loadingMore, data, loadMoreAlerts };
+  return { loading, loadingMore, recommendationLoading, data, loadMoreAlerts };
 }

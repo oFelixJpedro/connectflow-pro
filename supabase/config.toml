@@ -107,3 +107,6 @@ verify_jwt = false
 
 [functions.generate-filtered-insights]
 verify_jwt = true
+
+[functions.generate-agent-recommendation]
+verify_jwt = true
