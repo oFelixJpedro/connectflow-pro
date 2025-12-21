@@ -7,6 +7,8 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// ============= Interfaces =============
+
 interface CriteriaScores {
   communication: number;
   objectivity: number;
@@ -31,6 +33,47 @@ interface EvaluationData {
   lead_qualification: string | null;
 }
 
+interface MediaSample {
+  url: string;
+  mimeType: string;
+  type: 'image' | 'video' | 'audio' | 'document';
+}
+
+interface ConversationWithMedia {
+  conversationId: string;
+  contactName?: string;
+  evaluation: EvaluationData;
+  medias: MediaSample[];
+}
+
+interface ProblematicMedia {
+  url: string;
+  issue: string;
+  severity: 'baixa' | 'media' | 'alta';
+  type: string;
+  conversationId: string;
+}
+
+interface BatchAnalysisResult {
+  batchIndex: number;
+  conversationsAnalyzed: number;
+  averageScore: number;
+  strengths: string[];
+  weaknesses: string[];
+  positivePatterns: string[];
+  negativePatterns: string[];
+  problematicMedias: ProblematicMedia[];
+  criticalIssues: string[];
+  batchSummary: string;
+  mediaStats: {
+    total: number;
+    images: number;
+    videos: number;
+    audios: number;
+    documents: number;
+  };
+}
+
 interface FilteredInsightsResult {
   strengths: string[];
   weaknesses: string[];
@@ -39,7 +82,470 @@ interface FilteredInsightsResult {
   insights: string[];
   criticalIssues: string[];
   finalRecommendation: string;
+  mediaStats?: {
+    total: number;
+    problematic: number;
+    byType: Record<string, number>;
+  };
 }
+
+// ============= Helper Functions =============
+
+function chunkArray<T>(array: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let i = 0; i < array.length; i += size) {
+    chunks.push(array.slice(i, i + size));
+  }
+  return chunks;
+}
+
+// Transcribe audio using Gemini
+async function transcribeAudio(audioUrl: string, geminiApiKey: string): Promise<string | null> {
+  try {
+    console.log(`[transcribeAudio] Transcribing audio: ${audioUrl.substring(0, 50)}...`);
+    
+    const audioResponse = await fetch(audioUrl);
+    if (!audioResponse.ok) {
+      console.error(`[transcribeAudio] Failed to fetch audio: ${audioResponse.status}`);
+      return null;
+    }
+    
+    const audioBuffer = await audioResponse.arrayBuffer();
+    const base64Audio = btoa(String.fromCharCode(...new Uint8Array(audioBuffer)));
+    const mimeType = audioResponse.headers.get('content-type') || 'audio/ogg';
+    
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiApiKey}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{
+          parts: [
+            { inline_data: { mime_type: mimeType, data: base64Audio } },
+            { text: "Transcreva este áudio em português. Retorne apenas a transcrição, sem comentários." }
+          ]
+        }],
+        generationConfig: { temperature: 0.1, maxOutputTokens: 1024 },
+      }),
+    });
+    
+    if (!response.ok) {
+      console.error(`[transcribeAudio] Gemini error: ${response.status}`);
+      return null;
+    }
+    
+    const data = await response.json();
+    const transcription = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    
+    if (transcription) {
+      console.log(`[transcribeAudio] Success: ${transcription.substring(0, 50)}...`);
+      return transcription;
+    }
+    
+    return null;
+  } catch (error) {
+    console.error('[transcribeAudio] Error:', error);
+    return null;
+  }
+}
+
+// ============= Batch Analysis Function =============
+
+async function analyzeConversationBatch(
+  batch: ConversationWithMedia[],
+  batchIndex: number,
+  geminiApiKey: string
+): Promise<BatchAnalysisResult> {
+  console.log(`[Batch ${batchIndex}] Starting analysis of ${batch.length} conversations`);
+  
+  const defaultResult: BatchAnalysisResult = {
+    batchIndex,
+    conversationsAnalyzed: batch.length,
+    averageScore: 0,
+    strengths: [],
+    weaknesses: [],
+    positivePatterns: [],
+    negativePatterns: [],
+    problematicMedias: [],
+    criticalIssues: [],
+    batchSummary: 'Análise não disponível',
+    mediaStats: { total: 0, images: 0, videos: 0, audios: 0, documents: 0 },
+  };
+  
+  try {
+    // Build media parts for Gemini
+    const parts: any[] = [];
+    let totalMedias = 0;
+    let audioCount = 0;
+    let videoCount = 0;
+    const mediaStats = { total: 0, images: 0, videos: 0, audios: 0, documents: 0 };
+    const audioTranscriptions: { conversationId: string; transcription: string }[] = [];
+    
+    // Process each conversation
+    for (const conv of batch) {
+      const convMedias = conv.medias.slice(0, 10); // Max 10 medias per conversation
+      
+      for (const media of convMedias) {
+        mediaStats.total++;
+        
+        if (media.type === 'image') {
+          mediaStats.images++;
+          parts.push({
+            file_data: {
+              mime_type: media.mimeType,
+              file_uri: media.url,
+            }
+          });
+          parts.push({
+            text: `[IMAGEM da conversa ${conv.conversationId}]`
+          });
+        } else if (media.type === 'video' && videoCount < 2) {
+          mediaStats.videos++;
+          videoCount++;
+          parts.push({
+            file_data: {
+              mime_type: media.mimeType,
+              file_uri: media.url,
+            }
+          });
+          parts.push({
+            text: `[VÍDEO da conversa ${conv.conversationId}]`
+          });
+        } else if (media.type === 'audio' && audioCount < 3) {
+          mediaStats.audios++;
+          audioCount++;
+          // Transcribe audio
+          const transcription = await transcribeAudio(media.url, geminiApiKey);
+          if (transcription) {
+            audioTranscriptions.push({ conversationId: conv.conversationId, transcription });
+          }
+        } else if (media.type === 'document') {
+          mediaStats.documents++;
+          parts.push({
+            file_data: {
+              mime_type: media.mimeType,
+              file_uri: media.url,
+            }
+          });
+          parts.push({
+            text: `[DOCUMENTO da conversa ${conv.conversationId}]`
+          });
+        }
+        
+        totalMedias++;
+      }
+    }
+    
+    // Build conversations summary text
+    let conversationsSummary = batch.map((conv, i) => {
+      const e = conv.evaluation;
+      let summary = `### Conversa ${i + 1} (ID: ${conv.conversationId})\n`;
+      if (conv.contactName) summary += `- Contato: ${conv.contactName}\n`;
+      if (e.overall_score) summary += `- Score: ${e.overall_score}/10\n`;
+      if (e.lead_qualification) summary += `- Lead: ${e.lead_qualification}\n`;
+      if (e.ai_summary) summary += `- Resumo: ${e.ai_summary.substring(0, 150)}\n`;
+      if (e.strengths?.length) summary += `- Pontos fortes: ${e.strengths.join(', ')}\n`;
+      if (e.improvements?.length) summary += `- Melhorias: ${e.improvements.join(', ')}\n`;
+      summary += `- Mídias: ${conv.medias.length}\n`;
+      return summary;
+    }).join('\n');
+    
+    // Add audio transcriptions
+    if (audioTranscriptions.length > 0) {
+      conversationsSummary += '\n\n### Transcrições de Áudios:\n';
+      audioTranscriptions.forEach((t, i) => {
+        conversationsSummary += `\nÁudio ${i + 1} (Conversa ${t.conversationId}):\n"${t.transcription.substring(0, 300)}..."\n`;
+      });
+    }
+    
+    // Build the prompt
+    const prompt = `Você é um analista comercial especializado em vendas por WhatsApp. Analise este batch de ${batch.length} conversas comerciais.
+
+## Dados das Conversas
+
+${conversationsSummary}
+
+## Total de Mídias no Batch
+- Imagens: ${mediaStats.images}
+- Vídeos: ${mediaStats.videos}
+- Áudios: ${mediaStats.audios}
+- Documentos: ${mediaStats.documents}
+
+## Sua Tarefa
+
+Analise TODAS as mídias fornecidas (imagens, vídeos, documentos) junto com os dados textuais. Para cada mídia, identifique:
+1. O que é o conteúdo (descreva brevemente)
+2. Se é relevante para vendas
+3. Se há algo problemático (inapropriado, pessoal, baixa qualidade, irrelevante)
+
+Retorne um JSON com esta estrutura EXATA:
+
+{
+  "batchIndex": ${batchIndex},
+  "conversationsAnalyzed": ${batch.length},
+  "averageScore": <média dos scores>,
+  "strengths": ["<ponto forte 1>", "<ponto forte 2>", "<ponto forte 3>"],
+  "weaknesses": ["<ponto fraco 1>", "<ponto fraco 2>", "<ponto fraco 3>"],
+  "positivePatterns": ["<padrão positivo 1>", "<padrão positivo 2>"],
+  "negativePatterns": ["<padrão negativo 1>", "<padrão negativo 2>"],
+  "problematicMedias": [
+    {
+      "url": "<url se identificável ou 'não identificado'>",
+      "issue": "<descrição do problema>",
+      "severity": "baixa|media|alta",
+      "type": "image|video|audio|document",
+      "conversationId": "<id da conversa>"
+    }
+  ],
+  "criticalIssues": ["<problema crítico se houver>"],
+  "batchSummary": "<resumo de 2-3 frases deste batch>"
+}
+
+IMPORTANTE: 
+- Seja CONCISO em cada item (máximo 80 caracteres)
+- Array vazio se não houver problemas
+- Responda APENAS com JSON válido, sem markdown`;
+
+    // Add prompt as last part
+    parts.push({ text: prompt });
+    
+    console.log(`[Batch ${batchIndex}] Sending to Gemini with ${parts.length} parts, ${mediaStats.total} medias`);
+    
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiApiKey}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts }],
+        generationConfig: {
+          temperature: 0.7,
+          maxOutputTokens: 4096,
+          responseMimeType: "application/json",
+        },
+      }),
+    });
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`[Batch ${batchIndex}] Gemini error: ${response.status}`, errorText.substring(0, 200));
+      return { ...defaultResult, mediaStats };
+    }
+    
+    const geminiData = await response.json();
+    const textContent = geminiData.candidates?.[0]?.content?.parts?.[0]?.text;
+    
+    if (!textContent) {
+      console.error(`[Batch ${batchIndex}] No content in response`);
+      return { ...defaultResult, mediaStats };
+    }
+    
+    // Parse JSON response
+    let result: BatchAnalysisResult;
+    try {
+      let cleanedText = textContent.trim();
+      if (cleanedText.startsWith('```json')) cleanedText = cleanedText.slice(7);
+      if (cleanedText.startsWith('```')) cleanedText = cleanedText.slice(3);
+      if (cleanedText.endsWith('```')) cleanedText = cleanedText.slice(0, -3);
+      
+      result = JSON.parse(cleanedText.trim());
+      result.mediaStats = mediaStats;
+      result.batchIndex = batchIndex;
+      
+      console.log(`[Batch ${batchIndex}] Success: ${result.problematicMedias?.length || 0} problematic medias found`);
+      
+      return result;
+    } catch (parseError) {
+      console.error(`[Batch ${batchIndex}] JSON parse error:`, parseError);
+      return { ...defaultResult, mediaStats };
+    }
+  } catch (error) {
+    console.error(`[Batch ${batchIndex}] Error:`, error);
+    return defaultResult;
+  }
+}
+
+// ============= Consolidation Function =============
+
+async function consolidateBatchResults(
+  batchResults: BatchAnalysisResult[],
+  overallMetrics: { criteriaScores: CriteriaScores; totalEvaluations: number; avgScore: number },
+  filterDescription: string | undefined,
+  geminiApiKey: string
+): Promise<FilteredInsightsResult> {
+  console.log(`[Consolidate] Consolidating ${batchResults.length} batch results`);
+  
+  const defaultResult: FilteredInsightsResult = {
+    strengths: [],
+    weaknesses: [],
+    positivePatterns: [],
+    negativePatterns: [],
+    insights: [],
+    criticalIssues: [],
+    finalRecommendation: 'Análise não disponível.',
+  };
+  
+  try {
+    // Aggregate all batch results
+    const allStrengths: string[] = [];
+    const allWeaknesses: string[] = [];
+    const allPositivePatterns: string[] = [];
+    const allNegativePatterns: string[] = [];
+    const allProblematicMedias: ProblematicMedia[] = [];
+    const allCriticalIssues: string[] = [];
+    const allSummaries: string[] = [];
+    
+    let totalMedias = 0;
+    const mediaByType: Record<string, number> = { images: 0, videos: 0, audios: 0, documents: 0 };
+    let totalScore = 0;
+    let totalConvs = 0;
+    
+    batchResults.forEach(batch => {
+      allStrengths.push(...(batch.strengths || []));
+      allWeaknesses.push(...(batch.weaknesses || []));
+      allPositivePatterns.push(...(batch.positivePatterns || []));
+      allNegativePatterns.push(...(batch.negativePatterns || []));
+      allProblematicMedias.push(...(batch.problematicMedias || []));
+      allCriticalIssues.push(...(batch.criticalIssues || []));
+      if (batch.batchSummary) allSummaries.push(`Batch ${batch.batchIndex}: ${batch.batchSummary}`);
+      
+      if (batch.mediaStats) {
+        totalMedias += batch.mediaStats.total;
+        mediaByType.images += batch.mediaStats.images;
+        mediaByType.videos += batch.mediaStats.videos;
+        mediaByType.audios += batch.mediaStats.audios;
+        mediaByType.documents += batch.mediaStats.documents;
+      }
+      
+      totalScore += (batch.averageScore || 0) * (batch.conversationsAnalyzed || 1);
+      totalConvs += batch.conversationsAnalyzed || 0;
+    });
+    
+    const consolidatedAvgScore = totalConvs > 0 ? totalScore / totalConvs : overallMetrics.avgScore;
+    
+    // Build consolidation prompt
+    const prompt = `Você é um consultor comercial sênior. Consolide os resultados de ${batchResults.length} batches de análise.
+
+${filterDescription ? `**Contexto do Filtro:** ${filterDescription}\n` : ''}
+
+## Métricas Gerais
+- Total de Conversas: ${overallMetrics.totalEvaluations}
+- Score Médio: ${consolidatedAvgScore.toFixed(1)}/10
+- Scores por Critério:
+  - Comunicação: ${overallMetrics.criteriaScores.communication.toFixed(1)}
+  - Objetividade: ${overallMetrics.criteriaScores.objectivity.toFixed(1)}
+  - Humanização: ${overallMetrics.criteriaScores.humanization.toFixed(1)}
+  - Objeções: ${overallMetrics.criteriaScores.objection_handling.toFixed(1)}
+  - Fechamento: ${overallMetrics.criteriaScores.closing.toFixed(1)}
+  - Tempo Resposta: ${overallMetrics.criteriaScores.response_time.toFixed(1)}
+
+## Mídias Analisadas
+- Total: ${totalMedias} mídias
+- Imagens: ${mediaByType.images}
+- Vídeos: ${mediaByType.videos}
+- Áudios: ${mediaByType.audios}
+- Documentos: ${mediaByType.documents}
+- Problemáticas: ${allProblematicMedias.length}
+
+## Problemas em Mídias Detectados
+${allProblematicMedias.length > 0 
+  ? allProblematicMedias.slice(0, 10).map(m => `- [${m.severity.toUpperCase()}] ${m.type}: ${m.issue}`).join('\n')
+  : '- Nenhum problema significativo detectado'}
+
+## Resumos dos Batches
+${allSummaries.join('\n')}
+
+## Pontos Fortes Identificados
+${[...new Set(allStrengths)].slice(0, 10).join(', ') || 'Nenhum'}
+
+## Pontos Fracos Identificados
+${[...new Set(allWeaknesses)].slice(0, 10).join(', ') || 'Nenhum'}
+
+## Problemas Críticos
+${[...new Set(allCriticalIssues)].slice(0, 5).join(', ') || 'Nenhum'}
+
+---
+
+Gere um JSON consolidado com:
+
+{
+  "strengths": ["<3 principais pontos fortes>"],
+  "weaknesses": ["<3 principais pontos fracos>"],
+  "positivePatterns": ["<2-3 padrões positivos>"],
+  "negativePatterns": ["<2-3 padrões negativos>"],
+  "insights": ["<3 insights acionáveis incluindo análise de mídias>"],
+  "criticalIssues": ["<problemas críticos se houver>"],
+  "finalRecommendation": "<recomendação final de 2-3 frases, incluindo feedback sobre uso de mídias>"
+}
+
+IMPORTANTE:
+- Seja CONCISO (máximo 100 caracteres por item)
+- Inclua observações sobre as mídias analisadas nos insights
+- Se houver mídias problemáticas, mencione na recomendação
+- Responda APENAS com JSON válido`;
+
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiApiKey}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: {
+          temperature: 0.7,
+          maxOutputTokens: 2048,
+          responseMimeType: "application/json",
+        },
+      }),
+    });
+    
+    if (!response.ok) {
+      console.error(`[Consolidate] Gemini error: ${response.status}`);
+      return defaultResult;
+    }
+    
+    const geminiData = await response.json();
+    const textContent = geminiData.candidates?.[0]?.content?.parts?.[0]?.text;
+    
+    if (!textContent) {
+      console.error('[Consolidate] No content in response');
+      return defaultResult;
+    }
+    
+    let result: FilteredInsightsResult;
+    try {
+      let cleanedText = textContent.trim();
+      if (cleanedText.startsWith('```json')) cleanedText = cleanedText.slice(7);
+      if (cleanedText.startsWith('```')) cleanedText = cleanedText.slice(3);
+      if (cleanedText.endsWith('```')) cleanedText = cleanedText.slice(0, -3);
+      
+      result = JSON.parse(cleanedText.trim());
+      
+      // Add media stats
+      result.mediaStats = {
+        total: totalMedias,
+        problematic: allProblematicMedias.length,
+        byType: mediaByType,
+      };
+      
+      // Validate arrays
+      result.strengths = Array.isArray(result.strengths) ? result.strengths : [];
+      result.weaknesses = Array.isArray(result.weaknesses) ? result.weaknesses : [];
+      result.positivePatterns = Array.isArray(result.positivePatterns) ? result.positivePatterns : [];
+      result.negativePatterns = Array.isArray(result.negativePatterns) ? result.negativePatterns : [];
+      result.insights = Array.isArray(result.insights) ? result.insights : [];
+      result.criticalIssues = Array.isArray(result.criticalIssues) ? result.criticalIssues : [];
+      result.finalRecommendation = result.finalRecommendation || 'Análise concluída.';
+      
+      console.log(`[Consolidate] Success: ${result.insights.length} insights generated`);
+      
+      return result;
+    } catch (parseError) {
+      console.error('[Consolidate] JSON parse error:', parseError);
+      return defaultResult;
+    }
+  } catch (error) {
+    console.error('[Consolidate] Error:', error);
+    return defaultResult;
+  }
+}
+
+// ============= Main Handler =============
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -63,13 +569,22 @@ serve(async (req) => {
       throw new Error('Unauthorized');
     }
 
-    const { evaluations, criteriaScores, filterDescription } = await req.json() as {
-      evaluations: EvaluationData[];
+    const { conversationsWithMedia, evaluations, criteriaScores, filterDescription } = await req.json() as {
+      conversationsWithMedia?: ConversationWithMedia[];
+      evaluations?: EvaluationData[]; // Legacy support
       criteriaScores: CriteriaScores;
       filterDescription?: string;
     };
 
-    if (!evaluations || evaluations.length === 0) {
+    // Handle both new format (conversationsWithMedia) and legacy format (evaluations only)
+    const hasMediaData = conversationsWithMedia && conversationsWithMedia.length > 0;
+    const legacyEvaluations = evaluations || [];
+    
+    const totalEvaluations = hasMediaData 
+      ? conversationsWithMedia.length 
+      : legacyEvaluations.length;
+
+    if (totalEvaluations === 0) {
       return new Response(JSON.stringify({
         strengths: ['Nenhuma avaliação encontrada para análise'],
         weaknesses: [],
@@ -88,8 +603,52 @@ serve(async (req) => {
       throw new Error('GEMINI_API_KEY not configured');
     }
 
-    // Prepare evaluations summary for AI
-    const evaluationsSummary = evaluations.slice(0, 20).map((e, i) => {
+    // Calculate average score
+    const avgScore = hasMediaData
+      ? conversationsWithMedia.reduce((sum, c) => sum + (c.evaluation.overall_score || 0), 0) / conversationsWithMedia.length
+      : legacyEvaluations.reduce((sum, e) => sum + (e.overall_score || 0), 0) / legacyEvaluations.length;
+
+    console.log(`[generate-filtered-insights] Processing ${totalEvaluations} conversations, hasMedia: ${hasMediaData}`);
+
+    // If we have media data, use modular batch processing
+    if (hasMediaData) {
+      // Divide into batches of 10 conversations
+      const batches = chunkArray(conversationsWithMedia, 10);
+      console.log(`[generate-filtered-insights] Created ${batches.length} batches`);
+      
+      const batchResults: BatchAnalysisResult[] = [];
+      
+      // Process batches in waves of 3 (to avoid rate limits)
+      for (let waveStart = 0; waveStart < batches.length; waveStart += 3) {
+        const wave = batches.slice(waveStart, waveStart + 3);
+        console.log(`[generate-filtered-insights] Processing wave ${Math.floor(waveStart / 3) + 1} with ${wave.length} batches`);
+        
+        const wavePromises = wave.map((batch, i) => 
+          analyzeConversationBatch(batch, waveStart + i, geminiApiKey)
+        );
+        
+        const waveResults = await Promise.all(wavePromises);
+        batchResults.push(...waveResults);
+      }
+      
+      // Consolidate all results
+      const insights = await consolidateBatchResults(
+        batchResults,
+        { criteriaScores, totalEvaluations, avgScore },
+        filterDescription,
+        geminiApiKey
+      );
+      
+      console.log(`[generate-filtered-insights] Completed with ${insights.mediaStats?.total || 0} medias analyzed`);
+      
+      return new Response(JSON.stringify(insights), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // ============= Legacy path: text-only analysis =============
+    
+    const evaluationsSummary = legacyEvaluations.slice(0, 20).map((e, i) => {
       const parts = [`Conversa ${i + 1}:`];
       if (e.overall_score) parts.push(`Score: ${e.overall_score}/10`);
       if (e.lead_qualification) parts.push(`Lead: ${e.lead_qualification}`);
@@ -99,11 +658,7 @@ serve(async (req) => {
       return parts.join('\n');
     }).join('\n\n---\n\n');
 
-    // Calculate aggregated stats
-    const totalEvaluations = evaluations.length;
-    const avgScore = evaluations.reduce((sum, e) => sum + (e.overall_score || 0), 0) / totalEvaluations;
-    
-    const leadCounts = evaluations.reduce((acc, e) => {
+    const leadCounts = legacyEvaluations.reduce((acc, e) => {
       if (e.lead_qualification) {
         acc[e.lead_qualification] = (acc[e.lead_qualification] || 0) + 1;
       }
@@ -149,7 +704,7 @@ Retorne um JSON COMPACTO com estes campos (seja BREVE, máximo 1 frase por item)
 
 IMPORTANTE: Seja conciso. Cada item deve ter no máximo 100 caracteres. Responda APENAS com JSON válido, sem markdown.`;
 
-    console.log(`[generate-filtered-insights] Analyzing ${totalEvaluations} evaluations with avg score ${avgScore.toFixed(1)}`);
+    console.log(`[generate-filtered-insights] Legacy path: analyzing ${totalEvaluations} evaluations`);
 
     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiApiKey}`, {
       method: 'POST',
@@ -176,36 +731,22 @@ IMPORTANTE: Seja conciso. Cada item deve ter no máximo 100 caracteres. Responda
       throw new Error('No content in Gemini response');
     }
 
-    // Parse the JSON response
     let insights: FilteredInsightsResult;
     try {
-      // Clean up potential markdown formatting
       let cleanedText = textContent.trim();
-      if (cleanedText.startsWith('```json')) {
-        cleanedText = cleanedText.slice(7);
-      }
-      if (cleanedText.startsWith('```')) {
-        cleanedText = cleanedText.slice(3);
-      }
-      if (cleanedText.endsWith('```')) {
-        cleanedText = cleanedText.slice(0, -3);
-      }
+      if (cleanedText.startsWith('```json')) cleanedText = cleanedText.slice(7);
+      if (cleanedText.startsWith('```')) cleanedText = cleanedText.slice(3);
+      if (cleanedText.endsWith('```')) cleanedText = cleanedText.slice(0, -3);
       cleanedText = cleanedText.trim();
 
-      // Log response size for debugging
-      console.log(`[generate-filtered-insights] Response length: ${cleanedText.length} chars`);
-
-      // Try to repair truncated JSON by closing arrays/objects
       if (!cleanedText.endsWith('}')) {
         console.log('[generate-filtered-insights] Attempting to repair truncated JSON');
-        // Find the last complete field
         const lastCompleteQuote = cleanedText.lastIndexOf('",');
         const lastCompleteBracket = cleanedText.lastIndexOf('],');
         const lastComplete = Math.max(lastCompleteQuote, lastCompleteBracket);
         
         if (lastComplete > 0) {
           cleanedText = cleanedText.substring(0, lastComplete + 1);
-          // Count open brackets and close them
           const openBrackets = (cleanedText.match(/\[/g) || []).length;
           const closeBrackets = (cleanedText.match(/\]/g) || []).length;
           const openBraces = (cleanedText.match(/\{/g) || []).length;
@@ -218,7 +759,6 @@ IMPORTANTE: Seja conciso. Cada item deve ter no máximo 100 caracteres. Responda
 
       insights = JSON.parse(cleanedText);
       
-      // Validate and provide defaults
       insights = {
         strengths: Array.isArray(insights.strengths) ? insights.strengths : [],
         weaknesses: Array.isArray(insights.weaknesses) ? insights.weaknesses : [],
@@ -233,12 +773,7 @@ IMPORTANTE: Seja conciso. Cada item deve ter no máximo 100 caracteres. Responda
       throw new Error('Failed to parse AI insights response');
     }
 
-    console.log('[generate-filtered-insights] Successfully generated insights:', {
-      strengths: insights.strengths.length,
-      weaknesses: insights.weaknesses.length,
-      positivePatterns: insights.positivePatterns.length,
-      insights: insights.insights.length,
-    });
+    console.log('[generate-filtered-insights] Successfully generated insights');
 
     return new Response(JSON.stringify(insights), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -248,7 +783,6 @@ IMPORTANTE: Seja conciso. Cada item deve ter no máximo 100 caracteres. Responda
     console.error('[generate-filtered-insights] Error:', error);
     return new Response(JSON.stringify({ 
       error: error instanceof Error ? error.message : 'Unknown error',
-      // Return fallback insights so UI doesn't break
       strengths: [],
       weaknesses: [],
       positivePatterns: [],
