@@ -14,6 +14,7 @@ import { cn } from '@/lib/utils';
 
 interface InsightsCardProps {
   loading: boolean;
+  insightsLoading?: boolean; // Separate loading state for AI insights
   strengths: string[];
   weaknesses: string[];
   positivePatterns: string[];
@@ -23,8 +24,23 @@ interface InsightsCardProps {
   finalRecommendation: string;
 }
 
+// Skeleton component for insights sections
+function InsightsSkeleton() {
+  return (
+    <div className="space-y-2">
+      {[1, 2, 3].map((i) => (
+        <div key={i} className="flex items-start gap-2 p-2 rounded-lg">
+          <Skeleton className="h-4 w-4 mt-0.5 shrink-0 rounded-full" />
+          <Skeleton className="h-4 w-full" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function InsightsCard({
   loading,
+  insightsLoading = false,
   strengths,
   weaknesses,
   positivePatterns,
@@ -125,23 +141,32 @@ export function InsightsCard({
             <CardTitle className="text-lg flex items-center gap-2 text-primary">
               <TrendingUp className="w-5 h-5" />
               Padrões Positivos
+              {insightsLoading && (
+                <span className="ml-2 text-xs text-muted-foreground animate-pulse">
+                  Analisando...
+                </span>
+              )}
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="space-y-2">
-              {positivePatterns.map((item, index) => (
-                <div 
-                  key={index}
-                  className="flex items-start gap-2 p-2 bg-primary/5 rounded-lg"
-                >
-                  <TrendingUp className="w-4 h-4 text-primary mt-0.5 shrink-0" />
-                  <span className="text-sm">{item}</span>
-                </div>
-              ))}
-              {positivePatterns.length === 0 && (
-                <p className="text-muted-foreground text-sm">Nenhum padrão positivo identificado</p>
-              )}
-            </div>
+            {insightsLoading ? (
+              <InsightsSkeleton />
+            ) : (
+              <div className="space-y-2">
+                {positivePatterns.map((item, index) => (
+                  <div 
+                    key={index}
+                    className="flex items-start gap-2 p-2 bg-primary/5 rounded-lg"
+                  >
+                    <TrendingUp className="w-4 h-4 text-primary mt-0.5 shrink-0" />
+                    <span className="text-sm">{item}</span>
+                  </div>
+                ))}
+                {positivePatterns.length === 0 && (
+                  <p className="text-muted-foreground text-sm">Nenhum padrão positivo identificado</p>
+                )}
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -151,23 +176,32 @@ export function InsightsCard({
             <CardTitle className="text-lg flex items-center gap-2 text-orange-500">
               <TrendingDown className="w-5 h-5" />
               Padrões Negativos
+              {insightsLoading && (
+                <span className="ml-2 text-xs text-muted-foreground animate-pulse">
+                  Analisando...
+                </span>
+              )}
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="space-y-2">
-              {negativePatterns.map((item, index) => (
-                <div 
-                  key={index}
-                  className="flex items-start gap-2 p-2 bg-orange-500/5 rounded-lg"
-                >
-                  <TrendingDown className="w-4 h-4 text-orange-500 mt-0.5 shrink-0" />
-                  <span className="text-sm">{item}</span>
-                </div>
-              ))}
-              {negativePatterns.length === 0 && (
-                <p className="text-muted-foreground text-sm">Nenhum padrão negativo identificado</p>
-              )}
-            </div>
+            {insightsLoading ? (
+              <InsightsSkeleton />
+            ) : (
+              <div className="space-y-2">
+                {negativePatterns.map((item, index) => (
+                  <div 
+                    key={index}
+                    className="flex items-start gap-2 p-2 bg-orange-500/5 rounded-lg"
+                  >
+                    <TrendingDown className="w-4 h-4 text-orange-500 mt-0.5 shrink-0" />
+                    <span className="text-sm">{item}</span>
+                  </div>
+                ))}
+                {negativePatterns.length === 0 && (
+                  <p className="text-muted-foreground text-sm">Nenhum padrão negativo identificado</p>
+                )}
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -203,26 +237,46 @@ export function InsightsCard({
           <CardTitle className="text-lg flex items-center gap-2">
             <Lightbulb className="w-5 h-5 text-warning" />
             Insights e Recomendações
+            {insightsLoading && (
+              <span className="ml-2 text-xs text-muted-foreground animate-pulse">
+                IA analisando...
+              </span>
+            )}
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="space-y-2">
-            {insights.map((item, index) => (
-              <div 
-                key={index}
-                className="flex items-start gap-2 p-2 bg-muted/50 rounded-lg"
-              >
-                <Lightbulb className="w-4 h-4 text-warning mt-0.5 shrink-0" />
-                <span className="text-sm">{item}</span>
-              </div>
-            ))}
-            {insights.length === 0 && (
-              <p className="text-muted-foreground text-sm">Nenhum insight disponível</p>
-            )}
-          </div>
+          {insightsLoading ? (
+            <InsightsSkeleton />
+          ) : (
+            <div className="space-y-2">
+              {insights.map((item, index) => (
+                <div 
+                  key={index}
+                  className="flex items-start gap-2 p-2 bg-muted/50 rounded-lg"
+                >
+                  <Lightbulb className="w-4 h-4 text-warning mt-0.5 shrink-0" />
+                  <span className="text-sm">{item}</span>
+                </div>
+              ))}
+              {insights.length === 0 && (
+                <p className="text-muted-foreground text-sm">Nenhum insight disponível</p>
+              )}
+            </div>
+          )}
 
           {/* Final Recommendation */}
-          {finalRecommendation && (
+          {insightsLoading ? (
+            <div className="border-t pt-4 mt-4">
+              <div className="flex items-start gap-3 p-3 bg-primary/5 rounded-lg border border-primary/20">
+                <Skeleton className="w-5 h-5 rounded-full shrink-0" />
+                <div className="flex-1 space-y-2">
+                  <Skeleton className="h-4 w-32" />
+                  <Skeleton className="h-4 w-full" />
+                  <Skeleton className="h-4 w-3/4" />
+                </div>
+              </div>
+            </div>
+          ) : finalRecommendation && (
             <div className="border-t pt-4 mt-4">
               <div className="flex items-start gap-3 p-3 bg-primary/5 rounded-lg border border-primary/20">
                 <MessageSquare className="w-5 h-5 text-primary mt-0.5 shrink-0" />

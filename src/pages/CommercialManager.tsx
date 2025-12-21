@@ -41,7 +41,7 @@ export default function CommercialManager() {
   const [customStartDate, setCustomStartDate] = useState<Date | undefined>();
   const [customEndDate, setCustomEndDate] = useState<Date | undefined>();
   const [datePickerOpen, setDatePickerOpen] = useState(false);
-  const { loading, data, liveMetrics, isAdmin } = useCommercialData(filter);
+  const { loading, data, liveMetrics, isAdmin, insightsLoading } = useCommercialData(filter);
   const [viewMode, setViewMode] = useState<'commercial' | 'dashboard'>('commercial');
   const [currentTime, setCurrentTime] = useState(new Date());
   const [reportsModalOpen, setReportsModalOpen] = useState(false);
@@ -451,6 +451,7 @@ export default function CommercialManager() {
       {/* Insights */}
       <InsightsCard
         loading={loading}
+        insightsLoading={insightsLoading}
         strengths={data?.strengths || []}
         weaknesses={data?.weaknesses || []}
         positivePatterns={data?.positivePatterns || []}
