@@ -759,11 +759,11 @@ serve(async (req) => {
         
         // Handle media types with URL Context Tool + Cache
         if (msg.message_type === 'audio' && msg.media_url) {
-          const transcription = await transcribeAudioWithCache(
-            supabase, 
+          const transcription = await transcribeAudio(
             msg.media_url, 
-            companyId, 
-            GEMINI_API_KEY
+            GEMINI_API_KEY,
+            supabase,
+            companyId
           );
           content = transcription || '[Áudio não transcrito]';
         } else if (msg.message_type === 'image' && msg.media_url) {
@@ -846,11 +846,11 @@ serve(async (req) => {
           if (msg.content) {
             batchContents.push(msg.content);
           } else if (msg.mediaUrl) {
-            const transcription = await transcribeAudioWithCache(
-              supabase, 
+            const transcription = await transcribeAudio(
               msg.mediaUrl, 
-              companyId, 
-              GEMINI_API_KEY
+              GEMINI_API_KEY,
+              supabase,
+              companyId
             );
             batchContents.push(transcription || '[Áudio recebido]');
           }
@@ -913,11 +913,11 @@ serve(async (req) => {
     // Handle audio transcription for current message (legacy mode)
     if (!isBatchRequest && currentMessageIsAudio && actualMediaUrl && !processedMessageContent) {
       console.log('🎤 Transcrevendo áudio do cliente...');
-      const transcription = await transcribeAudioWithCache(
-        supabase, 
+      const transcription = await transcribeAudio(
         actualMediaUrl, 
-        companyId, 
-        GEMINI_API_KEY
+        GEMINI_API_KEY,
+        supabase,
+        companyId
       );
       if (transcription) {
         processedMessageContent = transcription;
