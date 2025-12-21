@@ -19,11 +19,15 @@ Responda APENAS em JSON válido, sem markdown:
   "is_disqualification_signal": true/false,
   "lead_status": "cold" | "warming" | "hot" | "closed_won" | "closed_lost",
   "close_probability": 0-100,
-  "predicted_outcome": "likely_close" | "likely_lost" | "needs_followup" | "unknown"
+  "predicted_outcome": "likely_close" | "likely_lost" | "needs_followup" | "unknown",
+  "media_description": "descrição do conteúdo visual/áudio se presente, ou null se não houver mídia"
 }
 
 Sinais de fechamento incluem: pedido de preço, contrato, forma de pagamento, prazo de entrega, "vamos fechar", "pode enviar".
 Sinais de desqualificação: "não tenho interesse", "não é para mim", errou o número, spam.
+
+IMPORTANTE para mídia: Se houver imagem, vídeo ou documento na mensagem, descreva detalhadamente o que você vê no campo media_description.
+Exemplos: "Imagem de uma pizza margherita", "Contrato de prestação de serviços em PDF", "Foto de um carro sedan prata", "Captura de tela de um erro no sistema".
 `;
 
 // Prompt for conversation evaluation
@@ -66,7 +70,8 @@ Responda APENAS em JSON válido, sem markdown:
   "title": "título curto do problema",
   "description": "descrição do comportamento problemático",
   "lead_was_rude": true/false,
-  "confidence": 0.0-1.0
+  "confidence": 0.0-1.0,
+  "media_description": "descrição do conteúdo visual/áudio enviado pelo vendedor, ou null se não houver mídia"
 }
 
 Tipos de alerta:
@@ -76,12 +81,13 @@ Tipos de alerta:
 - slow_response: (não detectável aqui, será calculado separadamente)
 - sabotage: prejudicar propositalmente a venda, desincentivar compra
 - quality_issue: respostas confusas, erros graves, informações incorretas
-- unprofessional: comportamento inadequado, linguagem imprópria
+- unprofessional: comportamento inadequado, linguagem imprópria, imagens inapropriadas
 
 IMPORTANTE: 
 - Se o lead foi grosseiro/rude primeiro, NÃO é alerta (lead_was_rude=true, has_issue=false)
 - Respostas diretas e objetivas NÃO são lazy
 - Analise o CONTEXTO antes de julgar
+- Se houver mídia (imagem, vídeo, documento), descreva o conteúdo no campo media_description
 `;
 
 // Prompt for aggregated insights
@@ -713,6 +719,15 @@ ${hasMedia ? `IMPORTANTE: Esta mensagem contém mídia (${message_type}). Analis
       metricsUpdate.interest_level = aiAnalysis.interest_level || 3;
       metricsUpdate.close_probability = aiAnalysis.close_probability || 0;
       metricsUpdate.predicted_outcome = aiAnalysis.predicted_outcome || null;
+      
+      // Store media description if present
+      if (aiAnalysis.media_description) {
+        console.log('🖼️ [PIXEL] Media description identified:', aiAnalysis.media_description);
+        // Store in deal_signals with prefix for easy identification
+        const existingSignals = existingMetrics?.deal_signals || [];
+        const mediaSignal = `[MÍDIA] ${aiAnalysis.media_description}`;
+        metricsUpdate.deal_signals = [...new Set([...existingSignals, mediaSignal])].slice(-10);
+      }
       
       // Update lead status (only escalate, don't downgrade without reason)
       const statusPriority: Record<string, number> = {
