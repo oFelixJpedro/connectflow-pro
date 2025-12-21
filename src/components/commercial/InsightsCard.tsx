@@ -86,23 +86,32 @@ export function InsightsCard({
             <CardTitle className="text-lg flex items-center gap-2 text-success">
               <CheckCircle2 className="w-5 h-5" />
               Pontos Fortes
+              {insightsLoading && (
+                <span className="ml-2 text-xs text-muted-foreground animate-pulse">
+                  Analisando...
+                </span>
+              )}
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="space-y-2">
-              {strengths.map((item, index) => (
-                <div 
-                  key={index}
-                  className="flex items-start gap-2 p-2 bg-success/5 rounded-lg"
-                >
-                  <CheckCircle2 className="w-4 h-4 text-success mt-0.5 shrink-0" />
-                  <span className="text-sm">{item}</span>
-                </div>
-              ))}
-              {strengths.length === 0 && (
-                <p className="text-muted-foreground text-sm">Nenhum ponto forte identificado</p>
-              )}
-            </div>
+            {insightsLoading ? (
+              <InsightsSkeleton />
+            ) : (
+              <div className="space-y-2">
+                {strengths.map((item, index) => (
+                  <div 
+                    key={index}
+                    className="flex items-start gap-2 p-2 bg-success/5 rounded-lg"
+                  >
+                    <CheckCircle2 className="w-4 h-4 text-success mt-0.5 shrink-0" />
+                    <span className="text-sm">{item}</span>
+                  </div>
+                ))}
+                {strengths.length === 0 && (
+                  <p className="text-muted-foreground text-sm">Nenhum ponto forte identificado</p>
+                )}
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -112,23 +121,32 @@ export function InsightsCard({
             <CardTitle className="text-lg flex items-center gap-2 text-warning">
               <AlertTriangle className="w-5 h-5" />
               Pontos Fracos
+              {insightsLoading && (
+                <span className="ml-2 text-xs text-muted-foreground animate-pulse">
+                  Analisando...
+                </span>
+              )}
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="space-y-2">
-              {weaknesses.map((item, index) => (
-                <div 
-                  key={index}
-                  className="flex items-start gap-2 p-2 bg-warning/5 rounded-lg"
-                >
-                  <AlertTriangle className="w-4 h-4 text-warning mt-0.5 shrink-0" />
-                  <span className="text-sm">{item}</span>
-                </div>
-              ))}
-              {weaknesses.length === 0 && (
-                <p className="text-muted-foreground text-sm">Nenhum ponto fraco identificado</p>
-              )}
-            </div>
+            {insightsLoading ? (
+              <InsightsSkeleton />
+            ) : (
+              <div className="space-y-2">
+                {weaknesses.map((item, index) => (
+                  <div 
+                    key={index}
+                    className="flex items-start gap-2 p-2 bg-warning/5 rounded-lg"
+                  >
+                    <AlertTriangle className="w-4 h-4 text-warning mt-0.5 shrink-0" />
+                    <span className="text-sm">{item}</span>
+                  </div>
+                ))}
+                {weaknesses.length === 0 && (
+                  <p className="text-muted-foreground text-sm">Nenhum ponto fraco identificado</p>
+                )}
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
