@@ -137,23 +137,17 @@ ${evaluationsSummary}
 
 ## Sua Tarefa
 
-Analise profundamente estes dados e retorne um JSON com os seguintes campos:
+Retorne um JSON COMPACTO com estes campos (seja BREVE, máximo 1 frase por item):
 
-1. **strengths** (array de 3-5 strings): Pontos fortes consolidados identificados nas conversas. Seja específico e baseado nos dados.
+1. **strengths** (array de 3 strings curtas): Pontos fortes principais.
+2. **weaknesses** (array de 3 strings curtas): Pontos fracos principais.
+3. **positivePatterns** (array de 2-3 strings curtas): Padrões positivos.
+4. **negativePatterns** (array de 2-3 strings curtas): Padrões negativos.
+5. **insights** (array de 3 strings curtas): Insights acionáveis.
+6. **criticalIssues** (array de 0-2 strings): Problemas críticos. Array vazio se não houver.
+7. **finalRecommendation** (string de 1-2 frases): Recomendação final.
 
-2. **weaknesses** (array de 3-5 strings): Pontos fracos ou áreas de melhoria consolidados. Seja específico.
-
-3. **positivePatterns** (array de 3 strings): Padrões comportamentais positivos que você identificou analisando as conversas.
-
-4. **negativePatterns** (array de 3 strings): Padrões comportamentais negativos ou problemáticos identificados.
-
-5. **insights** (array de 3-5 strings): Insights acionáveis e específicos. Não seja genérico. Baseie-se nos dados apresentados.
-
-6. **criticalIssues** (array de 0-3 strings): Problemas críticos que precisam de atenção imediata. Se não houver nenhum, retorne array vazio.
-
-7. **finalRecommendation** (string): Uma recomendação final clara, específica e acionável de 2-4 frases baseada na análise.
-
-Responda APENAS com o JSON válido, sem markdown ou explicações adicionais.`;
+IMPORTANTE: Seja conciso. Cada item deve ter no máximo 100 caracteres. Responda APENAS com JSON válido, sem markdown.`;
 
     console.log(`[generate-filtered-insights] Analyzing ${totalEvaluations} evaluations with avg score ${avgScore.toFixed(1)}`);
 
@@ -164,7 +158,7 @@ Responda APENAS com o JSON válido, sem markdown ou explicações adicionais.`;
         contents: [{ parts: [{ text: prompt }] }],
         generationConfig: {
           temperature: 0.7,
-          maxOutputTokens: 2000,
+          maxOutputTokens: 4096,
         },
       }),
     });
@@ -198,6 +192,30 @@ Responda APENAS com o JSON válido, sem markdown ou explicações adicionais.`;
       }
       cleanedText = cleanedText.trim();
 
+      // Log response size for debugging
+      console.log(`[generate-filtered-insights] Response length: ${cleanedText.length} chars`);
+
+      // Try to repair truncated JSON by closing arrays/objects
+      if (!cleanedText.endsWith('}')) {
+        console.log('[generate-filtered-insights] Attempting to repair truncated JSON');
+        // Find the last complete field
+        const lastCompleteQuote = cleanedText.lastIndexOf('",');
+        const lastCompleteBracket = cleanedText.lastIndexOf('],');
+        const lastComplete = Math.max(lastCompleteQuote, lastCompleteBracket);
+        
+        if (lastComplete > 0) {
+          cleanedText = cleanedText.substring(0, lastComplete + 1);
+          // Count open brackets and close them
+          const openBrackets = (cleanedText.match(/\[/g) || []).length;
+          const closeBrackets = (cleanedText.match(/\]/g) || []).length;
+          const openBraces = (cleanedText.match(/\{/g) || []).length;
+          const closeBraces = (cleanedText.match(/\}/g) || []).length;
+          
+          cleanedText += ']'.repeat(openBrackets - closeBrackets);
+          cleanedText += '}'.repeat(openBraces - closeBraces);
+        }
+      }
+
       insights = JSON.parse(cleanedText);
       
       // Validate and provide defaults
@@ -211,7 +229,7 @@ Responda APENAS com o JSON válido, sem markdown ou explicações adicionais.`;
         finalRecommendation: typeof insights.finalRecommendation === 'string' ? insights.finalRecommendation : 'Análise concluída.',
       };
     } catch (parseError) {
-      console.error('[generate-filtered-insights] Failed to parse AI response:', textContent);
+      console.error('[generate-filtered-insights] Failed to parse AI response:', textContent.substring(0, 500));
       throw new Error('Failed to parse AI insights response');
     }
 
