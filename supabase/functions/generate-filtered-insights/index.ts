@@ -358,15 +358,28 @@ IMPORTANTE:
       return { ...defaultResult, mediaStats };
     }
     
-    // Parse JSON response
+    // Parse JSON response (com responseMimeType, deve vir limpo)
     let result: BatchAnalysisResult;
     try {
       let cleanedText = textContent.trim();
       if (cleanedText.startsWith('```json')) cleanedText = cleanedText.slice(7);
       if (cleanedText.startsWith('```')) cleanedText = cleanedText.slice(3);
       if (cleanedText.endsWith('```')) cleanedText = cleanedText.slice(0, -3);
+      cleanedText = cleanedText.trim();
       
-      result = JSON.parse(cleanedText.trim());
+      // Tenta reparar JSON truncado
+      if (!cleanedText.endsWith('}')) {
+        console.warn(`[Batch ${batchIndex}] JSON appears truncated, attempting repair`);
+        const openBraces = (cleanedText.match(/{/g) || []).length;
+        const closeBraces = (cleanedText.match(/}/g) || []).length;
+        const openBrackets = (cleanedText.match(/\[/g) || []).length;
+        const closeBrackets = (cleanedText.match(/]/g) || []).length;
+        
+        cleanedText += ']'.repeat(Math.max(0, openBrackets - closeBrackets));
+        cleanedText += '}'.repeat(Math.max(0, openBraces - closeBraces));
+      }
+      
+      result = JSON.parse(cleanedText);
       result.mediaStats = mediaStats;
       result.batchIndex = batchIndex;
       
@@ -375,6 +388,7 @@ IMPORTANTE:
       return result;
     } catch (parseError) {
       console.error(`[Batch ${batchIndex}] JSON parse error:`, parseError);
+      console.error(`[Batch ${batchIndex}] Raw response:`, textContent.substring(0, 500));
       return { ...defaultResult, mediaStats };
     }
   } catch (error) {
@@ -534,8 +548,21 @@ IMPORTANTE:
       if (cleanedText.startsWith('```json')) cleanedText = cleanedText.slice(7);
       if (cleanedText.startsWith('```')) cleanedText = cleanedText.slice(3);
       if (cleanedText.endsWith('```')) cleanedText = cleanedText.slice(0, -3);
+      cleanedText = cleanedText.trim();
       
-      result = JSON.parse(cleanedText.trim());
+      // Tenta reparar JSON truncado
+      if (!cleanedText.endsWith('}')) {
+        console.warn('[Consolidate] JSON appears truncated, attempting repair');
+        const openBraces = (cleanedText.match(/{/g) || []).length;
+        const closeBraces = (cleanedText.match(/}/g) || []).length;
+        const openBrackets = (cleanedText.match(/\[/g) || []).length;
+        const closeBrackets = (cleanedText.match(/]/g) || []).length;
+        
+        cleanedText += ']'.repeat(Math.max(0, openBrackets - closeBrackets));
+        cleanedText += '}'.repeat(Math.max(0, openBraces - closeBraces));
+      }
+      
+      result = JSON.parse(cleanedText);
       
       // Add media stats
       result.mediaStats = {
