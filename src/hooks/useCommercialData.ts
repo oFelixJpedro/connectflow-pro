@@ -1,8 +1,27 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { getStateFromPhone, StateCode } from '@/lib/dddMapping';
 
+// Cache for filtered insights to avoid repeated API calls
+interface InsightsCache {
+  key: string;
+  data: FilteredAIInsights;
+  timestamp: number;
+}
+
+interface FilteredAIInsights {
+  strengths: string[];
+  weaknesses: string[];
+  positivePatterns: string[];
+  negativePatterns: string[];
+  insights: string[];
+  criticalIssues: string[];
+  finalRecommendation: string;
+}
+
+const insightsCache: InsightsCache | null = null;
+const CACHE_DURATION_MS = 5 * 60 * 1000; // 5 minutes
 interface CriteriaScores {
   communication: number;
   objectivity: number;
@@ -159,6 +178,7 @@ export function useCommercialData(filter?: CommercialFilter) {
   const [aggregatedInsights, setAggregatedInsights] = useState<AggregatedInsights>(DEFAULT_INSIGHTS);
   const [lastUpdated, setLastUpdated] = useState(new Date());
   const [evaluating, setEvaluating] = useState(false);
+  const [insightsLoading, setInsightsLoading] = useState(false);
   
   // Track if filter is active to control realtime behavior
   // Consider both connection filter AND date filter (non-default dates)
@@ -170,8 +190,96 @@ export function useCommercialData(filter?: CommercialFilter) {
   
   // Prevent concurrent calls to fetchCompanyLiveMetrics
   const isFetchingLiveMetricsRef = useRef(false);
+  
+  // Cache for filtered AI insights
+  const insightsCacheRef = useRef<InsightsCache | null>(null);
+  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const isAdmin = userRole?.role === 'owner' || userRole?.role === 'admin';
+  
+  // Generate cache key based on filter
+  const filterCacheKey = useMemo(() => {
+    return JSON.stringify({
+      connectionId: filter?.connectionId,
+      departmentId: filter?.departmentId,
+      startDate: filter?.startDate?.toISOString(),
+      endDate: filter?.endDate?.toISOString(),
+    });
+  }, [filter?.connectionId, filter?.departmentId, filter?.startDate, filter?.endDate]);
+  
+  // Function to fetch AI-generated insights for filtered data
+  const fetchFilteredInsights = useCallback(async (
+    evaluations: Array<{
+      conversation_id: string;
+      overall_score: number | null;
+      communication_score: number | null;
+      objectivity_score: number | null;
+      humanization_score: number | null;
+      objection_handling_score: number | null;
+      closing_score: number | null;
+      response_time_score: number | null;
+      strengths: string[] | null;
+      improvements: string[] | null;
+      ai_summary: string | null;
+      lead_qualification: string | null;
+    }>,
+    criteriaScores: CriteriaScores,
+    filterDescription?: string
+  ): Promise<FilteredAIInsights | null> => {
+    // Check cache first
+    const cached = insightsCacheRef.current;
+    if (cached && cached.key === filterCacheKey && Date.now() - cached.timestamp < CACHE_DURATION_MS) {
+      console.log('[useCommercialData] Using cached filtered insights');
+      return cached.data;
+    }
+    
+    if (evaluations.length === 0) return null;
+    
+    setInsightsLoading(true);
+    
+    try {
+      const { data: result, error } = await supabase.functions.invoke('generate-filtered-insights', {
+        body: {
+          evaluations: evaluations.slice(0, 20), // Limit to 20 evaluations
+          criteriaScores,
+          filterDescription,
+        },
+      });
+      
+      if (error) {
+        console.error('[useCommercialData] Error fetching filtered insights:', error);
+        return null;
+      }
+      
+      if (result && !result.error) {
+        const insights: FilteredAIInsights = {
+          strengths: result.strengths || [],
+          weaknesses: result.weaknesses || [],
+          positivePatterns: result.positivePatterns || [],
+          negativePatterns: result.negativePatterns || [],
+          insights: result.insights || [],
+          criticalIssues: result.criticalIssues || [],
+          finalRecommendation: result.finalRecommendation || '',
+        };
+        
+        // Update cache
+        insightsCacheRef.current = {
+          key: filterCacheKey,
+          data: insights,
+          timestamp: Date.now(),
+        };
+        
+        return insights;
+      }
+      
+      return null;
+    } catch (error) {
+      console.error('[useCommercialData] Error calling generate-filtered-insights:', error);
+      return null;
+    } finally {
+      setInsightsLoading(false);
+    }
+  }, [filterCacheKey]);
 
   const evaluateConversations = async () => {
     if (!profile?.company_id) return;
@@ -883,20 +991,81 @@ export function useCommercialData(filter?: CommercialFilter) {
           positivePatterns = positivePatterns.slice(0, 3);
           negativePatterns = negativePatterns.slice(0, 3);
 
-          // Generate basic insights until AI generates them
-          insights = [];
-          criticalIssues = [];
-          
-          if (criteriaScores.closing < 6) {
-            insights.push('Aguardando análise de IA para insights detalhados de fechamento');
+          // When filter is active, we'll fetch AI insights in a separate call
+          // For now, set placeholder values that will be replaced by AI
+          if (hasActiveFilter) {
+            // Build filter description for AI context
+            let filterDesc = '';
+            if (filter?.connectionId) {
+              filterDesc += 'Conexão específica selecionada. ';
+            }
+            if (filter?.departmentId) {
+              filterDesc += 'Departamento específico. ';
+            }
+            if (filter?.startDate && filter?.endDate) {
+              filterDesc += `Período: ${filter.startDate.toLocaleDateString('pt-BR')} a ${filter.endDate.toLocaleDateString('pt-BR')}`;
+            }
+            
+            // Call AI for filtered insights (debounced)
+            if (debounceTimerRef.current) {
+              clearTimeout(debounceTimerRef.current);
+            }
+            
+            debounceTimerRef.current = setTimeout(async () => {
+              const aiInsights = await fetchFilteredInsights(
+                evaluations.map(e => ({
+                  conversation_id: e.conversation_id,
+                  overall_score: e.overall_score,
+                  communication_score: e.communication_score,
+                  objectivity_score: e.objectivity_score,
+                  humanization_score: e.humanization_score,
+                  objection_handling_score: e.objection_handling_score,
+                  closing_score: e.closing_score,
+                  response_time_score: e.response_time_score,
+                  strengths: e.strengths as string[] | null,
+                  improvements: e.improvements as string[] | null,
+                  ai_summary: e.ai_summary,
+                  lead_qualification: e.lead_qualification,
+                })),
+                criteriaScores,
+                filterDesc
+              );
+              
+              if (aiInsights) {
+                // Update data with AI-generated insights
+                setData(prevData => prevData ? {
+                  ...prevData,
+                  strengths: aiInsights.strengths.length > 0 ? aiInsights.strengths : prevData.strengths,
+                  weaknesses: aiInsights.weaknesses.length > 0 ? aiInsights.weaknesses : prevData.weaknesses,
+                  positivePatterns: aiInsights.positivePatterns,
+                  negativePatterns: aiInsights.negativePatterns,
+                  insights: aiInsights.insights.length > 0 ? aiInsights.insights : prevData.insights,
+                  criticalIssues: aiInsights.criticalIssues,
+                  finalRecommendation: aiInsights.finalRecommendation || prevData.finalRecommendation,
+                } : prevData);
+              }
+            }, 500); // 500ms debounce
+            
+            // Set initial placeholder values while AI processes
+            positivePatterns = [];
+            negativePatterns = [];
+            insights = ['Gerando análise de IA para dados filtrados...'];
+            criticalIssues = [];
+            finalRecommendation = 'Analisando conversas filtradas...';
+          } else {
+            // Not filtered - use basic local calculations
+            insights = [];
+            criticalIssues = [];
+            
+            if (criteriaScores.closing < 6) {
+              insights.push('Aguardando análise de IA para insights detalhados de fechamento');
+            }
+            if (criteriaScores.response_time < 6) {
+              criticalIssues.push('Tempo de resposta precisa ser analisado pela IA');
+            }
+            
+            finalRecommendation = 'Aguardando análise de IA para recomendação personalizada...';
           }
-          if (criteriaScores.response_time < 6) {
-            criticalIssues.push('Tempo de resposta precisa ser analisado pela IA');
-          }
-
-          finalRecommendation = hasActiveFilter 
-            ? 'Dados calculados a partir das conversas filtradas.'
-            : 'Aguardando análise de IA para recomendação personalizada...';
         } else {
           // No data yet
           criteriaScores = {
@@ -961,7 +1130,7 @@ export function useCommercialData(filter?: CommercialFilter) {
     };
 
     fetchData();
-  }, [profile?.company_id, isAdmin, aggregatedInsights, filter?.type, filter?.connectionId, filter?.departmentId, filter?.startDate, filter?.endDate, hasActiveFilter, fetchCompanyLiveMetrics]);
+  }, [profile?.company_id, isAdmin, aggregatedInsights, filter?.type, filter?.connectionId, filter?.departmentId, filter?.startDate, filter?.endDate, hasActiveFilter, fetchCompanyLiveMetrics, fetchFilteredInsights]);
 
   return {
     loading,
@@ -972,5 +1141,6 @@ export function useCommercialData(filter?: CommercialFilter) {
     isAdmin,
     evaluating,
     evaluateConversations,
+    insightsLoading,
   };
 }

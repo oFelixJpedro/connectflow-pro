@@ -104,3 +104,6 @@ verify_jwt = true
 
 [functions.commercial-pixel]
 verify_jwt = false
+
+[functions.generate-filtered-insights]
+verify_jwt = true
