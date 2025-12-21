@@ -308,6 +308,29 @@ export function useCommercialData(filter?: CommercialFilter) {
         .eq('company_id', profile.company_id)
         .maybeSingle();
 
+      // Calculate today's metrics dynamically (since company_live_dashboard may not be updated)
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const todayISO = today.toISOString();
+
+      // Fetch today's new conversations
+      const { count: todayNewConversations } = await supabase
+        .from('conversations')
+        .select('id', { count: 'exact', head: true })
+        .eq('company_id', profile.company_id)
+        .gte('created_at', todayISO);
+
+      // Fetch closed deals and lost leads from conversation_live_metrics
+      const { data: todayMetrics } = await supabase
+        .from('conversation_live_metrics')
+        .select('lead_status, updated_at')
+        .eq('company_id', profile.company_id)
+        .in('lead_status', ['closed_won', 'closed_lost'])
+        .gte('updated_at', todayISO);
+
+      const todayContractsClosed = todayMetrics?.filter(m => m.lead_status === 'closed_won').length || 0;
+      const todayLeadsLost = todayMetrics?.filter(m => m.lead_status === 'closed_lost').length || 0;
+
       if (dashboard) {
         setLiveMetrics({
           activeConversations: dashboard.active_conversations || 0,
@@ -315,9 +338,9 @@ export function useCommercialData(filter?: CommercialFilter) {
           warmLeads: dashboard.warm_leads || 0,
           coldLeads: dashboard.cold_leads || 0,
           todayMessages: dashboard.today_messages || 0,
-          todayNewConversations: dashboard.today_new_conversations || 0,
-          todayContractsClosed: dashboard.today_contracts_closed || 0,
-          todayLeadsLost: dashboard.today_leads_lost || 0,
+          todayNewConversations: todayNewConversations || dashboard.today_new_conversations || 0,
+          todayContractsClosed: todayContractsClosed || dashboard.today_contracts_closed || 0,
+          todayLeadsLost: todayLeadsLost || dashboard.today_leads_lost || 0,
           currentAvgResponseTime: dashboard.current_avg_response_time || 0,
           currentAvgSentiment: dashboard.current_avg_sentiment || 'neutral',
           topObjections: Array.isArray(dashboard.top_objections) 
@@ -345,6 +368,14 @@ export function useCommercialData(filter?: CommercialFilter) {
             qualified_leads_percent: insights.qualified_leads_percent || 0,
           });
         }
+      } else {
+        // No dashboard data, set with calculated values
+        setLiveMetrics({
+          ...EMPTY_LIVE_METRICS,
+          todayNewConversations: todayNewConversations || 0,
+          todayContractsClosed,
+          todayLeadsLost,
+        });
       }
     } catch (error) {
       console.error('Error fetching live metrics:', error);
