@@ -127,7 +127,7 @@ export function BrazilMap({ contactsByState, dealsByState }: BrazilMapProps) {
     if (filter !== 'crm_stage') return null;
 
     return (
-      <div className="mt-2 border border-border rounded-lg overflow-hidden bg-background">
+      <div className="mt-2 border border-border rounded-lg overflow-hidden bg-background max-w-[300px]">
         {/* Header */}
         <div className="flex items-center gap-2 px-3 py-2 border-b border-border bg-muted/30">
           {crmSelectionStep === 'stage' && (
