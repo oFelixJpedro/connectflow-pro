@@ -18,6 +18,37 @@ interface FilteredAIInsights {
   insights: string[];
   criticalIssues: string[];
   finalRecommendation: string;
+  mediaStats?: {
+    total: number;
+    problematic: number;
+    byType: Record<string, number>;
+  };
+}
+
+interface MediaSample {
+  url: string;
+  mimeType: string;
+  type: 'image' | 'video' | 'audio' | 'document';
+}
+
+interface ConversationWithMedia {
+  conversationId: string;
+  contactName?: string;
+  evaluation: {
+    conversation_id: string;
+    overall_score: number | null;
+    communication_score: number | null;
+    objectivity_score: number | null;
+    humanization_score: number | null;
+    objection_handling_score: number | null;
+    closing_score: number | null;
+    response_time_score: number | null;
+    strengths: string[] | null;
+    improvements: string[] | null;
+    ai_summary: string | null;
+    lead_qualification: string | null;
+  };
+  medias: MediaSample[];
 }
 
 const insightsCache: InsightsCache | null = null;
@@ -207,7 +238,7 @@ export function useCommercialData(filter?: CommercialFilter) {
     });
   }, [filter?.connectionId, filter?.departmentId, filter?.startDate, filter?.endDate]);
   
-  // Function to fetch AI-generated insights for filtered data
+  // Function to fetch AI-generated insights for filtered data with media analysis
   const fetchFilteredInsights = useCallback(async (
     evaluations: Array<{
       conversation_id: string;
@@ -238,9 +269,79 @@ export function useCommercialData(filter?: CommercialFilter) {
     setInsightsLoading(true);
     
     try {
+      // Get conversation IDs from evaluations
+      const conversationIds = evaluations.map(e => e.conversation_id);
+      
+      // Fetch outbound media for these conversations
+      const { data: messagesWithMedia } = await supabase
+        .from('messages')
+        .select('conversation_id, media_url, media_mime_type, message_type')
+        .eq('direction', 'outbound')
+        .in('conversation_id', conversationIds)
+        .not('media_url', 'is', null);
+      
+      // Get contact names for each conversation
+      const { data: conversationsData } = await supabase
+        .from('conversations')
+        .select('id, contact:contacts(name)')
+        .in('id', conversationIds);
+      
+      const contactNames: Record<string, string> = {};
+      conversationsData?.forEach(c => {
+        const contact = c.contact as any;
+        if (contact?.name) {
+          contactNames[c.id] = contact.name;
+        }
+      });
+      
+      // Helper to determine media type
+      const getMediaType = (mimeType: string, messageType: string): 'image' | 'video' | 'audio' | 'document' => {
+        if (messageType === 'image' || mimeType?.startsWith('image/')) return 'image';
+        if (messageType === 'video' || mimeType?.startsWith('video/')) return 'video';
+        if (messageType === 'audio' || messageType === 'ptt' || mimeType?.startsWith('audio/')) return 'audio';
+        return 'document';
+      };
+      
+      // Group media by conversation
+      const mediaByConversation: Record<string, MediaSample[]> = {};
+      messagesWithMedia?.forEach(msg => {
+        if (!mediaByConversation[msg.conversation_id]) {
+          mediaByConversation[msg.conversation_id] = [];
+        }
+        mediaByConversation[msg.conversation_id].push({
+          url: msg.media_url!,
+          mimeType: msg.media_mime_type || 'application/octet-stream',
+          type: getMediaType(msg.media_mime_type || '', msg.message_type || ''),
+        });
+      });
+      
+      // Build conversationsWithMedia array (limit to 100 conversations max)
+      const conversationsWithMedia: ConversationWithMedia[] = evaluations.slice(0, 100).map(e => ({
+        conversationId: e.conversation_id,
+        contactName: contactNames[e.conversation_id],
+        evaluation: {
+          conversation_id: e.conversation_id,
+          overall_score: e.overall_score,
+          communication_score: e.communication_score,
+          objectivity_score: e.objectivity_score,
+          humanization_score: e.humanization_score,
+          objection_handling_score: e.objection_handling_score,
+          closing_score: e.closing_score,
+          response_time_score: e.response_time_score,
+          strengths: e.strengths,
+          improvements: e.improvements,
+          ai_summary: e.ai_summary,
+          lead_qualification: e.lead_qualification,
+        },
+        medias: (mediaByConversation[e.conversation_id] || []).slice(0, 10), // Max 10 medias per conversation
+      }));
+      
+      const totalMedias = conversationsWithMedia.reduce((sum, c) => sum + c.medias.length, 0);
+      console.log(`[useCommercialData] Sending ${conversationsWithMedia.length} conversations with ${totalMedias} medias to AI`);
+      
       const { data: result, error } = await supabase.functions.invoke('generate-filtered-insights', {
         body: {
-          evaluations: evaluations.slice(0, 20), // Limit to 20 evaluations
+          conversationsWithMedia,
           criteriaScores,
           filterDescription,
         },
@@ -260,6 +361,7 @@ export function useCommercialData(filter?: CommercialFilter) {
           insights: result.insights || [],
           criticalIssues: result.criticalIssues || [],
           finalRecommendation: result.finalRecommendation || '',
+          mediaStats: result.mediaStats,
         };
         
         // Update cache
@@ -268,6 +370,8 @@ export function useCommercialData(filter?: CommercialFilter) {
           data: insights,
           timestamp: Date.now(),
         };
+        
+        console.log(`[useCommercialData] AI insights received with mediaStats:`, result.mediaStats);
         
         return insights;
       }
