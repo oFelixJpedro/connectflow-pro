@@ -1650,6 +1650,65 @@ export type Database = {
           },
         ]
       }
+      insights_jobs: {
+        Row: {
+          company_id: string
+          completed_at: string | null
+          created_at: string | null
+          current_step: string | null
+          error_message: string | null
+          expires_at: string | null
+          filters: Json
+          id: string
+          job_type: string
+          progress: number | null
+          requested_by: string | null
+          result: Json | null
+          started_at: string | null
+          status: string
+        }
+        Insert: {
+          company_id: string
+          completed_at?: string | null
+          created_at?: string | null
+          current_step?: string | null
+          error_message?: string | null
+          expires_at?: string | null
+          filters?: Json
+          id?: string
+          job_type?: string
+          progress?: number | null
+          requested_by?: string | null
+          result?: Json | null
+          started_at?: string | null
+          status?: string
+        }
+        Update: {
+          company_id?: string
+          completed_at?: string | null
+          created_at?: string | null
+          current_step?: string | null
+          error_message?: string | null
+          expires_at?: string | null
+          filters?: Json
+          id?: string
+          job_type?: string
+          progress?: number | null
+          requested_by?: string | null
+          result?: Json | null
+          started_at?: string | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "insights_jobs_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       internal_chat_messages: {
         Row: {
           content: string | null
@@ -2907,6 +2966,7 @@ export type Database = {
         Args: { p_column_id: string }
         Returns: boolean
       }
+      cleanup_expired_insights_jobs: { Args: never; Returns: number }
       cleanup_expired_media_cache: { Args: never; Returns: number }
       create_internal_chat_room: {
         Args: { p_description?: string; p_name?: string; p_type: string }

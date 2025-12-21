@@ -110,3 +110,9 @@ verify_jwt = true
 
 [functions.generate-agent-recommendation]
 verify_jwt = true
+
+[functions.queue-insights-job]
+verify_jwt = true
+
+[functions.get-insights-job-status]
+verify_jwt = true

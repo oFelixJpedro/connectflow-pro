@@ -211,6 +211,11 @@ export function useCommercialData(filter?: CommercialFilter) {
   const [evaluating, setEvaluating] = useState(false);
   const [insightsLoading, setInsightsLoading] = useState(false);
   
+  // Async job state
+  const [insightsJobId, setInsightsJobId] = useState<string | null>(null);
+  const [insightsProgress, setInsightsProgress] = useState(0);
+  const [insightsCurrentStep, setInsightsCurrentStep] = useState('');
+  
   // Track if filter is active to control realtime behavior
   // Consider both connection filter AND date filter (non-default dates)
   const hasConnectionFilter = filter?.type === 'connection' && !!filter.connectionId;
@@ -225,6 +230,7 @@ export function useCommercialData(filter?: CommercialFilter) {
   // Cache for filtered AI insights
   const insightsCacheRef = useRef<InsightsCache | null>(null);
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   const isAdmin = userRole?.role === 'owner' || userRole?.role === 'admin';
   
@@ -384,6 +390,148 @@ export function useCommercialData(filter?: CommercialFilter) {
       setInsightsLoading(false);
     }
   }, [filterCacheKey]);
+
+  // Async job polling function
+  const pollJobStatus = useCallback(async (jobId: string) => {
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current);
+    }
+    
+    const poll = async () => {
+      try {
+        const { data: statusData, error } = await supabase.functions.invoke('get-insights-job-status', {
+          body: { jobId }
+        });
+        
+        if (error) {
+          console.error('[useCommercialData] Error polling job status:', error);
+          return;
+        }
+        
+        setInsightsProgress(statusData?.progress || 0);
+        setInsightsCurrentStep(statusData?.currentStep || 'Processando...');
+        
+        if (statusData?.status === 'completed') {
+          // Job completed - update data with result
+          if (pollingIntervalRef.current) {
+            clearInterval(pollingIntervalRef.current);
+            pollingIntervalRef.current = null;
+          }
+          
+          const result = statusData.result;
+          if (result) {
+            setData(prevData => prevData ? {
+              ...prevData,
+              strengths: result.strengths?.length > 0 ? result.strengths : prevData.strengths,
+              weaknesses: result.weaknesses?.length > 0 ? result.weaknesses : prevData.weaknesses,
+              positivePatterns: result.positivePatterns || prevData.positivePatterns,
+              negativePatterns: result.negativePatterns || prevData.negativePatterns,
+              insights: result.insights?.length > 0 ? result.insights : prevData.insights,
+              criticalIssues: result.criticalIssues || prevData.criticalIssues,
+              finalRecommendation: result.finalRecommendation || prevData.finalRecommendation,
+            } : prevData);
+            
+            // Update cache
+            insightsCacheRef.current = {
+              key: filterCacheKey,
+              data: result,
+              timestamp: Date.now(),
+            };
+          }
+          
+          setInsightsLoading(false);
+          setInsightsJobId(null);
+          setInsightsProgress(100);
+          setInsightsCurrentStep('Concluído');
+          console.log('[useCommercialData] Async job completed');
+          return;
+        }
+        
+        if (statusData?.status === 'failed') {
+          if (pollingIntervalRef.current) {
+            clearInterval(pollingIntervalRef.current);
+            pollingIntervalRef.current = null;
+          }
+          setInsightsLoading(false);
+          setInsightsJobId(null);
+          setInsightsProgress(0);
+          setInsightsCurrentStep('Erro no processamento');
+          console.error('[useCommercialData] Async job failed:', statusData.error);
+          return;
+        }
+        
+        // Still processing - continue polling
+      } catch (err) {
+        console.error('[useCommercialData] Polling error:', err);
+      }
+    };
+    
+    // Initial poll
+    await poll();
+    
+    // Set up interval for continued polling
+    pollingIntervalRef.current = setInterval(poll, 2000);
+  }, [filterCacheKey]);
+
+  // Start async insights job
+  const startInsightsJob = useCallback(async (
+    evaluations: any[],
+    criteriaScores: CriteriaScores,
+    filterDescription: string,
+    conversationIds: string[]
+  ) => {
+    setInsightsLoading(true);
+    setInsightsProgress(0);
+    setInsightsCurrentStep('Iniciando análise...');
+    
+    try {
+      const { data: result, error } = await supabase.functions.invoke('queue-insights-job', {
+        body: {
+          filters: {
+            connectionId: filter?.connectionId,
+            departmentId: filter?.departmentId,
+            startDate: filter?.startDate?.toISOString(),
+            endDate: filter?.endDate?.toISOString(),
+          },
+          conversationIds,
+          evaluations,
+          criteriaScores,
+          filterDescription,
+        },
+      });
+      
+      if (error || !result?.jobId) {
+        console.error('[useCommercialData] Error starting insights job:', error);
+        setInsightsLoading(false);
+        // Fallback to sync processing
+        return null;
+      }
+      
+      setInsightsJobId(result.jobId);
+      console.log('[useCommercialData] Async job started:', result.jobId);
+      
+      // Start polling
+      pollJobStatus(result.jobId);
+      
+      return result.jobId;
+    } catch (err) {
+      console.error('[useCommercialData] Error starting job:', err);
+      setInsightsLoading(false);
+      return null;
+    }
+  }, [filter, pollJobStatus]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+      }
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
+    };
+  }, []);
 
   const evaluateConversations = async () => {
     if (!profile?.company_id) return;
@@ -1110,43 +1258,62 @@ export function useCommercialData(filter?: CommercialFilter) {
               filterDesc += `Período: ${filter.startDate.toLocaleDateString('pt-BR')} a ${filter.endDate.toLocaleDateString('pt-BR')}`;
             }
             
+            // Determine if we should use async processing
+            // Use async for large datasets: >100 conversations or >5 agents with conversations
+            const agentsWithConversations = agentsAnalysis.filter(a => a.conversations > 0).length;
+            const shouldUseAsync = conversationIds.length > 100 || agentsWithConversations > 5;
+            
             // Call AI for filtered insights (debounced)
             if (debounceTimerRef.current) {
               clearTimeout(debounceTimerRef.current);
             }
             
             debounceTimerRef.current = setTimeout(async () => {
-              const aiInsights = await fetchFilteredInsights(
-                evaluations.map(e => ({
-                  conversation_id: e.conversation_id,
-                  overall_score: e.overall_score,
-                  communication_score: e.communication_score,
-                  objectivity_score: e.objectivity_score,
-                  humanization_score: e.humanization_score,
-                  objection_handling_score: e.objection_handling_score,
-                  closing_score: e.closing_score,
-                  response_time_score: e.response_time_score,
-                  strengths: e.strengths as string[] | null,
-                  improvements: e.improvements as string[] | null,
-                  ai_summary: e.ai_summary,
-                  lead_qualification: e.lead_qualification,
-                })),
-                criteriaScores,
-                filterDesc
-              );
+              const evaluationsData = evaluations.map(e => ({
+                conversation_id: e.conversation_id,
+                overall_score: e.overall_score,
+                communication_score: e.communication_score,
+                objectivity_score: e.objectivity_score,
+                humanization_score: e.humanization_score,
+                objection_handling_score: e.objection_handling_score,
+                closing_score: e.closing_score,
+                response_time_score: e.response_time_score,
+                strengths: e.strengths as string[] | null,
+                improvements: e.improvements as string[] | null,
+                ai_summary: e.ai_summary,
+                lead_qualification: e.lead_qualification,
+              }));
               
-              if (aiInsights) {
-                // Update data with AI-generated insights
-                setData(prevData => prevData ? {
-                  ...prevData,
-                  strengths: aiInsights.strengths.length > 0 ? aiInsights.strengths : prevData.strengths,
-                  weaknesses: aiInsights.weaknesses.length > 0 ? aiInsights.weaknesses : prevData.weaknesses,
-                  positivePatterns: aiInsights.positivePatterns,
-                  negativePatterns: aiInsights.negativePatterns,
-                  insights: aiInsights.insights.length > 0 ? aiInsights.insights : prevData.insights,
-                  criticalIssues: aiInsights.criticalIssues,
-                  finalRecommendation: aiInsights.finalRecommendation || prevData.finalRecommendation,
-                } : prevData);
+              if (shouldUseAsync) {
+                // Use async processing for large datasets
+                console.log(`[useCommercialData] Using async processing for ${conversationIds.length} conversations, ${agentsWithConversations} agents`);
+                await startInsightsJob(
+                  evaluationsData,
+                  criteriaScores,
+                  filterDesc,
+                  conversationIds
+                );
+              } else {
+                // Use sync processing for small datasets
+                const aiInsights = await fetchFilteredInsights(
+                  evaluationsData,
+                  criteriaScores,
+                  filterDesc
+                );
+                
+                if (aiInsights) {
+                  // Update data with AI-generated insights
+                  setData(prevData => prevData ? {
+                    ...prevData,
+                    strengths: aiInsights.strengths.length > 0 ? aiInsights.strengths : prevData.strengths,
+                    weaknesses: aiInsights.weaknesses.length > 0 ? aiInsights.weaknesses : prevData.weaknesses,
+                    positivePatterns: aiInsights.positivePatterns,
+                    negativePatterns: aiInsights.negativePatterns,
+                    insights: aiInsights.insights.length > 0 ? aiInsights.insights : prevData.insights,
+                    criticalIssues: aiInsights.criticalIssues,
+                    finalRecommendation: aiInsights.finalRecommendation || prevData.finalRecommendation,
+                  } : prevData);
+                }
               }
             }, 500); // 500ms debounce
             
@@ -1234,7 +1401,7 @@ export function useCommercialData(filter?: CommercialFilter) {
     };
 
     fetchData();
-  }, [profile?.company_id, isAdmin, aggregatedInsights, filter?.type, filter?.connectionId, filter?.departmentId, filter?.startDate, filter?.endDate, hasActiveFilter, fetchCompanyLiveMetrics, fetchFilteredInsights]);
+  }, [profile?.company_id, isAdmin, aggregatedInsights, filter?.type, filter?.connectionId, filter?.departmentId, filter?.startDate, filter?.endDate, hasActiveFilter, fetchCompanyLiveMetrics, fetchFilteredInsights, startInsightsJob]);
 
   return {
     loading,
@@ -1246,5 +1413,8 @@ export function useCommercialData(filter?: CommercialFilter) {
     evaluating,
     evaluateConversations,
     insightsLoading,
+    insightsProgress,
+    insightsCurrentStep,
+    insightsJobId,
   };
 }
