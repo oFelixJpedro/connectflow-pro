@@ -6,12 +6,39 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// ==================== INTERFACES ====================
+
 interface MediaSample {
   url: string;
   mimeType: string;
   type: 'image' | 'video' | 'audio' | 'document';
   direction: 'inbound' | 'outbound';
   messageContent?: string;
+}
+
+interface ConversationWithMedia {
+  conversationId: string;
+  contactName?: string;
+  medias: MediaSample[];
+  evaluationScore?: number;
+}
+
+interface BatchAnalysisResult {
+  batchIndex: number;
+  totalMedias: number;
+  relevantes: number;
+  problematicas: ProblematicMedia[];
+  padroesPositivos: string[];
+  padroesNegativos: string[];
+  error?: string;
+}
+
+interface ProblematicMedia {
+  url: string;
+  problema: string;
+  gravidade: 'baixa' | 'media' | 'alta';
+  conversationId: string;
+  tipo: string;
 }
 
 interface AgentRecommendationRequest {
@@ -37,10 +64,13 @@ interface AgentRecommendationRequest {
   criticalAlertsCount: number;
   alertTypes: string[];
   recentPerformance: 'improving' | 'stable' | 'declining';
+  // Nova estrutura: conversas com suas mídias agrupadas
+  conversationsWithMedia?: ConversationWithMedia[];
+  // Mantém compatibilidade com formato antigo
   mediaSamples?: MediaSample[];
 }
 
-// ==================== FUNÇÕES AUXILIARES PARA MÍDIA ====================
+// ==================== FUNÇÕES AUXILIARES ====================
 
 function arrayBufferToBase64(buffer: ArrayBuffer): string {
   const bytes = new Uint8Array(buffer);
@@ -51,6 +81,7 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
   return btoa(binary);
 }
 
+// Transcreve áudio usando Gemini (única função que ainda baixa conteúdo)
 async function transcribeAudio(audioUrl: string, apiKey: string): Promise<string | null> {
   try {
     console.log('[generate-agent-recommendation] 🎙️ Transcribing audio:', audioUrl.substring(0, 50));
@@ -108,109 +139,355 @@ async function transcribeAudio(audioUrl: string, apiKey: string): Promise<string
   }
 }
 
-async function fetchImageAsBase64(imageUrl: string): Promise<{ data: string; mimeType: string } | null> {
+// Divide array em chunks
+function chunkArray<T>(array: T[], chunkSize: number): T[][] {
+  const chunks: T[][] = [];
+  for (let i = 0; i < array.length; i += chunkSize) {
+    chunks.push(array.slice(i, i + chunkSize));
+  }
+  return chunks;
+}
+
+// ==================== ETAPA 1: ANÁLISE POR BATCH ====================
+
+async function analyzeConversationBatch(
+  conversations: ConversationWithMedia[],
+  batchIndex: number,
+  geminiApiKey: string
+): Promise<BatchAnalysisResult> {
   try {
-    console.log('[generate-agent-recommendation] 🖼️ Fetching image:', imageUrl.substring(0, 50));
+    console.log(`[generate-agent-recommendation] 📦 Analyzing batch ${batchIndex + 1} with ${conversations.length} conversations`);
     
-    const response = await fetch(imageUrl);
-    if (!response.ok) {
-      console.error('[generate-agent-recommendation] ❌ Failed to fetch image:', response.status);
-      return null;
+    const parts: any[] = [];
+    let mediaCount = { images: 0, videos: 0, documents: 0, audios: 0 };
+    const audioTranscriptions: string[] = [];
+    let audioProcessed = 0;
+    const MAX_AUDIOS_PER_BATCH = 3;
+    const MAX_VIDEOS_PER_BATCH = 2;
+
+    // Processa todas as mídias das conversas do batch
+    for (const conv of conversations) {
+      for (const media of conv.medias) {
+        try {
+          if (media.type === 'image') {
+            // Usa fileUri - Gemini baixa direto da URL
+            parts.push({
+              fileData: {
+                fileUri: media.url,
+                mimeType: media.mimeType || 'image/jpeg'
+              }
+            });
+            mediaCount.images++;
+          } else if (media.type === 'video' && mediaCount.videos < MAX_VIDEOS_PER_BATCH) {
+            parts.push({
+              fileData: {
+                fileUri: media.url,
+                mimeType: media.mimeType || 'video/mp4'
+              }
+            });
+            mediaCount.videos++;
+          } else if (media.type === 'document') {
+            parts.push({
+              fileData: {
+                fileUri: media.url,
+                mimeType: media.mimeType || 'application/pdf'
+              }
+            });
+            mediaCount.documents++;
+          } else if (media.type === 'audio' && audioProcessed < MAX_AUDIOS_PER_BATCH) {
+            // Áudio ainda precisa de transcrição
+            const transcription = await transcribeAudio(media.url, geminiApiKey);
+            if (transcription) {
+              audioTranscriptions.push(`[Áudio da conversa ${conv.conversationId.substring(0, 8)}]: ${transcription}`);
+              mediaCount.audios++;
+              audioProcessed++;
+            }
+          }
+        } catch (error) {
+          console.error(`[generate-agent-recommendation] ⚠️ Error processing media:`, error);
+        }
+      }
     }
+
+    const totalMedia = mediaCount.images + mediaCount.videos + mediaCount.documents + mediaCount.audios;
+    console.log(`[generate-agent-recommendation] 📊 Batch ${batchIndex + 1} media count:`, mediaCount);
+
+    if (totalMedia === 0) {
+      return {
+        batchIndex,
+        totalMedias: 0,
+        relevantes: 0,
+        problematicas: [],
+        padroesPositivos: [],
+        padroesNegativos: [],
+      };
+    }
+
+    // Prompt para análise do batch
+    const batchPrompt = `Você é um analista de qualidade de atendimento comercial.
+
+Analise as mídias enviadas pelo vendedor nestas ${conversations.length} conversas de vendas.
+
+## ESTATÍSTICAS DO BATCH
+- Imagens: ${mediaCount.images}
+- Vídeos: ${mediaCount.videos}
+- Documentos: ${mediaCount.documents}
+- Áudios transcritos: ${mediaCount.audios}
+
+${audioTranscriptions.length > 0 ? `## TRANSCRIÇÕES DE ÁUDIOS:\n${audioTranscriptions.join('\n\n')}` : ''}
+
+## INSTRUÇÕES
+
+Para CADA mídia visual (imagem/vídeo/documento), analise:
+1. O que é o conteúdo? Descreva brevemente.
+2. É relevante para um contexto de vendas? (catálogo, proposta, produto, etc.)
+3. Há algo problemático? (pessoal, inapropriado, irrelevante, baixa qualidade)
+
+Para áudios, analise o tom, profissionalismo e relevância.
+
+## RESPOSTA
+
+Retorne APENAS um JSON válido (sem markdown, sem \`\`\`) no formato:
+{
+  "totalMedias": ${totalMedia},
+  "relevantes": <número de mídias relevantes para vendas>,
+  "problematicas": [
+    {
+      "url": "<url da mídia>",
+      "problema": "<descrição do problema>",
+      "gravidade": "baixa|media|alta",
+      "tipo": "image|video|audio|document"
+    }
+  ],
+  "padroesPositivos": ["<padrão positivo identificado>"],
+  "padroesNegativos": ["<padrão negativo identificado>"]
+}
+
+Se não houver problemas, retorne array vazio em "problematicas".`;
+
+    parts.push({ text: batchPrompt });
+
+    // Chama Gemini com fileUri (sem baixar as mídias)
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${geminiApiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ role: 'user', parts }],
+          generationConfig: {
+            temperature: 0.3,
+            maxOutputTokens: 4096,
+          },
+        }),
+      }
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`[generate-agent-recommendation] ❌ Batch ${batchIndex + 1} Gemini error:`, errorText);
+      return {
+        batchIndex,
+        totalMedias: totalMedia,
+        relevantes: 0,
+        problematicas: [],
+        padroesPositivos: [],
+        padroesNegativos: [],
+        error: `Gemini API error: ${response.status}`,
+      };
+    }
+
+    const result = await response.json();
+    const responseText = result.candidates?.[0]?.content?.parts?.[0]?.text || '';
     
-    const buffer = await response.arrayBuffer();
-    const base64 = arrayBufferToBase64(buffer);
-    const mimeType = response.headers.get('content-type') || 'image/jpeg';
-    
-    return { data: base64, mimeType };
+    console.log(`[generate-agent-recommendation] ✅ Batch ${batchIndex + 1} response preview:`, responseText.substring(0, 200));
+
+    // Parse do JSON
+    try {
+      // Remove possíveis marcadores de código
+      const cleanJson = responseText.replace(/```json\n?|\n?```/g, '').trim();
+      const parsed = JSON.parse(cleanJson);
+      
+      return {
+        batchIndex,
+        totalMedias: parsed.totalMedias || totalMedia,
+        relevantes: parsed.relevantes || 0,
+        problematicas: (parsed.problematicas || []).map((p: any) => ({
+          ...p,
+          conversationId: conversations[0]?.conversationId || 'unknown',
+        })),
+        padroesPositivos: parsed.padroesPositivos || [],
+        padroesNegativos: parsed.padroesNegativos || [],
+      };
+    } catch (parseError) {
+      console.error(`[generate-agent-recommendation] ⚠️ Failed to parse batch ${batchIndex + 1} response:`, parseError);
+      return {
+        batchIndex,
+        totalMedias: totalMedia,
+        relevantes: totalMedia, // Assume todas são relevantes se não conseguir parsear
+        problematicas: [],
+        padroesPositivos: [],
+        padroesNegativos: [],
+        error: 'Failed to parse response',
+      };
+    }
   } catch (error) {
-    console.error('[generate-agent-recommendation] ❌ Error fetching image:', error);
-    return null;
+    console.error(`[generate-agent-recommendation] ❌ Batch ${batchIndex + 1} error:`, error);
+    return {
+      batchIndex,
+      totalMedias: 0,
+      relevantes: 0,
+      problematicas: [],
+      padroesPositivos: [],
+      padroesNegativos: [],
+      error: error instanceof Error ? error.message : 'Unknown error',
+    };
   }
 }
 
-async function fetchVideoAsBase64(videoUrl: string): Promise<{ data: string; mimeType: string } | null> {
-  try {
-    console.log('[generate-agent-recommendation] 🎬 Fetching video:', videoUrl.substring(0, 50));
-    
-    const response = await fetch(videoUrl);
-    if (!response.ok) {
-      console.error('[generate-agent-recommendation] ❌ Failed to fetch video:', response.status);
-      return null;
+// ==================== ETAPA 2: CONSOLIDAÇÃO FINAL ====================
+
+async function consolidateAndGenerateRecommendation(
+  batchResults: BatchAnalysisResult[],
+  agentData: AgentRecommendationRequest,
+  geminiApiKey: string
+): Promise<string> {
+  console.log('[generate-agent-recommendation] 🔄 Consolidating', batchResults.length, 'batch results');
+
+  // Consolida estatísticas de todos os batches
+  const totalMedias = batchResults.reduce((sum, b) => sum + b.totalMedias, 0);
+  const totalRelevantes = batchResults.reduce((sum, b) => sum + b.relevantes, 0);
+  const allProblematicas = batchResults.flatMap(b => b.problematicas);
+  const allPadroesPositivos = [...new Set(batchResults.flatMap(b => b.padroesPositivos))];
+  const allPadroesNegativos = [...new Set(batchResults.flatMap(b => b.padroesNegativos))];
+
+  // Categoriza problemas por gravidade
+  const problemasAlta = allProblematicas.filter(p => p.gravidade === 'alta');
+  const problemasMedia = allProblematicas.filter(p => p.gravidade === 'media');
+  const problemasBaixa = allProblematicas.filter(p => p.gravidade === 'baixa');
+
+  console.log('[generate-agent-recommendation] 📊 Consolidated stats:', {
+    totalMedias,
+    totalRelevantes,
+    problemas: allProblematicas.length,
+    padroesPositivos: allPadroesPositivos.length,
+    padroesNegativos: allPadroesNegativos.length,
+  });
+
+  // Monta o prompt final
+  const criteriaLabels: Record<string, string> = {
+    communication: 'Comunicação',
+    objectivity: 'Objetividade',
+    humanization: 'Humanização',
+    objection_handling: 'Tratamento de Objeções',
+    closing: 'Fechamento',
+    response_time: 'Tempo de Resposta',
+  };
+
+  const criteriaDetails = Object.entries(agentData.criteriaScores)
+    .map(([key, value]) => `- ${criteriaLabels[key]}: ${value.toFixed(1)}/10`)
+    .join('\n');
+
+  const levelLabel = agentData.level === 'junior' ? 'Junior' : agentData.level === 'pleno' ? 'Pleno' : 'Senior';
+  const performanceLabel = agentData.recentPerformance === 'improving' 
+    ? 'melhorando' 
+    : agentData.recentPerformance === 'declining' 
+      ? 'declinando' 
+      : 'estável';
+
+  const mediaAnalysisSection = totalMedias > 0 ? `
+## ANÁLISE COMPLETA DE MÍDIAS (${totalMedias} arquivos analisados)
+
+### Estatísticas
+- Total de mídias analisadas: ${totalMedias}
+- Mídias relevantes: ${totalRelevantes} (${totalMedias > 0 ? ((totalRelevantes / totalMedias) * 100).toFixed(0) : 0}%)
+- Problemas detectados: ${allProblematicas.length}
+
+### Problemas por Gravidade
+- Alta: ${problemasAlta.length} ${problemasAlta.length > 0 ? `(${problemasAlta.map(p => p.problema).slice(0, 3).join('; ')})` : ''}
+- Média: ${problemasMedia.length} ${problemasMedia.length > 0 ? `(${problemasMedia.map(p => p.problema).slice(0, 3).join('; ')})` : ''}
+- Baixa: ${problemasBaixa.length}
+
+### Padrões Positivos Identificados
+${allPadroesPositivos.length > 0 ? allPadroesPositivos.map(p => `- ${p}`).join('\n') : '- Nenhum padrão positivo destacado'}
+
+### Padrões Negativos Identificados
+${allPadroesNegativos.length > 0 ? allPadroesNegativos.map(p => `- ${p}`).join('\n') : '- Nenhum padrão negativo identificado'}
+` : '';
+
+  const prompt = `Você é um consultor especialista em gestão de equipes de vendas. Gere uma recomendação ESPECÍFICA e ACIONÁVEL baseada em TODOS os dados abaixo.
+
+## DADOS DO ATENDENTE
+
+**Nome:** ${agentData.agentName}
+**Nível:** ${levelLabel}
+**Score Geral:** ${agentData.overallScore.toFixed(1)}/10
+**Performance Recente:** ${performanceLabel}
+
+### Métricas de Conversão
+- Total de Conversas: ${agentData.totalConversations}
+- Negócios Fechados: ${agentData.closedDeals}
+- Negócios Perdidos: ${agentData.lostDeals}
+- Taxa de Conversão: ${agentData.conversionRate.toFixed(1)}%
+- Tempo Médio de Resposta: ${agentData.avgResponseTime.toFixed(0)} minutos
+
+### Scores por Critério
+${criteriaDetails}
+
+### Pontos Fortes
+${agentData.strengths.length > 0 ? agentData.strengths.map(s => `- ${s}`).join('\n') : '- Nenhum ponto forte destacado'}
+
+### Pontos de Melhoria
+${agentData.weaknesses.length > 0 ? agentData.weaknesses.map(w => `- ${w}`).join('\n') : '- Nenhuma melhoria identificada'}
+
+### Alertas Comportamentais
+- Total de Alertas: ${agentData.alertsCount}
+- Alertas Críticos/Altos: ${agentData.criticalAlertsCount}
+${agentData.alertTypes.length > 0 ? `- Tipos: ${agentData.alertTypes.join(', ')}` : ''}
+${mediaAnalysisSection}
+
+## INSTRUÇÕES
+
+Gere uma recomendação que:
+1. **Cite dados específicos** das métricas e análise de mídia
+2. **Identifique 2-3 ações concretas** com prazos
+3. **Priorize problemas críticos** (alertas e mídias problemáticas)
+4. **Use tom construtivo** mas seja direto sobre problemas
+5. **Considere o nível do atendente**
+${totalMedias > 0 ? '6. **Inclua observações sobre as mídias** - padrões positivos/negativos encontrados' : ''}
+
+**Formato:** 3-4 parágrafos, 200-400 palavras, português brasileiro, texto corrido.`;
+
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${geminiApiKey}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        generationConfig: {
+          temperature: 0.7,
+          maxOutputTokens: 4096,
+        },
+      }),
     }
-    
-    const contentLength = response.headers.get('content-length');
-    const size = contentLength ? parseInt(contentLength, 10) : 0;
-    
-    // Limite de 20MB para vídeos
-    if (size > 20 * 1024 * 1024) {
-      console.log('[generate-agent-recommendation] ⚠️ Video too large, skipping:', size);
-      return null;
-    }
-    
-    const buffer = await response.arrayBuffer();
-    const base64 = arrayBufferToBase64(buffer);
-    const mimeType = response.headers.get('content-type') || 'video/mp4';
-    
-    return { data: base64, mimeType };
-  } catch (error) {
-    console.error('[generate-agent-recommendation] ❌ Error fetching video:', error);
-    return null;
+  );
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error('[generate-agent-recommendation] ❌ Consolidation error:', errorText);
+    throw new Error(`Gemini API error: ${response.status}`);
   }
+
+  const result = await response.json();
+  const recommendation = result.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
+
+  console.log('[generate-agent-recommendation] ✅ Final recommendation generated, length:', recommendation.length);
+
+  return recommendation;
 }
 
-const SUPPORTED_DOCUMENT_MIMES = [
-  'application/pdf',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-  'application/msword',
-  'application/vnd.ms-excel',
-  'application/vnd.ms-powerpoint',
-  'text/plain',
-  'text/csv',
-  'text/html',
-];
-
-async function fetchDocumentAsBase64(docUrl: string): Promise<{ data: string; mimeType: string } | null> {
-  try {
-    console.log('[generate-agent-recommendation] 📄 Fetching document:', docUrl.substring(0, 50));
-    
-    const response = await fetch(docUrl);
-    if (!response.ok) {
-      console.error('[generate-agent-recommendation] ❌ Failed to fetch document:', response.status);
-      return null;
-    }
-    
-    const contentLength = response.headers.get('content-length');
-    const size = contentLength ? parseInt(contentLength, 10) : 0;
-    
-    // Limite de 20MB para documentos
-    if (size > 20 * 1024 * 1024) {
-      console.log('[generate-agent-recommendation] ⚠️ Document too large, skipping:', size);
-      return null;
-    }
-    
-    const mimeType = response.headers.get('content-type') || 'application/octet-stream';
-    
-    // Verificar se o MIME type é suportado
-    const isSupported = SUPPORTED_DOCUMENT_MIMES.some(m => mimeType.includes(m.split('/')[1]));
-    if (!isSupported) {
-      console.log('[generate-agent-recommendation] ⚠️ Unsupported document type:', mimeType);
-      return null;
-    }
-    
-    const buffer = await response.arrayBuffer();
-    const base64 = arrayBufferToBase64(buffer);
-    
-    return { data: base64, mimeType };
-  } catch (error) {
-    console.error('[generate-agent-recommendation] ❌ Error fetching document:', error);
-    return null;
-  }
-}
-
-// ==================== FIM FUNÇÕES DE MÍDIA ====================
+// ==================== HANDLER PRINCIPAL ====================
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -220,237 +497,78 @@ serve(async (req) => {
   try {
     const data: AgentRecommendationRequest = await req.json();
     
-    console.log('[generate-agent-recommendation] Generating for:', data.agentName);
-    console.log('[generate-agent-recommendation] Media samples received:', data.mediaSamples?.length || 0);
+    console.log('[generate-agent-recommendation] 🚀 Starting for:', data.agentName);
+    console.log('[generate-agent-recommendation] Conversations with media:', data.conversationsWithMedia?.length || 0);
+    console.log('[generate-agent-recommendation] Legacy media samples:', data.mediaSamples?.length || 0);
 
     const geminiApiKey = Deno.env.get('GEMINI_API_KEY');
     if (!geminiApiKey) {
       throw new Error('GEMINI_API_KEY not configured');
     }
 
-    // Build a detailed prompt with all agent data
-    const criteriaLabels: Record<string, string> = {
-      communication: 'Comunicação',
-      objectivity: 'Objetividade',
-      humanization: 'Humanização',
-      objection_handling: 'Tratamento de Objeções',
-      closing: 'Fechamento',
-      response_time: 'Tempo de Resposta',
+    let batchResults: BatchAnalysisResult[] = [];
+    
+    // Verifica se está usando a nova estrutura (conversas com mídias)
+    if (data.conversationsWithMedia && data.conversationsWithMedia.length > 0) {
+      // Nova arquitetura: processa por batches de conversas
+      const BATCH_SIZE = 10;
+      const conversationBatches = chunkArray(data.conversationsWithMedia, BATCH_SIZE);
+      
+      console.log('[generate-agent-recommendation] 📦 Processing', conversationBatches.length, 'batches');
+
+      // Processa batches em paralelo (máx 3 simultâneos para não sobrecarregar)
+      const MAX_PARALLEL = 3;
+      for (let i = 0; i < conversationBatches.length; i += MAX_PARALLEL) {
+        const batchPromises = conversationBatches
+          .slice(i, i + MAX_PARALLEL)
+          .map((batch, idx) => analyzeConversationBatch(batch, i + idx, geminiApiKey));
+        
+        const results = await Promise.all(batchPromises);
+        batchResults.push(...results);
+        
+        console.log(`[generate-agent-recommendation] ✅ Completed batches ${i + 1} to ${Math.min(i + MAX_PARALLEL, conversationBatches.length)}`);
+      }
+    } else if (data.mediaSamples && data.mediaSamples.length > 0) {
+      // Compatibilidade: converte formato antigo para novo
+      console.log('[generate-agent-recommendation] 🔄 Using legacy media format, converting...');
+      
+      const singleConversation: ConversationWithMedia = {
+        conversationId: 'legacy',
+        medias: data.mediaSamples,
+      };
+      
+      const result = await analyzeConversationBatch([singleConversation], 0, geminiApiKey);
+      batchResults.push(result);
+    }
+
+    // Etapa 2: Consolidação e geração da recomendação final
+    const recommendation = await consolidateAndGenerateRecommendation(batchResults, data, geminiApiKey);
+
+    // Prepara estatísticas para retorno
+    const mediaAnalyzed = {
+      images: batchResults.reduce((sum, b) => sum + (b.totalMedias || 0), 0),
+      problematicas: batchResults.reduce((sum, b) => sum + (b.problematicas?.length || 0), 0),
+      batchesProcessed: batchResults.length,
     };
 
-    const criteriaDetails = Object.entries(data.criteriaScores)
-      .map(([key, value]) => `- ${criteriaLabels[key]}: ${value.toFixed(1)}/10`)
-      .join('\n');
-
-    const levelLabel = data.level === 'junior' ? 'Junior' : data.level === 'pleno' ? 'Pleno' : 'Senior';
-    
-    const performanceLabel = data.recentPerformance === 'improving' 
-      ? 'melhorando' 
-      : data.recentPerformance === 'declining' 
-        ? 'declinando' 
-        : 'estável';
-
-    // Process media samples (max 5 for performance)
-    const mediaSamples = (data.mediaSamples || []).slice(0, 5);
-    const parts: any[] = [];
-    const audioTranscriptions: string[] = [];
-    let mediaAnalysisCount = { images: 0, videos: 0, documents: 0, audios: 0 };
-
-    for (const media of mediaSamples) {
-      try {
-        if (media.type === 'image') {
-          const imageData = await fetchImageAsBase64(media.url);
-          if (imageData) {
-            parts.push({
-              inline_data: {
-                mime_type: imageData.mimeType,
-                data: imageData.data
-              }
-            });
-            mediaAnalysisCount.images++;
-          }
-        } else if (media.type === 'video') {
-          const videoData = await fetchVideoAsBase64(media.url);
-          if (videoData) {
-            parts.push({
-              inline_data: {
-                mime_type: videoData.mimeType,
-                data: videoData.data
-              }
-            });
-            mediaAnalysisCount.videos++;
-          }
-        } else if (media.type === 'document') {
-          const docData = await fetchDocumentAsBase64(media.url);
-          if (docData) {
-            parts.push({
-              inline_data: {
-                mime_type: docData.mimeType,
-                data: docData.data
-              }
-            });
-            mediaAnalysisCount.documents++;
-          }
-        } else if (media.type === 'audio') {
-          const transcription = await transcribeAudio(media.url, geminiApiKey);
-          if (transcription) {
-            audioTranscriptions.push(`[Áudio enviado pelo vendedor]: ${transcription}`);
-            mediaAnalysisCount.audios++;
-          }
-        }
-      } catch (error) {
-        console.error('[generate-agent-recommendation] Error processing media:', error);
-      }
-    }
-
-    console.log('[generate-agent-recommendation] Media processed:', mediaAnalysisCount);
-
-    // Build media analysis section for prompt
-    let mediaAnalysisPrompt = '';
-    const totalMedia = mediaAnalysisCount.images + mediaAnalysisCount.videos + mediaAnalysisCount.documents + mediaAnalysisCount.audios;
-    
-    if (totalMedia > 0) {
-      mediaAnalysisPrompt = `
-
-## ANÁLISE DE MÍDIAS ENVIADAS PELO VENDEDOR
-
-Você está recebendo ${totalMedia} arquivo(s) de mídia que o vendedor enviou aos clientes:
-- ${mediaAnalysisCount.images} imagem(ns)
-- ${mediaAnalysisCount.videos} vídeo(s)
-- ${mediaAnalysisCount.documents} documento(s)
-- ${mediaAnalysisCount.audios} áudio(s) transcritos
-
-${audioTranscriptions.length > 0 ? `### Transcrições de Áudios:\n${audioTranscriptions.join('\n\n')}` : ''}
-
-**INSTRUÇÕES CRÍTICAS PARA ANÁLISE DE MÍDIA:**
-
-1. **DESCREVA** cada imagem/vídeo/documento que você vê. O que exatamente está sendo mostrado?
-
-2. **AVALIE** se o conteúdo faz sentido em um contexto comercial de vendas:
-   - O material é profissional e relevante para a venda?
-   - Está alinhado com o que se espera de um vendedor?
-   - A qualidade visual/documental é adequada?
-
-3. **IDENTIFIQUE PROBLEMAS** como:
-   - Conteúdo completamente irrelevante (fotos pessoais, memes, imagens aleatórias)
-   - Material inapropriado, ofensivo ou inadequado
-   - Documentos com erros graves ou informações incorretas
-   - Imagens de baixa qualidade que prejudicam a apresentação
-   - Qualquer sinal de sabotagem ou má-fé (enviar propositalmente coisas sem sentido)
-   - Conteúdo agressivo, grosseiro ou que possa afastar o cliente
-
-4. **CITE ESPECIFICAMENTE** na sua recomendação:
-   - Se encontrar problemas: "Nas mídias analisadas, foi identificado [descreva o problema específico]..."
-   - Se estiver tudo ok: "O material visual/documental enviado está adequado e profissional..."
-`;
-    }
-
-    const prompt = `Você é um consultor especialista em gestão de equipes de vendas e atendimento ao cliente. Analise os dados deste atendente e gere uma recomendação ESPECÍFICA, ACIONÁVEL e DETALHADA.
-
-## DADOS DO ATENDENTE
-
-**Nome:** ${data.agentName}
-**Nível:** ${levelLabel}
-**Score Geral:** ${data.overallScore.toFixed(1)}/10
-**Performance Recente:** ${performanceLabel}
-
-### Métricas de Conversão
-- Total de Conversas: ${data.totalConversations}
-- Negócios Fechados: ${data.closedDeals}
-- Negócios Perdidos: ${data.lostDeals}
-- Taxa de Conversão: ${data.conversionRate.toFixed(1)}%
-- Tempo Médio de Resposta: ${data.avgResponseTime.toFixed(0)} minutos
-
-### Scores por Critério (escala 0-10)
-${criteriaDetails}
-
-### Pontos Fortes Identificados
-${data.strengths.length > 0 ? data.strengths.map(s => `- ${s}`).join('\n') : '- Nenhum ponto forte destacado ainda'}
-
-### Pontos de Melhoria
-${data.weaknesses.length > 0 ? data.weaknesses.map(w => `- ${w}`).join('\n') : '- Nenhuma melhoria específica identificada'}
-
-### Alertas Comportamentais
-- Total de Alertas: ${data.alertsCount}
-- Alertas Críticos/Altos: ${data.criticalAlertsCount}
-${data.alertTypes.length > 0 ? `- Tipos: ${data.alertTypes.join(', ')}` : ''}
-${mediaAnalysisPrompt}
-
-## INSTRUÇÕES
-
-Gere uma recomendação personalizada que:
-1. **Cite dados específicos** (ex: "sua taxa de conversão de X% está Y% abaixo/acima da média esperada")
-2. **Identifique 2-3 ações concretas** com prazos realistas (ex: "nas próximas 2 semanas, foque em...")
-3. **Sugira métricas de acompanhamento** específicas
-4. **Use tom construtivo e motivador**, mas seja direto sobre problemas críticos
-5. **Considere o nível do atendente** (junior precisa mais orientação, senior mais autonomia)
-${totalMedia > 0 ? '6. **INCLUA análise das mídias** - comente especificamente o que viu nas imagens/vídeos/documentos' : ''}
-
-Se houver alertas críticos, comece abordando-os. Se a performance estiver declinando, seja mais direto sobre a urgência.
-${totalMedia > 0 ? 'Se encontrar conteúdo problemático nas mídias, isso deve ser tratado como prioridade na recomendação.' : ''}
-
-**Formato:** 3-4 parágrafos, MÍNIMO 200 palavras e MÁXIMO 400 palavras, em português brasileiro.
-**IMPORTANTE:** Não use bullet points, escreva em texto corrido e fluido. Complete todos os parágrafos integralmente.`;
-
-    const systemPrompt = 'Você é um consultor de gestão de vendas experiente. Suas recomendações são sempre específicas, acionáveis e baseadas em dados. Você nunca dá conselhos genéricos. Sempre complete sua resposta integralmente. Se receber imagens, vídeos ou documentos, analise-os detalhadamente e inclua suas observações na recomendação.';
-
-    // Add the prompt text to parts
-    parts.push({ text: `${systemPrompt}\n\n${prompt}` });
-
-    console.log('[generate-agent-recommendation] Calling Gemini API with', parts.length, 'parts (multimodal:', totalMedia > 0, ')');
-
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${geminiApiKey}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        contents: [
-          {
-            role: 'user',
-            parts
-          }
-        ],
-        generationConfig: {
-          temperature: 0.7,
-          maxOutputTokens: 4096,
-        },
-      }),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('[generate-agent-recommendation] Gemini error:', response.status, errorText);
-      throw new Error(`Gemini API error: ${response.status}`);
-    }
-
-    const result = await response.json();
-    
-    // Detailed logging for debugging
-    const candidate = result.candidates?.[0];
-    const finishReason = candidate?.finishReason;
-    console.log('[generate-agent-recommendation] Finish reason:', finishReason);
-    console.log('[generate-agent-recommendation] Full response preview:', JSON.stringify(result).substring(0, 500));
-    
-    // Warn if response didn't finish normally
-    if (finishReason && finishReason !== 'STOP') {
-      console.warn('[generate-agent-recommendation] Unexpected finish reason:', finishReason);
-    }
-    
-    const recommendation = candidate?.content?.parts?.[0]?.text?.trim() || '';
-
-    console.log('[generate-agent-recommendation] Generated recommendation length:', recommendation.length);
-    console.log('[generate-agent-recommendation] Recommendation preview:', recommendation.substring(0, 200));
+    console.log('[generate-agent-recommendation] 🎉 Complete!', mediaAnalyzed);
 
     return new Response(JSON.stringify({ 
       recommendation,
-      mediaAnalyzed: mediaAnalysisCount 
+      mediaAnalyzed,
+      batchResults: batchResults.map(b => ({
+        batchIndex: b.batchIndex,
+        totalMedias: b.totalMedias,
+        relevantes: b.relevantes,
+        problemasCount: b.problematicas.length,
+        error: b.error,
+      })),
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
 
   } catch (error) {
-    console.error('[generate-agent-recommendation] Error:', error);
+    console.error('[generate-agent-recommendation] ❌ Error:', error);
     return new Response(JSON.stringify({ 
       error: error instanceof Error ? error.message : 'Unknown error',
       recommendation: null 

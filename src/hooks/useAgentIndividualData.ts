@@ -8,6 +8,14 @@ export interface MediaSample {
   type: 'image' | 'video' | 'audio' | 'document';
   direction: 'inbound' | 'outbound';
   messageContent?: string;
+  conversationId?: string;
+}
+
+export interface ConversationWithMedia {
+  conversationId: string;
+  contactName?: string;
+  medias: MediaSample[];
+  evaluationScore?: number;
 }
 
 export interface AgentAlert {
@@ -127,16 +135,18 @@ export function useAgentIndividualData(agentId: string | null, agentName?: strin
     }
   }, [data, loadingMore, alertsOffset, fetchAlerts]);
 
-  // Function to generate AI recommendation
+  // Function to generate AI recommendation with modular batch processing
   const generateAIRecommendation = useCallback(async (
     name: string,
     level: 'junior' | 'pleno' | 'senior',
     metrics: AgentIndividualMetrics,
     alerts: AgentAlert[],
     totalAlerts: number,
-    mediaSamples: MediaSample[] = []
+    conversationsWithMedia: ConversationWithMedia[] = []
   ): Promise<string> => {
     try {
+      console.log('[useAgentIndividualData] Generating recommendation with', conversationsWithMedia.length, 'conversations');
+      
       const criticalAlertsCount = alerts.filter(a => a.severity === 'critical' || a.severity === 'high').length;
       const alertTypes = [...new Set(alerts.map(a => a.alert_type))];
 
@@ -157,7 +167,8 @@ export function useAgentIndividualData(agentId: string | null, agentName?: strin
           criticalAlertsCount,
           alertTypes,
           recentPerformance: metrics.recentPerformance,
-          mediaSamples,
+          // Nova estrutura: conversas com suas mídias agrupadas
+          conversationsWithMedia,
         },
       });
 
@@ -165,6 +176,12 @@ export function useAgentIndividualData(agentId: string | null, agentName?: strin
         console.error('Error generating AI recommendation:', error);
         throw error;
       }
+
+      console.log('[useAgentIndividualData] Recommendation response:', {
+        hasRecommendation: !!responseData?.recommendation,
+        mediaAnalyzed: responseData?.mediaAnalyzed,
+        batchesProcessed: responseData?.batchResults?.length,
+      });
 
       return responseData?.recommendation || '';
     } catch (error) {
@@ -208,7 +225,7 @@ export function useAgentIndividualData(agentId: string | null, agentName?: strin
         // Fetch agent's conversations
         const { data: conversations } = await supabase
           .from('conversations')
-          .select('id, status, created_at, closed_at')
+          .select('id, status, created_at, closed_at, contact:contact_id(id, name)')
           .eq('company_id', profile.company_id)
           .eq('assigned_user_id', agentId);
 
@@ -220,6 +237,14 @@ export function useAgentIndividualData(agentId: string | null, agentName?: strin
           .select('*')
           .eq('company_id', profile.company_id)
           .in('conversation_id', conversationIds.length > 0 ? conversationIds : ['00000000-0000-0000-0000-000000000000']);
+
+        // Create a map of conversation scores
+        const evaluationScoreMap = new Map<string, number>();
+        evaluations?.forEach(e => {
+          if (e.overall_score) {
+            evaluationScoreMap.set(e.conversation_id, e.overall_score);
+          }
+        });
 
         // Fetch live metrics for this agent's conversations
         const { data: liveMetrics } = await supabase
@@ -235,35 +260,62 @@ export function useAgentIndividualData(agentId: string | null, agentName?: strin
           .in('conversation_id', conversationIds.length > 0 ? conversationIds : ['00000000-0000-0000-0000-000000000000'])
           .order('created_at', { ascending: true });
 
-        // Fetch media samples from agent's outbound messages (last 10)
+        // Fetch ALL outbound media from agent's conversations (no limit!)
         const { data: mediaMessages } = await supabase
           .from('messages')
-          .select('media_url, media_mime_type, message_type, direction, content')
+          .select('media_url, media_mime_type, message_type, direction, content, conversation_id')
           .in('conversation_id', conversationIds.length > 0 ? conversationIds : ['00000000-0000-0000-0000-000000000000'])
           .eq('direction', 'outbound')
           .not('media_url', 'is', null)
-          .order('created_at', { ascending: false })
-          .limit(10);
+          .order('created_at', { ascending: false });
 
-        // Map media messages to MediaSample format
-        const mediaSamples: MediaSample[] = (mediaMessages || [])
-          .filter(m => m.media_url)
-          .map(m => {
-            let type: MediaSample['type'] = 'image';
-            if (m.message_type === 'image') type = 'image';
-            else if (m.message_type === 'document') type = 'document';
-            // Fallback: check mimeType for audio/video
-            else if (m.media_mime_type?.startsWith('video/')) type = 'video';
-            else if (m.media_mime_type?.startsWith('audio/')) type = 'audio';
+        console.log('[useAgentIndividualData] Total media messages fetched:', mediaMessages?.length || 0);
+
+        // Group media by conversation for the new architecture
+        const mediaByConversation = new Map<string, MediaSample[]>();
+        
+        (mediaMessages || []).forEach(m => {
+          if (!m.media_url || !m.conversation_id) return;
+          
+          let type: MediaSample['type'] = 'image';
+          const messageType = m.message_type as string;
+          if (messageType === 'image') type = 'image';
+          else if (messageType === 'document') type = 'document';
+          else if (messageType === 'video' || m.media_mime_type?.startsWith('video/')) type = 'video';
+          else if (messageType === 'audio' || messageType === 'ptt' || m.media_mime_type?.startsWith('audio/')) type = 'audio';
+          
+          const media: MediaSample = {
+            url: m.media_url,
+            mimeType: m.media_mime_type || 'application/octet-stream',
+            type,
+            direction: m.direction as 'inbound' | 'outbound',
+            messageContent: m.content || undefined,
+            conversationId: m.conversation_id,
+          };
+
+          if (!mediaByConversation.has(m.conversation_id)) {
+            mediaByConversation.set(m.conversation_id, []);
+          }
+          mediaByConversation.get(m.conversation_id)!.push(media);
+        });
+
+        // Build ConversationWithMedia array
+        const conversationsWithMedia: ConversationWithMedia[] = Array.from(mediaByConversation.entries())
+          .map(([convId, medias]) => {
+            const conv = conversations?.find(c => c.id === convId);
+            const contactData = conv?.contact as { id: string; name: string | null } | null;
             
             return {
-              url: m.media_url!,
-              mimeType: m.media_mime_type || 'application/octet-stream',
-              type,
-              direction: m.direction as 'inbound' | 'outbound',
-              messageContent: m.content || undefined,
+              conversationId: convId,
+              contactName: contactData?.name || undefined,
+              medias,
+              evaluationScore: evaluationScoreMap.get(convId),
             };
-          });
+          })
+          .filter(c => c.medias.length > 0);
+
+        console.log('[useAgentIndividualData] Conversations with media:', conversationsWithMedia.length);
+        console.log('[useAgentIndividualData] Total media count:', conversationsWithMedia.reduce((sum, c) => sum + c.medias.length, 0));
 
         // Fetch first page of alerts
         const { alerts, hasMore, total } = await fetchAlerts(0);
@@ -274,31 +326,27 @@ export function useAgentIndividualData(agentId: string | null, agentName?: strin
         const lostDeals = liveMetrics?.filter(m => m.lead_status === 'closed_lost').length || 0;
         const conversionRate = totalConversations > 0 ? (closedDeals / totalConversations) * 100 : 0;
 
-        // Calculate avg response time from messages (time between contact message and user response)
+        // Calculate avg response time from messages
         let avgResponseTime = 0;
         if (messages && messages.length > 0) {
           const responseTimes: number[] = [];
           
-          // Group messages by conversation
           const messagesByConversation = messages.reduce((acc, msg) => {
             if (!acc[msg.conversation_id]) acc[msg.conversation_id] = [];
             acc[msg.conversation_id].push(msg);
             return acc;
           }, {} as Record<string, typeof messages>);
 
-          // Calculate response times for each conversation
           Object.values(messagesByConversation).forEach(convMessages => {
             for (let i = 0; i < convMessages.length - 1; i++) {
               const current = convMessages[i];
               const next = convMessages[i + 1];
               
-              // If contact sent message and user responded
               if (current.sender_type === 'contact' && next.sender_type === 'user') {
                 const contactTime = new Date(current.created_at).getTime();
                 const userTime = new Date(next.created_at).getTime();
                 const diffMinutes = (userTime - contactTime) / (1000 * 60);
                 
-                // Only count reasonable response times (less than 24 hours)
                 if (diffMinutes > 0 && diffMinutes < 1440) {
                   responseTimes.push(diffMinutes);
                 }
@@ -383,7 +431,7 @@ export function useAgentIndividualData(agentId: string | null, agentName?: strin
         });
         setLoading(false);
 
-        // Now generate AI recommendation in background
+        // Generate AI recommendation with the new modular architecture
         if (agentName && agentLevel) {
           setRecommendationLoading(true);
           try {
@@ -393,7 +441,7 @@ export function useAgentIndividualData(agentId: string | null, agentName?: strin
               metrics,
               alerts,
               total,
-              mediaSamples
+              conversationsWithMedia // Send conversations with their media grouped
             );
             
             setData(prev => prev ? {
@@ -404,7 +452,6 @@ export function useAgentIndividualData(agentId: string | null, agentName?: strin
             setRecommendationLoading(false);
           }
         } else {
-          // Use fallback if no agent info provided
           const fallbackRec = generateFallbackRecommendation(metrics, total);
           setData(prev => prev ? {
             ...prev,
