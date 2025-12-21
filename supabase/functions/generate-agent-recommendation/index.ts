@@ -109,10 +109,12 @@ Gere uma recomendação personalizada que:
 
 Se houver alertas críticos, comece abordando-os. Se a performance estiver declinando, seja mais direto sobre a urgência.
 
-**Formato:** 3-4 parágrafos, máximo 250 palavras, em português brasileiro.
-**IMPORTANTE:** Não use bullet points, escreva em texto corrido e fluido.`;
+**Formato:** 3-4 parágrafos, MÍNIMO 200 palavras e MÁXIMO 300 palavras, em português brasileiro.
+**IMPORTANTE:** Não use bullet points, escreva em texto corrido e fluido. Complete todos os parágrafos integralmente.`;
 
-    const systemPrompt = 'Você é um consultor de gestão de vendas experiente. Suas recomendações são sempre específicas, acionáveis e baseadas em dados. Você nunca dá conselhos genéricos.';
+    const systemPrompt = 'Você é um consultor de gestão de vendas experiente. Suas recomendações são sempre específicas, acionáveis e baseadas em dados. Você nunca dá conselhos genéricos. Sempre complete sua resposta integralmente.';
+
+    console.log('[generate-agent-recommendation] Calling Gemini API...');
 
     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${geminiApiKey}`, {
       method: 'POST',
@@ -128,7 +130,7 @@ Se houver alertas críticos, comece abordando-os. Se a performance estiver decli
         ],
         generationConfig: {
           temperature: 0.7,
-          maxOutputTokens: 1024,
+          maxOutputTokens: 2048,
         },
       }),
     });
@@ -140,9 +142,22 @@ Se houver alertas críticos, comece abordando-os. Se a performance estiver decli
     }
 
     const result = await response.json();
-    const recommendation = result.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
+    
+    // Detailed logging for debugging
+    const candidate = result.candidates?.[0];
+    const finishReason = candidate?.finishReason;
+    console.log('[generate-agent-recommendation] Finish reason:', finishReason);
+    console.log('[generate-agent-recommendation] Full response preview:', JSON.stringify(result).substring(0, 500));
+    
+    // Warn if response didn't finish normally
+    if (finishReason && finishReason !== 'STOP') {
+      console.warn('[generate-agent-recommendation] Unexpected finish reason:', finishReason);
+    }
+    
+    const recommendation = candidate?.content?.parts?.[0]?.text?.trim() || '';
 
     console.log('[generate-agent-recommendation] Generated recommendation length:', recommendation.length);
+    console.log('[generate-agent-recommendation] Recommendation preview:', recommendation.substring(0, 200));
 
     return new Response(JSON.stringify({ recommendation }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
