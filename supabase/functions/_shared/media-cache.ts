@@ -31,11 +31,13 @@ export async function getCachedAnalysis(
     
     if (error || !data) return null;
     
-    // Incrementa hit count (fire and forget)
-    supabase.rpc('increment_cache_hit', { 
-      p_url_hash: urlHash, 
-      p_company_id: companyId 
-    }).catch(() => {});
+    // Incrementa hit count (fire and forget) - wrapped in Promise.resolve() for Deno compatibility
+    Promise.resolve().then(() => 
+      supabase.rpc('increment_cache_hit', { 
+        p_url_hash: urlHash, 
+        p_company_id: companyId 
+      })
+    ).catch(() => {});
     
     console.log(`[MediaCache] HIT for ${url.substring(0, 50)}...`);
     return data.analysis_result;
