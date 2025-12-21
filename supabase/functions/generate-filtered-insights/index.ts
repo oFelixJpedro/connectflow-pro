@@ -99,7 +99,17 @@ function chunkArray<T>(array: T[], size: number): T[][] {
   return chunks;
 }
 
-// Transcribe audio using Gemini
+// Helper to convert ArrayBuffer to base64
+function arrayBufferToBase64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  for (let i = 0; i < bytes.byteLength; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+}
+
+// Transcribe audio using Gemini (base64)
 async function transcribeAudio(audioUrl: string, geminiApiKey: string): Promise<string | null> {
   try {
     console.log(`[transcribeAudio] Transcribing audio: ${audioUrl.substring(0, 50)}...`);
@@ -111,10 +121,10 @@ async function transcribeAudio(audioUrl: string, geminiApiKey: string): Promise<
     }
     
     const audioBuffer = await audioResponse.arrayBuffer();
-    const base64Audio = btoa(String.fromCharCode(...new Uint8Array(audioBuffer)));
+    const base64Audio = arrayBufferToBase64(audioBuffer);
     const mimeType = audioResponse.headers.get('content-type') || 'audio/ogg';
     
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiApiKey}`, {
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiApiKey}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -148,7 +158,36 @@ async function transcribeAudio(audioUrl: string, geminiApiKey: string): Promise<
   }
 }
 
-// ============= Batch Analysis Function =============
+// Download video and return base64 (for inline_data)
+async function fetchVideoAsBase64(videoUrl: string): Promise<{ base64: string; mimeType: string } | null> {
+  try {
+    console.log(`[fetchVideoAsBase64] Downloading video: ${videoUrl.substring(0, 50)}...`);
+    
+    const response = await fetch(videoUrl);
+    if (!response.ok) {
+      console.error(`[fetchVideoAsBase64] Failed to fetch video: ${response.status}`);
+      return null;
+    }
+    
+    const contentLength = response.headers.get('content-length');
+    if (contentLength && parseInt(contentLength) > 30 * 1024 * 1024) { // 30MB limit
+      console.log(`[fetchVideoAsBase64] Video too large, skipping`);
+      return null;
+    }
+    
+    const buffer = await response.arrayBuffer();
+    const base64 = arrayBufferToBase64(buffer);
+    const mimeType = response.headers.get('content-type') || 'video/mp4';
+    
+    console.log(`[fetchVideoAsBase64] Success: ${(buffer.byteLength / 1024 / 1024).toFixed(2)}MB`);
+    return { base64, mimeType };
+  } catch (error) {
+    console.error('[fetchVideoAsBase64] Error:', error);
+    return null;
+  }
+}
+
+// ============= Batch Analysis Function (URL Context Tool) =============
 
 async function analyzeConversationBatch(
   batch: ConversationWithMedia[],
@@ -172,13 +211,20 @@ async function analyzeConversationBatch(
   };
   
   try {
-    // Build media parts for Gemini
-    const parts: any[] = [];
-    let totalMedias = 0;
+    const mediaStats = { total: 0, images: 0, videos: 0, audios: 0, documents: 0 };
+    
+    // Collect URLs for URL Context Tool (images, documents)
+    const imageUrls: { url: string; convId: string }[] = [];
+    const documentUrls: { url: string; convId: string }[] = [];
+    const videoParts: any[] = []; // For inline_data
+    const audioTranscriptions: { conversationId: string; transcription: string }[] = [];
+    
     let audioCount = 0;
     let videoCount = 0;
-    const mediaStats = { total: 0, images: 0, videos: 0, audios: 0, documents: 0 };
-    const audioTranscriptions: { conversationId: string; transcription: string }[] = [];
+    const MAX_IMAGES = 15; // Reserve space for docs
+    const MAX_DOCUMENTS = 5;
+    const MAX_VIDEOS = 2; // Memory consumption
+    const MAX_AUDIOS = 3; // Time consumption
     
     // Process each conversation
     for (const conv of batch) {
@@ -187,51 +233,34 @@ async function analyzeConversationBatch(
       for (const media of convMedias) {
         mediaStats.total++;
         
-        if (media.type === 'image') {
+        if (media.type === 'image' && imageUrls.length < MAX_IMAGES) {
           mediaStats.images++;
-          parts.push({
-            file_data: {
-              mime_type: media.mimeType,
-              file_uri: media.url,
-            }
-          });
-          parts.push({
-            text: `[IMAGEM da conversa ${conv.conversationId}]`
-          });
-        } else if (media.type === 'video' && videoCount < 2) {
-          mediaStats.videos++;
-          videoCount++;
-          parts.push({
-            file_data: {
-              mime_type: media.mimeType,
-              file_uri: media.url,
-            }
-          });
-          parts.push({
-            text: `[VÍDEO da conversa ${conv.conversationId}]`
-          });
-        } else if (media.type === 'audio' && audioCount < 3) {
-          mediaStats.audios++;
-          audioCount++;
+          imageUrls.push({ url: media.url, convId: conv.conversationId });
+        } else if (media.type === 'document' && documentUrls.length < MAX_DOCUMENTS) {
+          mediaStats.documents++;
+          documentUrls.push({ url: media.url, convId: conv.conversationId });
+        } else if (media.type === 'video' && videoCount < MAX_VIDEOS) {
+          // Download video for inline_data
+          const videoData = await fetchVideoAsBase64(media.url);
+          if (videoData) {
+            mediaStats.videos++;
+            videoCount++;
+            videoParts.push({
+              inline_data: {
+                mime_type: videoData.mimeType,
+                data: videoData.base64
+              }
+            });
+          }
+        } else if (media.type === 'audio' && audioCount < MAX_AUDIOS) {
           // Transcribe audio
           const transcription = await transcribeAudio(media.url, geminiApiKey);
           if (transcription) {
+            mediaStats.audios++;
+            audioCount++;
             audioTranscriptions.push({ conversationId: conv.conversationId, transcription });
           }
-        } else if (media.type === 'document') {
-          mediaStats.documents++;
-          parts.push({
-            file_data: {
-              mime_type: media.mimeType,
-              file_uri: media.url,
-            }
-          });
-          parts.push({
-            text: `[DOCUMENTO da conversa ${conv.conversationId}]`
-          });
         }
-        
-        totalMedias++;
       }
     }
     
@@ -249,11 +278,26 @@ async function analyzeConversationBatch(
       return summary;
     }).join('\n');
     
-    // Add audio transcriptions
+    // Add audio transcriptions to summary
     if (audioTranscriptions.length > 0) {
       conversationsSummary += '\n\n### Transcrições de Áudios:\n';
       audioTranscriptions.forEach((t, i) => {
         conversationsSummary += `\nÁudio ${i + 1} (Conversa ${t.conversationId}):\n"${t.transcription.substring(0, 300)}..."\n`;
+      });
+    }
+    
+    // Build media URLs section for URL Context Tool
+    let mediaUrlsSection = '';
+    if (imageUrls.length > 0) {
+      mediaUrlsSection += '\n## IMAGENS PARA ANALISAR (use URL Context para acessar):\n';
+      imageUrls.forEach((img, i) => {
+        mediaUrlsSection += `${i + 1}. [Conversa ${img.convId}]: ${img.url}\n`;
+      });
+    }
+    if (documentUrls.length > 0) {
+      mediaUrlsSection += '\n## DOCUMENTOS PARA ANALISAR (use URL Context para acessar):\n';
+      documentUrls.forEach((doc, i) => {
+        mediaUrlsSection += `${i + 1}. [Conversa ${doc.convId}]: ${doc.url}\n`;
       });
     }
     
@@ -269,6 +313,7 @@ ${conversationsSummary}
 - Vídeos: ${mediaStats.videos}
 - Áudios: ${mediaStats.audios}
 - Documentos: ${mediaStats.documents}
+${mediaUrlsSection}
 
 ## Sua Tarefa
 
@@ -305,22 +350,36 @@ IMPORTANTE:
 - Array vazio se não houver problemas
 - Responda APENAS com JSON válido, sem markdown`;
 
+    // Build parts array
+    const parts: any[] = [];
+    
+    // Add video inline_data parts first
+    parts.push(...videoParts);
+    
     // Add prompt as last part
     parts.push({ text: prompt });
     
-    console.log(`[Batch ${batchIndex}] Sending to Gemini with ${parts.length} parts, ${mediaStats.total} medias`);
+    console.log(`[Batch ${batchIndex}] Sending to Gemini with URL Context Tool: ${imageUrls.length} images, ${documentUrls.length} docs, ${videoParts.length} videos`);
+    
+    // Build request with URL Context Tool
+    const requestBody: any = {
+      contents: [{ parts }],
+      generationConfig: {
+        temperature: 0.7,
+        maxOutputTokens: 4096,
+        responseMimeType: "application/json",
+      },
+    };
+    
+    // Add URL Context Tool if we have URLs to analyze
+    if (imageUrls.length > 0 || documentUrls.length > 0) {
+      requestBody.tools = [{ url_context: {} }];
+    }
     
     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiApiKey}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts }],
-        generationConfig: {
-          temperature: 0.7,
-          maxOutputTokens: 4096,
-          responseMimeType: "application/json",
-        },
-      }),
+      body: JSON.stringify(requestBody),
     });
     
     if (!response.ok) {
