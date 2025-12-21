@@ -124,8 +124,10 @@ export function useDashboardData() {
       query = query.eq('assigned_user_id', filter.agentId);
     } else if (filter.type === 'connection' && filter.connectionId) {
       query = query.eq('whatsapp_connection_id', filter.connectionId);
-    } else if (filter.type === 'department' && filter.departmentId) {
-      query = query.eq('department_id', filter.departmentId);
+      // Apply department as sub-filter if present
+      if (filter.departmentId) {
+        query = query.eq('department_id', filter.departmentId);
+      }
     }
     return query;
   }, [filter]);
@@ -203,19 +205,17 @@ export function useDashboardData() {
             .eq('assigned_user_id', filter.agentId);
           conversationIdsForMessages = agentConvs?.map(c => c.id) || [];
         } else if (filter.type === 'connection' && filter.connectionId) {
-          const { data: connConvs } = await supabase
+          let connQuery = supabase
             .from('conversations')
             .select('id')
             .eq('company_id', company.id)
             .eq('whatsapp_connection_id', filter.connectionId);
+          // Apply department sub-filter if present
+          if (filter.departmentId) {
+            connQuery = connQuery.eq('department_id', filter.departmentId);
+          }
+          const { data: connConvs } = await connQuery;
           conversationIdsForMessages = connConvs?.map(c => c.id) || [];
-        } else if (filter.type === 'department' && filter.departmentId) {
-          const { data: deptConvs } = await supabase
-            .from('conversations')
-            .select('id')
-            .eq('company_id', company.id)
-            .eq('department_id', filter.departmentId);
-          conversationIdsForMessages = deptConvs?.map(c => c.id) || [];
         }
 
         let todayMessagesQuery = supabase

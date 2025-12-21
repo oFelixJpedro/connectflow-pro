@@ -143,9 +143,7 @@ export default function Dashboard() {
     if (filter.type === 'agent' && filter.agentId) {
       label = 'Filtrado por atendente';
     } else if (filter.type === 'connection' && filter.connectionId) {
-      label = 'Filtrado por conexão';
-    } else if (filter.type === 'department' && filter.departmentId) {
-      label = 'Filtrado por departamento';
+      label = filter.departmentId ? 'Filtrado por conexão e departamento' : 'Filtrado por conexão';
     }
     
     if (!label) return null;
@@ -648,12 +646,10 @@ export default function Dashboard() {
                 <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mb-4">
                   {filter.type === 'agent' && <Users className="w-8 h-8 text-primary" />}
                   {filter.type === 'connection' && <MessageSquare className="w-8 h-8 text-primary" />}
-                  {filter.type === 'department' && <Users className="w-8 h-8 text-primary" />}
                 </div>
                 <p className="text-sm font-medium text-foreground mb-1">
                   {filter.type === 'agent' && 'Visualizando por Atendente'}
                   {filter.type === 'connection' && 'Visualizando por Conexão'}
-                  {filter.type === 'department' && 'Visualizando por Departamento'}
                 </p>
                 <p className="text-xs text-center">
                   Selecione um item no filtro acima para ver os dados segmentados
