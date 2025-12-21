@@ -8,7 +8,6 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { 
@@ -23,7 +22,8 @@ import {
   Award,
   AlertTriangle,
   CheckCircle,
-  XCircle
+  XCircle,
+  Sparkles
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { CriteriaRadarChart } from './CriteriaRadarChart';
@@ -77,7 +77,11 @@ function getInitials(name: string) {
 }
 
 export function AgentIndividualModal({ open, onOpenChange, agent }: AgentIndividualModalProps) {
-  const { loading, loadingMore, data, loadMoreAlerts } = useAgentIndividualData(agent?.id || null);
+  const { loading, loadingMore, recommendationLoading, data, loadMoreAlerts } = useAgentIndividualData(
+    agent?.id || null,
+    agent?.name,
+    agent?.level
+  );
   const [selectedAlert, setSelectedAlert] = useState<AgentAlert | null>(null);
   const [chatPreviewOpen, setChatPreviewOpen] = useState(false);
 
@@ -216,9 +220,9 @@ export function AgentIndividualModal({ open, onOpenChange, agent }: AgentIndivid
                         </div>
                         <p className={cn(
                           "text-2xl font-bold",
-                          data.alerts.length > 0 && "text-warning"
+                          data.totalAlerts > 0 && "text-warning"
                         )}>
-                          {data.alerts.length}
+                          {data.totalAlerts}
                         </p>
                         <p className="text-xs text-muted-foreground">
                           {data.alerts.filter(a => a.severity === 'critical' || a.severity === 'high').length} críticos
@@ -313,12 +317,34 @@ export function AgentIndividualModal({ open, onOpenChange, agent }: AgentIndivid
                       <CardTitle className="text-base flex items-center gap-2">
                         <Award className="w-4 h-4 text-primary" />
                         Recomendação Personalizada
+                        {recommendationLoading && (
+                          <Badge variant="secondary" className="text-xs gap-1 ml-2">
+                            <Sparkles className="w-3 h-3 animate-pulse" />
+                            Gerando com IA...
+                          </Badge>
+                        )}
                       </CardTitle>
                     </CardHeader>
                     <CardContent>
-                      <p className="text-sm leading-relaxed">
-                        {data.personalizedRecommendation}
-                      </p>
+                      {recommendationLoading ? (
+                        <div className="space-y-2">
+                          <Skeleton className="h-4 w-full" />
+                          <Skeleton className="h-4 w-full" />
+                          <Skeleton className="h-4 w-3/4" />
+                          <Skeleton className="h-4 w-full mt-4" />
+                          <Skeleton className="h-4 w-5/6" />
+                          <Skeleton className="h-4 w-full mt-4" />
+                          <Skeleton className="h-4 w-2/3" />
+                        </div>
+                      ) : data.personalizedRecommendation ? (
+                        <p className="text-sm leading-relaxed whitespace-pre-wrap">
+                          {data.personalizedRecommendation}
+                        </p>
+                      ) : (
+                        <p className="text-sm text-muted-foreground">
+                          Não foi possível gerar a recomendação
+                        </p>
+                      )}
                     </CardContent>
                   </Card>
                 </>
