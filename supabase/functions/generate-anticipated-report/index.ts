@@ -54,6 +54,19 @@ interface ReportContent {
   final_message: string;
 }
 
+interface MediaStatistics {
+  total_analyzed: number;
+  by_type: {
+    image: number;
+    video: number;
+    document: number;
+    audio: number;
+  };
+  cache_hits: number;
+  cache_efficiency_percent: number;
+  top_media_types: string[];
+}
+
 const DDD_TO_STATE: Record<string, string> = {
   '11': 'SP', '12': 'SP', '13': 'SP', '14': 'SP', '15': 'SP', '16': 'SP', '17': 'SP', '18': 'SP', '19': 'SP',
   '21': 'RJ', '22': 'RJ', '24': 'RJ',
@@ -98,6 +111,72 @@ function getStateFromPhone(phone: string): string | null {
   const withoutCountry = cleaned.startsWith('55') ? cleaned.slice(2) : cleaned;
   const ddd = withoutCountry.slice(0, 2);
   return DDD_TO_STATE[ddd] || null;
+}
+
+async function getMediaStatistics(
+  supabase: any,
+  companyId: string,
+  weekStart: Date,
+  weekEnd: Date
+): Promise<MediaStatistics> {
+  try {
+    const { data: mediaCache, error } = await supabase
+      .from('media_analysis_cache')
+      .select('media_type, hit_count, created_at')
+      .eq('company_id', companyId)
+      .gte('created_at', weekStart.toISOString())
+      .lte('created_at', weekEnd.toISOString());
+
+    if (error || !mediaCache || mediaCache.length === 0) {
+      console.log('No media cache data found for period');
+      return {
+        total_analyzed: 0,
+        by_type: { image: 0, video: 0, document: 0, audio: 0 },
+        cache_hits: 0,
+        cache_efficiency_percent: 0,
+        top_media_types: []
+      };
+    }
+
+    const byType: Record<string, number> = { image: 0, video: 0, document: 0, audio: 0 };
+    let totalHits = 0;
+
+    for (const item of mediaCache) {
+      const mediaType = item.media_type?.toLowerCase() || 'unknown';
+      if (mediaType in byType) {
+        byType[mediaType]++;
+      }
+      totalHits += item.hit_count || 0;
+    }
+
+    const total = mediaCache.length;
+    const topTypes = Object.entries(byType)
+      .sort((a, b) => b[1] - a[1])
+      .filter(([_, v]) => v > 0)
+      .slice(0, 3)
+      .map(([k]) => k);
+
+    const efficiency = total > 0 ? Math.round((totalHits / (total + totalHits)) * 100) : 0;
+
+    console.log(`Media stats: ${total} items, ${totalHits} cache hits, ${efficiency}% efficiency`);
+
+    return {
+      total_analyzed: total,
+      by_type: byType as { image: number; video: number; document: number; audio: number },
+      cache_hits: totalHits,
+      cache_efficiency_percent: efficiency,
+      top_media_types: topTypes
+    };
+  } catch (error) {
+    console.error('Error fetching media statistics:', error);
+    return {
+      total_analyzed: 0,
+      by_type: { image: 0, video: 0, document: 0, audio: 0 },
+      cache_hits: 0,
+      cache_efficiency_percent: 0,
+      top_media_types: []
+    };
+  }
 }
 
 function getClassification(score: number): string {
@@ -865,6 +944,14 @@ serve(async (req) => {
     }));
 
     // ============================================================
+    // FETCH MEDIA STATISTICS
+    // ============================================================
+    
+    console.log('Fetching media statistics...');
+    const mediaStats = await getMediaStatistics(supabase, companyId, weekStart, weekEnd);
+    console.log('Media stats:', JSON.stringify(mediaStats));
+
+    // ============================================================
     // GENERATE AI CONTENT FOR EACH SECTION
     // ============================================================
     
@@ -958,6 +1045,7 @@ serve(async (req) => {
       anticipated_at: now.toISOString(),
       anticipated_by: user.id,
       report_content: reportContent,
+      media_statistics: mediaStats,
     });
 
     if (insertError) {
