@@ -158,34 +158,7 @@ async function transcribeAudio(audioUrl: string, geminiApiKey: string): Promise<
   }
 }
 
-// Download video and return base64 (for inline_data)
-async function fetchVideoAsBase64(videoUrl: string): Promise<{ base64: string; mimeType: string } | null> {
-  try {
-    console.log(`[fetchVideoAsBase64] Downloading video: ${videoUrl.substring(0, 50)}...`);
-    
-    const response = await fetch(videoUrl);
-    if (!response.ok) {
-      console.error(`[fetchVideoAsBase64] Failed to fetch video: ${response.status}`);
-      return null;
-    }
-    
-    const contentLength = response.headers.get('content-length');
-    if (contentLength && parseInt(contentLength) > 30 * 1024 * 1024) { // 30MB limit
-      console.log(`[fetchVideoAsBase64] Video too large, skipping`);
-      return null;
-    }
-    
-    const buffer = await response.arrayBuffer();
-    const base64 = arrayBufferToBase64(buffer);
-    const mimeType = response.headers.get('content-type') || 'video/mp4';
-    
-    console.log(`[fetchVideoAsBase64] Success: ${(buffer.byteLength / 1024 / 1024).toFixed(2)}MB`);
-    return { base64, mimeType };
-  } catch (error) {
-    console.error('[fetchVideoAsBase64] Error:', error);
-    return null;
-  }
-}
+// NOTA: Vídeos agora usam URL Context Tool (sem download)
 
 // ============= Batch Analysis Function (URL Context Tool) =============
 
@@ -216,15 +189,13 @@ async function analyzeConversationBatch(
     // Collect URLs for URL Context Tool (images, documents)
     const imageUrls: { url: string; convId: string }[] = [];
     const documentUrls: { url: string; convId: string }[] = [];
-    const videoParts: any[] = []; // For inline_data
+    const videoUrls: { url: string; convId: string }[] = []; // URL Context Tool
     const audioTranscriptions: { conversationId: string; transcription: string }[] = [];
     
-    let audioCount = 0;
-    let videoCount = 0;
-    const MAX_IMAGES = 15; // Reserve space for docs
+    const MAX_IMAGES = 15;
     const MAX_DOCUMENTS = 5;
-    const MAX_VIDEOS = 2; // Memory consumption
-    const MAX_AUDIOS = 3; // Time consumption
+    const MAX_VIDEOS = 3; // URL Context Tool
+    const MAX_AUDIOS = 2; // Limite reduzido para economizar memória
     
     // Process each conversation
     for (const conv of batch) {
@@ -239,25 +210,15 @@ async function analyzeConversationBatch(
         } else if (media.type === 'document' && documentUrls.length < MAX_DOCUMENTS) {
           mediaStats.documents++;
           documentUrls.push({ url: media.url, convId: conv.conversationId });
-        } else if (media.type === 'video' && videoCount < MAX_VIDEOS) {
-          // Download video for inline_data
-          const videoData = await fetchVideoAsBase64(media.url);
-          if (videoData) {
-            mediaStats.videos++;
-            videoCount++;
-            videoParts.push({
-              inline_data: {
-                mime_type: videoData.mimeType,
-                data: videoData.base64
-              }
-            });
-          }
-        } else if (media.type === 'audio' && audioCount < MAX_AUDIOS) {
-          // Transcribe audio
+        } else if (media.type === 'video' && videoUrls.length < MAX_VIDEOS) {
+          // URL Context Tool para vídeos (sem download)
+          mediaStats.videos++;
+          videoUrls.push({ url: media.url, convId: conv.conversationId });
+        } else if (media.type === 'audio' && audioTranscriptions.length < MAX_AUDIOS) {
+          // Transcrição de áudio (ainda precisa de download)
           const transcription = await transcribeAudio(media.url, geminiApiKey);
           if (transcription) {
             mediaStats.audios++;
-            audioCount++;
             audioTranscriptions.push({ conversationId: conv.conversationId, transcription });
           }
         }
@@ -286,12 +247,18 @@ async function analyzeConversationBatch(
       });
     }
     
-    // Build media URLs section for URL Context Tool
+    // Build media URLs section for URL Context Tool (todas as mídias visuais)
     let mediaUrlsSection = '';
     if (imageUrls.length > 0) {
       mediaUrlsSection += '\n## IMAGENS PARA ANALISAR (use URL Context para acessar):\n';
       imageUrls.forEach((img, i) => {
         mediaUrlsSection += `${i + 1}. [Conversa ${img.convId}]: ${img.url}\n`;
+      });
+    }
+    if (videoUrls.length > 0) {
+      mediaUrlsSection += '\n## VÍDEOS PARA ANALISAR (use URL Context para acessar):\n';
+      videoUrls.forEach((vid, i) => {
+        mediaUrlsSection += `${i + 1}. [Conversa ${vid.convId}]: ${vid.url}\n`;
       });
     }
     if (documentUrls.length > 0) {
@@ -350,16 +317,11 @@ IMPORTANTE:
 - Array vazio se não houver problemas
 - Responda APENAS com JSON válido, sem markdown`;
 
-    // Build parts array
-    const parts: any[] = [];
+    // Build parts array - apenas texto (URLs no prompt para URL Context Tool)
+    const parts: any[] = [{ text: prompt }];
     
-    // Add video inline_data parts first
-    parts.push(...videoParts);
-    
-    // Add prompt as last part
-    parts.push({ text: prompt });
-    
-    console.log(`[Batch ${batchIndex}] Sending to Gemini with URL Context Tool: ${imageUrls.length} images, ${documentUrls.length} docs, ${videoParts.length} videos`);
+    const hasUrlsToAnalyze = imageUrls.length > 0 || videoUrls.length > 0 || documentUrls.length > 0;
+    console.log(`[Batch ${batchIndex}] Sending to Gemini with URL Context Tool: ${imageUrls.length} images, ${videoUrls.length} videos, ${documentUrls.length} docs`);
     
     // Build request with URL Context Tool
     const requestBody: any = {
@@ -372,7 +334,7 @@ IMPORTANTE:
     };
     
     // Add URL Context Tool if we have URLs to analyze
-    if (imageUrls.length > 0 || documentUrls.length > 0) {
+    if (hasUrlsToAnalyze) {
       requestBody.tools = [{ url_context: {} }];
     }
     
