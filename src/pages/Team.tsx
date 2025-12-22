@@ -156,8 +156,10 @@ export default function Team() {
   };
 
   const canEditMember = (member: TeamMember) => {
+    // Owner can edit anyone except themselves as owner
     if (isOwner) return member.role !== 'owner' || member.id === profile?.id;
-    if (isAdmin) return member.role !== 'owner' && member.role !== 'admin';
+    // Admin has same permissions as owner (can edit anyone except owner)
+    if (isAdmin) return member.role !== 'owner';
     return false;
   };
 
@@ -169,9 +171,9 @@ export default function Team() {
     // Owner can delete anyone except themselves
     if (isOwner) return true;
     
-    // Admin can only delete agents/supervisors and viewers
+    // Admin has same permissions as owner (can delete anyone except owner)
     if (isAdmin) {
-      return member.role !== 'owner' && member.role !== 'admin';
+      return member.role !== 'owner';
     }
     
     return false;
