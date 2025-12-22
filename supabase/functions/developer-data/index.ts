@@ -468,6 +468,29 @@ serve(async (req) => {
       );
     }
 
+    if (action === 'list_templates') {
+      console.log('\n┌─────────────────────────────────────────────────────────────────┐');
+      console.log('│ 5️⃣  BUSCANDO TEMPLATES DE AGENTES                              │');
+      console.log('└─────────────────────────────────────────────────────────────────┘');
+      
+      const { data: templates, error } = await supabase
+        .from('ai_agent_templates')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.log('❌ Erro ao buscar templates:', error);
+        throw error;
+      }
+      
+      console.log('✅ Templates encontrados:', templates?.length || 0);
+
+      return new Response(
+        JSON.stringify({ templates: templates || [] }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     console.log('❌ Ação inválida:', action);
     return new Response(
       JSON.stringify({ error: 'Ação inválida' }),

@@ -787,6 +787,136 @@ serve(async (req) => {
       );
     }
 
+    // ========== TEMPLATE ACTIONS ==========
+
+    if (action === 'create_template') {
+      const { template } = params;
+
+      console.log('Creating template:', template);
+
+      const { data, error } = await supabase
+        .from('ai_agent_templates')
+        .insert([{
+          name: template.name,
+          description: template.description || null,
+          agent_type: template.agent_type,
+          category: template.category || null,
+          script_template: template.script_template || null,
+          rules_template: template.rules_template || null,
+          faq_template: template.faq_template || null,
+          is_active: template.is_active ?? true,
+          created_by: 'developer',
+        }])
+        .select()
+        .single();
+
+      if (error) {
+        console.error('Create template error:', error);
+        return new Response(
+          JSON.stringify({ error: error.message }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      await logAction('create_template', undefined, undefined, { template_id: data.id, name: template.name });
+
+      return new Response(
+        JSON.stringify({ success: true, template_id: data.id }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    if (action === 'update_template') {
+      const { template_id, updates } = params;
+
+      console.log('Updating template:', template_id, updates);
+
+      const updateData: Record<string, any> = {
+        updated_at: new Date().toISOString()
+      };
+
+      if (updates.name !== undefined) updateData.name = updates.name;
+      if (updates.description !== undefined) updateData.description = updates.description;
+      if (updates.agent_type !== undefined) updateData.agent_type = updates.agent_type;
+      if (updates.category !== undefined) updateData.category = updates.category;
+      if (updates.script_template !== undefined) updateData.script_template = updates.script_template;
+      if (updates.rules_template !== undefined) updateData.rules_template = updates.rules_template;
+      if (updates.faq_template !== undefined) updateData.faq_template = updates.faq_template;
+      if (updates.is_active !== undefined) updateData.is_active = updates.is_active;
+
+      const { error } = await supabase
+        .from('ai_agent_templates')
+        .update(updateData)
+        .eq('id', template_id);
+
+      if (error) {
+        console.error('Update template error:', error);
+        return new Response(
+          JSON.stringify({ error: error.message }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      await logAction('update_template', undefined, undefined, { template_id, updates });
+
+      return new Response(
+        JSON.stringify({ success: true }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    if (action === 'toggle_template') {
+      const { template_id, is_active } = params;
+
+      console.log('Toggling template:', template_id, is_active);
+
+      const { error } = await supabase
+        .from('ai_agent_templates')
+        .update({ is_active, updated_at: new Date().toISOString() })
+        .eq('id', template_id);
+
+      if (error) {
+        console.error('Toggle template error:', error);
+        return new Response(
+          JSON.stringify({ error: error.message }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      await logAction('toggle_template', undefined, undefined, { template_id, is_active });
+
+      return new Response(
+        JSON.stringify({ success: true }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    if (action === 'delete_template') {
+      const { template_id } = params;
+
+      console.log('Deleting template:', template_id);
+
+      const { error } = await supabase
+        .from('ai_agent_templates')
+        .delete()
+        .eq('id', template_id);
+
+      if (error) {
+        console.error('Delete template error:', error);
+        return new Response(
+          JSON.stringify({ error: error.message }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      await logAction('delete_template', undefined, undefined, { template_id });
+
+      return new Response(
+        JSON.stringify({ success: true }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     return new Response(
       JSON.stringify({ error: 'Ação inválida' }),
       { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
