@@ -15,7 +15,7 @@ export const SUPPORTED_MIME_TYPES = {
   image: ['image/png', 'image/jpeg', 'image/webp', 'image/heic', 'image/heif', 'image/gif'],
   video: ['video/mp4', 'video/mpeg', 'video/mov', 'video/avi', 'video/x-flv', 'video/mpg', 'video/webm', 'video/wmv', 'video/3gpp', 'video/quicktime', 'video/x-msvideo', 'video/x-matroska'],
   audio: ['audio/wav', 'audio/mp3', 'audio/mpeg', 'audio/aiff', 'audio/aac', 'audio/ogg', 'audio/flac', 'audio/webm', 'audio/mp4'],
-  document: ['application/pdf', 'text/plain', 'text/html', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'text/csv', 'application/vnd.ms-powerpoint', 'application/vnd.openxmlformats-officedocument.presentationml.presentation']
+  document: ['application/pdf', 'text/plain', 'text/html', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'text/csv', 'application/vnd.ms-powerpoint', 'application/vnd.openxmlformats-officedocument.presentationml.presentation', 'text/rtf', 'text/javascript', 'text/x-python', 'text/xml', 'application/xml', 'text/markdown']
 };
 
 // Infere o tipo de mídia a partir do MIME type
@@ -65,6 +65,12 @@ export function inferMimeTypeFromFileName(fileName: string): string | null {
     'flac': 'audio/flac',
     'm4a': 'audio/mp4',
     'opus': 'audio/ogg',
+    // Novos formatos de documento
+    'rtf': 'text/rtf',
+    'js': 'text/javascript',
+    'py': 'text/x-python',
+    'xml': 'text/xml',
+    'md': 'text/markdown',
   };
   
   return ext ? mimeMap[ext] || null : null;
