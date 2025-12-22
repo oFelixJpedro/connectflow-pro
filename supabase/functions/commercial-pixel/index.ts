@@ -1,5 +1,11 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { 
+  analyzeImageWithFileAPI, 
+  analyzeVideoWithFileAPI, 
+  analyzeDocumentWithFileAPI,
+  transcribeAudioWithFileAPI 
+} from '../_shared/gemini-file-api.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -106,195 +112,9 @@ Responda APENAS em JSON válido, sem markdown:
 Seja específico, acionável e baseado nos dados fornecidos. Evite generalidades.
 `;
 
-// ==================== FUNÇÕES AUXILIARES PARA MÍDIA ====================
-
-function arrayBufferToBase64(buffer: ArrayBuffer): string {
-  const bytes = new Uint8Array(buffer);
-  let binary = '';
-  for (let i = 0; i < bytes.byteLength; i++) {
-    binary += String.fromCharCode(bytes[i]);
-  }
-  return btoa(binary);
-}
-
-async function transcribeAudio(audioUrl: string, apiKey: string): Promise<string | null> {
-  try {
-    console.log('🎙️ [PIXEL] Transcribing audio:', audioUrl.substring(0, 50));
-    
-    const audioResponse = await fetch(audioUrl);
-    if (!audioResponse.ok) {
-      console.error('❌ [PIXEL] Failed to fetch audio:', audioResponse.status);
-      return null;
-    }
-    
-    const audioBuffer = await audioResponse.arrayBuffer();
-    const base64Audio = arrayBufferToBase64(audioBuffer);
-    const contentType = audioResponse.headers.get('content-type') || 'audio/ogg';
-    
-    const geminiResponse = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{
-            parts: [
-              {
-                inline_data: {
-                  mime_type: contentType,
-                  data: base64Audio
-                }
-              },
-              {
-                text: "Transcreva este áudio em português. Retorne APENAS a transcrição, sem comentários adicionais."
-              }
-            ]
-          }],
-          generationConfig: {
-            temperature: 0.1,
-            maxOutputTokens: 4096,
-          },
-        }),
-      }
-    );
-    
-    if (!geminiResponse.ok) {
-      console.error('❌ [PIXEL] Gemini transcription failed:', await geminiResponse.text());
-      return null;
-    }
-    
-    const data = await geminiResponse.json();
-    const transcription = data.candidates?.[0]?.content?.parts?.[0]?.text;
-    
-    console.log('✅ [PIXEL] Audio transcribed successfully');
-    return transcription || null;
-  } catch (error) {
-    console.error('❌ [PIXEL] Error transcribing audio:', error);
-    return null;
-  }
-}
-
-async function fetchImageAsBase64(imageUrl: string): Promise<{ data: string; mimeType: string } | null> {
-  try {
-    console.log('🖼️ [PIXEL] Fetching image:', imageUrl.substring(0, 50));
-    
-    const response = await fetch(imageUrl);
-    if (!response.ok) {
-      console.error('❌ [PIXEL] Failed to fetch image:', response.status);
-      return null;
-    }
-    
-    const buffer = await response.arrayBuffer();
-    const base64 = arrayBufferToBase64(buffer);
-    const mimeType = response.headers.get('content-type') || 'image/jpeg';
-    
-    return { data: base64, mimeType };
-  } catch (error) {
-    console.error('❌ [PIXEL] Error fetching image:', error);
-    return null;
-  }
-}
-
-async function fetchVideoAsBase64(videoUrl: string): Promise<{ data: string; mimeType: string } | null> {
-  try {
-    console.log('🎬 [PIXEL] Fetching video:', videoUrl.substring(0, 50));
-    
-    const response = await fetch(videoUrl);
-    if (!response.ok) {
-      console.error('❌ [PIXEL] Failed to fetch video:', response.status);
-      return null;
-    }
-    
-    const contentLength = response.headers.get('content-length');
-    const size = contentLength ? parseInt(contentLength, 10) : 0;
-    
-    // Limite de 20MB para vídeos
-    if (size > 20 * 1024 * 1024) {
-      console.log('⚠️ [PIXEL] Video too large, skipping:', size);
-      return null;
-    }
-    
-    const buffer = await response.arrayBuffer();
-    const base64 = arrayBufferToBase64(buffer);
-    const mimeType = response.headers.get('content-type') || 'video/mp4';
-    
-    return { data: base64, mimeType };
-  } catch (error) {
-    console.error('❌ [PIXEL] Error fetching video:', error);
-    return null;
-  }
-}
-
-const SUPPORTED_DOCUMENT_MIMES = [
-  'application/pdf',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-  'application/msword',
-  'application/vnd.ms-excel',
-  'application/vnd.ms-powerpoint',
-  'text/plain',
-  'text/csv',
-  'text/html',
-];
-
-async function fetchDocumentAsBase64(docUrl: string, fileName?: string): Promise<{ data: string; mimeType: string } | null> {
-  try {
-    console.log('📄 [PIXEL] Fetching document:', docUrl.substring(0, 50));
-    
-    const response = await fetch(docUrl);
-    if (!response.ok) {
-      console.error('❌ [PIXEL] Failed to fetch document:', response.status);
-      return null;
-    }
-    
-    const contentLength = response.headers.get('content-length');
-    const size = contentLength ? parseInt(contentLength, 10) : 0;
-    
-    // Limite de 20MB para documentos
-    if (size > 20 * 1024 * 1024) {
-      console.log('⚠️ [PIXEL] Document too large, skipping:', size);
-      return null;
-    }
-    
-    let mimeType = response.headers.get('content-type') || 'application/octet-stream';
-    
-    // Tentar inferir MIME type do nome do arquivo
-    if (fileName) {
-      const ext = fileName.split('.').pop()?.toLowerCase();
-      const mimeMap: Record<string, string> = {
-        'pdf': 'application/pdf',
-        'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        'pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-        'doc': 'application/msword',
-        'xls': 'application/vnd.ms-excel',
-        'ppt': 'application/vnd.ms-powerpoint',
-        'txt': 'text/plain',
-        'csv': 'text/csv',
-        'html': 'text/html',
-      };
-      if (ext && mimeMap[ext]) {
-        mimeType = mimeMap[ext];
-      }
-    }
-    
-    // Verificar se o MIME type é suportado
-    if (!SUPPORTED_DOCUMENT_MIMES.some(m => mimeType.includes(m.split('/')[1]))) {
-      console.log('⚠️ [PIXEL] Unsupported document type:', mimeType);
-      return null;
-    }
-    
-    const buffer = await response.arrayBuffer();
-    const base64 = arrayBufferToBase64(buffer);
-    
-    return { data: base64, mimeType };
-  } catch (error) {
-    console.error('❌ [PIXEL] Error fetching document:', error);
-    return null;
-  }
-}
-
+// ==================== FUNÇÕES AUXILIARES PARA MÍDIA (GEMINI FILE API) ====================
+// As funções de mídia agora usam o módulo compartilhado gemini-file-api.ts
+// que suporta vídeos até 2GB e faz polling automático para estado ACTIVE
 // ==================== FIM FUNÇÕES DE MÍDIA ====================
 
 // Robust JSON parsing
@@ -555,69 +375,61 @@ serve(async (req) => {
         console.log(`📎 [PIXEL] Current message is ${message_type}, media_url: ${currentMediaUrl ? 'found' : 'not found'}`);
       }
 
-      // Process media content
+      // Process media content using Gemini File API (supports large files + automatic ACTIVE polling)
       let processedContent = message_content || '';
-      const mediaParts: any[] = [];
+      let mediaAnalysis: string | null = null;
       
-      // Process audio - transcribe it
+      // Process audio - transcribe using File API
       if (message_type === 'audio' && currentMediaUrl) {
-        console.log('🎤 [PIXEL] Transcribing audio for real-time analysis...');
-        const transcription = await transcribeAudio(currentMediaUrl, geminiApiKey);
+        console.log('🎤 [PIXEL] Transcribing audio using Gemini File API...');
+        const transcription = await transcribeAudioWithFileAPI(currentMediaUrl, geminiApiKey, supabase, company_id);
         if (transcription) {
           processedContent = `[Áudio transcrito]: "${transcription}"`;
+          mediaAnalysis = transcription;
           console.log('✅ [PIXEL] Audio transcribed:', transcription.substring(0, 100));
         } else {
           processedContent = '[Áudio - transcrição não disponível]';
         }
       }
       
-      // Process image - fetch and add to multimodal
+      // Process image - analyze using File API
       if (message_type === 'image' && currentMediaUrl) {
-        console.log('🖼️ [PIXEL] Fetching image for real-time analysis...');
-        const imageData = await fetchImageAsBase64(currentMediaUrl);
-        if (imageData) {
-          mediaParts.push({
-            inline_data: {
-              mime_type: imageData.mimeType,
-              data: imageData.data
-            }
-          });
-          console.log('✅ [PIXEL] Image fetched successfully');
+        console.log('🖼️ [PIXEL] Analyzing image using Gemini File API...');
+        const analysis = await analyzeImageWithFileAPI(currentMediaUrl, geminiApiKey, supabase, company_id);
+        if (analysis) {
+          mediaAnalysis = analysis;
+          processedContent = `[Imagem analisada]: ${analysis}`;
+          console.log('✅ [PIXEL] Image analyzed:', analysis.substring(0, 100));
+        } else {
+          processedContent = message_content || '[Imagem enviada - análise não disponível]';
         }
-        processedContent = message_content || '[Imagem enviada - analisar visualmente]';
       }
       
-      // Process video - fetch and add to multimodal
+      // Process video - analyze using File API (supports up to 2GB!)
       if (message_type === 'video' && currentMediaUrl) {
-        console.log('🎬 [PIXEL] Fetching video for real-time analysis...');
-        const videoData = await fetchVideoAsBase64(currentMediaUrl);
-        if (videoData) {
-          mediaParts.push({
-            inline_data: {
-              mime_type: videoData.mimeType,
-              data: videoData.data
-            }
-          });
-          console.log('✅ [PIXEL] Video fetched successfully');
+        console.log('🎬 [PIXEL] Analyzing video using Gemini File API (supports large files)...');
+        const analysis = await analyzeVideoWithFileAPI(currentMediaUrl, geminiApiKey, supabase, company_id);
+        if (analysis) {
+          mediaAnalysis = analysis;
+          processedContent = `[Vídeo analisado]: ${analysis}`;
+          console.log('✅ [PIXEL] Video analyzed:', analysis.substring(0, 100));
+        } else {
+          processedContent = message_content || '[Vídeo enviado - análise não disponível]';
         }
-        processedContent = message_content || '[Vídeo enviado - analisar visualmente]';
       }
       
-      // Process document - fetch and add to multimodal
+      // Process document - analyze using File API
       if (message_type === 'document' && currentMediaUrl) {
-        console.log('📄 [PIXEL] Fetching document for real-time analysis...');
+        console.log('📄 [PIXEL] Analyzing document using Gemini File API...');
         const fileName = currentMetadata?.fileName;
-        const docData = await fetchDocumentAsBase64(currentMediaUrl, fileName);
-        if (docData) {
-          mediaParts.push({
-            inline_data: {
-              mime_type: docData.mimeType,
-              data: docData.data
-            }
-          });
-          console.log('✅ [PIXEL] Document fetched successfully');
+        const analysis = await analyzeDocumentWithFileAPI(currentMediaUrl, geminiApiKey, supabase, company_id, fileName);
+        if (analysis) {
+          mediaAnalysis = analysis;
+          processedContent = `[Documento analisado: ${fileName || 'arquivo'}]: ${analysis}`;
+          console.log('✅ [PIXEL] Document analyzed:', analysis.substring(0, 100));
+        } else {
+          processedContent = message_content || `[Documento enviado: ${fileName || 'arquivo'}]`;
         }
-        processedContent = message_content || `[Documento enviado: ${fileName || 'arquivo'}]`;
       }
 
       const messageDescription = hasMedia && !message_content 
@@ -636,14 +448,9 @@ ${hasMedia ? `IMPORTANTE: Esta mensagem contém mídia (${message_type}). Analis
 
       console.log('🤖 [PIXEL] Calling Gemini for message analysis...');
       
-      // Use multimodal if we have media parts, otherwise text-only
-      if (mediaParts.length > 0) {
-        console.log(`🖼️ [PIXEL] Using multimodal analysis with ${mediaParts.length} media part(s)`);
-        mediaParts.unshift({ text: fullPrompt });
-        aiAnalysis = await callGeminiMultimodal(mediaParts, geminiApiKey);
-      } else {
-        aiAnalysis = await callGemini(fullPrompt, geminiApiKey);
-      }
+      // Since we now use File API for media analysis, the content already contains the analysis
+      // No need for multimodal call - the mediaAnalysis is already included in processedContent
+      aiAnalysis = await callGemini(fullPrompt, geminiApiKey);
       
       if (aiAnalysis) {
         console.log('✅ [PIXEL] AI Analysis parsed successfully:', JSON.stringify(aiAnalysis));
@@ -854,68 +661,46 @@ ${hasMedia ? `NOTA: O vendedor enviou uma mídia (${message_type}). Considere se
 
         console.log('🔍 [PIXEL] Analyzing agent behavior...');
         
-        // Use multimodal analysis for media content to get actual description
+        // Use File API for media analysis instead of inline multimodal
         let behaviorResult;
         if (hasMedia && behaviorMediaUrl) {
-          console.log('🖼️ [PIXEL] Using multimodal analysis for behavior with media:', message_type, 'URL:', behaviorMediaUrl);
+          console.log('🖼️ [PIXEL] Using File API analysis for behavior with media:', message_type, 'URL:', behaviorMediaUrl);
           
-          // Build multimodal parts array
-          const behaviorParts: any[] = [{ text: behaviorPrompt }];
-          
-          // Fetch and add media to parts based on type
+          // Get media analysis using File API (handles large files + ACTIVE state polling)
+          let mediaDescription = '';
           try {
             if (message_type === 'audio') {
-              // Transcribe audio for behavior analysis
-              const transcription = await transcribeAudio(behaviorMediaUrl, geminiApiKey);
+              const transcription = await transcribeAudioWithFileAPI(behaviorMediaUrl, geminiApiKey, supabase, company_id);
               if (transcription) {
-                behaviorParts[0] = { text: `${behaviorPrompt}\n\nTranscrição do áudio enviado: "${transcription}"` };
+                mediaDescription = `\n\nTranscrição do áudio enviado: "${transcription}"`;
                 console.log('🎤 [PIXEL] Audio transcribed for behavior:', transcription.substring(0, 100));
               }
             } else if (message_type === 'image' || message_type === 'sticker') {
-              const imageData = await fetchImageAsBase64(behaviorMediaUrl);
-              if (imageData) {
-                behaviorParts.push({
-                  inline_data: {
-                    mime_type: imageData.mimeType,
-                    data: imageData.data
-                  }
-                });
-                console.log('🖼️ [PIXEL] Image added to behavior analysis');
+              const analysis = await analyzeImageWithFileAPI(behaviorMediaUrl, geminiApiKey, supabase, company_id);
+              if (analysis) {
+                mediaDescription = `\n\nDescrição da imagem enviada: "${analysis}"`;
+                console.log('🖼️ [PIXEL] Image analyzed for behavior:', analysis.substring(0, 100));
               }
             } else if (message_type === 'video') {
-              const videoData = await fetchVideoAsBase64(behaviorMediaUrl);
-              if (videoData) {
-                behaviorParts.push({
-                  inline_data: {
-                    mime_type: videoData.mimeType,
-                    data: videoData.data
-                  }
-                });
-                console.log('🎥 [PIXEL] Video added to behavior analysis');
+              const analysis = await analyzeVideoWithFileAPI(behaviorMediaUrl, geminiApiKey, supabase, company_id);
+              if (analysis) {
+                mediaDescription = `\n\nDescrição do vídeo enviado: "${analysis}"`;
+                console.log('🎥 [PIXEL] Video analyzed for behavior:', analysis.substring(0, 100));
               }
             } else if (message_type === 'document') {
               const fileName = behaviorMetadata?.fileName;
-              const docData = await fetchDocumentAsBase64(behaviorMediaUrl, fileName);
-              if (docData) {
-                behaviorParts.push({
-                  inline_data: {
-                    mime_type: docData.mimeType,
-                    data: docData.data
-                  }
-                });
-                console.log('📄 [PIXEL] Document added to behavior analysis');
+              const analysis = await analyzeDocumentWithFileAPI(behaviorMediaUrl, geminiApiKey, supabase, company_id, fileName);
+              if (analysis) {
+                mediaDescription = `\n\nConteúdo do documento enviado: "${analysis}"`;
+                console.log('📄 [PIXEL] Document analyzed for behavior:', analysis.substring(0, 100));
               }
             }
           } catch (mediaError) {
-            console.log('⚠️ [PIXEL] Error fetching media for behavior analysis:', mediaError);
+            console.log('⚠️ [PIXEL] Error analyzing media for behavior:', mediaError);
           }
           
-          // Call multimodal if we have media parts, otherwise fallback to text-only
-          if (behaviorParts.length > 1 || message_type === 'audio') {
-            behaviorResult = await callGeminiMultimodal(behaviorParts, geminiApiKey);
-          } else {
-            behaviorResult = await callGemini(behaviorPrompt, geminiApiKey);
-          }
+          // Call text-only with media description included
+          behaviorResult = await callGemini(behaviorPrompt + mediaDescription, geminiApiKey);
         } else {
           behaviorResult = await callGemini(behaviorPrompt, geminiApiKey);
         }
@@ -1043,11 +828,9 @@ ${hasMedia ? `NOTA: O vendedor enviou uma mídia (${message_type}). Considere se
         .limit(50);
 
       if (allMessages && allMessages.length >= 5) {
-        // Process messages with multimodal support
-        const imageUrls: string[] = [];
-        const videoUrls: string[] = [];
-        const documentData: { url: string; fileName?: string }[] = [];
+        // Use File API for media analysis (supports large files + ACTIVE state polling)
         const processedMessages: string[] = [];
+        const mediaAnalyses: { type: string; analysis: string }[] = [];
 
         for (const m of allMessages) {
           if (!m.content && !m.media_url) continue;
@@ -1059,28 +842,41 @@ ${hasMedia ? `NOTA: O vendedor enviou uma mídia (${message_type}). Considere se
           switch (m.message_type) {
             case 'audio':
               if (m.media_url) {
-                const transcription = await transcribeAudio(m.media_url, geminiApiKey);
+                const transcription = await transcribeAudioWithFileAPI(m.media_url, geminiApiKey, supabase, company_id);
                 content = transcription 
                   ? `[Áudio transcrito]: "${transcription}"`
                   : '[Áudio - transcrição não disponível]';
+                if (transcription) {
+                  mediaAnalyses.push({ type: 'audio', analysis: transcription });
+                }
               }
               break;
               
             case 'image':
               if (m.media_url) {
-                imageUrls.push(m.media_url);
-                content = m.content 
-                  ? `[Imagem com legenda: "${m.content}"]`
-                  : '[Imagem enviada]';
+                const analysis = await analyzeImageWithFileAPI(m.media_url, geminiApiKey, supabase, company_id);
+                content = analysis
+                  ? `[Imagem analisada]: "${analysis}"`
+                  : m.content 
+                    ? `[Imagem com legenda: "${m.content}"]`
+                    : '[Imagem enviada]';
+                if (analysis) {
+                  mediaAnalyses.push({ type: 'image', analysis });
+                }
               }
               break;
               
             case 'video':
               if (m.media_url) {
-                videoUrls.push(m.media_url);
-                content = m.content 
-                  ? `[Vídeo com legenda: "${m.content}"]`
-                  : '[Vídeo enviado]';
+                const analysis = await analyzeVideoWithFileAPI(m.media_url, geminiApiKey, supabase, company_id);
+                content = analysis
+                  ? `[Vídeo analisado]: "${analysis}"`
+                  : m.content 
+                    ? `[Vídeo com legenda: "${m.content}"]`
+                    : '[Vídeo enviado]';
+                if (analysis) {
+                  mediaAnalyses.push({ type: 'video', analysis });
+                }
               }
               break;
               
@@ -1088,8 +884,13 @@ ${hasMedia ? `NOTA: O vendedor enviou uma mídia (${message_type}). Considere se
               if (m.media_url) {
                 const metadata = m.metadata as any;
                 const fileName = metadata?.fileName || metadata?.filename || 'documento';
-                documentData.push({ url: m.media_url, fileName });
-                content = `[Documento: ${fileName}]`;
+                const analysis = await analyzeDocumentWithFileAPI(m.media_url, geminiApiKey, supabase, company_id, fileName);
+                content = analysis
+                  ? `[Documento analisado: ${fileName}]: "${analysis}"`
+                  : `[Documento: ${fileName}]`;
+                if (analysis) {
+                  mediaAnalyses.push({ type: 'document', analysis });
+                }
               }
               break;
               
@@ -1108,75 +909,36 @@ ${hasMedia ? `NOTA: O vendedor enviou uma mídia (${message_type}). Considere se
         }
 
         const conversationText = processedMessages.join('\n');
-
-        // Construir parts multimodal
-        const parts: any[] = [];
+        const mediaCount = {
+          images: mediaAnalyses.filter(m => m.type === 'image').length,
+          videos: mediaAnalyses.filter(m => m.type === 'video').length,
+          documents: mediaAnalyses.filter(m => m.type === 'document').length,
+          audios: mediaAnalyses.filter(m => m.type === 'audio').length
+        };
         
-        // Adicionar texto do prompt + conversa
+        // Build text prompt with all media analyses included
         const textPrompt = `${EVALUATION_PROMPT}
 
 ## IMPORTANTE - ANÁLISE DE MÍDIA
-- SE houver imagens anexadas, analise se o atendente utilizou recursos visuais adequadamente (catálogos, fotos de produtos, prints)
-- SE houver áudios transcritos, considere a comunicação verbal como parte da avaliação (tom, clareza, persuasão)
-- SE houver vídeos, avalie se foram usados de forma pertinente (demonstrações, apresentações)
-- SE houver documentos, verifique se materiais relevantes foram compartilhados (propostas, contratos, PDFs informativos)
+- SE houver imagens analisadas, avalie se o atendente utilizou recursos visuais adequadamente
+- SE houver áudios transcritos, considere a comunicação verbal como parte da avaliação
+- SE houver vídeos analisados, avalie se foram usados de forma pertinente
+- SE houver documentos analisados, verifique se materiais relevantes foram compartilhados
+
+## RESUMO DE MÍDIAS NA CONVERSA
+- Imagens analisadas: ${mediaCount.images}
+- Vídeos analisados: ${mediaCount.videos}
+- Documentos analisados: ${mediaCount.documents}
+- Áudios transcritos: ${mediaCount.audios}
 
 --- CONVERSA ---
 ${conversationText}
 --- FIM DA CONVERSA ---`;
-        parts.push({ text: textPrompt });
 
-        // Adicionar imagens (máx 10 últimas)
-        let mediaCount = { images: 0, videos: 0, documents: 0 };
+        console.log(`🤖 [PIXEL] Calling Gemini for evaluation with media analyses:`, mediaCount);
         
-        for (const imageUrl of imageUrls.slice(-10)) {
-          const imageData = await fetchImageAsBase64(imageUrl);
-          if (imageData) {
-            parts.push({
-              inline_data: {
-                mime_type: imageData.mimeType,
-                data: imageData.data
-              }
-            });
-            mediaCount.images++;
-          }
-        }
-
-        // Adicionar vídeos (máx 3 últimos, ≤20MB cada)
-        for (const videoUrl of videoUrls.slice(-3)) {
-          const videoData = await fetchVideoAsBase64(videoUrl);
-          if (videoData) {
-            parts.push({
-              inline_data: {
-                mime_type: videoData.mimeType,
-                data: videoData.data
-              }
-            });
-            mediaCount.videos++;
-          }
-        }
-
-        // Adicionar documentos (máx 3 últimos, ≤20MB cada)
-        for (const doc of documentData.slice(-3)) {
-          const docData = await fetchDocumentAsBase64(doc.url, doc.fileName);
-          if (docData) {
-            parts.push({
-              inline_data: {
-                mime_type: docData.mimeType,
-                data: docData.data
-              }
-            });
-            mediaCount.documents++;
-          }
-        }
-
-        const hasMedia = mediaCount.images > 0 || mediaCount.videos > 0 || mediaCount.documents > 0;
-        console.log(`🤖 [PIXEL] Calling Gemini for evaluation with media:`, mediaCount);
-        
-        // Use multimodal call if there's media, otherwise use text-only
-        const evalResult = hasMedia 
-          ? await callGeminiMultimodal(parts, geminiApiKey)
-          : await callGemini(textPrompt, geminiApiKey);
+        // Use text-only call since media content is already analyzed and included in text
+        const evalResult = await callGemini(textPrompt, geminiApiKey);
         
         if (evalResult) {
           console.log('✅ [PIXEL] Evaluation result:', JSON.stringify(evalResult));
