@@ -153,7 +153,7 @@ serve(async (req) => {
         .eq('id', permissionRequest.id);
 
       // Usar URL dinâmica do frontend (com fallback)
-      const fallbackUrl = `${supabaseUrl.replace('.supabase.co', '.lovable.app')}/dashboard`;
+      const fallbackUrl = 'https://chatgo.ia.br/dashboard';
       const finalRedirectUrl = redirect_url || fallbackUrl;
       
       console.log('Generating magic link for:', profile.email, 'redirect:', finalRedirectUrl);

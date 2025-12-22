@@ -59,7 +59,7 @@ serve(async (req) => {
       logStep("No existing customer, will create new");
     }
 
-    const origin = req.headers.get("origin") || "https://stjtkvanmlidurmwpdpc.lovableproject.com";
+    const origin = req.headers.get("origin") || "https://chatgo.ia.br";
     
     // Build Stripe line_items from request
     const stripeLineItems = lineItems.map((item: { priceId: string; quantity: number }) => ({
