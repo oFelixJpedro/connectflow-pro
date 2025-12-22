@@ -1,76 +1,19 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { 
+  analyzeMedia,
+  transcribeAudioWithFileAPI,
+  analyzeImageWithFileAPI,
+  analyzeVideoWithFileAPI,
+  analyzeDocumentWithFileAPI
+} from '../_shared/gemini-file-api.ts';
+import { getCachedAnalysis, saveCacheAnalysis } from '../_shared/media-cache.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
-
-// ============= Media Cache Functions =============
-
-async function sha256(text: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(text);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-}
-
-async function getCachedAnalysis(
-  supabase: any, 
-  url: string, 
-  companyId: string
-): Promise<any | null> {
-  try {
-    const urlHash = await sha256(url);
-    
-    const { data, error } = await supabase
-      .from('media_analysis_cache')
-      .select('analysis_result')
-      .eq('url_hash', urlHash)
-      .eq('company_id', companyId)
-      .gt('expires_at', new Date().toISOString())
-      .single();
-    
-    if (error || !data) return null;
-    
-    // Increment hit count (fire and forget)
-    supabase.rpc('increment_cache_hit', { p_url_hash: urlHash, p_company_id: companyId }).then(() => {});
-    
-    console.log(`[Cache] HIT for ${url.substring(0, 50)}...`);
-    return data.analysis_result;
-  } catch {
-    return null;
-  }
-}
-
-async function saveCacheAnalysis(
-  supabase: any,
-  url: string,
-  companyId: string,
-  mediaType: string,
-  result: any
-): Promise<void> {
-  try {
-    const urlHash = await sha256(url);
-    
-    await supabase
-      .from('media_analysis_cache')
-      .upsert({
-        url_hash: urlHash,
-        url,
-        company_id: companyId,
-        media_type: mediaType,
-        analysis_result: result,
-        expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(), // 7 days
-      }, { onConflict: 'url_hash,company_id' });
-    
-    console.log(`[Cache] SAVED for ${url.substring(0, 50)}...`);
-  } catch (error) {
-    console.error('[Cache] Error saving:', error);
-  }
-}
 
 // ==================== INTERFACES ====================
 
@@ -130,82 +73,12 @@ interface AgentRecommendationRequest {
   criticalAlertsCount: number;
   alertTypes: string[];
   recentPerformance: 'improving' | 'stable' | 'declining';
-  // Nova estrutura: conversas com suas mídias agrupadas
   conversationsWithMedia?: ConversationWithMedia[];
-  // Mantém compatibilidade com formato antigo
   mediaSamples?: MediaSample[];
 }
 
 // ==================== FUNÇÕES AUXILIARES ====================
 
-function arrayBufferToBase64(buffer: ArrayBuffer): string {
-  const bytes = new Uint8Array(buffer);
-  let binary = '';
-  for (let i = 0; i < bytes.byteLength; i++) {
-    binary += String.fromCharCode(bytes[i]);
-  }
-  return btoa(binary);
-}
-
-// Transcreve áudio usando Gemini (única função que ainda baixa conteúdo)
-async function transcribeAudio(audioUrl: string, apiKey: string): Promise<string | null> {
-  try {
-    console.log('[generate-agent-recommendation] 🎙️ Transcribing audio:', audioUrl.substring(0, 50));
-    
-    const audioResponse = await fetch(audioUrl);
-    if (!audioResponse.ok) {
-      console.error('[generate-agent-recommendation] ❌ Failed to fetch audio:', audioResponse.status);
-      return null;
-    }
-    
-    const audioBuffer = await audioResponse.arrayBuffer();
-    const base64Audio = arrayBufferToBase64(audioBuffer);
-    const contentType = audioResponse.headers.get('content-type') || 'audio/ogg';
-    
-    const geminiResponse = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{
-            parts: [
-              {
-                inline_data: {
-                  mime_type: contentType,
-                  data: base64Audio
-                }
-              },
-              {
-                text: "Transcreva este áudio em português. Retorne APENAS a transcrição, sem comentários adicionais."
-              }
-            ]
-          }],
-          generationConfig: {
-            temperature: 0.1,
-            maxOutputTokens: 4096,
-          },
-        }),
-      }
-    );
-    
-    if (!geminiResponse.ok) {
-      console.error('[generate-agent-recommendation] ❌ Gemini transcription failed:', await geminiResponse.text());
-      return null;
-    }
-    
-    const data = await geminiResponse.json();
-    const transcription = data.candidates?.[0]?.content?.parts?.[0]?.text;
-    
-    console.log('[generate-agent-recommendation] ✅ Audio transcribed successfully');
-    return transcription || null;
-  } catch (error) {
-    console.error('[generate-agent-recommendation] ❌ Error transcribing audio:', error);
-    return null;
-  }
-}
-
-// Divide array em chunks
 function chunkArray<T>(array: T[], chunkSize: number): T[][] {
   const chunks: T[][] = [];
   for (let i = 0; i < array.length; i += chunkSize) {
@@ -214,9 +87,7 @@ function chunkArray<T>(array: T[], chunkSize: number): T[][] {
   return chunks;
 }
 
-// NOTA: Vídeos agora usam URL Context Tool (sem download)
-
-// ==================== ETAPA 1: ANÁLISE POR BATCH (URL Context Tool with Cache) ====================
+// ==================== ETAPA 1: ANÁLISE POR BATCH (Gemini File API com Cache) ====================
 
 async function analyzeConversationBatch(
   conversations: ConversationWithMedia[],
@@ -229,57 +100,51 @@ async function analyzeConversationBatch(
     console.log(`[generate-agent-recommendation] 📦 Analyzing batch ${batchIndex + 1} with ${conversations.length} conversations`);
     
     const cacheEnabled = !!supabase && !!companyId;
-    const cachedResults: { url: string; analysis: any }[] = [];
-    const urlsToAnalyze: { url: string; type: string; convId: string }[] = [];
+    const mediaDescriptions: string[] = [];
     
     let mediaCount = { images: 0, videos: 0, documents: 0, audios: 0 };
-    const audioTranscriptions: string[] = [];
-    
-    // Collect URLs for URL Context Tool (todas as mídias visuais)
-    const imageUrls: { url: string; convId: string }[] = [];
-    const documentUrls: { url: string; convId: string }[] = [];
-    const videoUrls: { url: string; convId: string }[] = []; // URL Context Tool
     
     const MAX_IMAGES = 15;
     const MAX_DOCUMENTS = 5;
-    const MAX_VIDEOS_PER_BATCH = 3; // URL Context Tool
-    const MAX_AUDIOS_PER_BATCH = 2; // Limite reduzido para economizar memória
+    const MAX_VIDEOS_PER_BATCH = 3;
+    const MAX_AUDIOS_PER_BATCH = 2;
 
-    // Processa todas as mídias das conversas do batch - check cache first
+    // Processa todas as mídias das conversas do batch usando Gemini File API
     for (const conv of conversations) {
       for (const media of conv.medias) {
         try {
-          // Check cache if enabled
-          if (cacheEnabled) {
-            const cached = await getCachedAnalysis(supabase, media.url, companyId);
-            if (cached) {
-              cachedResults.push({ url: media.url, analysis: cached });
-              if (media.type === 'image') mediaCount.images++;
-              else if (media.type === 'document') mediaCount.documents++;
-              else if (media.type === 'video') mediaCount.videos++;
-              continue; // Skip to next media, this one is cached
-            }
-          }
+          const convId = conv.conversationId.substring(0, 8);
           
-          if (media.type === 'image' && imageUrls.length < MAX_IMAGES) {
-            // Collect URL for URL Context Tool
-            imageUrls.push({ url: media.url, convId: conv.conversationId.substring(0, 8) });
-            mediaCount.images++;
-            urlsToAnalyze.push({ url: media.url, type: 'image', convId: conv.conversationId });
-          } else if (media.type === 'document' && documentUrls.length < MAX_DOCUMENTS) {
-            documentUrls.push({ url: media.url, convId: conv.conversationId.substring(0, 8) });
-            mediaCount.documents++;
-            urlsToAnalyze.push({ url: media.url, type: 'document', convId: conv.conversationId });
-          } else if (media.type === 'video' && videoUrls.length < MAX_VIDEOS_PER_BATCH) {
-            // URL Context Tool para vídeos (sem download)
-            videoUrls.push({ url: media.url, convId: conv.conversationId.substring(0, 8) });
-            mediaCount.videos++;
-            urlsToAnalyze.push({ url: media.url, type: 'video', convId: conv.conversationId });
+          if (media.type === 'image' && mediaCount.images < MAX_IMAGES) {
+            const analysis = await analyzeImageWithFileAPI(
+              media.url, geminiApiKey, supabase, companyId || ''
+            );
+            if (analysis) {
+              mediaDescriptions.push(`📸 [Conv ${convId}] IMAGEM: ${analysis}`);
+              mediaCount.images++;
+            }
+          } else if (media.type === 'document' && mediaCount.documents < MAX_DOCUMENTS) {
+            const analysis = await analyzeDocumentWithFileAPI(
+              media.url, geminiApiKey, supabase, companyId || ''
+            );
+            if (analysis) {
+              mediaDescriptions.push(`📄 [Conv ${convId}] DOCUMENTO: ${analysis}`);
+              mediaCount.documents++;
+            }
+          } else if (media.type === 'video' && mediaCount.videos < MAX_VIDEOS_PER_BATCH) {
+            const analysis = await analyzeVideoWithFileAPI(
+              media.url, geminiApiKey, supabase, companyId || ''
+            );
+            if (analysis) {
+              mediaDescriptions.push(`🎬 [Conv ${convId}] VÍDEO: ${analysis}`);
+              mediaCount.videos++;
+            }
           } else if (media.type === 'audio' && mediaCount.audios < MAX_AUDIOS_PER_BATCH) {
-            // Áudio ainda precisa de transcrição (download necessário)
-            const transcription = await transcribeAudio(media.url, geminiApiKey);
+            const transcription = await transcribeAudioWithFileAPI(
+              media.url, geminiApiKey, supabase, companyId || ''
+            );
             if (transcription) {
-              audioTranscriptions.push(`[Áudio da conversa ${conv.conversationId.substring(0, 8)}]: ${transcription}`);
+              mediaDescriptions.push(`🎙️ [Conv ${convId}] ÁUDIO: ${transcription}`);
               mediaCount.audios++;
             }
           }
@@ -303,49 +168,20 @@ async function analyzeConversationBatch(
       };
     }
 
-    // Build media URLs section for URL Context Tool (todas as mídias visuais)
-    let mediaUrlsSection = '';
-    if (imageUrls.length > 0) {
-      mediaUrlsSection += '\n## IMAGENS PARA ANALISAR:\n';
-      imageUrls.forEach((img, i) => {
-        mediaUrlsSection += `${i + 1}. [Conv ${img.convId}]: ${img.url}\n`;
-      });
-    }
-    if (videoUrls.length > 0) {
-      mediaUrlsSection += '\n## VÍDEOS PARA ANALISAR:\n';
-      videoUrls.forEach((vid, i) => {
-        mediaUrlsSection += `${i + 1}. [Conv ${vid.convId}]: ${vid.url}\n`;
-      });
-    }
-    if (documentUrls.length > 0) {
-      mediaUrlsSection += '\n## DOCUMENTOS PARA ANALISAR:\n';
-      documentUrls.forEach((doc, i) => {
-        mediaUrlsSection += `${i + 1}. [Conv ${doc.convId}]: ${doc.url}\n`;
-      });
-    }
-
     // Prompt para análise do batch
     const batchPrompt = `Você é um analista de qualidade de atendimento comercial.
 
 Analise as mídias enviadas pelo vendedor nestas ${conversations.length} conversas de vendas.
 
-## ESTATÍSTICAS DO BATCH
-- Imagens: ${mediaCount.images}
-- Vídeos: ${mediaCount.videos}
-- Documentos: ${mediaCount.documents}
-- Áudios transcritos: ${mediaCount.audios}
-${mediaUrlsSection}
+## MÍDIAS ANALISADAS (${totalMedia} arquivos)
 
-${audioTranscriptions.length > 0 ? `## TRANSCRIÇÕES DE ÁUDIOS:\n${audioTranscriptions.join('\n\n')}` : ''}
+${mediaDescriptions.join('\n\n')}
 
 ## INSTRUÇÕES
 
-Para CADA mídia (imagem/vídeo/documento), analise:
-1. O que é o conteúdo? Descreva brevemente.
-2. É relevante para um contexto de vendas? (catálogo, proposta, produto, etc.)
-3. Há algo problemático? (pessoal, inapropriado, irrelevante, baixa qualidade)
-
-Para áudios, analise o tom, profissionalismo e relevância.
+Para CADA mídia descrita acima, analise:
+1. É relevante para um contexto de vendas? (catálogo, proposta, produto, etc.)
+2. Há algo problemático? (pessoal, inapropriado, irrelevante, baixa qualidade)
 
 ## RESPOSTA
 
@@ -355,7 +191,7 @@ Retorne APENAS um JSON válido (sem markdown, sem \`\`\`) no formato:
   "relevantes": <número de mídias relevantes para vendas>,
   "problematicas": [
     {
-      "url": "<url da mídia>",
+      "url": "<identificador da mídia>",
       "problema": "<descrição do problema>",
       "gravidade": "baixa|media|alta",
       "tipo": "image|video|audio|document"
@@ -367,30 +203,19 @@ Retorne APENAS um JSON válido (sem markdown, sem \`\`\`) no formato:
 
 Se não houver problemas, retorne array vazio em "problematicas".`;
 
-    // Build parts array - apenas texto (URLs no prompt para URL Context Tool)
-    const parts: any[] = [{ text: batchPrompt }];
-
-    const hasUrlsToAnalyze = imageUrls.length > 0 || videoUrls.length > 0 || documentUrls.length > 0;
-    console.log(`[generate-agent-recommendation] 📊 Batch ${batchIndex + 1}: ${imageUrls.length} images, ${videoUrls.length} videos, ${documentUrls.length} docs via URL Context`);
-
-    // Build request with URL Context Tool
+    // Build request
     const requestBody: any = {
-      contents: [{ role: 'user', parts }],
+      contents: [{ role: 'user', parts: [{ text: batchPrompt }] }],
       generationConfig: {
         temperature: 0.3,
         maxOutputTokens: 4096,
-        responseMimeType: "application/json", // Força JSON válido
+        responseMimeType: "application/json",
       },
     };
-    
-    // Add URL Context Tool if we have URLs to analyze
-    if (hasUrlsToAnalyze) {
-      requestBody.tools = [{ url_context: {} }];
-    }
 
-    // Chama Gemini com URL Context Tool
+    // Chama Gemini
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${geminiApiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiApiKey}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -417,9 +242,8 @@ Se não houver problemas, retorne array vazio em "problematicas".`;
     
     console.log(`[generate-agent-recommendation] ✅ Batch ${batchIndex + 1} response preview:`, responseText.substring(0, 200));
 
-    // Parse do JSON (com responseMimeType, deve vir limpo)
+    // Parse do JSON
     try {
-      // Remove possíveis marcadores de código (fallback)
       let cleanJson = responseText.trim();
       if (cleanJson.startsWith('```json')) cleanJson = cleanJson.slice(7);
       if (cleanJson.startsWith('```')) cleanJson = cleanJson.slice(3);
@@ -429,34 +253,18 @@ Se não houver problemas, retorne array vazio em "problematicas".`;
       // Tenta reparar JSON truncado
       if (!cleanJson.endsWith('}')) {
         console.warn(`[generate-agent-recommendation] ⚠️ JSON appears truncated, attempting repair`);
-        // Tenta fechar arrays e objetos abertos
         const openBraces = (cleanJson.match(/{/g) || []).length;
         const closeBraces = (cleanJson.match(/}/g) || []).length;
         const openBrackets = (cleanJson.match(/\[/g) || []).length;
         const closeBrackets = (cleanJson.match(/]/g) || []).length;
         
-        // Adiciona fechamentos faltantes
         cleanJson += ']'.repeat(Math.max(0, openBrackets - closeBrackets));
         cleanJson += '}'.repeat(Math.max(0, openBraces - closeBraces));
       }
       
       const parsed = JSON.parse(cleanJson);
       
-      console.log(`[generate-agent-recommendation] ✅ Batch ${batchIndex + 1} parsed, cached: ${cachedResults.length}`);
-      
-      // Save analyzed URLs to cache (fire and forget)
-      if (cacheEnabled && urlsToAnalyze.length > 0) {
-        const simplifiedResult = {
-          analyzed: true,
-          hasProblems: (parsed.problematicas?.length || 0) > 0,
-          batchIndex,
-        };
-        for (const urlData of urlsToAnalyze) {
-          saveCacheAnalysis(supabase, urlData.url, companyId, urlData.type, simplifiedResult)
-            .catch(err => console.error('[Cache] Save error:', err));
-        }
-        console.log(`[generate-agent-recommendation] 💾 Caching ${urlsToAnalyze.length} new media URLs`);
-      }
+      console.log(`[generate-agent-recommendation] ✅ Batch ${batchIndex + 1} parsed successfully`);
       
       return {
         batchIndex,
@@ -475,7 +283,7 @@ Se não houver problemas, retorne array vazio em "problematicas".`;
       return {
         batchIndex,
         totalMedias: totalMedia,
-        relevantes: totalMedia, // Assume todas são relevantes se não conseguir parsear
+        relevantes: totalMedia,
         problematicas: [],
         padroesPositivos: [],
         padroesNegativos: [],
@@ -610,7 +418,7 @@ ${totalMedias > 0 ? '6. **Inclua observações sobre as mídias** - padrões pos
 **Formato:** 3-4 parágrafos, 200-400 palavras, português brasileiro, texto corrido.`;
 
   const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${geminiApiKey}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiApiKey}`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

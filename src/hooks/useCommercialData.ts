@@ -98,6 +98,7 @@ interface AggregatedInsights {
   criteria_scores: CriteriaScores;
   average_score: number;
   qualified_leads_percent: number;
+  agent_rankings?: AgentAnalysis[]; // Persisted agent rankings from commercial-pixel
 }
 
 export interface CRMStageMapData {
@@ -217,10 +218,47 @@ export function useCommercialData(filter?: CommercialFilter) {
   const [insightsCurrentStep, setInsightsCurrentStep] = useState('');
   
   // Track if filter is active to control realtime behavior
-  // Consider both connection filter AND date filter (non-default dates)
+  // Connection filter requires recalculating insights from scratch
+  // Date filter with default period should still use aggregated insights from DB
   const hasConnectionFilter = filter?.type === 'connection' && !!filter.connectionId;
+  const hasDepartmentFilter = !!filter?.departmentId;
   const hasDateFilter = !!(filter?.startDate && filter?.endDate);
-  const hasActiveFilter = hasConnectionFilter || hasDateFilter;
+  
+  // Detect if the date filter is the default "Esta semana" (current week)
+  // If it's the default period, we should use aggregated dashboard data instead of recalculating
+  const isDefaultPeriod = useMemo(() => {
+    if (!filter?.startDate || !filter?.endDate) return true;
+    
+    // Use UTC to avoid timezone mismatches with server/database
+    const now = new Date();
+    
+    // Calculate start of current week (Monday) in UTC
+    const dayOfWeekUTC = now.getUTCDay();
+    const diffToMonday = dayOfWeekUTC === 0 ? -6 : 1 - dayOfWeekUTC; // Monday is first day (ISO week)
+    const weekStartUTC = new Date(Date.UTC(
+      now.getUTCFullYear(),
+      now.getUTCMonth(),
+      now.getUTCDate() + diffToMonday
+    ));
+    
+    // Compare only dates (YYYY-MM-DD format) in UTC to avoid timezone issues
+    const filterStartISO = filter.startDate.toISOString().split('T')[0];
+    const weekStartISO = weekStartUTC.toISOString().split('T')[0];
+    
+    console.log('📅 [isDefaultPeriod] Comparing:', { filterStartISO, weekStartISO, isDefault: filterStartISO === weekStartISO });
+    
+    return filterStartISO === weekStartISO;
+  }, [filter?.startDate, filter?.endDate]);
+  
+  // hasActiveFilter: true when user has selected a SPECIFIC filter (not just default period)
+  // This controls whether we use aggregated dashboard data or calculate filtered data
+  const hasSpecificFilter = hasConnectionFilter || hasDepartmentFilter;
+  const hasNonDefaultDateFilter = hasDateFilter && !isDefaultPeriod;
+  const hasActiveFilter = hasSpecificFilter || hasNonDefaultDateFilter;
+  
+  // For insights, only connection/department filter requires recalculation
+  const hasActiveFilterForInsights = hasSpecificFilter;
+  
   const filterRef = useRef(filter);
   filterRef.current = filter;
   
@@ -751,8 +789,10 @@ export function useCommercialData(filter?: CommercialFilter) {
   useEffect(() => {
     if (!profile?.company_id || !isAdmin) return;
 
-    // Only fetch company-wide metrics when no filter is active
+    // Fetch company-wide metrics when no specific filter is active
+    // Default period (Esta semana) should still use aggregated dashboard data
     if (!hasActiveFilter) {
+      console.log('📊 Fetching company-wide live metrics (no active filter or default period)');
       fetchCompanyLiveMetrics();
     }
 
@@ -768,11 +808,14 @@ export function useCommercialData(filter?: CommercialFilter) {
           filter: `company_id=eq.${profile.company_id}`,
         },
         (payload) => {
-          // Only update from realtime if no filter is active (connection OR date)
+          // Only update from realtime if no SPECIFIC filter is active
+          // Default period should still receive realtime updates
           const hasConnFilter = filterRef.current?.type === 'connection' && filterRef.current?.connectionId;
-          const hasDateFilterActive = !!(filterRef.current?.startDate && filterRef.current?.endDate);
-          if (hasConnFilter || hasDateFilterActive) {
-            console.log('📊 [REALTIME] Ignoring dashboard update - filter is active');
+          const hasDeptFilter = !!filterRef.current?.departmentId;
+          
+          // Specific filter = connection or department (NOT just default date period)
+          if (hasConnFilter || hasDeptFilter) {
+            console.log('📊 [REALTIME] Ignoring dashboard update - specific filter active');
             return;
           }
 
@@ -884,9 +927,18 @@ export function useCommercialData(filter?: CommercialFilter) {
         // Extract conversation IDs for filtering related data
         const conversationIds = conversations?.map(c => c.id) || [];
         
-        // EARLY RETURN: If filter is active and no conversations found, return empty data
-        if (hasActiveFilter && conversationIds.length === 0) {
-          console.log('📊 No conversations found for active filter - returning empty data');
+        console.log('📊 Conversations found:', conversationIds.length, 'hasActiveFilter:', hasActiveFilter, 'isDefaultPeriod:', isDefaultPeriod);
+        
+        // Check if we have rich aggregated insights from dashboard
+        const hasRichAggregatedInsights = aggregatedInsights.strengths?.length > 0 || 
+                                          aggregatedInsights.final_recommendation?.length > 0;
+        
+        // EARLY RETURN: Only return empty data if:
+        // 1. A SPECIFIC filter is active (connection/department or non-default date)
+        // 2. No conversations found
+        // 3. No rich aggregated insights available as fallback
+        if (hasActiveFilter && conversationIds.length === 0 && !hasRichAggregatedInsights) {
+          console.log('📊 No conversations found for active filter and no aggregated insights - returning empty data');
           setData(EMPTY_COMMERCIAL_DATA);
           setLiveMetrics(EMPTY_LIVE_METRICS);
           setAggregatedInsights(DEFAULT_INSIGHTS);
@@ -895,18 +947,18 @@ export function useCommercialData(filter?: CommercialFilter) {
           return;
         }
 
-        // Calculate filtered live metrics when ANY filter is active (connection OR date)
-        // This ensures date-filtered views calculate metrics from filtered conversations only
+        // Calculate filtered live metrics only when a SPECIFIC filter is active
+        // Default period should use the company-wide metrics from dashboard
         if (hasActiveFilter && conversationIds.length > 0) {
           console.log('📊 Calculating filtered live metrics for', conversationIds.length, 'conversations');
           const filteredMetrics = await calculateFilteredLiveMetrics(conversationIds);
           setLiveMetrics(filteredMetrics);
         } else if (hasActiveFilter && conversationIds.length === 0) {
-          // No conversations in filter range - show empty metrics
+          // No conversations in filter range - show empty metrics only for specific filters
           setLiveMetrics(EMPTY_LIVE_METRICS);
         }
-        // NOTE: When no filter is active, live metrics are fetched by the dedicated useEffect
-        // that handles realtime subscription - no duplicate call needed here
+        // NOTE: When no active filter (including default period), live metrics are fetched 
+        // by the dedicated useEffect that handles realtime subscription
 
         // Extract contact IDs from filtered conversations
         const contactPhones = conversations?.map(c => (c.contact as any)?.phone_number).filter(Boolean) || [];
@@ -1081,44 +1133,60 @@ export function useCommercialData(filter?: CommercialFilter) {
         const { data: evaluations } = await evaluationsQuery;
 
         // Build agent analysis with real evaluation data
-        const agentsAnalysis: AgentAnalysis[] = agents?.map(agent => {
-          const stats = agentStats[agent.id] || { conversations: 0, closed: 0 };
-          
-          const agentEvaluations = evaluations?.filter(e => {
-            const convIds = conversations?.filter(c => c.assigned_user_id === agent.id).map(c => c.id) || [];
-            return convIds.includes(e.conversation_id);
-          }) || [];
+        // Priority: 1) Calculate from current data if filter active, 2) Use persisted rankings from DB if available and no filter, 3) Calculate fresh
+        let agentsAnalysis: AgentAnalysis[];
+        
+        const hasPersistedRankings = aggregatedInsights.agent_rankings && aggregatedInsights.agent_rankings.length > 0;
+        const shouldUsePersistedRankings = !hasActiveFilter && hasPersistedRankings;
+        
+        if (shouldUsePersistedRankings) {
+          // Use persisted rankings from aggregated_insights (updated by commercial-pixel)
+          console.log('📊 [useCommercialData] Using persisted agent_rankings from DB:', aggregatedInsights.agent_rankings!.length, 'agents');
+          agentsAnalysis = aggregatedInsights.agent_rankings!;
+        } else {
+          // Calculate fresh from conversations and evaluations
+          console.log('📊 [useCommercialData] Calculating agent rankings from conversations/evaluations');
+          agentsAnalysis = agents?.map(agent => {
+            const stats = agentStats[agent.id] || { conversations: 0, closed: 0 };
+            
+            const agentEvaluations = evaluations?.filter(e => {
+              const convIds = conversations?.filter(c => c.assigned_user_id === agent.id).map(c => c.id) || [];
+              return convIds.includes(e.conversation_id);
+            }) || [];
 
-          let score: number;
-          if (agentEvaluations.length > 0) {
-            const totalScore = agentEvaluations.reduce((sum, e) => sum + (e.overall_score || 0), 0);
-            score = Math.round((totalScore / agentEvaluations.length) * 10) / 10;
-          } else {
-            score = stats.conversations > 0 
-              ? Math.round((stats.closed / stats.conversations) * 10 * 10) / 10 
-              : 0;
-          }
-          
-          const level: AgentAnalysis['level'] = 
-            score >= 8.5 ? 'senior' : 
-            score >= 7.0 ? 'pleno' : 'junior';
-          
-          const recommendation: AgentAnalysis['recommendation'] = 
-            score >= 8.5 ? 'promover' :
-            score >= 7.0 ? 'manter' :
-            score >= 6.0 ? 'treinar' :
-            score >= 5.0 ? 'monitorar' : 'ação corretiva';
+            let score: number;
+            if (agentEvaluations.length > 0) {
+              const totalScore = agentEvaluations.reduce((sum, e) => sum + (e.overall_score || 0), 0);
+              score = Math.round((totalScore / agentEvaluations.length) * 10) / 10;
+            } else {
+              score = stats.conversations > 0 
+                ? Math.round((stats.closed / stats.conversations) * 10 * 10) / 10 
+                : 0;
+            }
+            
+            const level: AgentAnalysis['level'] = 
+              score >= 8.5 ? 'senior' : 
+              score >= 7.0 ? 'pleno' : 'junior';
+            
+            const recommendation: AgentAnalysis['recommendation'] = 
+              score >= 8.5 ? 'promover' :
+              score >= 7.0 ? 'manter' :
+              score >= 6.0 ? 'treinar' :
+              score >= 5.0 ? 'monitorar' : 'ação corretiva';
 
-          return {
-            id: agent.id,
-            name: agent.full_name,
-            avatar_url: agent.avatar_url || undefined,
-            level,
-            score,
-            conversations: stats.conversations,
-            recommendation,
-          };
-        }).filter(a => a.conversations > 0).sort((a, b) => b.score - a.score) || [];
+            return {
+              id: agent.id,
+              name: agent.full_name,
+              avatar_url: agent.avatar_url || undefined,
+              level,
+              score,
+              conversations: stats.conversations,
+              recommendation,
+            };
+          }).filter(a => a.conversations > 0).sort((a, b) => b.score - a.score) || [];
+        }
+        
+        console.log('📊 [useCommercialData] Final agentsAnalysis:', agentsAnalysis.length, 'agents');
 
         // Calculate overall metrics
         const totalConversations = conversations?.length || 0;
@@ -1126,9 +1194,12 @@ export function useCommercialData(filter?: CommercialFilter) {
           ? Math.round((closedDealsFromAI / totalConversations) * 100 * 10) / 10 
           : 0;
 
-        // Use aggregated insights from realtime if available and no filter active
-        // When filter is active, calculate from filtered evaluations only
-        const useAggregatedInsights = !hasActiveFilter && aggregatedInsights.average_score > 0;
+        // Use aggregated insights from realtime if available and no CONNECTION filter active
+        // Date filter alone should still use aggregated insights from DB
+        // Check for rich insights content, not just average_score (which may be 0 initially)
+        const hasRichInsights = (aggregatedInsights.strengths?.length > 0) || 
+                                (aggregatedInsights.final_recommendation?.length > 0);
+        const useAggregatedInsights = !hasActiveFilterForInsights && hasRichInsights;
         
         let averageScore: number;
         let criteriaScores: CriteriaScores;

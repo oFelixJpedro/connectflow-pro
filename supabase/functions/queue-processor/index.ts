@@ -407,6 +407,12 @@ async function processMediaMessage(
 // SPLIT RESPONSE INTO HUMANIZED MESSAGES
 // ═══════════════════════════════════════════════════════════════════
 function splitResponse(text: string): string[] {
+  // Validação para evitar crash se text for undefined/null
+  if (!text || typeof text !== 'string') {
+    console.warn('[splitResponse] Received invalid input:', typeof text, text);
+    return [];
+  }
+  
   const parts: string[] = []
   
   // Split by sentences first

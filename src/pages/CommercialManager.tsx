@@ -125,7 +125,7 @@ export default function CommercialManager() {
         endDate = endOfDay(subDays(now, 1));
         break;
       case 'week':
-        startDate = startOfWeek(now, { weekStartsOn: 1 });
+        startDate = startOfDay(subDays(now, 6)); // Últimos 7 dias (6 dias atrás + hoje)
         endDate = endOfDay(now);
         break;
       case 'month':

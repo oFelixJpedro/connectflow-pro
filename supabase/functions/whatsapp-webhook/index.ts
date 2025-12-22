@@ -504,6 +504,32 @@ async function processAIBatchImmediate(batchData: any, batchKey: string, redisCl
       return;
     }
     
+    // ═══════════════════════════════════════════════════════════════════════════════
+    // 🛑 CHECK CONVERSATION-LEVEL DEACTIVATION BEFORE PROCESSING
+    // ═══════════════════════════════════════════════════════════════════════════════
+    const { data: conversationState } = await supabase
+      .from('ai_conversation_states')
+      .select('status, paused_until')
+      .eq('conversation_id', conversationId)
+      .single();
+    
+    if (conversationState) {
+      const now = new Date();
+      const pausedUntil = conversationState.paused_until ? new Date(conversationState.paused_until) : null;
+      
+      // Check if permanently deactivated
+      if (conversationState.status === 'deactivated_permanently') {
+        console.log(`🛑 [IMMEDIATE-BATCH] Conversation ${conversationId} is permanently deactivated - ABORTING`);
+        return;
+      }
+      
+      // Check if paused and still within pause period
+      if (conversationState.status === 'paused' && pausedUntil && pausedUntil > now) {
+        console.log(`⏸️ [IMMEDIATE-BATCH] Conversation ${conversationId} is paused until ${pausedUntil.toISOString()} - ABORTING`);
+        return;
+      }
+    }
+    
     // Call AI agent process function with batch of messages
     const aiProcessUrl = `${supabaseUrl}/functions/v1/ai-agent-process`;
     
@@ -574,6 +600,20 @@ async function processAIBatchImmediate(batchData: any, batchKey: string, redisCl
     for (let i = 0; i < responseParts.length; i++) {
       const part = responseParts[i];
       const partKey = `${responseId}:part:${i}`;
+      
+      // ═══════════════════════════════════════════════════════════════════════════════
+      // 🛑 RE-CHECK DEACTIVATION BEFORE EACH MESSAGE SEND
+      // ═══════════════════════════════════════════════════════════════════════════════
+      const { data: currentState } = await supabase
+        .from('ai_conversation_states')
+        .select('status')
+        .eq('conversation_id', conversationId)
+        .single();
+      
+      if (currentState?.status === 'deactivated_permanently') {
+        console.log(`🛑 [IMMEDIATE-BATCH] Conversation was deactivated during processing - ABORTING remaining sends`);
+        break;
+      }
       
       // ═══════════════════════════════════════════════════════════════════════════════
       // 🔒 SPLIT TRACKING - Prevent duplicate sending of same part
@@ -674,32 +714,39 @@ async function processAIBatchImmediate(batchData: any, batchKey: string, redisCl
         }
       }
       
-      // Save to database
+      // Save to database ALWAYS (even without whatsappMessageId)
+      const messageInsertResult = await supabase
+        .from('messages')
+        .insert({
+          conversation_id: conversationId,
+          direction: 'outbound',
+          sender_type: 'bot',
+          sender_id: null,
+          content: messageType === 'audio' ? aiResponse : part,
+          message_type: messageType,
+          media_url: mediaUrl,
+          whatsapp_message_id: whatsappMessageId || `pending-${Date.now()}-${i}`,
+          status: whatsappMessageId ? 'sent' : 'pending',
+          metadata: {
+            aiGenerated: true,
+            batchProcessed: true,
+            partIndex: i + 1,
+            totalParts: responseParts.length,
+            immediateProcessing: true,
+            pendingWhatsAppId: !whatsappMessageId,
+          },
+        });
+      
+      if (messageInsertResult.error) {
+        console.error(`❌ [IMMEDIATE-BATCH] Error saving message to DB:`, messageInsertResult.error);
+      } else {
+        console.log(`💾 [IMMEDIATE-BATCH] Message saved to DB (whatsappId: ${whatsappMessageId || 'pending'})`);
+      }
+      
+      // ═══════════════════════════════════════════════════════════════════════════════
+      // ✅ MARK PART AS SENT in Redis to prevent duplicate sends
+      // ═══════════════════════════════════════════════════════════════════════════════
       if (whatsappMessageId) {
-        await supabase
-          .from('messages')
-          .insert({
-            conversation_id: conversationId,
-            direction: 'outbound',
-            sender_type: 'bot',
-            sender_id: null,
-            content: messageType === 'audio' ? aiResponse : part,
-            message_type: messageType,
-            media_url: mediaUrl,
-            whatsapp_message_id: whatsappMessageId,
-            status: 'sent',
-            metadata: {
-              aiGenerated: true,
-              batchProcessed: true,
-              partIndex: i + 1,
-              totalParts: responseParts.length,
-              immediateProcessing: true,
-            },
-          });
-        
-        // ═══════════════════════════════════════════════════════════════════════════════
-        // ✅ MARK PART AS SENT in Redis to prevent duplicate sends
-        // ═══════════════════════════════════════════════════════════════════════════════
         try {
           await redisClient.setex(partKey, 300, 'sent'); // TTL 5 minutes
           console.log(`✅ [SPLIT-TRACK] Part ${i + 1}/${responseParts.length} marked as sent`);
@@ -925,6 +972,12 @@ async function processAIBatchImmediate(batchData: any, batchKey: string, redisCl
 
 // Helper to split response into humanized messages
 function splitResponse(text: string): string[] {
+  // Validação para evitar crash se text for undefined/null
+  if (!text || typeof text !== 'string') {
+    console.warn('[splitResponse] Received invalid input:', typeof text, text);
+    return [];
+  }
+  
   const parts: string[] = [];
   const sentences = text.split(/(?<=[.!?])\s+/);
   let currentPart = '';

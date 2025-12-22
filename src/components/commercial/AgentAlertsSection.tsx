@@ -180,7 +180,7 @@ export function AgentAlertsSection({
       </CardHeader>
       <CardContent className="p-0">
         <ScrollArea 
-          className="max-h-[400px]" 
+          className="h-[400px]" 
           ref={scrollRef}
           onScrollCapture={handleScroll}
         >

@@ -251,15 +251,25 @@ export function InsightsCard({
       </div>
 
       {/* Critical Issues */}
-      {criticalIssues.length > 0 && (
-        <Card className="border-destructive/50 bg-destructive/5">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-lg flex items-center gap-2 text-destructive">
-              <AlertCircle className="w-5 h-5" />
-              Problemas Críticos
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
+      <Card className={cn(
+        "border-destructive/50",
+        criticalIssues.length > 0 ? "bg-destructive/5" : ""
+      )}>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-lg flex items-center gap-2 text-destructive">
+            <AlertCircle className="w-5 h-5" />
+            Problemas Críticos
+            {insightsLoading && (
+              <span className="ml-2 text-xs text-muted-foreground animate-pulse">
+                Analisando...
+              </span>
+            )}
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {insightsLoading ? (
+            <InsightsSkeleton />
+          ) : (
             <div className="space-y-2">
               {criticalIssues.map((item, index) => (
                 <div 
@@ -270,10 +280,13 @@ export function InsightsCard({
                   <span className="text-sm font-medium text-destructive">{item}</span>
                 </div>
               ))}
+              {criticalIssues.length === 0 && (
+                <p className="text-muted-foreground text-sm">Nenhum problema crítico identificado</p>
+              )}
             </div>
-          </CardContent>
-        </Card>
-      )}
+          )}
+        </CardContent>
+      </Card>
 
       {/* Insights and Recommendations */}
       <Card>
