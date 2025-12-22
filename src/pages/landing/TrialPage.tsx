@@ -11,9 +11,11 @@ import {
   Users, 
   Clock,
   Shield,
-  Zap
+  Zap,
+  Loader2
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { supabase } from '@/integrations/supabase/client';
 
 const benefits = [
   { icon: MessageSquare, text: '1 Conexão WhatsApp inclusa' },
@@ -33,26 +35,67 @@ export default function TrialPage() {
     password: '',
   });
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
   const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
-    
-    // TODO: Implement trial registration with Supabase
-    // This will create a new company with trial status
-    
-    toast({
-      title: 'Conta criada com sucesso!',
-      description: 'Redirecionando para o dashboard...',
-    });
-    
-    // Simulate API call
-    setTimeout(() => {
+    setError(null);
+
+    try {
+      // Validate password length
+      if (formData.password.length < 8) {
+        setError('A senha deve ter pelo menos 8 caracteres');
+        setIsLoading(false);
+        return;
+      }
+
+      // Call register edge function
+      const { data, error: registerError } = await supabase.functions.invoke('register', {
+        body: {
+          email: formData.email,
+          password: formData.password,
+          fullName: formData.name,
+          companyName: formData.companyName,
+        }
+      });
+
+      if (registerError) {
+        console.error('Registration error:', registerError);
+        setError(registerError.message || 'Erro ao criar conta. Tente novamente.');
+        setIsLoading(false);
+        return;
+      }
+
+      if (data?.error) {
+        setError(data.error);
+        setIsLoading(false);
+        return;
+      }
+
+      toast({
+        title: 'Conta criada com sucesso!',
+        description: 'Redirecionando para o login...',
+      });
+
+      // Redirect to auth page after successful registration
+      setTimeout(() => {
+        navigate('/auth', { 
+          state: { 
+            message: 'Conta criada! Faça login para começar.',
+            email: formData.email 
+          } 
+        });
+      }, 1500);
+
+    } catch (err) {
+      console.error('Unexpected error:', err);
+      setError('Erro inesperado. Tente novamente.');
+    } finally {
       setIsLoading(false);
-      navigate('/auth');
-    }, 2000);
+    }
   };
 
   return (
@@ -106,6 +149,12 @@ export default function TrialPage() {
               Criar conta gratuita
             </h2>
             
+            {error && (
+              <div className="mb-4 p-3 bg-destructive/10 border border-destructive/20 rounded-lg text-destructive text-sm">
+                {error}
+              </div>
+            )}
+            
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
                 <Label htmlFor="companyName">Nome da empresa</Label>
@@ -115,6 +164,7 @@ export default function TrialPage() {
                   value={formData.companyName}
                   onChange={(e) => setFormData({ ...formData, companyName: e.target.value })}
                   required
+                  disabled={isLoading}
                 />
               </div>
               
@@ -126,6 +176,7 @@ export default function TrialPage() {
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                   required
+                  disabled={isLoading}
                 />
               </div>
               
@@ -138,6 +189,7 @@ export default function TrialPage() {
                   value={formData.email}
                   onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                   required
+                  disabled={isLoading}
                 />
               </div>
               
@@ -150,6 +202,7 @@ export default function TrialPage() {
                   value={formData.phone}
                   onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                   required
+                  disabled={isLoading}
                 />
               </div>
               
@@ -163,6 +216,7 @@ export default function TrialPage() {
                   onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                   required
                   minLength={8}
+                  disabled={isLoading}
                 />
               </div>
               
@@ -172,8 +226,17 @@ export default function TrialPage() {
                 size="lg"
                 disabled={isLoading}
               >
-                {isLoading ? 'Criando conta...' : 'Começar teste grátis'}
-                <ArrowRight className="ml-2 w-5 h-5" />
+                {isLoading ? (
+                  <>
+                    <Loader2 className="mr-2 w-5 h-5 animate-spin" />
+                    Criando conta...
+                  </>
+                ) : (
+                  <>
+                    Começar teste grátis
+                    <ArrowRight className="ml-2 w-5 h-5" />
+                  </>
+                )}
               </Button>
               
               <p className="text-xs text-center text-muted-foreground">

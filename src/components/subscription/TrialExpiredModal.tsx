@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   AlertDialog,
   AlertDialogContent,
@@ -18,16 +19,22 @@ import {
 interface TrialExpiredModalProps {
   open: boolean;
   companyName: string;
-  onSubscribe: () => void;
+  onSubscribe?: () => void;
 }
 
 export function TrialExpiredModal({ open, companyName, onSubscribe }: TrialExpiredModalProps) {
   const [isLoading, setIsLoading] = useState(false);
+  const navigate = useNavigate();
 
   const handleSubscribe = async () => {
     setIsLoading(true);
     try {
-      onSubscribe();
+      if (onSubscribe) {
+        onSubscribe();
+      } else {
+        // Default: redirect to pricing page
+        navigate('/pricing');
+      }
     } finally {
       setIsLoading(false);
     }
