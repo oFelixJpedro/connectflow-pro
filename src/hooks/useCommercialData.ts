@@ -619,9 +619,9 @@ export function useCommercialData(filter?: CommercialFilter) {
         return EMPTY_LIVE_METRICS;
       }
 
-      // Count lead statuses
+      // Count lead statuses (include 'warming' in warm leads count)
       const hotLeads = metrics.filter(m => m.lead_status === 'hot').length;
-      const warmLeads = metrics.filter(m => m.lead_status === 'warm').length;
+      const warmLeads = metrics.filter(m => m.lead_status === 'warm' || m.lead_status === 'warming').length;
       const coldLeads = metrics.filter(m => m.lead_status === 'cold').length;
       const closedWon = metrics.filter(m => m.lead_status === 'closed_won').length;
       const closedLost = metrics.filter(m => m.lead_status === 'closed_lost').length;
