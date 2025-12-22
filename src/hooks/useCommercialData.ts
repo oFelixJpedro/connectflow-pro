@@ -217,10 +217,13 @@ export function useCommercialData(filter?: CommercialFilter) {
   const [insightsCurrentStep, setInsightsCurrentStep] = useState('');
   
   // Track if filter is active to control realtime behavior
-  // Consider both connection filter AND date filter (non-default dates)
+  // Connection filter requires recalculating insights from scratch
+  // Date filter with default period should still use aggregated insights from DB
   const hasConnectionFilter = filter?.type === 'connection' && !!filter.connectionId;
   const hasDateFilter = !!(filter?.startDate && filter?.endDate);
   const hasActiveFilter = hasConnectionFilter || hasDateFilter;
+  // For insights, only connection filter requires recalculation - date filter uses cached DB insights
+  const hasActiveFilterForInsights = hasConnectionFilter;
   const filterRef = useRef(filter);
   filterRef.current = filter;
   
@@ -1126,9 +1129,12 @@ export function useCommercialData(filter?: CommercialFilter) {
           ? Math.round((closedDealsFromAI / totalConversations) * 100 * 10) / 10 
           : 0;
 
-        // Use aggregated insights from realtime if available and no filter active
-        // When filter is active, calculate from filtered evaluations only
-        const useAggregatedInsights = !hasActiveFilter && aggregatedInsights.average_score > 0;
+        // Use aggregated insights from realtime if available and no CONNECTION filter active
+        // Date filter alone should still use aggregated insights from DB
+        // Check for rich insights content, not just average_score (which may be 0 initially)
+        const hasRichInsights = (aggregatedInsights.strengths?.length > 0) || 
+                                (aggregatedInsights.final_recommendation?.length > 0);
+        const useAggregatedInsights = !hasActiveFilterForInsights && hasRichInsights;
         
         let averageScore: number;
         let criteriaScores: CriteriaScores;
