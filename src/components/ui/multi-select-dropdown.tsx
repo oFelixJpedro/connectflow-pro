@@ -35,6 +35,24 @@ interface MultiSelectDropdownProps {
   maxDisplay?: number;
 }
 
+// Convert hex color to pastel version
+function toPastelColor(hexColor: string): { background: string; text: string } {
+  const hex = hexColor.replace('#', '');
+  const r = parseInt(hex.substr(0, 2), 16) || 128;
+  const g = parseInt(hex.substr(2, 2), 16) || 128;
+  const b = parseInt(hex.substr(4, 2), 16) || 128;
+  
+  // Mix with white (30% original, 70% white) for pastel effect
+  const pastelR = Math.round(r * 0.3 + 255 * 0.7);
+  const pastelG = Math.round(g * 0.3 + 255 * 0.7);
+  const pastelB = Math.round(b * 0.3 + 255 * 0.7);
+  
+  return {
+    background: `rgb(${pastelR}, ${pastelG}, ${pastelB})`,
+    text: hexColor,
+  };
+}
+
 export function MultiSelectDropdown({
   options,
   values,
@@ -63,11 +81,6 @@ export function MultiSelectDropdown({
     onChange(values.filter((v) => v !== optionValue));
   };
 
-  const handleClearAll = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    onChange([]);
-  };
-
   return (
     <div className="space-y-2">
       <Popover open={open} onOpenChange={setOpen}>
@@ -90,15 +103,7 @@ export function MultiSelectDropdown({
                 ? selectedOptions[0]?.label
                 : `${values.length} selecionados`}
             </span>
-            <div className="flex items-center gap-1 shrink-0">
-              {values.length > 0 && (
-                <X
-                  className="h-3.5 w-3.5 opacity-50 hover:opacity-100"
-                  onClick={handleClearAll}
-                />
-              )}
-              <ChevronsUpDown className="h-4 w-4 shrink-0 opacity-50" />
-            </div>
+            <ChevronsUpDown className="h-4 w-4 shrink-0 opacity-50" />
           </Button>
         </PopoverTrigger>
         <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
@@ -134,23 +139,26 @@ export function MultiSelectDropdown({
         </PopoverContent>
       </Popover>
 
-      {/* Selected badges */}
+      {/* Selected badges with pastel colors */}
       {selectedOptions.length > 0 && (
         <div className="flex flex-wrap gap-1">
-          {selectedOptions.slice(0, maxDisplay).map((option) => (
-            <Badge
-              key={option.value}
-              variant="secondary"
-              className="text-xs px-2 py-0.5 gap-1"
-              style={option.color ? { backgroundColor: option.color, color: '#000' } : undefined}
-            >
-              {option.label}
-              <X
-                className="h-3 w-3 cursor-pointer hover:opacity-70"
-                onClick={(e) => handleRemove(option.value, e)}
-              />
-            </Badge>
-          ))}
+          {selectedOptions.slice(0, maxDisplay).map((option) => {
+            const pastelStyle = option.color ? toPastelColor(option.color) : null;
+            return (
+              <Badge
+                key={option.value}
+                variant="secondary"
+                className="text-xs px-2 py-0.5 gap-1"
+                style={pastelStyle ? { backgroundColor: pastelStyle.background, color: pastelStyle.text } : undefined}
+              >
+                {option.label}
+                <X
+                  className="h-3 w-3 cursor-pointer hover:opacity-70"
+                  onClick={(e) => handleRemove(option.value, e)}
+                />
+              </Badge>
+            );
+          })}
           {selectedOptions.length > maxDisplay && (
             <Badge variant="outline" className="text-xs px-2 py-0.5">
               +{selectedOptions.length - maxDisplay}
