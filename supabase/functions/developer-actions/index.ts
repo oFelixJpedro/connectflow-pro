@@ -115,10 +115,16 @@ serve(async (req) => {
         owner_name,
         owner_email,
         owner_password,
-        force_password_change 
+        force_password_change,
+        // New limit fields
+        max_connections,
+        max_users,
+        max_ai_agents,
+        commercial_manager_enabled,
+        subscription_status
       } = params;
 
-      // 1. Create company
+      // 1. Create company with limit fields
       const { data: company, error: companyError } = await supabase
         .from('companies')
         .insert([{
@@ -126,7 +132,12 @@ serve(async (req) => {
           slug: slug,
           plan: plan,
           trial_ends_at: trial_ends_at,
-          active: true
+          active: true,
+          max_connections: max_connections ?? 1,
+          max_users: max_users ?? null,
+          max_ai_agents: max_ai_agents ?? null,
+          commercial_manager_enabled: commercial_manager_enabled ?? false,
+          subscription_status: subscription_status ?? 'trial'
         }])
         .select()
         .single();
@@ -203,7 +214,12 @@ serve(async (req) => {
         company_name,
         slug,
         plan,
-        owner_email
+        owner_email,
+        max_connections,
+        max_users,
+        max_ai_agents,
+        commercial_manager_enabled,
+        subscription_status
       });
 
       return new Response(
@@ -660,15 +676,25 @@ serve(async (req) => {
           .eq('id', permission_request_id);
       }
 
+      // Build update object with all fields including new limit fields
+      const updateData: Record<string, any> = {
+        updated_at: new Date().toISOString()
+      };
+
+      // Only update fields that are provided
+      if (updates.name !== undefined) updateData.name = updates.name;
+      if (updates.plan !== undefined) updateData.plan = updates.plan;
+      if (updates.active !== undefined) updateData.active = updates.active;
+      if (updates.trial_ends_at !== undefined) updateData.trial_ends_at = updates.trial_ends_at;
+      if (updates.max_connections !== undefined) updateData.max_connections = updates.max_connections;
+      if (updates.max_users !== undefined) updateData.max_users = updates.max_users;
+      if (updates.max_ai_agents !== undefined) updateData.max_ai_agents = updates.max_ai_agents;
+      if (updates.commercial_manager_enabled !== undefined) updateData.commercial_manager_enabled = updates.commercial_manager_enabled;
+      if (updates.subscription_status !== undefined) updateData.subscription_status = updates.subscription_status;
+
       const { error } = await supabase
         .from('companies')
-        .update({
-          name: updates.name,
-          plan: updates.plan,
-          active: updates.active,
-          trial_ends_at: updates.trial_ends_at,
-          updated_at: new Date().toISOString()
-        })
+        .update(updateData)
         .eq('id', company_id);
 
       if (error) {
