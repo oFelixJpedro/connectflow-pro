@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, ReactNode, useCallback } from 'react';
+import { createContext, useContext, useEffect, useState, ReactNode, useCallback, useRef } from 'react';
 import { User, Session, RealtimeChannel } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import type { Tables } from '@/integrations/supabase/types';
@@ -6,6 +6,13 @@ import type { Tables } from '@/integrations/supabase/types';
 type Profile = Tables<'profiles'>;
 type Company = Tables<'companies'>;
 type UserRole = Tables<'user_roles'>;
+
+interface SubscriptionState {
+  subscribed: boolean;
+  productId: string | null;
+  subscriptionEnd: string | null;
+  lastChecked: Date | null;
+}
 
 interface AuthContextType {
   user: User | null;
@@ -16,14 +23,19 @@ interface AuthContextType {
   loading: boolean;
   needsPasswordChange: boolean;
   teamProfiles: Profile[];
+  subscription: SubscriptionState;
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
   updateProfile: (updates: Partial<Profile>) => Promise<{ error: Error | null }>;
   updateCompany: (updates: Partial<Company>) => Promise<{ error: Error | null }>;
   clearPasswordChangeFlag: () => void;
+  checkSubscription: () => Promise<void>;
+  refreshCompany: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+const SUBSCRIPTION_CHECK_INTERVAL = 60000; // 60 seconds
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -34,6 +46,61 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [needsPasswordChange, setNeedsPasswordChange] = useState(false);
   const [teamProfiles, setTeamProfiles] = useState<Profile[]>([]);
+  const [subscription, setSubscription] = useState<SubscriptionState>({
+    subscribed: false,
+    productId: null,
+    subscriptionEnd: null,
+    lastChecked: null,
+  });
+  
+  const subscriptionIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Check subscription status via Stripe
+  const checkSubscription = useCallback(async () => {
+    if (!session) return;
+
+    try {
+      console.log('[AuthContext] Checking subscription status...');
+      const { data, error } = await supabase.functions.invoke('check-subscription');
+      
+      if (error) {
+        console.error('[AuthContext] Subscription check error:', error);
+        return;
+      }
+
+      if (data) {
+        setSubscription({
+          subscribed: data.subscribed || false,
+          productId: data.product_id || null,
+          subscriptionEnd: data.subscription_end || null,
+          lastChecked: new Date(),
+        });
+        console.log('[AuthContext] Subscription status updated:', data);
+      }
+    } catch (err) {
+      console.error('[AuthContext] Subscription check failed:', err);
+    }
+  }, [session]);
+
+  // Refresh company data from database
+  const refreshCompany = useCallback(async () => {
+    if (!profile?.company_id) return;
+
+    try {
+      const { data: companyData, error } = await supabase
+        .from('companies')
+        .select('*')
+        .eq('id', profile.company_id)
+        .single();
+
+      if (!error && companyData) {
+        setCompany(companyData as Company);
+        console.log('[AuthContext] Company data refreshed');
+      }
+    } catch (err) {
+      console.error('[AuthContext] Company refresh failed:', err);
+    }
+  }, [profile?.company_id]);
 
   // Load team profiles
   const loadTeamProfiles = useCallback(async (companyId: string) => {
@@ -48,9 +115,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  // Start periodic subscription check
+  useEffect(() => {
+    if (session && profile) {
+      // Initial subscription check
+      checkSubscription();
+      
+      // Set up periodic check
+      subscriptionIntervalRef.current = setInterval(() => {
+        checkSubscription();
+        refreshCompany(); // Also refresh company data to get latest subscription_status
+      }, SUBSCRIPTION_CHECK_INTERVAL);
+    }
+
+    return () => {
+      if (subscriptionIntervalRef.current) {
+        clearInterval(subscriptionIntervalRef.current);
+        subscriptionIntervalRef.current = null;
+      }
+    };
+  }, [session, profile, checkSubscription, refreshCompany]);
+
   useEffect(() => {
     // Set up auth state listener FIRST
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+    const { data: { subscription: authSubscription } } = supabase.auth.onAuthStateChange(
       (event, session) => {
         console.log('[AuthContext] Auth state changed:', event);
         
@@ -63,6 +151,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setCompany(null);
           setUserRole(null);
           setTeamProfiles([]);
+          setSubscription({
+            subscribed: false,
+            productId: null,
+            subscriptionEnd: null,
+            lastChecked: null,
+          });
           setLoading(false);
           return;
         }
@@ -96,7 +190,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     });
 
-    return () => subscription.unsubscribe();
+    return () => authSubscription.unsubscribe();
   }, []);
 
   // Realtime subscription for team profiles
@@ -138,6 +232,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       supabase.removeChannel(channel);
     };
   }, [profile?.company_id, profile?.id, loadTeamProfiles]);
+
+  // Realtime subscription for company updates
+  useEffect(() => {
+    if (!company?.id) return;
+
+    const channel = supabase
+      .channel(`company-${company.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'companies',
+          filter: `id=eq.${company.id}`,
+        },
+        (payload) => {
+          const updatedCompany = payload.new as Company;
+          console.log('[AuthContext] Company updated via realtime:', updatedCompany);
+          setCompany(updatedCompany);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [company?.id]);
 
   async function loadUserData(userId: string) {
     try {
@@ -212,6 +333,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setProfile(null);
     setCompany(null);
     setUserRole(null);
+    setSubscription({
+      subscribed: false,
+      productId: null,
+      subscriptionEnd: null,
+      lastChecked: null,
+    });
   }
 
   async function updateProfile(updates: Partial<Profile>) {
@@ -261,11 +388,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       loading,
       needsPasswordChange,
       teamProfiles,
+      subscription,
       signIn,
       signOut,
       updateProfile,
       updateCompany,
-      clearPasswordChangeFlag
+      clearPasswordChangeFlag,
+      checkSubscription,
+      refreshCompany,
     }}>
       {children}
     </AuthContext.Provider>

@@ -716,43 +716,58 @@ export type Database = {
       companies: {
         Row: {
           active: boolean | null
+          commercial_manager_enabled: boolean | null
           created_at: string | null
           id: string
           logo_url: string | null
+          max_ai_agents: number | null
+          max_connections: number | null
+          max_users: number | null
           name: string
           plan: Database["public"]["Enums"]["company_plan"] | null
           settings: Json | null
           slug: string
           stripe_customer_id: string | null
           stripe_subscription_id: string | null
+          subscription_status: string | null
           trial_ends_at: string | null
           updated_at: string | null
         }
         Insert: {
           active?: boolean | null
+          commercial_manager_enabled?: boolean | null
           created_at?: string | null
           id?: string
           logo_url?: string | null
+          max_ai_agents?: number | null
+          max_connections?: number | null
+          max_users?: number | null
           name: string
           plan?: Database["public"]["Enums"]["company_plan"] | null
           settings?: Json | null
           slug: string
           stripe_customer_id?: string | null
           stripe_subscription_id?: string | null
+          subscription_status?: string | null
           trial_ends_at?: string | null
           updated_at?: string | null
         }
         Update: {
           active?: boolean | null
+          commercial_manager_enabled?: boolean | null
           created_at?: string | null
           id?: string
           logo_url?: string | null
+          max_ai_agents?: number | null
+          max_connections?: number | null
+          max_users?: number | null
           name?: string
           plan?: Database["public"]["Enums"]["company_plan"] | null
           settings?: Json | null
           slug?: string
           stripe_customer_id?: string | null
           stripe_subscription_id?: string | null
+          subscription_status?: string | null
           trial_ends_at?: string | null
           updated_at?: string | null
         }
@@ -3012,7 +3027,16 @@ export type Database = {
     }
     Enums: {
       app_role: "owner" | "admin" | "supervisor" | "agent" | "viewer"
-      company_plan: "free" | "starter" | "professional" | "enterprise"
+      company_plan:
+        | "free"
+        | "starter"
+        | "professional"
+        | "enterprise"
+        | "monthly"
+        | "semiannual"
+        | "annual"
+        | "lifetime"
+        | "trial"
       connection_status:
         | "connected"
         | "disconnected"
@@ -3194,7 +3218,17 @@ export const Constants = {
   public: {
     Enums: {
       app_role: ["owner", "admin", "supervisor", "agent", "viewer"],
-      company_plan: ["free", "starter", "professional", "enterprise"],
+      company_plan: [
+        "free",
+        "starter",
+        "professional",
+        "enterprise",
+        "monthly",
+        "semiannual",
+        "annual",
+        "lifetime",
+        "trial",
+      ],
       connection_status: [
         "connected",
         "disconnected",
