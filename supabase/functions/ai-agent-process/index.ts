@@ -458,24 +458,29 @@ serve(async (req) => {
     // 🔒 IDEMPOTENCY CHECK
     // ═══════════════════════════════════════════════════════════════════════════════
     const messagesToProcess = isBatchRequest ? messages : [{ type: messageType || 'text', content: messageContent, mediaUrl }];
-    const idempotencyKey = createBatchHash(conversationId, messagesToProcess);
     
-    if (redis) {
-      try {
-        const alreadyProcessing = await redis.get(idempotencyKey);
-        if (alreadyProcessing) {
-          console.log(`🔒 [IDEMPOTENCY] Batch already being processed: ${idempotencyKey}`);
-          return new Response(
-            JSON.stringify({ success: true, skip: true, reason: 'Already processing this batch' }),
-            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-          );
+    // Store idempotency key in outer scope so we can release it in finally block
+    let currentIdempotencyKey: string | null = null;
+    
+    try {
+      currentIdempotencyKey = createBatchHash(conversationId, messagesToProcess);
+      
+      if (redis) {
+        try {
+          const alreadyProcessing = await redis.get(currentIdempotencyKey);
+          if (alreadyProcessing) {
+            console.log(`🔒 [IDEMPOTENCY] Batch already being processed: ${currentIdempotencyKey}`);
+            return new Response(
+              JSON.stringify({ success: true, skip: true, reason: 'Already processing this batch' }),
+              { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+            );
+          }
+          await redis.setex(currentIdempotencyKey, 300, 'processing');
+          console.log(`✅ [IDEMPOTENCY] Marked batch as processing: ${currentIdempotencyKey}`);
+        } catch (redisError) {
+          console.log('⚠️ [IDEMPOTENCY] Redis error, continuing anyway:', redisError);
         }
-        await redis.setex(idempotencyKey, 300, 'processing');
-        console.log(`✅ [IDEMPOTENCY] Marked batch as processing: ${idempotencyKey}`);
-      } catch (redisError) {
-        console.log('⚠️ [IDEMPOTENCY] Redis error, continuing anyway:', redisError);
       }
-    }
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -2506,8 +2511,27 @@ ${contextSummary}
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
 
+    } catch (error) {
+      console.error('❌ Erro fatal no ai-agent-process:', error);
+      return new Response(
+        JSON.stringify({ success: false, error: error instanceof Error ? error.message : 'Unknown error' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    } finally {
+      // 🔓 ALWAYS release idempotency lock when done (success or error)
+      if (redis && currentIdempotencyKey) {
+        try {
+          await redis.del(currentIdempotencyKey);
+          console.log(`🔓 [IDEMPOTENCY] Lock released: ${currentIdempotencyKey}`);
+        } catch (unlockError) {
+          console.error('⚠️ [IDEMPOTENCY] Error releasing lock:', unlockError);
+        }
+      }
+    }
+
   } catch (error) {
-    console.error('❌ Erro fatal no ai-agent-process:', error);
+    // Outer error handling for request parsing errors
+    console.error('❌ Erro fatal no ai-agent-process (outer):', error);
     return new Response(
       JSON.stringify({ success: false, error: error instanceof Error ? error.message : 'Unknown error' }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
