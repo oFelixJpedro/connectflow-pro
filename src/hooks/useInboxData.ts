@@ -3,6 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAppStore } from '@/stores/appStore';
 import { toast } from '@/hooks/use-toast';
+import { ALL_CONNECTIONS_ID } from '@/components/inbox/ConnectionSelector';
 import type { Conversation, Message, Contact, ConversationFilters, MessageReaction } from '@/types';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 
@@ -159,7 +160,8 @@ export function useInboxData() {
       return;
     }
 
-    console.log('[useInboxData] Carregando conversas para conexão:', selectedConnectionId);
+    const isAllConnections = selectedConnectionId === ALL_CONNECTIONS_ID;
+    console.log('[useInboxData] Carregando conversas para conexão:', selectedConnectionId, { isAllConnections });
     setIsLoadingConversations(true);
 
     try {
@@ -168,79 +170,109 @@ export function useInboxData() {
       let effectiveAccessLevel: 'full' | 'assigned_only' = 'full';
       let hasConnectionAccess = true;
       let allowedDepartmentIds: string[] | null = null; // null means all departments
+      let userConnectionIds: string[] = []; // List of connections the user has access to
 
-      if (!isAdminOrOwner && user?.id) {
-        // Check connection_users for this user - include department_access_mode
-        const { data: accessData } = await supabase
-          .from('connection_users')
-          .select('access_level, department_access_mode')
-          .eq('connection_id', selectedConnectionId)
-          .eq('user_id', user.id)
-          .maybeSingle();
-
-        if (accessData) {
-          // User has explicit assignment - use their access level
-          effectiveAccessLevel = (accessData.access_level as 'full' | 'assigned_only') || 'full';
-          
-          // Check department access mode
-          const deptAccessMode = (accessData as any).department_access_mode || 'all';
-          
-          if (deptAccessMode === 'none') {
-            // User explicitly has no department access - show no conversations
-            allowedDepartmentIds = [];
-          } else if (deptAccessMode === 'specific') {
-            // User has specific department access - check department_users
-            const { data: departmentAssignments } = await supabase
-              .from('department_users')
-              .select('department_id, departments!inner(whatsapp_connection_id)')
-              .eq('user_id', user.id);
-
-            // Filter to departments of current connection
-            const userDeptIds = (departmentAssignments || [])
-              .filter((da: any) => da.departments?.whatsapp_connection_id === selectedConnectionId)
-              .map((da: any) => da.department_id);
-
-            allowedDepartmentIds = userDeptIds.length > 0 ? userDeptIds : [];
-          }
-          // If deptAccessMode === 'all', allowedDepartmentIds stays null (all departments)
-        } else {
-          // User has no connection assignment - check if connection has ANY assignments
-          const { data: connectionAssignments } = await supabase
-            .from('connection_users')
+      if (isAllConnections) {
+        // Mode "All Connections" - get all connections user has access to
+        if (isAdminOrOwner) {
+          // Admin/Owner see all connected connections
+          const { data: allConnections } = await supabase
+            .from('whatsapp_connections')
             .select('id')
-            .eq('connection_id', selectedConnectionId)
-            .limit(1);
-
-          if (connectionAssignments && connectionAssignments.length > 0) {
-            // Connection has assignments but user is not in them - NO ACCESS
-            console.log('[useInboxData] Usuário sem acesso a esta conexão');
-            hasConnectionAccess = false;
-          }
-          // If connection has no assignments, allow full access (legacy behavior)
+            .eq('company_id', profile.company_id)
+            .eq('status', 'connected');
+          
+          userConnectionIds = (allConnections || []).map(c => c.id);
+        } else if (user?.id) {
+          // Agent/Viewer - only connections they have explicit access to
+          const { data: userAssignments } = await supabase
+            .from('connection_users')
+            .select('connection_id')
+            .eq('user_id', user.id);
+          
+          userConnectionIds = (userAssignments || []).map(a => a.connection_id);
         }
-      }
 
-      // If user doesn't have access, return empty and don't load conversations
-      if (!hasConnectionAccess) {
-        setAccessLevel('full');
-        setCurrentAccessLevel('full');
-        setConversations([]);
-        setIsLoadingConversations(false);
-        toast({
-          title: 'Sem acesso',
-          description: 'Você não tem permissão para acessar esta conexão.',
-          variant: 'destructive',
-        });
-        return;
-      }
+        if (userConnectionIds.length === 0) {
+          setConversations([]);
+          setIsLoadingConversations(false);
+          return;
+        }
+      } else {
+        // Single connection mode - original logic
+        if (!isAdminOrOwner && user?.id) {
+          // Check connection_users for this user - include department_access_mode
+          const { data: accessData } = await supabase
+            .from('connection_users')
+            .select('access_level, department_access_mode')
+            .eq('connection_id', selectedConnectionId)
+            .eq('user_id', user.id)
+            .maybeSingle();
 
-      // If user has no allowed departments, return empty
-      if (allowedDepartmentIds !== null && allowedDepartmentIds.length === 0) {
-        setAccessLevel(effectiveAccessLevel);
-        setCurrentAccessLevel(effectiveAccessLevel);
-        setConversations([]);
-        setIsLoadingConversations(false);
-        return;
+          if (accessData) {
+            // User has explicit assignment - use their access level
+            effectiveAccessLevel = (accessData.access_level as 'full' | 'assigned_only') || 'full';
+            
+            // Check department access mode
+            const deptAccessMode = (accessData as any).department_access_mode || 'all';
+            
+            if (deptAccessMode === 'none') {
+              // User explicitly has no department access - show no conversations
+              allowedDepartmentIds = [];
+            } else if (deptAccessMode === 'specific') {
+              // User has specific department access - check department_users
+              const { data: departmentAssignments } = await supabase
+                .from('department_users')
+                .select('department_id, departments!inner(whatsapp_connection_id)')
+                .eq('user_id', user.id);
+
+              // Filter to departments of current connection
+              const userDeptIds = (departmentAssignments || [])
+                .filter((da: any) => da.departments?.whatsapp_connection_id === selectedConnectionId)
+                .map((da: any) => da.department_id);
+
+              allowedDepartmentIds = userDeptIds.length > 0 ? userDeptIds : [];
+            }
+            // If deptAccessMode === 'all', allowedDepartmentIds stays null (all departments)
+          } else {
+            // User has no connection assignment - check if connection has ANY assignments
+            const { data: connectionAssignments } = await supabase
+              .from('connection_users')
+              .select('id')
+              .eq('connection_id', selectedConnectionId)
+              .limit(1);
+
+            if (connectionAssignments && connectionAssignments.length > 0) {
+              // Connection has assignments but user is not in them - NO ACCESS
+              console.log('[useInboxData] Usuário sem acesso a esta conexão');
+              hasConnectionAccess = false;
+            }
+            // If connection has no assignments, allow full access (legacy behavior)
+          }
+        }
+
+        // If user doesn't have access, return empty and don't load conversations
+        if (!hasConnectionAccess) {
+          setAccessLevel('full');
+          setCurrentAccessLevel('full');
+          setConversations([]);
+          setIsLoadingConversations(false);
+          toast({
+            title: 'Sem acesso',
+            description: 'Você não tem permissão para acessar esta conexão.',
+            variant: 'destructive',
+          });
+          return;
+        }
+
+        // If user has no allowed departments, return empty
+        if (allowedDepartmentIds !== null && allowedDepartmentIds.length === 0) {
+          setAccessLevel(effectiveAccessLevel);
+          setCurrentAccessLevel(effectiveAccessLevel);
+          setConversations([]);
+          setIsLoadingConversations(false);
+          return;
+        }
       }
 
       setAccessLevel(effectiveAccessLevel);
@@ -263,8 +295,14 @@ export function useInboxData() {
             color,
             is_default
           )
-        `)
-        .eq('whatsapp_connection_id', selectedConnectionId);
+        `);
+
+      // Apply connection filter
+      if (isAllConnections) {
+        query = query.in('whatsapp_connection_id', userConnectionIds);
+      } else {
+        query = query.eq('whatsapp_connection_id', selectedConnectionId);
+      }
 
       // Apply department filter if user has restricted access
       if (allowedDepartmentIds !== null && allowedDepartmentIds.length > 0) {
@@ -392,13 +430,47 @@ export function useInboxData() {
       return;
     }
 
+    const isAllConnections = selectedConnectionId === ALL_CONNECTIONS_ID;
+
     try {
-      // Query ALL conversations for this connection (no tab filter, no closed)
-      const { data, error } = await supabase
+      let query = supabase
         .from('conversations')
-        .select('id, assigned_user_id, unread_count, metadata')
-        .eq('whatsapp_connection_id', selectedConnectionId)
+        .select('id, assigned_user_id, unread_count, metadata, whatsapp_connection_id')
         .neq('status', 'closed');
+
+      if (isAllConnections) {
+        // Get user's accessible connections
+        const isAdminOrOwner = userRole?.role === 'owner' || userRole?.role === 'admin';
+        let userConnectionIds: string[] = [];
+
+        if (isAdminOrOwner) {
+          const { data: allConnections } = await supabase
+            .from('whatsapp_connections')
+            .select('id')
+            .eq('company_id', profile.company_id)
+            .eq('status', 'connected');
+          
+          userConnectionIds = (allConnections || []).map(c => c.id);
+        } else if (user?.id) {
+          const { data: userAssignments } = await supabase
+            .from('connection_users')
+            .select('connection_id')
+            .eq('user_id', user.id);
+          
+          userConnectionIds = (userAssignments || []).map(a => a.connection_id);
+        }
+
+        if (userConnectionIds.length === 0) {
+          setTabUnreadCounts({ minhas: 0, fila: 0, todas: 0 });
+          return;
+        }
+
+        query = query.in('whatsapp_connection_id', userConnectionIds);
+      } else {
+        query = query.eq('whatsapp_connection_id', selectedConnectionId);
+      }
+
+      const { data, error } = await query;
 
       if (error) {
         console.error('[useInboxData] Erro ao carregar contagens:', error);
@@ -422,7 +494,7 @@ export function useInboxData() {
     } catch (err) {
       console.error('[useInboxData] Erro ao calcular contagens:', err);
     }
-  }, [profile?.company_id, selectedConnectionId, user?.id]);
+  }, [profile?.company_id, selectedConnectionId, user?.id, userRole?.role]);
 
   // ============================================================
   const loadMessages = useCallback(async (conversationId: string) => {
@@ -1224,22 +1296,31 @@ export function useInboxData() {
   }, [profile?.company_id, messages]);
 
   // ============================================================
-  // REALTIME: CONVERSAS (FILTRADO POR CONEXÃO)
+  // REALTIME: CONVERSAS (FILTRADO POR CONEXÃO OU COMPANY_ID SE "ALL")
   // ============================================================
   useEffect(() => {
     if (!profile?.company_id || !selectedConnectionId) return;
 
-    console.log('[Realtime] Iniciando subscription de conversas para conexão:', selectedConnectionId);
+    const isAllConnections = selectedConnectionId === ALL_CONNECTIONS_ID;
+    console.log('[Realtime] Iniciando subscription de conversas', { selectedConnectionId, isAllConnections });
+
+    // Quando "all" está selecionado, filtramos por company_id
+    // Quando é uma conexão específica, filtramos por whatsapp_connection_id
+    const channelName = isAllConnections 
+      ? `inbox-conversations-all-${profile.company_id}`
+      : `inbox-conversations-${selectedConnectionId}`;
 
     const channel: RealtimeChannel = supabase
-      .channel(`inbox-conversations-${selectedConnectionId}`)
+      .channel(channelName)
       .on(
         'postgres_changes',
         {
           event: 'UPDATE',
           schema: 'public',
           table: 'conversations',
-          filter: `whatsapp_connection_id=eq.${selectedConnectionId}`,
+          filter: isAllConnections 
+            ? `company_id=eq.${profile.company_id}`
+            : `whatsapp_connection_id=eq.${selectedConnectionId}`,
         },
         (payload) => {
           console.log('[Realtime] Conversa atualizada:', payload);
@@ -1338,7 +1419,9 @@ export function useInboxData() {
           event: 'INSERT',
           schema: 'public',
           table: 'conversations',
-          filter: `whatsapp_connection_id=eq.${selectedConnectionId}`,
+          filter: isAllConnections 
+            ? `company_id=eq.${profile.company_id}`
+            : `whatsapp_connection_id=eq.${selectedConnectionId}`,
         },
         (payload) => {
           console.log('[Realtime] Nova conversa criada:', payload);

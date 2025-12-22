@@ -1,15 +1,18 @@
 import { useState, useEffect } from 'react';
-import { Check, ChevronDown, Wifi, WifiOff, Loader2 } from 'lucide-react';
+import { Check, ChevronDown, Wifi, WifiOff, Loader2, Layers } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
+
+export const ALL_CONNECTIONS_ID = 'all';
 
 export interface WhatsAppConnectionItem {
   id: string;
@@ -210,9 +213,12 @@ export function ConnectionSelector({
     loadConnections();
   }, [profile?.company_id, profile?.id, onConnectionChange, onNoConnections]);
 
-  const selectedConnection = connections.find(c => c.id === selectedConnectionId);
+  const selectedConnection = selectedConnectionId === ALL_CONNECTIONS_ID 
+    ? null 
+    : connections.find(c => c.id === selectedConnectionId);
+  const isAllSelected = selectedConnectionId === ALL_CONNECTIONS_ID;
 
-  console.log('🔵 ConnectionSelector - RENDER', { isLoading, connectionsCount: connections.length, selectedConnection: selectedConnection?.name });
+  console.log('🔵 ConnectionSelector - RENDER', { isLoading, connectionsCount: connections.length, selectedConnection: selectedConnection?.name, isAllSelected });
 
   if (isLoading) {
     return (
@@ -233,6 +239,9 @@ export function ConnectionSelector({
     );
   }
 
+  // Só mostra opção "Todas" se houver mais de 1 conexão
+  const showAllOption = connections.length > 1;
+
   return (
     <DropdownMenu open={isOpen} onOpenChange={setIsOpen}>
       <DropdownMenuTrigger asChild>
@@ -241,16 +250,22 @@ export function ConnectionSelector({
           className="w-full justify-between gap-2 h-auto py-2 px-3 bg-card border-border"
         >
           <div className="flex items-center gap-2 min-w-0">
-            {selectedConnection?.status === 'connected' ? (
+            {isAllSelected ? (
+              <Layers className="w-4 h-4 text-primary shrink-0" />
+            ) : selectedConnection?.status === 'connected' ? (
               <Wifi className="w-4 h-4 text-success shrink-0" />
             ) : (
               <WifiOff className="w-4 h-4 text-muted-foreground shrink-0" />
             )}
             <div className="text-left min-w-0">
               <p className="text-sm font-medium truncate">
-                {selectedConnection?.name || 'Selecione uma conexão'}
+                {isAllSelected ? 'Todas as conexões' : selectedConnection?.name || 'Selecione uma conexão'}
               </p>
-              {selectedConnection && (
+              {isAllSelected ? (
+                <p className="text-xs text-muted-foreground truncate">
+                  {connections.length} conexões disponíveis
+                </p>
+              ) : selectedConnection && (
                 <p className="text-xs text-muted-foreground truncate">
                   {formatPhoneNumber(selectedConnection.phoneNumber)}
                 </p>
@@ -265,6 +280,33 @@ export function ConnectionSelector({
         className="w-[280px] bg-popover border-border"
         sideOffset={4}
       >
+        {showAllOption && (
+          <>
+            <DropdownMenuItem
+              onClick={() => {
+                onConnectionChange(ALL_CONNECTIONS_ID);
+                localStorage.setItem('selectedConnectionId', ALL_CONNECTIONS_ID);
+                setIsOpen(false);
+              }}
+              className={cn(
+                'flex items-center gap-3 py-3 px-3 cursor-pointer',
+                isAllSelected && 'bg-muted'
+              )}
+            >
+              <Layers className="w-4 h-4 text-primary shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium truncate">Todas as conexões</p>
+                <p className="text-xs text-muted-foreground truncate">
+                  Ver todas as conversas
+                </p>
+              </div>
+              {isAllSelected && (
+                <Check className="w-4 h-4 text-primary shrink-0" />
+              )}
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+          </>
+        )}
         {connections.map((connection) => (
           <DropdownMenuItem
             key={connection.id}
