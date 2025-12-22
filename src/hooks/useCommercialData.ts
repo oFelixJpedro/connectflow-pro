@@ -220,10 +220,40 @@ export function useCommercialData(filter?: CommercialFilter) {
   // Connection filter requires recalculating insights from scratch
   // Date filter with default period should still use aggregated insights from DB
   const hasConnectionFilter = filter?.type === 'connection' && !!filter.connectionId;
+  const hasDepartmentFilter = !!filter?.departmentId;
   const hasDateFilter = !!(filter?.startDate && filter?.endDate);
-  const hasActiveFilter = hasConnectionFilter || hasDateFilter;
-  // For insights, only connection filter requires recalculation - date filter uses cached DB insights
-  const hasActiveFilterForInsights = hasConnectionFilter;
+  
+  // Detect if the date filter is the default "Esta semana" (current week)
+  // If it's the default period, we should use aggregated dashboard data instead of recalculating
+  const isDefaultPeriod = useMemo(() => {
+    if (!filter?.startDate || !filter?.endDate) return true;
+    
+    const now = new Date();
+    // Calculate start of current week (Monday)
+    const weekStart = new Date(now);
+    const dayOfWeek = now.getDay();
+    const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek; // Monday is first day
+    weekStart.setDate(now.getDate() + diff);
+    weekStart.setHours(0, 0, 0, 0);
+    
+    // Check if filter start date is approximately the start of current week
+    const filterStartDate = new Date(filter.startDate);
+    filterStartDate.setHours(0, 0, 0, 0);
+    const startDiff = Math.abs(filterStartDate.getTime() - weekStart.getTime());
+    
+    // Less than 1 day difference = default period
+    return startDiff < 24 * 60 * 60 * 1000;
+  }, [filter?.startDate, filter?.endDate]);
+  
+  // hasActiveFilter: true when user has selected a SPECIFIC filter (not just default period)
+  // This controls whether we use aggregated dashboard data or calculate filtered data
+  const hasSpecificFilter = hasConnectionFilter || hasDepartmentFilter;
+  const hasNonDefaultDateFilter = hasDateFilter && !isDefaultPeriod;
+  const hasActiveFilter = hasSpecificFilter || hasNonDefaultDateFilter;
+  
+  // For insights, only connection/department filter requires recalculation
+  const hasActiveFilterForInsights = hasSpecificFilter;
+  
   const filterRef = useRef(filter);
   filterRef.current = filter;
   
@@ -754,8 +784,10 @@ export function useCommercialData(filter?: CommercialFilter) {
   useEffect(() => {
     if (!profile?.company_id || !isAdmin) return;
 
-    // Only fetch company-wide metrics when no filter is active
+    // Fetch company-wide metrics when no specific filter is active
+    // Default period (Esta semana) should still use aggregated dashboard data
     if (!hasActiveFilter) {
+      console.log('📊 Fetching company-wide live metrics (no active filter or default period)');
       fetchCompanyLiveMetrics();
     }
 
@@ -887,9 +919,18 @@ export function useCommercialData(filter?: CommercialFilter) {
         // Extract conversation IDs for filtering related data
         const conversationIds = conversations?.map(c => c.id) || [];
         
-        // EARLY RETURN: If filter is active and no conversations found, return empty data
-        if (hasActiveFilter && conversationIds.length === 0) {
-          console.log('📊 No conversations found for active filter - returning empty data');
+        console.log('📊 Conversations found:', conversationIds.length, 'hasActiveFilter:', hasActiveFilter, 'isDefaultPeriod:', isDefaultPeriod);
+        
+        // Check if we have rich aggregated insights from dashboard
+        const hasRichAggregatedInsights = aggregatedInsights.strengths?.length > 0 || 
+                                          aggregatedInsights.final_recommendation?.length > 0;
+        
+        // EARLY RETURN: Only return empty data if:
+        // 1. A SPECIFIC filter is active (connection/department or non-default date)
+        // 2. No conversations found
+        // 3. No rich aggregated insights available as fallback
+        if (hasActiveFilter && conversationIds.length === 0 && !hasRichAggregatedInsights) {
+          console.log('📊 No conversations found for active filter and no aggregated insights - returning empty data');
           setData(EMPTY_COMMERCIAL_DATA);
           setLiveMetrics(EMPTY_LIVE_METRICS);
           setAggregatedInsights(DEFAULT_INSIGHTS);
@@ -898,18 +939,18 @@ export function useCommercialData(filter?: CommercialFilter) {
           return;
         }
 
-        // Calculate filtered live metrics when ANY filter is active (connection OR date)
-        // This ensures date-filtered views calculate metrics from filtered conversations only
+        // Calculate filtered live metrics only when a SPECIFIC filter is active
+        // Default period should use the company-wide metrics from dashboard
         if (hasActiveFilter && conversationIds.length > 0) {
           console.log('📊 Calculating filtered live metrics for', conversationIds.length, 'conversations');
           const filteredMetrics = await calculateFilteredLiveMetrics(conversationIds);
           setLiveMetrics(filteredMetrics);
         } else if (hasActiveFilter && conversationIds.length === 0) {
-          // No conversations in filter range - show empty metrics
+          // No conversations in filter range - show empty metrics only for specific filters
           setLiveMetrics(EMPTY_LIVE_METRICS);
         }
-        // NOTE: When no filter is active, live metrics are fetched by the dedicated useEffect
-        // that handles realtime subscription - no duplicate call needed here
+        // NOTE: When no active filter (including default period), live metrics are fetched 
+        // by the dedicated useEffect that handles realtime subscription
 
         // Extract contact IDs from filtered conversations
         const contactPhones = conversations?.map(c => (c.contact as any)?.phone_number).filter(Boolean) || [];
