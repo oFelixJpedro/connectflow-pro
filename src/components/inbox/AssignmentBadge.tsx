@@ -22,7 +22,7 @@ export function AssignmentBadge({ assignedUser, currentUserId, className }: Assi
         style={{ backgroundColor: '#FECACA' }}
         title="Sem responsável"
       >
-        Sem responsável
+        Sem resp.
       </Badge>
     );
   }
