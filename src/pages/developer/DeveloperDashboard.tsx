@@ -21,7 +21,8 @@ import {
   UserCog,
   RefreshCw,
   Moon,
-  Sun
+  Sun,
+  Bot
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { format } from 'date-fns';
@@ -35,6 +36,7 @@ import EditUserModal from './components/EditUserModal';
 import DeleteConfirmModal from './components/DeleteConfirmModal';
 import ResetPasswordModal from './components/ResetPasswordModal';
 import PermissionWaitingModal from './components/PermissionWaitingModal';
+import AgentTemplatesModal from './components/AgentTemplatesModal';
 import { useDeveloperPermissions } from '@/hooks/useDeveloperPermissions';
 import { developerData, developerActions } from '@/lib/developerApi';
 
@@ -97,6 +99,7 @@ export default function DeveloperDashboard() {
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [selectedUserCompany, setSelectedUserCompany] = useState<Company | null>(null);
   const [showCreateCompany, setShowCreateCompany] = useState(false);
+  const [showTemplates, setShowTemplates] = useState(false);
   
   // Action modal states
   const [deleteCompany, setDeleteCompany] = useState<Company | null>(null);
@@ -478,6 +481,16 @@ export default function DeveloperDashboard() {
             <Button 
               variant="outline" 
               size="sm" 
+              onClick={() => setShowTemplates(true)}
+              title="Gerenciar templates de agentes"
+              className="text-xs"
+            >
+              <Bot className={`h-3 w-3 md:h-4 md:w-4 mr-1`} />
+              <span className="hidden sm:inline">Templates</span>
+            </Button>
+            <Button 
+              variant="outline" 
+              size="sm" 
               onClick={handleCleanupBannedUsers}
               disabled={actionLoading}
               title="Deletar usuários banidos"
@@ -856,6 +869,12 @@ export default function DeveloperDashboard() {
           onClose={() => setPermissionRequest(null)}
         />
       )}
+
+      {/* Agent Templates Modal */}
+      <AgentTemplatesModal
+        open={showTemplates}
+        onClose={() => setShowTemplates(false)}
+      />
     </div>
   );
 }
