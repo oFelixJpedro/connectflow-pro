@@ -11,7 +11,8 @@ import {
   MoreHorizontal,
   Loader2,
   X,
-  Users
+  Users,
+  AlertTriangle
 } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
@@ -47,6 +48,7 @@ import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { Navigate } from 'react-router-dom';
+import { ConnectionLimitReachedModal } from '@/components/subscription/ConnectionLimitReachedModal';
 import type { Tables } from '@/integrations/supabase/types';
 
 type WhatsAppConnection = Tables<'whatsapp_connections'>;
@@ -61,6 +63,10 @@ export default function Connections() {
   if (!isAdminOrOwner) {
     return <Navigate to="/dashboard" replace />;
   }
+
+  // Connection limit state
+  const [showLimitModal, setShowLimitModal] = useState(false);
+  const maxConnections = (company as any)?.max_connections ?? 1;
   const [connections, setConnections] = useState<WhatsAppConnection[]>([]);
   const [loading, setLoading] = useState(true);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -543,8 +549,27 @@ export default function Connections() {
     );
   }
 
+  // Check connection limit before opening dialog
+  const handleAddConnection = () => {
+    const currentCount = connections.length;
+    if (currentCount >= maxConnections) {
+      setShowLimitModal(true);
+      return;
+    }
+    resetDialogState();
+    setIsDialogOpen(true);
+  };
+
   return (
     <div className="h-full overflow-auto p-4 md:p-6 space-y-4 md:space-y-6">
+      {/* Connection Limit Modal */}
+      <ConnectionLimitReachedModal
+        open={showLimitModal}
+        onClose={() => setShowLimitModal(false)}
+        currentConnections={connections.length}
+        maxConnections={maxConnections}
+      />
+
       {/* Page Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -552,8 +577,13 @@ export default function Connections() {
           <p className="text-sm md:text-base text-muted-foreground">
             Conecte números do WhatsApp para atender seus clientes
           </p>
+          {maxConnections < 999 && (
+            <p className="text-xs text-muted-foreground mt-1">
+              <span className="font-medium">{connections.length}</span> de <span className="font-medium">{maxConnections}</span> conexões utilizadas
+            </p>
+          )}
         </div>
-        <Button onClick={() => { resetDialogState(); setIsDialogOpen(true); }} className="w-full sm:w-auto">
+        <Button onClick={handleAddConnection} className="w-full sm:w-auto">
           <Plus className="w-4 h-4 mr-2" />
           Conectar WhatsApp
         </Button>
