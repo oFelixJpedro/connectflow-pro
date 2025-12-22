@@ -262,6 +262,10 @@ export function useCommercialData(filter?: CommercialFilter) {
   const filterRef = useRef(filter);
   filterRef.current = filter;
   
+  // Use ref for aggregatedInsights to avoid re-triggering fetchData when it changes
+  const aggregatedInsightsRef = useRef(aggregatedInsights);
+  aggregatedInsightsRef.current = aggregatedInsights;
+  
   // Prevent concurrent calls to fetchCompanyLiveMetrics
   const isFetchingLiveMetricsRef = useRef(false);
   
@@ -1136,13 +1140,14 @@ export function useCommercialData(filter?: CommercialFilter) {
         // Priority: 1) Calculate from current data if filter active, 2) Use persisted rankings from DB if available and no filter, 3) Calculate fresh
         let agentsAnalysis: AgentAnalysis[];
         
-        const hasPersistedRankings = aggregatedInsights.agent_rankings && aggregatedInsights.agent_rankings.length > 0;
+        const currentAggInsights = aggregatedInsightsRef.current;
+        const hasPersistedRankings = currentAggInsights.agent_rankings && currentAggInsights.agent_rankings.length > 0;
         const shouldUsePersistedRankings = !hasActiveFilter && hasPersistedRankings;
         
         if (shouldUsePersistedRankings) {
           // Use persisted rankings from aggregated_insights (updated by commercial-pixel)
-          console.log('📊 [useCommercialData] Using persisted agent_rankings from DB:', aggregatedInsights.agent_rankings!.length, 'agents');
-          agentsAnalysis = aggregatedInsights.agent_rankings!;
+          console.log('📊 [useCommercialData] Using persisted agent_rankings from DB:', currentAggInsights.agent_rankings!.length, 'agents');
+          agentsAnalysis = currentAggInsights.agent_rankings!;
         } else {
           // Calculate fresh from conversations and evaluations
           console.log('📊 [useCommercialData] Calculating agent rankings from conversations/evaluations');
@@ -1196,10 +1201,14 @@ export function useCommercialData(filter?: CommercialFilter) {
 
         // Use aggregated insights from realtime if available and no CONNECTION filter active
         // Date filter alone should still use aggregated insights from DB
-        // Check for rich insights content, not just average_score (which may be 0 initially)
-        const hasRichInsights = (aggregatedInsights.strengths?.length > 0) || 
-                                (aggregatedInsights.final_recommendation?.length > 0);
-        const useAggregatedInsights = !hasActiveFilterForInsights && hasRichInsights;
+        // Check for rich insights content AND valid numeric scores
+        // This prevents overwriting real calculated data with zeroed aggregated data
+        const currentAggregatedInsights = aggregatedInsightsRef.current;
+        const hasRichInsights = (currentAggregatedInsights.strengths?.length > 0) || 
+                                (currentAggregatedInsights.final_recommendation?.length > 0);
+        const hasValidScores = currentAggregatedInsights.average_score > 0 || 
+                               Object.values(currentAggregatedInsights.criteria_scores).some(s => s > 0);
+        const useAggregatedInsights = !hasActiveFilterForInsights && hasRichInsights && hasValidScores;
         
         let averageScore: number;
         let criteriaScores: CriteriaScores;
@@ -1213,17 +1222,17 @@ export function useCommercialData(filter?: CommercialFilter) {
         let finalRecommendation: string;
 
         if (useAggregatedInsights) {
-          // Use AI-generated insights from database
-          averageScore = aggregatedInsights.average_score;
-          criteriaScores = aggregatedInsights.criteria_scores;
-          qualifiedLeadsPercent = aggregatedInsights.qualified_leads_percent;
-          allStrengths = aggregatedInsights.strengths;
-          allWeaknesses = aggregatedInsights.weaknesses;
-          positivePatterns = aggregatedInsights.positive_patterns;
-          negativePatterns = aggregatedInsights.negative_patterns;
-          insights = aggregatedInsights.insights;
-          criticalIssues = aggregatedInsights.critical_issues;
-          finalRecommendation = aggregatedInsights.final_recommendation;
+          // Use AI-generated insights from database (only if valid)
+          averageScore = currentAggregatedInsights.average_score;
+          criteriaScores = currentAggregatedInsights.criteria_scores;
+          qualifiedLeadsPercent = currentAggregatedInsights.qualified_leads_percent;
+          allStrengths = currentAggregatedInsights.strengths;
+          allWeaknesses = currentAggregatedInsights.weaknesses;
+          positivePatterns = currentAggregatedInsights.positive_patterns;
+          negativePatterns = currentAggregatedInsights.negative_patterns;
+          insights = currentAggregatedInsights.insights;
+          criticalIssues = currentAggregatedInsights.critical_issues;
+          finalRecommendation = currentAggregatedInsights.final_recommendation;
         } else if (evaluations && evaluations.length > 0) {
           // Calculate from evaluations if filter active or no aggregated insights yet
           const scores = {
@@ -1472,7 +1481,9 @@ export function useCommercialData(filter?: CommercialFilter) {
     };
 
     fetchData();
-  }, [profile?.company_id, isAdmin, aggregatedInsights, filter?.type, filter?.connectionId, filter?.departmentId, filter?.startDate, filter?.endDate, hasActiveFilter, fetchCompanyLiveMetrics, fetchFilteredInsights, startInsightsJob]);
+    // IMPORTANT: aggregatedInsights removed from dependencies to prevent race condition
+    // Using aggregatedInsightsRef.current inside fetchData to access the latest value
+  }, [profile?.company_id, isAdmin, filter?.type, filter?.connectionId, filter?.departmentId, filter?.startDate, filter?.endDate, hasActiveFilter, hasActiveFilterForInsights, fetchCompanyLiveMetrics, fetchFilteredInsights, startInsightsJob]);
 
   return {
     loading,
