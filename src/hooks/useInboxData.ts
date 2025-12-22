@@ -341,17 +341,17 @@ export function useInboxData() {
             break;
           case 'todas':
             // All conversations - no assignment filter
-            // Only apply agent filter if admin/owner has selected one
-            if (conversationFilters.filterByAgentId) {
-              query = query.eq('assigned_user_id', conversationFilters.filterByAgentId);
+            // Only apply agent filter if admin/owner has selected one (array of agent IDs)
+            if (conversationFilters.filterByAgentIds && conversationFilters.filterByAgentIds.length > 0) {
+              query = query.in('assigned_user_id', conversationFilters.filterByAgentIds);
             }
             break;
         }
       }
 
-      // Department filter (from UI filter - additional to access filter)
-      if (conversationFilters.departmentId) {
-        query = query.eq('department_id', conversationFilters.departmentId);
+      // Department filter (from UI filter - additional to access filter) - array of department IDs
+      if (conversationFilters.departmentIds && conversationFilters.departmentIds.length > 0) {
+        query = query.in('department_id', conversationFilters.departmentIds);
       }
 
       // Tags filter - filter conversations that have any of the selected tags
@@ -378,12 +378,12 @@ export function useInboxData() {
       
       let transformedConversations = (data || []).map(transformConversation);
 
-      // Apply kanban column filter (post-query since it requires contact_id lookup)
-      if (conversationFilters.kanbanColumnId) {
+      // Apply kanban column filter (post-query since it requires contact_id lookup) - array of column IDs
+      if (conversationFilters.kanbanColumnIds && conversationFilters.kanbanColumnIds.length > 0) {
         const { data: kanbanCards } = await supabase
           .from('kanban_cards')
           .select('contact_id')
-          .eq('column_id', conversationFilters.kanbanColumnId);
+          .in('column_id', conversationFilters.kanbanColumnIds);
 
         if (kanbanCards && kanbanCards.length > 0) {
           const contactIds = new Set(kanbanCards.map(c => c.contact_id));
