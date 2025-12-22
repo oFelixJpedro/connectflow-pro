@@ -54,6 +54,10 @@ function transformConversation(db: any): Conversation {
       createdAt: '',
       updatedAt: '',
     } : undefined,
+    whatsappConnection: db.whatsapp_connections ? {
+      id: db.whatsapp_connections.id,
+      name: db.whatsapp_connections.name,
+    } : undefined,
     status: db.status as Conversation['status'],
     priority: db.priority as Conversation['priority'],
     channel: db.channel,
@@ -294,6 +298,10 @@ export function useInboxData() {
             name,
             color,
             is_default
+          ),
+          whatsapp_connections:whatsapp_connection_id (
+            id,
+            name
           )
         `);
 
