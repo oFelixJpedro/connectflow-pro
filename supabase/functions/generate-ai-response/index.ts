@@ -1,12 +1,12 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { 
-  transcribeAudio, 
-  getCachedAnalysis, 
-  saveCacheAnalysis,
-  SUPPORTED_DOCUMENT_MIMES,
-  SUPPORTED_VIDEO_MIMES 
-} from '../_shared/media-cache.ts';
+  analyzeMedia,
+  transcribeAudioWithFileAPI,
+  analyzeImageWithFileAPI,
+  analyzeVideoWithFileAPI,
+  analyzeDocumentWithFileAPI
+} from '../_shared/gemini-file-api.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -124,79 +124,6 @@ interface RequestBody {
   companyId?: string;
 }
 
-// Analisa mídia usando URL Context Tool com cache
-async function analyzeMediaWithUrlContext(
-  url: string,
-  mediaType: 'image' | 'video' | 'document',
-  apiKey: string,
-  supabase: any,
-  companyId: string,
-  fileName?: string
-): Promise<string | null> {
-  try {
-    // Verifica cache primeiro
-    const cached = await getCachedAnalysis(supabase, url, companyId);
-    if (cached?.analysis) {
-      console.log(`[generate-ai-response] Cache HIT para ${mediaType}`);
-      return cached.analysis;
-    }
-    
-    console.log(`[generate-ai-response] Analisando ${mediaType} com URL Context...`);
-    
-    let prompt = '';
-    if (mediaType === 'image') {
-      prompt = `Descreva objetivamente o que está nesta imagem. Foque em: objetos, pessoas, texto visível, e contexto geral. Seja conciso.
-
-URL: ${url}`;
-    } else if (mediaType === 'video') {
-      prompt = `Descreva objetivamente o que acontece neste vídeo. Foque em: ações, objetos, pessoas, e contexto geral. Seja conciso.
-
-URL: ${url}`;
-    } else if (mediaType === 'document') {
-      prompt = `Extraia as informações principais deste documento${fileName ? ` (${fileName})` : ''}. Foque em: tipo, dados importantes, números e datas. Seja conciso.
-
-URL: ${url}`;
-    }
-    
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          tools: [{ url_context: {} }],
-          generationConfig: { 
-            temperature: 0.2, 
-            maxOutputTokens: 1024 
-          }
-        }),
-      }
-    );
-    
-    if (!response.ok) {
-      console.error(`[generate-ai-response] URL Context error: ${response.status}`);
-      return null;
-    }
-    
-    const data = await response.json();
-    const analysis = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-    
-    if (analysis) {
-      // Salva no cache
-      saveCacheAnalysis(supabase, url, companyId, mediaType, { analysis })
-        .catch(err => console.error('[generate-ai-response] Cache save error:', err));
-      
-      return analysis;
-    }
-    
-    return null;
-  } catch (error) {
-    console.error(`[generate-ai-response] Erro ao analisar ${mediaType}:`, error);
-    return null;
-  }
-}
-
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -232,6 +159,7 @@ serve(async (req) => {
     let imagesAnalyzed = 0;
     let videosAnalyzed = 0;
     let documentsAnalyzed = 0;
+    let audiosAnalyzed = 0;
     
     // Process messages and analyze media
     const processedMessages: string[] = [];
@@ -242,28 +170,25 @@ serve(async (req) => {
       const metadata = msg.metadata;
       
       if (msg.messageType === 'audio') {
-        // Handle audio - use transcription if available, otherwise transcribe with cache
+        // Handle audio - use transcription if available, otherwise transcribe with Gemini File API
         if (metadata?.transcription) {
           content = `[Áudio transcrito]: ${metadata.transcription}`;
         } else if (msg.mediaUrl && companyId) {
-          const transcription = await transcribeAudio(msg.mediaUrl, geminiApiKey, supabase, companyId);
+          const transcription = await transcribeAudioWithFileAPI(
+            msg.mediaUrl, geminiApiKey, supabase, companyId
+          );
           content = transcription 
             ? `[Áudio transcrito]: ${transcription}`
             : '[Áudio sem transcrição disponível]';
-        } else if (msg.mediaUrl) {
-          // Fallback sem cache
-          const transcription = await transcribeAudio(msg.mediaUrl, geminiApiKey);
-          content = transcription 
-            ? `[Áudio transcrito]: ${transcription}`
-            : '[Áudio sem transcrição disponível]';
+          if (transcription) audiosAnalyzed++;
         } else {
           content = '[Mensagem de áudio]';
         }
       } else if (msg.messageType === 'image') {
-        // Analyze image with URL Context Tool + cache
+        // Analyze image with Gemini File API + cache
         if (msg.mediaUrl && msg.direction === 'inbound' && companyId && imagesAnalyzed < 5) {
-          const analysis = await analyzeMediaWithUrlContext(
-            msg.mediaUrl, 'image', geminiApiKey, supabase, companyId
+          const analysis = await analyzeImageWithFileAPI(
+            msg.mediaUrl, geminiApiKey, supabase, companyId
           );
           if (analysis) {
             mediaAnalyses.push(`📸 Imagem do cliente: ${analysis}`);
@@ -278,10 +203,10 @@ serve(async (req) => {
             : '[Cliente enviou uma imagem]';
         }
       } else if (msg.messageType === 'video') {
-        // Analyze video with URL Context Tool + cache
+        // Analyze video with Gemini File API + cache
         if (msg.mediaUrl && msg.direction === 'inbound' && companyId && videosAnalyzed < 3) {
-          const analysis = await analyzeMediaWithUrlContext(
-            msg.mediaUrl, 'video', geminiApiKey, supabase, companyId
+          const analysis = await analyzeVideoWithFileAPI(
+            msg.mediaUrl, geminiApiKey, supabase, companyId
           );
           if (analysis) {
             mediaAnalyses.push(`🎬 Vídeo do cliente: ${analysis}`);
@@ -297,10 +222,10 @@ serve(async (req) => {
         }
       } else if (msg.messageType === 'document') {
         const fileName = metadata?.fileName || metadata?.file_name || 'documento';
-        // Analyze document with URL Context Tool + cache
+        // Analyze document with Gemini File API + cache
         if (msg.mediaUrl && msg.direction === 'inbound' && companyId && documentsAnalyzed < 5) {
-          const analysis = await analyzeMediaWithUrlContext(
-            msg.mediaUrl, 'document', geminiApiKey, supabase, companyId, fileName
+          const analysis = await analyzeDocumentWithFileAPI(
+            msg.mediaUrl, geminiApiKey, supabase, companyId, fileName
           );
           if (analysis) {
             mediaAnalyses.push(`📄 Documento "${fileName}": ${analysis}`);
@@ -356,14 +281,15 @@ serve(async (req) => {
     console.log('🖼️ Imagens analisadas:', imagesAnalyzed);
     console.log('🎬 Vídeos analisados:', videosAnalyzed);
     console.log('📄 Documentos analisados:', documentsAnalyzed);
+    console.log('🎙️ Áudios transcritos:', audiosAnalyzed);
     console.log('👤 Atendente:', agentName || 'N/A');
 
     // Build the prompt
     const fullPrompt = `${enrichedSystemPrompt}\n\nAnalise esta conversa e gere a próxima resposta imitando o estilo do atendente:\n\n${formattedMessages}`;
 
-    // Call Gemini API (without inline media - using URL Context analyses instead)
+    // Call Gemini API
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${geminiApiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiApiKey}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

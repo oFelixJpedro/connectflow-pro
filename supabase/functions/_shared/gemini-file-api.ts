@@ -394,16 +394,16 @@ export async function transcribeAudioWithFileAPI(
  */
 export async function analyzeImageWithFileAPI(
   imageUrl: string,
-  prompt: string,
   apiKey: string,
   supabase?: any,
-  companyId?: string
+  companyId?: string,
+  customPrompt?: string
 ): Promise<string | null> {
   const mimeType = inferMimeTypeFromFileName(imageUrl) || 'image/jpeg';
   const result = await analyzeMedia(
     imageUrl,
     mimeType,
-    prompt || 'Descreva esta imagem de forma detalhada e objetiva para contexto de atendimento ao cliente.',
+    customPrompt || 'Descreva esta imagem de forma detalhada e objetiva para contexto de atendimento ao cliente.',
     apiKey,
     supabase,
     companyId,
@@ -419,16 +419,16 @@ export async function analyzeImageWithFileAPI(
  */
 export async function analyzeVideoWithFileAPI(
   videoUrl: string,
-  prompt: string,
   apiKey: string,
   supabase?: any,
-  companyId?: string
+  companyId?: string,
+  customPrompt?: string
 ): Promise<string | null> {
   const mimeType = inferMimeTypeFromFileName(videoUrl) || 'video/mp4';
   const result = await analyzeMedia(
     videoUrl,
     mimeType,
-    prompt || 'Descreva este vídeo de forma detalhada. Inclua ações, objetos, pessoas, áudio e contexto geral.',
+    customPrompt || 'Descreva este vídeo de forma detalhada. Inclua ações, objetos, pessoas, áudio e contexto geral.',
     apiKey,
     supabase,
     companyId,
@@ -444,17 +444,17 @@ export async function analyzeVideoWithFileAPI(
  */
 export async function analyzeDocumentWithFileAPI(
   documentUrl: string,
-  fileName: string,
-  prompt: string,
   apiKey: string,
   supabase?: any,
-  companyId?: string
+  companyId?: string,
+  fileName?: string,
+  customPrompt?: string
 ): Promise<string | null> {
   const mimeType = inferMimeTypeFromFileName(fileName || documentUrl) || 'application/pdf';
   const result = await analyzeMedia(
     documentUrl,
     mimeType,
-    prompt || `Extraia as informações principais deste documento "${fileName}". Inclua: tipo, dados importantes, números, datas e resumo.`,
+    customPrompt || `Extraia as informações principais deste documento "${fileName || 'documento'}". Inclua: tipo, dados importantes, números, datas e resumo.`,
     apiKey,
     supabase,
     companyId,
