@@ -328,22 +328,38 @@ export function useInboxData() {
         query = query.eq('assigned_user_id', user.id);
       } else {
         // Column-based filtering (replaces old assignment filter)
+        // Agent filter applies to ALL tabs - if filtering by agents, respect the tab logic
+        const hasAgentFilter = conversationFilters.filterByAgentIds && conversationFilters.filterByAgentIds.length > 0;
+        
         switch (inboxColumn) {
           case 'minhas':
             // Only conversations assigned to current user
             if (user?.id) {
-              query = query.eq('assigned_user_id', user.id);
+              if (hasAgentFilter) {
+                // If agent filter is active and current user is NOT in the list, show nothing
+                if (!conversationFilters.filterByAgentIds!.includes(user.id)) {
+                  query = query.eq('assigned_user_id', '__FORCE_EMPTY_RESULT__');
+                } else {
+                  query = query.eq('assigned_user_id', user.id);
+                }
+              } else {
+                query = query.eq('assigned_user_id', user.id);
+              }
             }
             break;
           case 'fila':
             // Only unassigned conversations
-            query = query.is('assigned_user_id', null);
+            if (hasAgentFilter) {
+              // Fila = unassigned. If filtering by agents, show nothing (agents have assignments)
+              query = query.eq('assigned_user_id', '__FORCE_EMPTY_RESULT__');
+            } else {
+              query = query.is('assigned_user_id', null);
+            }
             break;
           case 'todas':
-            // All conversations - no assignment filter
-            // Only apply agent filter if admin/owner has selected one (array of agent IDs)
-            if (conversationFilters.filterByAgentIds && conversationFilters.filterByAgentIds.length > 0) {
-              query = query.in('assigned_user_id', conversationFilters.filterByAgentIds);
+            // All conversations - apply agent filter if present
+            if (hasAgentFilter) {
+              query = query.in('assigned_user_id', conversationFilters.filterByAgentIds!);
             }
             break;
         }
