@@ -88,6 +88,10 @@ export interface Conversation {
   contactId: string;
   contact?: Contact;
   whatsappConnectionId?: string;
+  whatsappConnection?: {
+    id: string;
+    name: string;
+  };
   assignedUserId?: string;
   assignedUser?: User;
   departmentId?: string;
