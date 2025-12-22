@@ -236,13 +236,11 @@ export function useCommercialData(filter?: CommercialFilter) {
     weekStart.setDate(now.getDate() + diff);
     weekStart.setHours(0, 0, 0, 0);
     
-    // Check if filter start date is approximately the start of current week
-    const filterStartDate = new Date(filter.startDate);
-    filterStartDate.setHours(0, 0, 0, 0);
-    const startDiff = Math.abs(filterStartDate.getTime() - weekStart.getTime());
+    // Compare only dates (day/month/year), ignoring time to avoid false positives
+    const filterStartDay = filter.startDate.toISOString().split('T')[0];
+    const weekStartDay = weekStart.toISOString().split('T')[0];
     
-    // Less than 1 day difference = default period
-    return startDiff < 24 * 60 * 60 * 1000;
+    return filterStartDay === weekStartDay;
   }, [filter?.startDate, filter?.endDate]);
   
   // hasActiveFilter: true when user has selected a SPECIFIC filter (not just default period)
@@ -803,11 +801,14 @@ export function useCommercialData(filter?: CommercialFilter) {
           filter: `company_id=eq.${profile.company_id}`,
         },
         (payload) => {
-          // Only update from realtime if no filter is active (connection OR date)
+          // Only update from realtime if no SPECIFIC filter is active
+          // Default period should still receive realtime updates
           const hasConnFilter = filterRef.current?.type === 'connection' && filterRef.current?.connectionId;
-          const hasDateFilterActive = !!(filterRef.current?.startDate && filterRef.current?.endDate);
-          if (hasConnFilter || hasDateFilterActive) {
-            console.log('📊 [REALTIME] Ignoring dashboard update - filter is active');
+          const hasDeptFilter = !!filterRef.current?.departmentId;
+          
+          // Specific filter = connection or department (NOT just default date period)
+          if (hasConnFilter || hasDeptFilter) {
+            console.log('📊 [REALTIME] Ignoring dashboard update - specific filter active');
             return;
           }
 
