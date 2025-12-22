@@ -1,4 +1,4 @@
-import { Navigate, useLocation, useNavigate } from 'react-router-dom';
+import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Loader2 } from 'lucide-react';
 import { ForcePasswordChangeModal } from '@/components/auth/ForcePasswordChangeModal';
@@ -10,9 +10,8 @@ interface ProtectedRouteProps {
 }
 
 export function ProtectedRoute({ children }: ProtectedRouteProps) {
-  const { user, loading, needsPasswordChange, clearPasswordChangeFlag, profile, company } = useAuth();
+  const { user, loading, needsPasswordChange, clearPasswordChangeFlag, profile, company, subscription, checkSubscription, refreshCompany } = useAuth();
   const location = useLocation();
-  const navigate = useNavigate();
 
   if (loading) {
     return (
@@ -43,8 +42,8 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
       return { blocked: false, reason: null };
     }
 
-    // Active subscription
-    if (subscriptionStatus === 'active') {
+    // Active subscription - check both local DB and Stripe status
+    if (subscriptionStatus === 'active' || subscription.subscribed) {
       return { blocked: false, reason: null };
     }
 
@@ -73,10 +72,15 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
 
   const { blocked, reason } = checkSubscriptionStatus();
 
-  const handleSubscribe = () => {
-    // TODO: Navigate to pricing page when implemented
-    // For now, open WhatsApp
-    window.open('https://wa.me/5500000000000?text=Olá! Gostaria de assinar o ChatGo.', '_blank');
+  const handleSubscribe = async () => {
+    // Open pricing page
+    window.location.href = '/pricing';
+  };
+
+  const handleRefresh = async () => {
+    // Refresh subscription status
+    await checkSubscription();
+    await refreshCompany();
   };
 
   // Show blocked modals

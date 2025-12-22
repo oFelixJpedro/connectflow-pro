@@ -57,14 +57,18 @@ Deno.serve(async (req) => {
       .replace(/(^-|-$)/g, '')
       + '-' + Date.now().toString(36)
 
-    // 1. Create company first
+    // 1. Create company first with trial status (3 days)
     const { data: company, error: companyError } = await supabaseAdmin
       .from('companies')
       .insert({
         name: companyName,
         slug: slug,
-        plan: 'free',
-        trial_ends_at: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString()
+        plan: 'trial',
+        subscription_status: 'trial',
+        trial_ends_at: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(), // 3 days trial
+        max_connections: 1,
+        max_users: null, // unlimited during trial
+        max_ai_agents: null, // unlimited during trial
       })
       .select()
       .single()
