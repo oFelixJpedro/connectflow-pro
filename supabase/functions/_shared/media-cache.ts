@@ -54,7 +54,7 @@ export async function saveCacheAnalysis(
   companyId: string,
   mediaType: string,
   result: any,
-  ttlDays: number = 7
+  ttlDays: number = 3 // Reduzido de 7 para 3 dias
 ): Promise<void> {
   try {
     const urlHash = await sha256(url);

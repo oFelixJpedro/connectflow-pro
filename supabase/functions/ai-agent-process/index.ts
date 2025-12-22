@@ -3,17 +3,25 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { Redis } from "https://esm.sh/@upstash/redis@1.28.0";
 
 // ═══════════════════════════════════════════════════════════════════
-// IMPORT SHARED MEDIA CACHE UTILITIES
+// IMPORT SHARED MODULES
 // ═══════════════════════════════════════════════════════════════════
 import {
   sha256,
   getCachedAnalysis,
   saveCacheAnalysis,
-  transcribeAudio,
   SUPPORTED_VIDEO_MIMES,
   SUPPORTED_DOCUMENT_MIMES,
   inferMimeTypeFromFileName
 } from "../_shared/media-cache.ts";
+
+import {
+  analyzeMedia,
+  transcribeAudioWithFileAPI,
+  analyzeImageWithFileAPI,
+  analyzeVideoWithFileAPI,
+  analyzeDocumentWithFileAPI,
+  inferMediaType
+} from "../_shared/gemini-file-api.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -346,9 +354,9 @@ Retorne APENAS o JSON, sem explicações.`;
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// ANALYZE MEDIA WITH URL CONTEXT TOOL + CACHE
+// ANALYZE MEDIA WITH GEMINI FILE API (replaces URL Context Tool)
 // ═══════════════════════════════════════════════════════════════════
-async function analyzeMediaWithUrlContext(
+async function analyzeMediaWithFileAPI(
   supabase: any,
   mediaUrl: string,
   mediaType: 'image' | 'video' | 'document',
@@ -358,69 +366,49 @@ async function analyzeMediaWithUrlContext(
   fileName?: string
 ): Promise<string | null> {
   try {
-    console.log(`🔍 [URL_CONTEXT] Analisando ${mediaType}: ${mediaUrl.substring(0, 60)}...`);
+    console.log(`🔍 [FILE_API] Analisando ${mediaType}: ${mediaUrl.substring(0, 60)}...`);
     
-    // 1. Check cache first
-    const cached = await getCachedAnalysis(supabase, mediaUrl, companyId);
-    if (cached) {
-      console.log(`✅ [URL_CONTEXT] Cache HIT para ${mediaType}`);
-      return cached;
-    }
-    console.log(`📡 [URL_CONTEXT] Cache MISS - chamando Gemini com URL Context Tool`);
-    
-    // 2. Build the prompt with URL for Gemini to fetch
-    const mediaInstructions = mediaType === 'image' 
-      ? 'Analise esta imagem detalhadamente. Descreva o que você vê.'
-      : mediaType === 'video'
-      ? 'Analise este vídeo detalhadamente. Descreva o conteúdo visual e de áudio.'
-      : `Analise este documento${fileName ? ` "${fileName}"` : ''}. Extraia as informações mais relevantes.`;
-    
-    const fullPrompt = `${contextPrompt}
-
-${mediaInstructions}
-
-URL da mídia para analisar: ${mediaUrl}`;
-
-    // 3. Call Gemini with URL Context Tool
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{
-            parts: [{ text: fullPrompt }]
-          }],
-          tools: [{ url_context: {} }],
-          generationConfig: {
-            temperature: 0.3,
-            maxOutputTokens: 2048
-          }
-        })
+    let prompt = contextPrompt;
+    if (!prompt) {
+      switch (mediaType) {
+        case 'image':
+          prompt = 'Descreva esta imagem de forma concisa para contexto de atendimento ao cliente.';
+          break;
+        case 'video':
+          prompt = 'Descreva este vídeo de forma concisa. Inclua ações, objetos, pessoas e áudio se houver.';
+          break;
+        case 'document':
+          prompt = `Extraia as informações relevantes deste documento${fileName ? ` "${fileName}"` : ''} para atendimento ao cliente.`;
+          break;
       }
+    }
+    
+    // Usa o novo módulo Gemini File API
+    const result = await analyzeMedia(
+      mediaUrl,
+      inferMimeTypeFromFileName(fileName || mediaUrl) || 
+        (mediaType === 'image' ? 'image/jpeg' : mediaType === 'video' ? 'video/mp4' : 'application/pdf'),
+      prompt,
+      apiKey,
+      supabase,
+      companyId,
+      `${mediaType}-analysis`
     );
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`❌ [URL_CONTEXT] Erro Gemini: ${response.status}`, errorText);
+    
+    if (result.error) {
+      console.error(`❌ [FILE_API] Erro: ${result.error}`);
       return null;
     }
-
-    const result = await response.json();
-    const analysisText = result.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
     
-    if (analysisText) {
-      console.log(`✅ [URL_CONTEXT] Análise obtida (${analysisText.length} chars)`);
-      
-      // 4. Save to cache
-      await saveCacheAnalysis(supabase, mediaUrl, companyId, mediaType, analysisText);
-      
-      return analysisText;
+    if (result.fromCache) {
+      console.log(`✅ [FILE_API] Cache HIT para ${mediaType}`);
+    } else {
+      console.log(`✅ [FILE_API] Análise obtida via File API (${result.analysis?.length || 0} chars)`);
     }
     
-    return null;
+    return result.analysis;
   } catch (error) {
-    console.error(`❌ [URL_CONTEXT] Erro ao analisar ${mediaType}:`, error);
+    console.error(`❌ [FILE_API] Erro ao analisar ${mediaType}:`, error);
     return null;
   }
 }
@@ -757,9 +745,9 @@ serve(async (req) => {
         const role: 'user' | 'assistant' = msg.direction === 'inbound' ? 'user' : 'assistant';
         let content = msg.content || '';
         
-        // Handle media types with URL Context Tool + Cache
+        // Handle media types with Gemini File API
         if (msg.message_type === 'audio' && msg.media_url) {
-          const transcription = await transcribeAudio(
+          const transcription = await transcribeAudioWithFileAPI(
             msg.media_url, 
             GEMINI_API_KEY,
             supabase,
@@ -768,7 +756,7 @@ serve(async (req) => {
           content = transcription || '[Áudio não transcrito]';
         } else if (msg.message_type === 'image' && msg.media_url) {
           imageUrls.push(msg.media_url);
-          const analysis = await analyzeMediaWithUrlContext(
+          const analysis = await analyzeMediaWithFileAPI(
             supabase,
             msg.media_url,
             'image',
@@ -781,7 +769,7 @@ serve(async (req) => {
             : content || '[Imagem enviada]';
         } else if (msg.message_type === 'video' && msg.media_url) {
           videoUrls.push(msg.media_url);
-          const analysis = await analyzeMediaWithUrlContext(
+          const analysis = await analyzeMediaWithFileAPI(
             supabase,
             msg.media_url,
             'video',
@@ -796,7 +784,7 @@ serve(async (req) => {
           const meta = msg.metadata as any;
           const fileName = meta?.fileName || meta?.file_name || 'documento';
           documentData.push({ url: msg.media_url, fileName });
-          const analysis = await analyzeMediaWithUrlContext(
+          const analysis = await analyzeMediaWithFileAPI(
             supabase,
             msg.media_url,
             'document',
@@ -846,7 +834,7 @@ serve(async (req) => {
           if (msg.content) {
             batchContents.push(msg.content);
           } else if (msg.mediaUrl) {
-            const transcription = await transcribeAudio(
+            const transcription = await transcribeAudioWithFileAPI(
               msg.mediaUrl, 
               GEMINI_API_KEY,
               supabase,
@@ -913,7 +901,7 @@ serve(async (req) => {
     // Handle audio transcription for current message (legacy mode)
     if (!isBatchRequest && currentMessageIsAudio && actualMediaUrl && !processedMessageContent) {
       console.log('🎤 Transcrevendo áudio do cliente...');
-      const transcription = await transcribeAudio(
+      const transcription = await transcribeAudioWithFileAPI(
         actualMediaUrl, 
         GEMINI_API_KEY,
         supabase,
@@ -1407,11 +1395,11 @@ CRÍTICO SOBRE COMANDOS:
         `${m.role === 'user' ? '[CLIENTE]' : '[AGENTE]'}: ${m.content}`
       ).join('\n');
       
-      // Use URL Context Tool for multimodal analysis instead of Base64
+      // Use Gemini File API for multimodal analysis
       const mediaType = shouldUseMultimodalImage ? 'image' : shouldUseMultimodalVideo ? 'video' : 'document';
-      console.log(`📡 Usando URL Context Tool para análise de ${mediaType}`);
+      console.log(`📡 Usando Gemini File API para análise de ${mediaType}`);
       
-      const mediaAnalysis = await analyzeMediaWithUrlContext(
+      const mediaAnalysis = await analyzeMediaWithFileAPI(
         supabase,
         actualMediaUrl,
         mediaType as 'image' | 'video' | 'document',
