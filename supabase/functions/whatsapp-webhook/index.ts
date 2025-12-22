@@ -972,6 +972,12 @@ async function processAIBatchImmediate(batchData: any, batchKey: string, redisCl
 
 // Helper to split response into humanized messages
 function splitResponse(text: string): string[] {
+  // Validação para evitar crash se text for undefined/null
+  if (!text || typeof text !== 'string') {
+    console.warn('[splitResponse] Received invalid input:', typeof text, text);
+    return [];
+  }
+  
   const parts: string[] = [];
   const sentences = text.split(/(?<=[.!?])\s+/);
   let currentPart = '';
