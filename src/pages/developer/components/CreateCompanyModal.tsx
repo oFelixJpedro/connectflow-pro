@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -32,7 +32,12 @@ import { Switch } from '@/components/ui/switch';
 import { 
   Building2, 
   AlertTriangle,
-  Loader2
+  Loader2,
+  Infinity,
+  Wifi,
+  Users,
+  Bot,
+  TrendingUp
 } from 'lucide-react';
 import { developerActions } from '@/lib/developerApi';
 import { toast } from 'sonner';
@@ -43,6 +48,16 @@ interface CreateCompanyModalProps {
   onSuccess: () => void;
 }
 
+type PlanType = 'monthly' | 'semiannual' | 'annual' | 'lifetime' | 'trial';
+
+const PLAN_LABELS: Record<PlanType, string> = {
+  monthly: 'Mensal - R$695,00/mês',
+  semiannual: 'Semestral - 6x R$437,85',
+  annual: 'Anual - 12x R$347,00',
+  lifetime: 'Vitalício (Todos recursos ilimitados)',
+  trial: 'Teste (Período personalizado)'
+};
+
 export default function CreateCompanyModal({ onClose, onSuccess }: CreateCompanyModalProps) {
   const [step, setStep] = useState<'form' | 'confirm'>('form');
   const [isLoading, setIsLoading] = useState(false);
@@ -51,15 +66,35 @@ export default function CreateCompanyModal({ onClose, onSuccess }: CreateCompany
   // Company fields
   const [companyName, setCompanyName] = useState('');
   const [slug, setSlug] = useState('');
-  const [plan, setPlan] = useState<string>('free');
-  const [trialDuration, setTrialDuration] = useState(14);
+  const [plan, setPlan] = useState<PlanType>('trial');
+  const [trialDuration, setTrialDuration] = useState(3);
   const [trialUnit, setTrialUnit] = useState<'days' | 'weeks' | 'months' | 'years'>('days');
+
+  // Limit fields
+  const [maxConnections, setMaxConnections] = useState(1);
+  const [unlimitedUsers, setUnlimitedUsers] = useState(true);
+  const [maxUsers, setMaxUsers] = useState<number | null>(null);
+  const [unlimitedAgents, setUnlimitedAgents] = useState(true);
+  const [maxAiAgents, setMaxAiAgents] = useState<number | null>(null);
+  const [commercialManagerEnabled, setCommercialManagerEnabled] = useState(false);
 
   // Owner fields
   const [ownerName, setOwnerName] = useState('');
   const [ownerEmail, setOwnerEmail] = useState('');
   const [ownerPassword, setOwnerPassword] = useState('');
   const [forcePasswordChange, setForcePasswordChange] = useState(true);
+
+  // Auto-set limits for lifetime plan
+  useEffect(() => {
+    if (plan === 'lifetime') {
+      setMaxConnections(999);
+      setUnlimitedUsers(true);
+      setMaxUsers(null);
+      setUnlimitedAgents(true);
+      setMaxAiAgents(null);
+      setCommercialManagerEnabled(true);
+    }
+  }, [plan]);
 
   // Auto-generate slug from company name
   const handleCompanyNameChange = (value: string) => {
@@ -85,7 +120,7 @@ export default function CreateCompanyModal({ onClose, onSuccess }: CreateCompany
       case 'years':
         return addYears(now, trialDuration);
       default:
-        return addDays(now, 14);
+        return addDays(now, 3);
     }
   };
 
@@ -131,21 +166,25 @@ export default function CreateCompanyModal({ onClose, onSuccess }: CreateCompany
         trialEndsAt = addDays(new Date(), 14).toISOString();
       }
 
-      // Map plan to valid enum value
-      const validPlan = (plan === 'lifetime' || plan === 'trial') 
-        ? 'free' 
-        : plan;
+      // Determine subscription status
+      const subscriptionStatus = plan === 'trial' ? 'trial' : (plan === 'lifetime' ? 'active' : 'active');
 
       const { data, error } = await developerActions({
         action: 'create_company',
         company_name: companyName.trim(),
         slug: slug.trim(),
-        plan: validPlan,
+        plan: plan,
         trial_ends_at: trialEndsAt,
         owner_name: ownerName.trim(),
         owner_email: ownerEmail.trim(),
         owner_password: ownerPassword,
-        force_password_change: forcePasswordChange
+        force_password_change: forcePasswordChange,
+        // New limit fields
+        max_connections: maxConnections,
+        max_users: unlimitedUsers ? null : maxUsers,
+        max_ai_agents: unlimitedAgents ? null : maxAiAgents,
+        commercial_manager_enabled: commercialManagerEnabled,
+        subscription_status: subscriptionStatus
       });
 
       if (error) {
@@ -175,7 +214,7 @@ export default function CreateCompanyModal({ onClose, onSuccess }: CreateCompany
   if (step === 'confirm') {
     return (
       <AlertDialog open onOpenChange={() => setStep('form')}>
-        <AlertDialogContent>
+        <AlertDialogContent className="max-h-[90vh] overflow-y-auto">
           <AlertDialogHeader>
             <AlertDialogTitle className="flex items-center gap-2 text-destructive">
               <AlertTriangle className="h-5 w-5" />
@@ -188,10 +227,16 @@ export default function CreateCompanyModal({ onClose, onSuccess }: CreateCompany
                 <div className="bg-muted p-3 rounded-md space-y-2 text-sm">
                   <p><strong>Empresa:</strong> {companyName}</p>
                   <p><strong>Slug:</strong> {slug}</p>
-                  <p><strong>Plano:</strong> {plan === 'lifetime' ? 'Vitalício' : plan === 'trial' ? 'Teste' : plan}</p>
+                  <p><strong>Plano:</strong> {PLAN_LABELS[plan]}</p>
                   {plan === 'trial' && (
-                    <p><strong>Duração:</strong> {trialDuration} {trialUnit}</p>
+                    <p><strong>Duração do Teste:</strong> {trialDuration} {trialUnit}</p>
                   )}
+                  <Separator className="my-2" />
+                  <p className="font-medium">Limites:</p>
+                  <p><strong>Conexões:</strong> {maxConnections === 999 ? 'Ilimitadas' : maxConnections}</p>
+                  <p><strong>Usuários:</strong> {unlimitedUsers ? 'Ilimitados' : maxUsers}</p>
+                  <p><strong>Agentes IA:</strong> {unlimitedAgents ? 'Ilimitados' : maxAiAgents}</p>
+                  <p><strong>Gerente Comercial:</strong> {commercialManagerEnabled ? 'Habilitado' : 'Desabilitado'}</p>
                   <Separator className="my-2" />
                   <p><strong>Proprietário:</strong> {ownerName}</p>
                   <p><strong>Email:</strong> {ownerEmail}</p>
@@ -274,16 +319,15 @@ export default function CreateCompanyModal({ onClose, onSuccess }: CreateCompany
 
               <div className="space-y-2">
                 <Label htmlFor="plan">Plano</Label>
-                <Select value={plan} onValueChange={setPlan}>
+                <Select value={plan} onValueChange={(v) => setPlan(v as PlanType)}>
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="free">Gratuito</SelectItem>
-                    <SelectItem value="starter">Starter</SelectItem>
-                    <SelectItem value="professional">Professional</SelectItem>
-                    <SelectItem value="enterprise">Enterprise</SelectItem>
-                    <SelectItem value="lifetime">Vitalício</SelectItem>
+                    <SelectItem value="monthly">Mensal - R$695,00/mês</SelectItem>
+                    <SelectItem value="semiannual">Semestral - 6x R$437,85</SelectItem>
+                    <SelectItem value="annual">Anual - 12x R$347,00</SelectItem>
+                    <SelectItem value="lifetime">Vitalício (Ilimitado)</SelectItem>
                     <SelectItem value="trial">Teste</SelectItem>
                   </SelectContent>
                 </Select>
@@ -316,6 +360,120 @@ export default function CreateCompanyModal({ onClose, onSuccess }: CreateCompany
                   </div>
                 </div>
               )}
+            </div>
+          </div>
+
+          <Separator />
+
+          {/* Limits Section */}
+          <div className="space-y-4">
+            <h3 className="font-medium text-sm">Limites e Recursos</h3>
+            
+            <div className="grid gap-4">
+              {/* Max Connections */}
+              <div className="space-y-2">
+                <Label htmlFor="max-connections" className="flex items-center gap-2">
+                  <Wifi className="h-4 w-4" />
+                  Conexões WhatsApp
+                </Label>
+                <div className="flex items-center gap-2">
+                  <Input
+                    id="max-connections"
+                    type="number"
+                    min={1}
+                    max={999}
+                    value={maxConnections}
+                    onChange={(e) => setMaxConnections(parseInt(e.target.value) || 1)}
+                    disabled={plan === 'lifetime'}
+                    className="w-24"
+                  />
+                  {plan === 'lifetime' && (
+                    <span className="text-sm text-muted-foreground flex items-center gap-1">
+                      <Infinity className="h-4 w-4" /> Ilimitadas
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Max Users */}
+              <div className="space-y-2">
+                <Label className="flex items-center gap-2">
+                  <Users className="h-4 w-4" />
+                  Usuários
+                </Label>
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center space-x-2">
+                    <Checkbox
+                      id="unlimited-users"
+                      checked={unlimitedUsers}
+                      onCheckedChange={(checked) => {
+                        setUnlimitedUsers(checked as boolean);
+                        if (checked) setMaxUsers(null);
+                        else setMaxUsers(10);
+                      }}
+                      disabled={plan === 'lifetime'}
+                    />
+                    <Label htmlFor="unlimited-users" className="text-sm">Ilimitados</Label>
+                  </div>
+                  {!unlimitedUsers && (
+                    <Input
+                      type="number"
+                      min={1}
+                      value={maxUsers || ''}
+                      onChange={(e) => setMaxUsers(parseInt(e.target.value) || 1)}
+                      className="w-24"
+                      placeholder="Limite"
+                    />
+                  )}
+                </div>
+              </div>
+
+              {/* Max AI Agents */}
+              <div className="space-y-2">
+                <Label className="flex items-center gap-2">
+                  <Bot className="h-4 w-4" />
+                  Agentes de IA
+                </Label>
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center space-x-2">
+                    <Checkbox
+                      id="unlimited-agents"
+                      checked={unlimitedAgents}
+                      onCheckedChange={(checked) => {
+                        setUnlimitedAgents(checked as boolean);
+                        if (checked) setMaxAiAgents(null);
+                        else setMaxAiAgents(5);
+                      }}
+                      disabled={plan === 'lifetime'}
+                    />
+                    <Label htmlFor="unlimited-agents" className="text-sm">Ilimitados</Label>
+                  </div>
+                  {!unlimitedAgents && (
+                    <Input
+                      type="number"
+                      min={1}
+                      value={maxAiAgents || ''}
+                      onChange={(e) => setMaxAiAgents(parseInt(e.target.value) || 1)}
+                      className="w-24"
+                      placeholder="Limite"
+                    />
+                  )}
+                </div>
+              </div>
+
+              {/* Commercial Manager */}
+              <div className="flex items-center justify-between">
+                <Label htmlFor="commercial-manager" className="flex items-center gap-2">
+                  <TrendingUp className="h-4 w-4" />
+                  Gerente Comercial
+                </Label>
+                <Switch
+                  id="commercial-manager"
+                  checked={commercialManagerEnabled}
+                  onCheckedChange={setCommercialManagerEnabled}
+                  disabled={plan === 'lifetime'}
+                />
+              </div>
             </div>
           </div>
 
