@@ -1,12 +1,11 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { 
-  transcribeAudio, 
-  getCachedAnalysis, 
-  saveCacheAnalysis,
-  SUPPORTED_DOCUMENT_MIMES,
-  SUPPORTED_VIDEO_MIMES 
-} from '../_shared/media-cache.ts';
+  analyzeImageWithFileAPI,
+  analyzeVideoWithFileAPI,
+  analyzeDocumentWithFileAPI,
+  transcribeAudioWithFileAPI
+} from '../_shared/gemini-file-api.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -16,96 +15,6 @@ const corsHeaders = {
 const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY');
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-
-// Analisa mídia usando URL Context Tool com cache
-async function analyzeMediaWithUrlContext(
-  url: string,
-  mediaType: 'image' | 'video' | 'document',
-  apiKey: string,
-  supabase: any,
-  companyId: string,
-  fileName?: string
-): Promise<string | null> {
-  try {
-    // Verifica cache primeiro
-    const cached = await getCachedAnalysis(supabase, url, companyId);
-    if (cached?.analysis) {
-      console.log(`[summarize-chat] Cache HIT para ${mediaType}: ${url.substring(0, 50)}...`);
-      return cached.analysis;
-    }
-    
-    console.log(`[summarize-chat] Analisando ${mediaType} com URL Context: ${url.substring(0, 50)}...`);
-    
-    let prompt = '';
-    if (mediaType === 'image') {
-      prompt = `Analise esta imagem em detalhes. Descreva: 
-1. O que está sendo mostrado visualmente
-2. Texto ou legendas visíveis
-3. Cores, objetos e pessoas identificáveis
-4. Contexto relevante para atendimento ao cliente
-Retorne uma descrição objetiva e completa.
-
-URL da imagem: ${url}`;
-    } else if (mediaType === 'video') {
-      prompt = `Analise este vídeo. Descreva:
-1. O que está acontecendo no vídeo
-2. Principais cenas e momentos
-3. Áudio/narração se houver
-4. Contexto relevante para atendimento ao cliente
-Retorne uma descrição objetiva.
-
-URL do vídeo: ${url}`;
-    } else if (mediaType === 'document') {
-      prompt = `Analise este documento${fileName ? ` (${fileName})` : ''}. Extraia:
-1. Tipo do documento
-2. Principais informações e dados
-3. Datas, valores, nomes mencionados
-4. Resumo do conteúdo relevante
-Retorne as informações de forma estruturada.
-
-URL do documento: ${url}`;
-    }
-    
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          tools: [{ url_context: {} }],
-          generationConfig: { 
-            temperature: 0.3, 
-            maxOutputTokens: 2048 
-          }
-        }),
-      }
-    );
-    
-    if (!response.ok) {
-      console.error(`[summarize-chat] URL Context error: ${response.status}`);
-      return null;
-    }
-    
-    const data = await response.json();
-    const analysis = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-    
-    if (analysis) {
-      console.log(`[summarize-chat] ${mediaType} analisado com sucesso`);
-      
-      // Salva no cache
-      saveCacheAnalysis(supabase, url, companyId, mediaType, { analysis })
-        .catch(err => console.error('[summarize-chat] Cache save error:', err));
-      
-      return analysis;
-    }
-    
-    return null;
-  } catch (error) {
-    console.error(`[summarize-chat] Erro ao analisar ${mediaType}:`, error);
-    return null;
-  }
-}
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -206,20 +115,24 @@ serve(async (req) => {
     let imagesAnalyzed = 0;
     let videosAnalyzed = 0;
     let documentsAnalyzed = 0;
+    let audiosAnalyzed = 0;
 
-    // Processar mensagens e analisar mídia
+    // Processar mensagens e analisar mídia usando Gemini File API
     for (const msg of messages) {
       const sender = msg.direction === 'incoming' ? '👤 CLIENTE' : '💼 ATENDENTE';
       const time = new Date(msg.created_at).toLocaleString('pt-BR');
       let content = msg.content || '';
       
       if (msg.message_type === 'audio') {
-        // Transcrever áudio com cache
+        // Transcrever áudio com Gemini File API + cache
         if (msg.media_url && companyId) {
-          const transcription = await transcribeAudio(msg.media_url, GEMINI_API_KEY, supabase, companyId);
+          const transcription = await transcribeAudioWithFileAPI(
+            msg.media_url, GEMINI_API_KEY, supabase, companyId
+          );
           content = transcription 
             ? `[Áudio transcrito]: "${transcription}"`
             : '[Áudio - transcrição não disponível]';
+          if (transcription) audiosAnalyzed++;
         } else if (msg.metadata?.transcription) {
           content = `[Áudio transcrito]: "${msg.metadata.transcription}"`;
         } else {
@@ -227,8 +140,8 @@ serve(async (req) => {
         }
       } else if (msg.message_type === 'image') {
         if (msg.media_url && companyId && imagesAnalyzed < 10) {
-          const analysis = await analyzeMediaWithUrlContext(
-            msg.media_url, 'image', GEMINI_API_KEY, supabase, companyId
+          const analysis = await analyzeImageWithFileAPI(
+            msg.media_url, GEMINI_API_KEY, supabase, companyId
           );
           if (analysis) {
             mediaAnalyses.push(`📸 IMAGEM (${time}): ${analysis}`);
@@ -242,8 +155,8 @@ serve(async (req) => {
         }
       } else if (msg.message_type === 'video') {
         if (msg.media_url && companyId && videosAnalyzed < 5) {
-          const analysis = await analyzeMediaWithUrlContext(
-            msg.media_url, 'video', GEMINI_API_KEY, supabase, companyId
+          const analysis = await analyzeVideoWithFileAPI(
+            msg.media_url, GEMINI_API_KEY, supabase, companyId
           );
           if (analysis) {
             mediaAnalyses.push(`🎬 VÍDEO (${time}): ${analysis}`);
@@ -258,8 +171,8 @@ serve(async (req) => {
       } else if (msg.message_type === 'document') {
         if (msg.media_url && companyId && documentsAnalyzed < 5) {
           const fileName = msg.metadata?.fileName || msg.metadata?.file_name || 'documento';
-          const analysis = await analyzeMediaWithUrlContext(
-            msg.media_url, 'document', GEMINI_API_KEY, supabase, companyId, fileName
+          const analysis = await analyzeDocumentWithFileAPI(
+            msg.media_url, GEMINI_API_KEY, supabase, companyId, fileName
           );
           if (analysis) {
             mediaAnalyses.push(`📄 DOCUMENTO "${fileName}" (${time}): ${analysis}`);
@@ -341,11 +254,11 @@ ${mediaSection}
 
 Gere o resumo estruturado conforme as instruções.`;
 
-    console.log(`[summarize-chat] Mídias analisadas - Imagens: ${imagesAnalyzed}, Vídeos: ${videosAnalyzed}, Documentos: ${documentsAnalyzed}`);
+    console.log(`[summarize-chat] Mídias analisadas - Imagens: ${imagesAnalyzed}, Vídeos: ${videosAnalyzed}, Documentos: ${documentsAnalyzed}, Áudios: ${audiosAnalyzed}`);
 
-    // Chamar Gemini 3.0 Flash Preview
+    // Chamar Gemini 2.5 Flash
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${GEMINI_API_KEY}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -373,7 +286,8 @@ Gere o resumo estruturado conforme as instruções.`;
     const mediaAnalyzed = {
       images: imagesAnalyzed,
       videos: videosAnalyzed,
-      documents: documentsAnalyzed
+      documents: documentsAnalyzed,
+      audios: audiosAnalyzed
     };
 
     // Get current user for generated_by field
