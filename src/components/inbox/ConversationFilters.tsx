@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Filter } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -10,17 +10,12 @@ import {
 } from '@/components/ui/popover';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
-import { SearchableDropdown } from '@/components/ui/searchable-dropdown';
 import { MultiSelectDropdown } from '@/components/ui/multi-select-dropdown';
+import { DepartmentHierarchySelector } from '@/components/inbox/DepartmentHierarchySelector';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
+import { ALL_CONNECTIONS_ID } from '@/components/inbox/ConnectionSelector';
 import type { ConversationFilters as FiltersType } from '@/types';
-
-interface Department {
-  id: string;
-  name: string;
-  color?: string;
-}
 
 interface Agent {
   id: string;
@@ -37,6 +32,7 @@ interface KanbanColumn {
   id: string;
   name: string;
   color: string;
+  connectionId: string;
 }
 
 interface ConversationFiltersProps {
@@ -62,41 +58,15 @@ export function ConversationFiltersComponent({
   currentUserId,
   isRestricted = false,
 }: ConversationFiltersProps) {
-  const { userRole } = useAuth();
+  const { userRole, profile } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
-  const [departments, setDepartments] = useState<Department[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [tags, setTags] = useState<Tag[]>([]);
   const [kanbanColumns, setKanbanColumns] = useState<KanbanColumn[]>([]);
   const [localFilters, setLocalFilters] = useState<FiltersType>(filters);
 
   const isAdminOrOwner = userRole?.role === 'owner' || userRole?.role === 'admin';
-
-  // Load departments for the connection
-  useEffect(() => {
-    async function loadDepartments() {
-      if (!connectionId) {
-        setDepartments([]);
-        return;
-      }
-
-      const { data, error } = await supabase
-        .from('departments')
-        .select('id, name, color')
-        .eq('whatsapp_connection_id', connectionId)
-        .eq('active', true)
-        .order('name');
-
-      if (error) {
-        console.error('[ConversationFilters] Error loading departments:', error);
-        return;
-      }
-
-      setDepartments(data || []);
-    }
-
-    loadDepartments();
-  }, [connectionId]);
+  const isAllConnections = connectionId === ALL_CONNECTIONS_ID;
 
   // Load agents for admin/owner
   useEffect(() => {
@@ -142,7 +112,7 @@ export function ConversationFiltersComponent({
     loadTags();
   }, []);
 
-  // Load kanban columns for the connection
+  // Load kanban columns for the connection(s)
   useEffect(() => {
     async function loadKanbanColumns() {
       if (!connectionId) {
@@ -150,35 +120,84 @@ export function ConversationFiltersComponent({
         return;
       }
 
-      // First get the board for this connection
-      const { data: boardData, error: boardError } = await supabase
-        .from('kanban_boards')
-        .select('id')
-        .eq('whatsapp_connection_id', connectionId)
-        .maybeSingle();
+      try {
+        if (isAllConnections && profile?.company_id) {
+          // Get all boards for company connections
+          const { data: connections } = await supabase
+            .from('whatsapp_connections')
+            .select('id')
+            .eq('company_id', profile.company_id)
+            .eq('active', true);
 
-      if (boardError || !boardData) {
-        setKanbanColumns([]);
-        return;
-      }
+          if (!connections || connections.length === 0) {
+            setKanbanColumns([]);
+            return;
+          }
 
-      // Then get columns for this board
-      const { data, error } = await supabase
-        .from('kanban_columns')
-        .select('id, name, color')
-        .eq('board_id', boardData.id)
-        .order('position');
+          const connectionIds = connections.map(c => c.id);
 
-      if (error) {
+          const { data: boards } = await supabase
+            .from('kanban_boards')
+            .select('id, whatsapp_connection_id')
+            .in('whatsapp_connection_id', connectionIds);
+
+          if (!boards || boards.length === 0) {
+            setKanbanColumns([]);
+            return;
+          }
+
+          const boardIds = boards.map(b => b.id);
+
+          const { data: columns } = await supabase
+            .from('kanban_columns')
+            .select('id, name, color, board_id')
+            .in('board_id', boardIds)
+            .order('position');
+
+          if (columns) {
+            // Map board_id to connection_id
+            const boardToConnection = new Map(boards.map(b => [b.id, b.whatsapp_connection_id]));
+            setKanbanColumns(columns.map(c => ({
+              id: c.id,
+              name: c.name,
+              color: c.color || '#3B82F6',
+              connectionId: boardToConnection.get(c.board_id) || '',
+            })));
+          }
+        } else {
+          // Single connection
+          const { data: boardData } = await supabase
+            .from('kanban_boards')
+            .select('id')
+            .eq('whatsapp_connection_id', connectionId)
+            .maybeSingle();
+
+          if (!boardData) {
+            setKanbanColumns([]);
+            return;
+          }
+
+          const { data } = await supabase
+            .from('kanban_columns')
+            .select('id, name, color')
+            .eq('board_id', boardData.id)
+            .order('position');
+
+          setKanbanColumns((data || []).map(c => ({
+            id: c.id,
+            name: c.name,
+            color: c.color || '#3B82F6',
+            connectionId: connectionId,
+          })));
+        }
+      } catch (error) {
         console.error('[ConversationFilters] Error loading kanban columns:', error);
-        return;
+        setKanbanColumns([]);
       }
-
-      setKanbanColumns(data || []);
     }
 
     loadKanbanColumns();
-  }, [connectionId]);
+  }, [connectionId, isAllConnections, profile?.company_id]);
 
   // Sync local filters when props change
   useEffect(() => {
@@ -186,14 +205,16 @@ export function ConversationFiltersComponent({
   }, [filters]);
 
   // Count active filters
-  const activeFiltersCount = [
-    localFilters.status && localFilters.status.length > 0,
-    localFilters.departmentId,
-    isAdminOrOwner && localFilters.filterByAgentId,
-    localFilters.tags && localFilters.tags.length > 0,
-    localFilters.kanbanColumnId,
-    isAdminOrOwner && localFilters.isFollowing,
-  ].filter(Boolean).length;
+  const activeFiltersCount = useMemo(() => {
+    return [
+      localFilters.status && localFilters.status.length > 0,
+      localFilters.departmentIds && localFilters.departmentIds.length > 0,
+      isAdminOrOwner && localFilters.filterByAgentIds && localFilters.filterByAgentIds.length > 0,
+      localFilters.tags && localFilters.tags.length > 0,
+      localFilters.kanbanColumnIds && localFilters.kanbanColumnIds.length > 0,
+      isAdminOrOwner && localFilters.isFollowing,
+    ].filter(Boolean).length;
+  }, [localFilters, isAdminOrOwner]);
 
   const handleApply = () => {
     onFiltersChange(localFilters);
@@ -204,10 +225,10 @@ export function ConversationFiltersComponent({
   const handleClear = () => {
     const clearedFilters: FiltersType = {
       status: [],
-      departmentId: undefined,
-      filterByAgentId: undefined,
+      departmentIds: undefined,
+      filterByAgentIds: undefined,
       tags: undefined,
-      kanbanColumnId: undefined,
+      kanbanColumnIds: undefined,
       isFollowing: undefined,
     };
     setLocalFilters(clearedFilters);
@@ -231,7 +252,6 @@ export function ConversationFiltersComponent({
 
   // Convert options for dropdowns
   const agentOptions = agents.map(a => ({ value: a.id, label: a.full_name }));
-  const departmentOptions = departments.map(d => ({ value: d.id, label: d.name, color: d.color }));
   const tagOptions = tags.map(t => ({ value: t.id, label: t.name, color: t.color }));
   const kanbanOptions = kanbanColumns.map(k => ({ value: k.id, label: k.name, color: k.color }));
 
@@ -265,17 +285,20 @@ export function ConversationFiltersComponent({
         
         <div className="flex-1 overflow-y-auto min-h-0">
           <div className="p-3 space-y-4">
-            {/* Agent Filter - Only for admin/owner */}
+            {/* Agent Filter - Only for admin/owner - Multi-select */}
             {isAdminOrOwner && agents.length > 0 && (
               <>
                 <div className="space-y-2">
                   <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
                     Por Atendente
                   </Label>
-                  <SearchableDropdown
+                  <MultiSelectDropdown
                     options={agentOptions}
-                    value={localFilters.filterByAgentId}
-                    onChange={(value) => setLocalFilters(prev => ({ ...prev, filterByAgentId: value }))}
+                    values={localFilters.filterByAgentIds || []}
+                    onChange={(values) => setLocalFilters(prev => ({ 
+                      ...prev, 
+                      filterByAgentIds: values.length > 0 ? values : undefined 
+                    }))}
                     placeholder="Todos os atendentes"
                     searchPlaceholder="Buscar atendente..."
                     emptyMessage="Nenhum atendente encontrado"
@@ -285,27 +308,23 @@ export function ConversationFiltersComponent({
               </>
             )}
 
-            {/* Department Filter */}
-            {departments.length > 0 && (
-              <>
-                <div className="space-y-2">
-                  <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                    Departamento
-                  </Label>
-                  <SearchableDropdown
-                    options={departmentOptions}
-                    value={localFilters.departmentId}
-                    onChange={(value) => setLocalFilters(prev => ({ ...prev, departmentId: value }))}
-                    placeholder="Todos os departamentos"
-                    searchPlaceholder="Buscar departamento..."
-                    emptyMessage="Nenhum departamento encontrado"
-                  />
-                </div>
-                <Separator />
-              </>
-            )}
+            {/* Department Filter - Hierarchical selector */}
+            <div className="space-y-2">
+              <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                Departamento
+              </Label>
+              <DepartmentHierarchySelector
+                selectedConnectionId={connectionId}
+                selectedDepartmentIds={localFilters.departmentIds || []}
+                onChange={(ids) => setLocalFilters(prev => ({ 
+                  ...prev, 
+                  departmentIds: ids.length > 0 ? ids : undefined 
+                }))}
+              />
+            </div>
+            <Separator />
 
-            {/* Tags Filter */}
+            {/* Tags Filter - Multi-select */}
             {tags.length > 0 && (
               <>
                 <div className="space-y-2">
@@ -325,17 +344,20 @@ export function ConversationFiltersComponent({
               </>
             )}
 
-            {/* Kanban Funnel Stage Filter */}
+            {/* Kanban Funnel Stage Filter - Multi-select */}
             {kanbanColumns.length > 0 && (
               <>
                 <div className="space-y-2">
                   <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
                     Estágio do Funil
                   </Label>
-                  <SearchableDropdown
+                  <MultiSelectDropdown
                     options={kanbanOptions}
-                    value={localFilters.kanbanColumnId}
-                    onChange={(value) => setLocalFilters(prev => ({ ...prev, kanbanColumnId: value }))}
+                    values={localFilters.kanbanColumnIds || []}
+                    onChange={(values) => setLocalFilters(prev => ({ 
+                      ...prev, 
+                      kanbanColumnIds: values.length > 0 ? values : undefined 
+                    }))}
                     placeholder="Todos os estágios"
                     searchPlaceholder="Buscar estágio..."
                     emptyMessage="Nenhum estágio encontrado"
