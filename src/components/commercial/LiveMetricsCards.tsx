@@ -67,7 +67,7 @@ export function LiveMetricsCards({ loading, metrics }: LiveMetricsCardsProps) {
       bgColor: 'bg-orange-500/10'
     },
     {
-      label: 'Leads Frios',
+      label: 'Leads Frios/Novos',
       value: metrics.coldLeads,
       icon: Snowflake,
       color: 'text-cyan-500',
