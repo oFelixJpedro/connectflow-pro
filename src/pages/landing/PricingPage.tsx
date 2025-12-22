@@ -20,6 +20,8 @@ const STRIPE_PRICES = {
   monthly: 'price_1Sh1ldHOTrHw8gZfWCxrSpBo',
   semiannual: 'price_1Sh1srHOTrHw8gZfAF7nujIj',
   annual: 'price_1Sh1uIHOTrHw8gZfCY7VVZEy',
+  extraConnection: 'price_1Sh23yHOTrHw8gZfN1V0ZBMP',
+  commercialManager: 'price_1Sh24PHOTrHw8gZfVI7mSliT',
 };
 
 const plans = [
@@ -113,10 +115,25 @@ export default function PricingPage() {
         return;
       }
 
-      const priceId = STRIPE_PRICES[selectedPlan as keyof typeof STRIPE_PRICES];
+      // Build line items array
+      const lineItems: { priceId: string; quantity: number }[] = [];
+      
+      // Add main plan
+      const planPriceId = STRIPE_PRICES[selectedPlan as keyof typeof STRIPE_PRICES];
+      lineItems.push({ priceId: planPriceId, quantity: 1 });
+      
+      // Add extra connections if selected
+      if (extraConnections > 0) {
+        lineItems.push({ priceId: STRIPE_PRICES.extraConnection, quantity: extraConnections });
+      }
+      
+      // Add commercial manager if selected
+      if (includeCommercialManager) {
+        lineItems.push({ priceId: STRIPE_PRICES.commercialManager, quantity: 1 });
+      }
       
       const { data, error } = await supabase.functions.invoke('create-checkout', {
-        body: { priceId }
+        body: { lineItems }
       });
 
       if (error) throw error;
