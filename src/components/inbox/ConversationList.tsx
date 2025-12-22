@@ -282,10 +282,19 @@ export function ConversationList({
                       </div>
                       
                       <p className={cn(
-                        "text-xs truncate mt-0.5",
+                        "text-xs truncate mt-0.5 flex items-center gap-1.5",
                         isUnread ? "text-foreground font-semibold" : "text-muted-foreground"
                       )}>
-                        {conversation.contact?.phoneNumber}
+                        <span>{conversation.contact?.phoneNumber}</span>
+                        {conversation.whatsappConnection?.name && (
+                          <Badge 
+                            variant="outline" 
+                            className="text-[10px] px-1.5 py-0 h-4 bg-blue-100 text-blue-700 border-0 dark:bg-blue-900/30 dark:text-blue-400 max-w-[70px] truncate"
+                            title={conversation.whatsappConnection.name}
+                          >
+                            {conversation.whatsappConnection.name}
+                          </Badge>
+                        )}
                       </p>
 
                       {/* Assignment, department badges and contact tags */}
