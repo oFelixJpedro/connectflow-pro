@@ -98,6 +98,7 @@ interface AggregatedInsights {
   criteria_scores: CriteriaScores;
   average_score: number;
   qualified_leads_percent: number;
+  agent_rankings?: AgentAnalysis[]; // Persisted agent rankings from commercial-pixel
 }
 
 export interface CRMStageMapData {
@@ -228,19 +229,25 @@ export function useCommercialData(filter?: CommercialFilter) {
   const isDefaultPeriod = useMemo(() => {
     if (!filter?.startDate || !filter?.endDate) return true;
     
+    // Use UTC to avoid timezone mismatches with server/database
     const now = new Date();
-    // Calculate start of current week (Monday)
-    const weekStart = new Date(now);
-    const dayOfWeek = now.getDay();
-    const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek; // Monday is first day
-    weekStart.setDate(now.getDate() + diff);
-    weekStart.setHours(0, 0, 0, 0);
     
-    // Compare only dates (day/month/year), ignoring time to avoid false positives
-    const filterStartDay = filter.startDate.toISOString().split('T')[0];
-    const weekStartDay = weekStart.toISOString().split('T')[0];
+    // Calculate start of current week (Monday) in UTC
+    const dayOfWeekUTC = now.getUTCDay();
+    const diffToMonday = dayOfWeekUTC === 0 ? -6 : 1 - dayOfWeekUTC; // Monday is first day (ISO week)
+    const weekStartUTC = new Date(Date.UTC(
+      now.getUTCFullYear(),
+      now.getUTCMonth(),
+      now.getUTCDate() + diffToMonday
+    ));
     
-    return filterStartDay === weekStartDay;
+    // Compare only dates (YYYY-MM-DD format) in UTC to avoid timezone issues
+    const filterStartISO = filter.startDate.toISOString().split('T')[0];
+    const weekStartISO = weekStartUTC.toISOString().split('T')[0];
+    
+    console.log('📅 [isDefaultPeriod] Comparing:', { filterStartISO, weekStartISO, isDefault: filterStartISO === weekStartISO });
+    
+    return filterStartISO === weekStartISO;
   }, [filter?.startDate, filter?.endDate]);
   
   // hasActiveFilter: true when user has selected a SPECIFIC filter (not just default period)
@@ -1126,44 +1133,60 @@ export function useCommercialData(filter?: CommercialFilter) {
         const { data: evaluations } = await evaluationsQuery;
 
         // Build agent analysis with real evaluation data
-        const agentsAnalysis: AgentAnalysis[] = agents?.map(agent => {
-          const stats = agentStats[agent.id] || { conversations: 0, closed: 0 };
-          
-          const agentEvaluations = evaluations?.filter(e => {
-            const convIds = conversations?.filter(c => c.assigned_user_id === agent.id).map(c => c.id) || [];
-            return convIds.includes(e.conversation_id);
-          }) || [];
+        // Priority: 1) Calculate from current data if filter active, 2) Use persisted rankings from DB if available and no filter, 3) Calculate fresh
+        let agentsAnalysis: AgentAnalysis[];
+        
+        const hasPersistedRankings = aggregatedInsights.agent_rankings && aggregatedInsights.agent_rankings.length > 0;
+        const shouldUsePersistedRankings = !hasActiveFilter && hasPersistedRankings;
+        
+        if (shouldUsePersistedRankings) {
+          // Use persisted rankings from aggregated_insights (updated by commercial-pixel)
+          console.log('📊 [useCommercialData] Using persisted agent_rankings from DB:', aggregatedInsights.agent_rankings!.length, 'agents');
+          agentsAnalysis = aggregatedInsights.agent_rankings!;
+        } else {
+          // Calculate fresh from conversations and evaluations
+          console.log('📊 [useCommercialData] Calculating agent rankings from conversations/evaluations');
+          agentsAnalysis = agents?.map(agent => {
+            const stats = agentStats[agent.id] || { conversations: 0, closed: 0 };
+            
+            const agentEvaluations = evaluations?.filter(e => {
+              const convIds = conversations?.filter(c => c.assigned_user_id === agent.id).map(c => c.id) || [];
+              return convIds.includes(e.conversation_id);
+            }) || [];
 
-          let score: number;
-          if (agentEvaluations.length > 0) {
-            const totalScore = agentEvaluations.reduce((sum, e) => sum + (e.overall_score || 0), 0);
-            score = Math.round((totalScore / agentEvaluations.length) * 10) / 10;
-          } else {
-            score = stats.conversations > 0 
-              ? Math.round((stats.closed / stats.conversations) * 10 * 10) / 10 
-              : 0;
-          }
-          
-          const level: AgentAnalysis['level'] = 
-            score >= 8.5 ? 'senior' : 
-            score >= 7.0 ? 'pleno' : 'junior';
-          
-          const recommendation: AgentAnalysis['recommendation'] = 
-            score >= 8.5 ? 'promover' :
-            score >= 7.0 ? 'manter' :
-            score >= 6.0 ? 'treinar' :
-            score >= 5.0 ? 'monitorar' : 'ação corretiva';
+            let score: number;
+            if (agentEvaluations.length > 0) {
+              const totalScore = agentEvaluations.reduce((sum, e) => sum + (e.overall_score || 0), 0);
+              score = Math.round((totalScore / agentEvaluations.length) * 10) / 10;
+            } else {
+              score = stats.conversations > 0 
+                ? Math.round((stats.closed / stats.conversations) * 10 * 10) / 10 
+                : 0;
+            }
+            
+            const level: AgentAnalysis['level'] = 
+              score >= 8.5 ? 'senior' : 
+              score >= 7.0 ? 'pleno' : 'junior';
+            
+            const recommendation: AgentAnalysis['recommendation'] = 
+              score >= 8.5 ? 'promover' :
+              score >= 7.0 ? 'manter' :
+              score >= 6.0 ? 'treinar' :
+              score >= 5.0 ? 'monitorar' : 'ação corretiva';
 
-          return {
-            id: agent.id,
-            name: agent.full_name,
-            avatar_url: agent.avatar_url || undefined,
-            level,
-            score,
-            conversations: stats.conversations,
-            recommendation,
-          };
-        }).filter(a => a.conversations > 0).sort((a, b) => b.score - a.score) || [];
+            return {
+              id: agent.id,
+              name: agent.full_name,
+              avatar_url: agent.avatar_url || undefined,
+              level,
+              score,
+              conversations: stats.conversations,
+              recommendation,
+            };
+          }).filter(a => a.conversations > 0).sort((a, b) => b.score - a.score) || [];
+        }
+        
+        console.log('📊 [useCommercialData] Final agentsAnalysis:', agentsAnalysis.length, 'agents');
 
         // Calculate overall metrics
         const totalConversations = conversations?.length || 0;
