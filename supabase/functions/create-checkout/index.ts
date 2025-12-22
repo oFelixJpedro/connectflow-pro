@@ -41,9 +41,11 @@ serve(async (req) => {
     if (!user?.email) throw new Error("User not authenticated or email not available");
     logStep("User authenticated", { userId: user.id, email: user.email });
 
-    const { priceId } = await req.json();
-    if (!priceId) throw new Error("Price ID is required");
-    logStep("Price ID received", { priceId });
+    const { lineItems } = await req.json();
+    if (!lineItems || !Array.isArray(lineItems) || lineItems.length === 0) {
+      throw new Error("Line items are required");
+    }
+    logStep("Line items received", { count: lineItems.length, items: lineItems });
 
     const stripe = new Stripe(stripeKey, { apiVersion: "2025-08-27.basil" });
 
@@ -59,15 +61,16 @@ serve(async (req) => {
 
     const origin = req.headers.get("origin") || "https://stjtkvanmlidurmwpdpc.lovableproject.com";
     
+    // Build Stripe line_items from request
+    const stripeLineItems = lineItems.map((item: { priceId: string; quantity: number }) => ({
+      price: item.priceId,
+      quantity: item.quantity,
+    }));
+    
     const session = await stripe.checkout.sessions.create({
       customer: customerId,
       customer_email: customerId ? undefined : user.email,
-      line_items: [
-        {
-          price: priceId,
-          quantity: 1,
-        },
-      ],
+      line_items: stripeLineItems,
       mode: "subscription",
       success_url: `${origin}/checkout-success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${origin}/precos`,
