@@ -959,6 +959,10 @@ export function ChatPanel({
         setReplyingTo(null);
         setNoteAttachment(null);
         resetMentions();
+        // Reset textarea height
+        if (textareaRef.current) {
+          textareaRef.current.style.height = 'auto';
+        }
         // Keep internal note mode active for convenience
         // Restore focus after state update
         setTimeout(() => textareaRef.current?.focus(), 0);
@@ -972,6 +976,10 @@ export function ChatPanel({
       // Clear input and reply immediately for better UX
       setInputValue('');
       setReplyingTo(null);
+      // Reset textarea height
+      if (textareaRef.current) {
+        textareaRef.current.style.height = 'auto';
+      }
       
       // Await the send operation
       await onSendMessage(contentToSend, quotedId);
@@ -1073,6 +1081,14 @@ export function ChatPanel({
     if (isInternalNoteMode) {
       handleMentionInputChange(value, cursorPosition);
     }
+
+    // Auto-resize textarea based on content
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+      const maxHeight = 200; // ~8 lines, harmonious limit
+      const newHeight = Math.min(textareaRef.current.scrollHeight, maxHeight);
+      textareaRef.current.style.height = `${newHeight}px`;
+    }
   };
 
   // Handle quick reply selection
@@ -1080,6 +1096,10 @@ export function ChatPanel({
     console.log('📝 Resposta rápida selecionada:', reply.id, 'Tipo:', reply.media_type);
     setShowQuickReplies(false);
     setInputValue('');
+    // Reset textarea height
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+    }
     
     const mediaType = reply.media_type || 'text';
     
@@ -2026,7 +2046,7 @@ export function ChatPanel({
                       : blockInfo.message
                 }
                 className={cn(
-                  "min-h-[44px] max-h-32 resize-none pr-10 transition-colors duration-200",
+                  "min-h-[44px] max-h-[200px] resize-none pr-10 transition-colors duration-200",
                   !isInternalNoteMode && canReply && messages.length > 0 && "pl-10",
                   !canReply && !isInternalNoteMode && "bg-muted/50 cursor-not-allowed",
                   isInternalNoteMode && "bg-amber-50 border-amber-300 focus-visible:ring-amber-400 placeholder:text-amber-600/70 text-slate-900"
