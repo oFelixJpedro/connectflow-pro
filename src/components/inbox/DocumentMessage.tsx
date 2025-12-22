@@ -64,11 +64,15 @@ function getFileExtension(fileName?: string, mimeType?: string): string {
 }
 
 function getFileIcon(fileName?: string, mimeType?: string) {
-  // Check file extension first (more reliable for markdown)
+  // Check file extension first (more reliable)
   if (fileName) {
     const ext = fileName.split('.').pop()?.toLowerCase();
     if (ext === 'md' || ext === 'markdown') {
       return <FileCode className="w-10 h-10 text-purple-500" />;
+    }
+    // CSV and Excel by extension
+    if (ext === 'csv' || ext === 'xls' || ext === 'xlsx') {
+      return <FileSpreadsheet className="w-10 h-10 text-green-500" />;
     }
   }
   
@@ -89,8 +93,8 @@ function getFileIcon(fileName?: string, mimeType?: string) {
     return <FileText className="w-10 h-10 text-blue-500" />;
   }
   
-  // Excel/Spreadsheets
-  if (mimeType.includes('excel') || mimeType.includes('spreadsheet') || mimeType.includes('sheet')) {
+  // Excel/Spreadsheets/CSV
+  if (mimeType.includes('excel') || mimeType.includes('spreadsheet') || mimeType.includes('sheet') || mimeType === 'text/csv') {
     return <FileSpreadsheet className="w-10 h-10 text-green-500" />;
   }
   
