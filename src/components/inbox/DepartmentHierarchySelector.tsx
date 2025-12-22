@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Check, ChevronRight, ChevronsUpDown, X, Building2 } from 'lucide-react';
+import { ChevronRight, ChevronsUpDown, X, Building2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -44,6 +44,24 @@ interface DepartmentHierarchySelectorProps {
   onChange: (departmentIds: string[]) => void;
   disabled?: boolean;
   className?: string;
+}
+
+// Convert hex color to pastel version
+function toPastelColor(hexColor: string): { background: string; text: string } {
+  const hex = hexColor.replace('#', '');
+  const r = parseInt(hex.substr(0, 2), 16) || 128;
+  const g = parseInt(hex.substr(2, 2), 16) || 128;
+  const b = parseInt(hex.substr(4, 2), 16) || 128;
+  
+  // Mix with white (30% original, 70% white) for pastel effect
+  const pastelR = Math.round(r * 0.3 + 255 * 0.7);
+  const pastelG = Math.round(g * 0.3 + 255 * 0.7);
+  const pastelB = Math.round(b * 0.3 + 255 * 0.7);
+  
+  return {
+    background: `rgb(${pastelR}, ${pastelG}, ${pastelB})`,
+    text: hexColor,
+  };
 }
 
 export function DepartmentHierarchySelector({
@@ -250,11 +268,6 @@ export function DepartmentHierarchySelector({
     return selectedCount > 0 && selectedCount < connection.departments.length;
   };
 
-  const handleClearAll = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    onChange([]);
-  };
-
   const handleRemoveDepartment = (departmentId: string, e: React.MouseEvent) => {
     e.stopPropagation();
     onChange(selectedDepartmentIds.filter(id => id !== departmentId));
@@ -289,15 +302,7 @@ export function DepartmentHierarchySelector({
                 ? selectedDepartments[0]?.name
                 : `${selectedDepartmentIds.length} departamentos`}
             </span>
-            <div className="flex items-center gap-1 shrink-0">
-              {selectedDepartmentIds.length > 0 && (
-                <X
-                  className="h-3.5 w-3.5 opacity-50 hover:opacity-100"
-                  onClick={handleClearAll}
-                />
-              )}
-              <ChevronsUpDown className="h-4 w-4 shrink-0 opacity-50" />
-            </div>
+            <ChevronsUpDown className="h-4 w-4 shrink-0 opacity-50" />
           </Button>
         </PopoverTrigger>
         <PopoverContent 
@@ -427,23 +432,26 @@ export function DepartmentHierarchySelector({
         </PopoverContent>
       </Popover>
 
-      {/* Selected badges */}
+      {/* Selected badges with pastel colors */}
       {selectedDepartments.length > 0 && (
         <div className="flex flex-wrap gap-1">
-          {selectedDepartments.slice(0, 3).map((dept) => (
-            <Badge
-              key={dept.id}
-              variant="secondary"
-              className="text-xs px-2 py-0.5 gap-1"
-              style={dept.color ? { backgroundColor: dept.color, color: '#000' } : undefined}
-            >
-              {dept.name}
-              <X
-                className="h-3 w-3 cursor-pointer hover:opacity-70"
-                onClick={(e) => handleRemoveDepartment(dept.id, e)}
-              />
-            </Badge>
-          ))}
+          {selectedDepartments.slice(0, 3).map((dept) => {
+            const pastelStyle = dept.color ? toPastelColor(dept.color) : null;
+            return (
+              <Badge
+                key={dept.id}
+                variant="secondary"
+                className="text-xs px-2 py-0.5 gap-1"
+                style={pastelStyle ? { backgroundColor: pastelStyle.background, color: pastelStyle.text } : undefined}
+              >
+                {dept.name}
+                <X
+                  className="h-3 w-3 cursor-pointer hover:opacity-70"
+                  onClick={(e) => handleRemoveDepartment(dept.id, e)}
+                />
+              </Badge>
+            );
+          })}
           {selectedDepartments.length > 3 && (
             <Badge variant="outline" className="text-xs px-2 py-0.5">
               +{selectedDepartments.length - 3}
