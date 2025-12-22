@@ -214,10 +214,10 @@ export type InboxColumn = 'minhas' | 'fila' | 'todas';
 export interface ConversationFilters {
   status?: string[]; // Array of statuses for multi-select (e.g., ['open', 'in_progress'])
   assignedUserId?: string | 'mine' | 'unassigned' | 'all' | 'others';
-  filterByAgentId?: string; // Filter by specific agent (admin/owner only)
-  departmentId?: string;
+  filterByAgentIds?: string[]; // Filter by specific agents (admin/owner only) - array for multi-select
+  departmentIds?: string[]; // Filter by departments - array for multi-select
   tags?: string[];
-  kanbanColumnId?: string; // Filter by Kanban funnel stage
+  kanbanColumnIds?: string[]; // Filter by Kanban funnel stages - array for multi-select
   priority?: ConversationPriority;
   search?: string;
   inboxColumn?: InboxColumn;
