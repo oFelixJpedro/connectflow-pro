@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { TrendingUp, LayoutDashboard, Loader2, Radio, Library, Globe, Phone, Users, Calendar } from 'lucide-react';
+import { TrendingUp, LayoutDashboard, Loader2, Radio, Library, Globe, Phone, Users, Calendar, Lock } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -16,6 +16,7 @@ import { CriteriaRadarChart } from '@/components/commercial/CriteriaRadarChart';
 import { AgentPerformanceTable } from '@/components/commercial/AgentPerformanceTable';
 import { InsightsCard } from '@/components/commercial/InsightsCard';
 import { ReportsModal } from '@/components/reports/ReportsModal';
+import { FeatureLockedModal } from '@/components/subscription/FeatureLockedModal';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
@@ -45,11 +46,15 @@ export default function CommercialManager() {
   const [viewMode, setViewMode] = useState<'commercial' | 'dashboard'>('commercial');
   const [currentTime, setCurrentTime] = useState(new Date());
   const [reportsModalOpen, setReportsModalOpen] = useState(false);
+  const [showLockedModal, setShowLockedModal] = useState(false);
   
   // Filter options data
   const [connections, setConnections] = useState<Connection[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [loadingFilters, setLoadingFilters] = useState(false);
+
+  // Check if commercial manager is enabled for this company
+  const commercialManagerEnabled = (company as any)?.commercial_manager_enabled ?? false;
 
   // Real-time clock update
   useEffect(() => {
@@ -214,9 +219,34 @@ export default function CommercialManager() {
     return [];
   };
 
+  // Redirect non-admins
   if (!isAdmin) {
     navigate('/dashboard');
     return null;
+  }
+
+  // Show locked modal if feature is not enabled
+  if (!commercialManagerEnabled) {
+    return (
+      <div className="h-full overflow-auto p-3 md:p-6 flex items-center justify-center">
+        <FeatureLockedModal
+          open={true}
+          onClose={() => navigate('/dashboard')}
+          featureName="Gerente Comercial"
+          featureDescription="O Gerente Comercial é um recurso premium que oferece análises avançadas de performance da sua equipe de vendas, insights de IA, relatórios detalhados e muito mais."
+          price="R$ 197,00"
+          benefits={[
+            "Dashboard em tempo real com métricas de vendas",
+            "Análise de qualidade de atendimento por IA",
+            "Relatórios semanais automatizados",
+            "Mapa de leads por região do Brasil",
+            "Performance individual de cada atendente",
+            "Identificação de pontos fortes e fracos",
+            "Insights e recomendações de melhoria"
+          ]}
+        />
+      </div>
+    );
   }
 
   const secondaryOptions = getSecondaryOptions();
