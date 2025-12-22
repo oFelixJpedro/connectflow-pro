@@ -77,6 +77,64 @@ export function inferMimeTypeFromFileName(fileName: string): string | null {
 }
 
 /**
+ * Aguarda um arquivo ficar no estado ACTIVE no Gemini
+ * Vídeos e arquivos grandes precisam de processamento antes de ficarem prontos
+ * 
+ * @param fileName Nome do arquivo no Gemini (ex: files/abc123)
+ * @param apiKey Chave da API do Gemini
+ * @param maxWaitMs Tempo máximo de espera em ms (default: 120s para vídeos grandes)
+ * @returns true se o arquivo está ACTIVE, false se falhou ou timeout
+ */
+async function waitForFileActive(
+  fileName: string,
+  apiKey: string,
+  maxWaitMs: number = 120000
+): Promise<boolean> {
+  const startTime = Date.now();
+  const pollIntervalMs = 2000; // Verifica a cada 2 segundos
+  
+  console.log(`[GeminiFileAPI] ⏳ Waiting for file to become ACTIVE: ${fileName}`);
+  
+  while (Date.now() - startTime < maxWaitMs) {
+    try {
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/${fileName}?key=${apiKey}`
+      );
+      
+      if (!response.ok) {
+        console.error(`[GeminiFileAPI] ❌ File status check failed: ${response.status}`);
+        return false;
+      }
+      
+      const data = await response.json();
+      const state = data.state;
+      
+      console.log(`[GeminiFileAPI] 📡 File state: ${state} (elapsed: ${Math.round((Date.now() - startTime) / 1000)}s)`);
+      
+      if (state === 'ACTIVE') {
+        console.log(`[GeminiFileAPI] ✅ File is ACTIVE and ready for analysis`);
+        return true;
+      }
+      
+      if (state === 'FAILED') {
+        console.error(`[GeminiFileAPI] ❌ File processing FAILED:`, data.error);
+        return false;
+      }
+      
+      // Estado PROCESSING - aguarda mais um pouco
+      await new Promise(resolve => setTimeout(resolve, pollIntervalMs));
+      
+    } catch (error) {
+      console.error(`[GeminiFileAPI] ❌ Error checking file status:`, error);
+      return false;
+    }
+  }
+  
+  console.error(`[GeminiFileAPI] ⏳ Timeout waiting for file to become ACTIVE (${maxWaitMs / 1000}s)`);
+  return false;
+}
+
+/**
  * Faz upload de um arquivo para a Gemini File API
  * @returns O URI do arquivo no Gemini ou null em caso de erro
  */
@@ -109,6 +167,10 @@ export async function uploadToGemini(
     
     // 2. Normaliza o MIME type
     const actualMimeType = mimeType.split(';')[0].trim() || 'application/octet-stream';
+    
+    // Determina se é vídeo (precisa de mais tempo para processar)
+    const isVideo = actualMimeType.startsWith('video/');
+    const isLargeFile = fileSize > 10 * 1024 * 1024; // > 10MB
     
     // 3. Faz upload para a Gemini File API usando resumable upload
     const uploadMetadata = {
@@ -172,6 +234,21 @@ export async function uploadToGemini(
     }
     
     console.log(`[GeminiFileAPI] ✅ Uploaded: ${fileName}`);
+    
+    // 4. Aguarda o arquivo ficar ACTIVE (especialmente importante para vídeos)
+    // Vídeos e arquivos grandes precisam de processamento do lado do Gemini
+    if (isVideo || isLargeFile) {
+      const maxWaitMs = isVideo ? 120000 : 60000; // 2min para vídeo, 1min para outros grandes
+      const isActive = await waitForFileActive(fileName, apiKey, maxWaitMs);
+      
+      if (!isActive) {
+        console.error(`[GeminiFileAPI] ❌ File did not become ACTIVE in time`);
+        // Tenta deletar o arquivo que ficou preso
+        deleteFromGemini(fileName, apiKey).catch(() => {});
+        return null;
+      }
+    }
+    
     return { uri: fileUri, name: fileName };
     
   } catch (error) {
