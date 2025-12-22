@@ -321,64 +321,73 @@ export function useInboxData() {
         query = query.neq('status', 'closed');
       }
 
-      // Column-based assignment filter
-      // If 'assigned_only' access level, force filter to only user's conversations
-      if (effectiveAccessLevel === 'assigned_only' && user?.id) {
-        // Force filter to only assigned to current user
-        query = query.eq('assigned_user_id', user.id);
-      } else {
-        // Column-based filtering (replaces old assignment filter)
-        // Agent filter applies to ALL tabs - if filtering by agents, respect the tab logic
-        const hasAgentFilter = conversationFilters.filterByAgentIds && conversationFilters.filterByAgentIds.length > 0;
+        // Column-based assignment filter
+        // If 'assigned_only' access level, force filter to only user's conversations
+        let forceEmptyResult = false;
         
-        switch (inboxColumn) {
-          case 'minhas':
-            // Only conversations assigned to current user
-            if (user?.id) {
-              if (hasAgentFilter) {
-                // If agent filter is active and current user is NOT in the list, show nothing
-                if (!conversationFilters.filterByAgentIds!.includes(user.id)) {
-                  query = query.eq('assigned_user_id', '__FORCE_EMPTY_RESULT__');
+        if (effectiveAccessLevel === 'assigned_only' && user?.id) {
+          // Force filter to only assigned to current user
+          query = query.eq('assigned_user_id', user.id);
+        } else {
+          // Column-based filtering (replaces old assignment filter)
+          // Agent filter applies to ALL tabs - if filtering by agents, respect the tab logic
+          const hasAgentFilter = conversationFilters.filterByAgentIds && conversationFilters.filterByAgentIds.length > 0;
+          
+          switch (inboxColumn) {
+            case 'minhas':
+              // Only conversations assigned to current user
+              if (user?.id) {
+                if (hasAgentFilter) {
+                  // If agent filter is active and current user is NOT in the list, show nothing
+                  if (!conversationFilters.filterByAgentIds!.includes(user.id)) {
+                    forceEmptyResult = true;
+                  } else {
+                    query = query.eq('assigned_user_id', user.id);
+                  }
                 } else {
                   query = query.eq('assigned_user_id', user.id);
                 }
-              } else {
-                query = query.eq('assigned_user_id', user.id);
               }
-            }
-            break;
-          case 'fila':
-            // Only unassigned conversations
-            if (hasAgentFilter) {
-              // Fila = unassigned. If filtering by agents, show nothing (agents have assignments)
-              query = query.eq('assigned_user_id', '__FORCE_EMPTY_RESULT__');
-            } else {
-              query = query.is('assigned_user_id', null);
-            }
-            break;
-          case 'todas':
-            // All conversations - apply agent filter if present
-            if (hasAgentFilter) {
-              query = query.in('assigned_user_id', conversationFilters.filterByAgentIds!);
-            }
-            break;
+              break;
+            case 'fila':
+              // Only unassigned conversations
+              if (hasAgentFilter) {
+                // Fila = unassigned. If filtering by agents, show nothing (agents have assignments)
+                forceEmptyResult = true;
+              } else {
+                query = query.is('assigned_user_id', null);
+              }
+              break;
+            case 'todas':
+              // All conversations - apply agent filter if present
+              if (hasAgentFilter) {
+                query = query.in('assigned_user_id', conversationFilters.filterByAgentIds!);
+              }
+              break;
+          }
         }
-      }
 
-      // Department filter (from UI filter - additional to access filter) - array of department IDs
-      if (conversationFilters.departmentIds && conversationFilters.departmentIds.length > 0) {
-        query = query.in('department_id', conversationFilters.departmentIds);
-      }
+        // If filters indicate no results should be shown, return empty immediately
+        if (forceEmptyResult) {
+          console.log('[useInboxData] Forçando resultado vazio devido a filtros incompatíveis');
+          setConversations([]);
+          return;
+        }
 
-      // Tags filter - filter conversations that have any of the selected tags
-      if (conversationFilters.tags && conversationFilters.tags.length > 0) {
-        query = query.overlaps('tags', conversationFilters.tags);
-      }
+        // Department filter (from UI filter - additional to access filter) - array of department IDs
+        if (conversationFilters.departmentIds && conversationFilters.departmentIds.length > 0) {
+          query = query.in('department_id', conversationFilters.departmentIds);
+        }
 
-      // Ordenar por última mensagem
-      query = query.order('last_message_at', { ascending: false, nullsFirst: false });
+        // Tags filter - filter conversations that have any of the selected tags
+        if (conversationFilters.tags && conversationFilters.tags.length > 0) {
+          query = query.overlaps('tags', conversationFilters.tags);
+        }
 
-      const { data, error } = await query;
+        // Ordenar por última mensagem
+        query = query.order('last_message_at', { ascending: false, nullsFirst: false });
+
+        const { data, error } = await query;
 
       if (error) {
         console.error('[useInboxData] Erro ao carregar conversas:', error);
