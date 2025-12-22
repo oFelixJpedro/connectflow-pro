@@ -1015,6 +1015,87 @@ ${conversationText}
         .select('*')
         .eq('company_id', company_id);
 
+      // Fetch conversations with agents for agent_rankings calculation
+      const { data: allConversations } = await supabase
+        .from('conversations')
+        .select('id, assigned_user_id')
+        .eq('company_id', company_id)
+        .not('assigned_user_id', 'is', null);
+
+      // Fetch agent profiles
+      const agentIds = [...new Set(allConversations?.map(c => c.assigned_user_id).filter(Boolean) || [])];
+      let agentProfiles: any[] = [];
+      if (agentIds.length > 0) {
+        const { data: profiles } = await supabase
+          .from('profiles')
+          .select('id, full_name, avatar_url')
+          .in('id', agentIds);
+        agentProfiles = profiles || [];
+      }
+
+      // Calculate agent statistics for rankings
+      const agentStats: Record<string, { conversations: number; closed: number; totalScore: number; evalCount: number }> = {};
+      
+      allConversations?.forEach(conv => {
+        if (conv.assigned_user_id) {
+          if (!agentStats[conv.assigned_user_id]) {
+            agentStats[conv.assigned_user_id] = { conversations: 0, closed: 0, totalScore: 0, evalCount: 0 };
+          }
+          agentStats[conv.assigned_user_id].conversations++;
+          
+          const isClosedWon = allLiveMetrics?.some(
+            m => m.conversation_id === conv.id && m.lead_status === 'closed_won'
+          );
+          if (isClosedWon) {
+            agentStats[conv.assigned_user_id].closed++;
+          }
+        }
+      });
+
+      // Add evaluation scores to agent stats
+      allEvaluations?.forEach(eval_ => {
+        const conv = allConversations?.find(c => c.id === eval_.conversation_id);
+        if (conv?.assigned_user_id && agentStats[conv.assigned_user_id]) {
+          agentStats[conv.assigned_user_id].totalScore += eval_.overall_score || 0;
+          agentStats[conv.assigned_user_id].evalCount++;
+        }
+      });
+
+      // Build agent_rankings array
+      const agentRankings = agentProfiles
+        .map(agent => {
+          const stats = agentStats[agent.id] || { conversations: 0, closed: 0, totalScore: 0, evalCount: 0 };
+          
+          let score: number;
+          if (stats.evalCount > 0) {
+            score = Math.round((stats.totalScore / stats.evalCount) * 10) / 10;
+          } else {
+            score = stats.conversations > 0 
+              ? Math.round((stats.closed / stats.conversations) * 10 * 10) / 10 
+              : 0;
+          }
+          
+          const level = score >= 8.5 ? 'senior' : score >= 7.0 ? 'pleno' : 'junior';
+          const recommendation = score >= 8.5 ? 'promover' :
+            score >= 7.0 ? 'manter' :
+            score >= 6.0 ? 'treinar' :
+            score >= 5.0 ? 'monitorar' : 'ação corretiva';
+
+          return {
+            id: agent.id,
+            name: agent.full_name || 'Sem nome',
+            avatar_url: agent.avatar_url || null,
+            level,
+            score,
+            conversations: stats.conversations,
+            recommendation,
+          };
+        })
+        .filter(a => a.conversations > 0)
+        .sort((a, b) => b.score - a.score);
+
+      console.log(`👥 [PIXEL] Calculated agent_rankings:`, agentRankings.length, 'agents');
+
       // Aggregate data
       const aggregatedData = {
         total_conversations: allLiveMetrics?.length || 0,
@@ -1098,7 +1179,7 @@ Dados das avaliações de qualidade:
       if (insightsResult) {
         console.log('✅ [PIXEL] Insights generated:', JSON.stringify(insightsResult));
         
-        // Save aggregated insights to dashboard
+        // Save aggregated insights to dashboard WITH agent_rankings
         const aggregatedInsights = {
           strengths: insightsResult.strengths || [],
           weaknesses: insightsResult.weaknesses || [],
@@ -1117,6 +1198,7 @@ Dados das avaliações de qualidade:
           },
           average_score: parseFloat(evalAggregated.avg_overall_score as string) || 0,
           qualified_leads_percent: parseFloat(evalAggregated.qualified_leads_percent as string) || 0,
+          agent_rankings: agentRankings, // NEW: Persist agent rankings
         };
 
         const { error: insightsError } = await supabase
@@ -1130,7 +1212,7 @@ Dados das avaliações de qualidade:
         if (insightsError) {
           console.log('⚠️ [PIXEL] Error saving insights:', insightsError);
         } else {
-          console.log('✅ [PIXEL] Insights saved to dashboard');
+          console.log('✅ [PIXEL] Insights saved to dashboard with', agentRankings.length, 'agent rankings');
         }
       }
     }
