@@ -167,7 +167,7 @@ function parseAIResponse(responseText: string): any | null {
 async function callGemini(prompt: string, geminiApiKey: string): Promise<any | null> {
   try {
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiApiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${geminiApiKey}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -203,7 +203,7 @@ async function callGemini(prompt: string, geminiApiKey: string): Promise<any | n
 async function callGeminiMultimodal(parts: any[], geminiApiKey: string): Promise<any | null> {
   try {
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiApiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${geminiApiKey}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
