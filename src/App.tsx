@@ -29,7 +29,7 @@ import DeveloperLogin from "./pages/developer/DeveloperLogin";
 import DeveloperDashboard from "./pages/developer/DeveloperDashboard";
 
 // Landing pages
-import { LandingPage, PricingPage, TrialPage } from "./pages/landing";
+import { LandingPage, PricingPage, TrialPage, CheckoutSuccess } from "./pages/landing";
 
 const queryClient = new QueryClient();
 
@@ -45,6 +45,8 @@ const App = () => (
               {/* Public Landing Routes */}
               <Route path="/" element={<LandingPage />} />
               <Route path="/pricing" element={<PricingPage />} />
+              <Route path="/precos" element={<PricingPage />} />
+              <Route path="/checkout-success" element={<CheckoutSuccess />} />
               <Route path="/trial" element={<TrialPage />} />
               
               {/* Auth Route */}

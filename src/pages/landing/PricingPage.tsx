@@ -1,27 +1,33 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
-import { Label } from '@/components/ui/label';
 import { 
   Check, 
   X, 
   ArrowRight, 
   MessageSquare, 
-  Bot, 
-  Users, 
   BarChart3,
-  Zap,
   Plus,
-  Minus
+  Minus,
+  Loader2
 } from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
+import { toast } from 'sonner';
+
+// Stripe Price IDs
+const STRIPE_PRICES = {
+  monthly: 'price_1Sh1ldHOTrHw8gZfWCxrSpBo',
+  semiannual: 'price_1Sh1srHOTrHw8gZfAF7nujIj',
+  annual: 'price_1Sh1uIHOTrHw8gZfCY7VVZEy',
+};
 
 const plans = [
   {
     id: 'monthly',
     name: 'Mensal',
     description: 'Para quem quer flexibilidade',
-    price: 695,
+    price: 694,
     period: '/mês',
     billing: 'Cobrado mensalmente',
     popular: false,
@@ -40,10 +46,10 @@ const plans = [
     id: 'semiannual',
     name: 'Semestral',
     description: 'Economize 37%',
-    price: 437.85,
-    originalPrice: 695,
+    price: 437,
+    originalPrice: 694,
     period: '/mês',
-    billing: '6x de R$437,85',
+    billing: '6x de R$437',
     popular: true,
     features: [
       { name: '1 Conexão WhatsApp', included: true },
@@ -61,7 +67,7 @@ const plans = [
     name: 'Anual',
     description: 'Economize 50%',
     price: 347,
-    originalPrice: 695,
+    originalPrice: 694,
     period: '/mês',
     billing: '12x de R$347',
     popular: false,
@@ -78,29 +84,12 @@ const plans = [
   }
 ];
 
-const addons = [
-  {
-    id: 'extra-connection',
-    name: 'Conexão WhatsApp Adicional',
-    description: 'Adicione mais números WhatsApp à sua conta',
-    price: 97,
-    period: '/mês por conexão',
-    icon: MessageSquare
-  },
-  {
-    id: 'commercial-manager',
-    name: 'Gerente Comercial',
-    description: 'Relatórios avançados e análise de performance com IA',
-    price: 197,
-    period: '/mês',
-    icon: BarChart3
-  }
-];
-
 export default function PricingPage() {
+  const navigate = useNavigate();
   const [selectedPlan, setSelectedPlan] = useState('semiannual');
   const [extraConnections, setExtraConnections] = useState(0);
   const [includeCommercialManager, setIncludeCommercialManager] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   
   const currentPlan = plans.find(p => p.id === selectedPlan)!;
   
@@ -109,6 +98,38 @@ export default function PricingPage() {
     total += extraConnections * 97;
     if (includeCommercialManager) total += 197;
     return total;
+  };
+
+  const handleSubscribe = async () => {
+    setIsLoading(true);
+    
+    try {
+      // Check if user is authenticated
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session) {
+        toast.info('Você precisa estar logado para assinar');
+        navigate('/auth', { state: { returnTo: '/precos' } });
+        return;
+      }
+
+      const priceId = STRIPE_PRICES[selectedPlan as keyof typeof STRIPE_PRICES];
+      
+      const { data, error } = await supabase.functions.invoke('create-checkout', {
+        body: { priceId }
+      });
+
+      if (error) throw error;
+
+      if (data?.url) {
+        window.open(data.url, '_blank');
+      }
+    } catch (error) {
+      console.error('Checkout error:', error);
+      toast.error('Erro ao iniciar checkout. Tente novamente.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -170,7 +191,7 @@ export default function PricingPage() {
                     </span>
                   )}
                   <span className="text-4xl font-bold text-foreground">
-                    R${plan.price.toFixed(2).replace('.', ',')}
+                    R${plan.price}
                   </span>
                   <span className="text-muted-foreground">{plan.period}</span>
                 </div>
@@ -267,34 +288,48 @@ export default function PricingPage() {
             <div className="space-y-3 mb-6">
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Plano {currentPlan.name}</span>
-                <span className="text-foreground">R${currentPlan.price.toFixed(2).replace('.', ',')}/mês</span>
+                <span className="text-foreground">R${currentPlan.price}/mês</span>
               </div>
               
               {extraConnections > 0 && (
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">{extraConnections}x Conexão adicional</span>
-                  <span className="text-foreground">R${(extraConnections * 97).toFixed(2).replace('.', ',')}/mês</span>
+                  <span className="text-foreground">R${(extraConnections * 97)}/mês</span>
                 </div>
               )}
               
               {includeCommercialManager && (
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Gerente Comercial</span>
-                  <span className="text-foreground">R$197,00/mês</span>
+                  <span className="text-foreground">R$197/mês</span>
                 </div>
               )}
               
               <div className="border-t border-border pt-3">
                 <div className="flex justify-between text-lg font-semibold">
                   <span className="text-foreground">Total</span>
-                  <span className="text-foreground">R${calculateTotal().toFixed(2).replace('.', ',')}/mês</span>
+                  <span className="text-foreground">R${calculateTotal()}/mês</span>
                 </div>
               </div>
             </div>
             
-            <Button className="w-full" size="lg">
-              Assinar agora
-              <ArrowRight className="ml-2 w-5 h-5" />
+            <Button 
+              className="w-full" 
+              size="lg"
+              onClick={handleSubscribe}
+              disabled={isLoading}
+            >
+              {isLoading ? (
+                <>
+                  <Loader2 className="mr-2 w-5 h-5 animate-spin" />
+                  Processando...
+                </>
+              ) : (
+                <>
+                  Assinar agora
+                  <ArrowRight className="ml-2 w-5 h-5" />
+                </>
+              )}
             </Button>
             
             <p className="text-center text-sm text-muted-foreground mt-4">
