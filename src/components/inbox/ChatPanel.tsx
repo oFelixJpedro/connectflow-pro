@@ -19,7 +19,8 @@ import {
   Trash2,
   Pencil,
   Bot,
-  Wifi
+  Wifi,
+  Kanban
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -71,6 +72,7 @@ import { toast } from '@/hooks/use-toast';
 import { MentionPicker, MentionText } from '@/components/mentions';
 import { useMentions, parseMentionsFromText } from '@/hooks/useMentions';
 import { LinkifyText } from '@/components/ui/linkify-text';
+import { useContactCRM } from '@/hooks/useContactCRM';
 
 interface ChatPanelProps {
   conversation: Conversation | null;
@@ -170,6 +172,9 @@ export function ChatPanel({
     closeMentionPicker,
     resetMentions,
   } = useMentions();
+  
+  // CRM position for current contact
+  const { currentPosition: crmPosition } = useContactCRM(conversation?.contactId || null);
   
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -1309,6 +1314,13 @@ export function ChatPanel({
                     <span>-</span>
                     <Wifi className="w-3 h-3 text-green-500" />
                     <span>{conversation.whatsappConnection.name}</span>
+                  </>
+                )}
+                {crmPosition?.column_name && (
+                  <>
+                    <span>-</span>
+                    <Kanban className="w-3 h-3 text-primary" />
+                    <span>{crmPosition.column_name}</span>
                   </>
                 )}
               </p>
