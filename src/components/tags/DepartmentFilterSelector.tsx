@@ -56,6 +56,7 @@ export function DepartmentFilterSelector({
   const [connectionsWithDepts, setConnectionsWithDepts] = useState<ConnectionWithDepartments[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [hoveredConnectionId, setHoveredConnectionId] = useState<string | null>(null);
+  const [isHoverLocked, setIsHoverLocked] = useState(false);
 
   const isAdminOrOwner = userRole?.role === 'owner' || userRole?.role === 'admin';
 
@@ -241,10 +242,21 @@ export function DepartmentFilterSelector({
               {connectionsWithDepts.map((connection) => (
                 <HoverCard 
                   key={connection.id} 
-                  openDelay={100} 
-                  closeDelay={150}
+                  openDelay={150} 
+                  closeDelay={100}
                   open={hoveredConnectionId === connection.id}
-                  onOpenChange={(isOpen) => setHoveredConnectionId(isOpen ? connection.id : null)}
+                  onOpenChange={(isOpen) => {
+                    if (isOpen) {
+                      if (!isHoverLocked) {
+                        setHoveredConnectionId(connection.id);
+                      }
+                    } else {
+                      // When closing, lock briefly to prevent instant re-trigger on another item
+                      setHoveredConnectionId(null);
+                      setIsHoverLocked(true);
+                      setTimeout(() => setIsHoverLocked(false), 100);
+                    }
+                  }}
                 >
                   <HoverCardTrigger asChild>
                     <div
