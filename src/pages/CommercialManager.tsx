@@ -1,11 +1,22 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { TrendingUp, LayoutDashboard, Loader2, Radio, Library, Globe, Wifi, Users, Calendar, Lock } from 'lucide-react';
+import { TrendingUp, LayoutDashboard, Loader2, Radio, Library, Globe, Wifi, Users, Calendar, ChevronDown, Search, X, Check } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar as CalendarComponent } from '@/components/ui/calendar';
+import { Input } from '@/components/ui/input';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { format, startOfDay, endOfDay, subDays, startOfWeek, startOfMonth, subMonths } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { useCommercialData, type CommercialFilter } from '@/hooks/useCommercialData';
@@ -30,6 +41,8 @@ interface Connection {
 interface Department {
   id: string;
   name: string;
+  color?: string | null;
+  whatsapp_connection_id: string;
 }
 
 type PeriodPreset = 'today' | 'yesterday' | 'week' | 'month' | 'last_month' | 'custom';
@@ -52,6 +65,10 @@ export default function CommercialManager() {
   const [connections, setConnections] = useState<Connection[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [loadingFilters, setLoadingFilters] = useState(false);
+  
+  // Dropdown filter state
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [filterSearch, setFilterSearch] = useState('');
 
   // Check if commercial manager is enabled for this company
   const commercialManagerEnabled = (company as any)?.commercial_manager_enabled ?? false;
@@ -64,21 +81,36 @@ export default function CommercialManager() {
     return () => clearInterval(interval);
   }, []);
 
-  // Load filter options
+  // Load all filter data (connections and departments)
   useEffect(() => {
     if (!company?.id) return;
 
-    const loadFilterData = async () => {
+    const loadAllFilterData = async () => {
       setLoadingFilters(true);
       try {
-        if (filter.type === 'connection' && connections.length === 0) {
-          const { data } = await supabase
-            .from('whatsapp_connections')
-            .select('id, name, phone_number')
-            .eq('company_id', company.id)
-            .eq('status', 'connected')
-            .order('name');
-          setConnections(data || []);
+        // Load connections
+        const { data: connectionsData } = await supabase
+          .from('whatsapp_connections')
+          .select('id, name, phone_number')
+          .eq('company_id', company.id)
+          .eq('status', 'connected')
+          .order('name');
+        
+        if (connectionsData) {
+          setConnections(connectionsData);
+          
+          // Load all departments for all connections
+          const connectionIds = connectionsData.map(c => c.id);
+          if (connectionIds.length > 0) {
+            const { data: departmentsData } = await supabase
+              .from('departments')
+              .select('id, name, color, whatsapp_connection_id')
+              .in('whatsapp_connection_id', connectionIds)
+              .eq('active', true)
+              .order('name');
+            
+            setDepartments(departmentsData || []);
+          }
         }
       } catch (error) {
         console.error('Error loading filter data:', error);
@@ -87,32 +119,8 @@ export default function CommercialManager() {
       }
     };
 
-    loadFilterData();
-  }, [filter.type, company?.id, connections.length]);
-
-  // Load departments when connection is selected
-  useEffect(() => {
-    if (!filter.connectionId) {
-      setDepartments([]);
-      return;
-    }
-
-    const loadDepartments = async () => {
-      try {
-        const { data } = await supabase
-          .from('departments')
-          .select('id, name')
-          .eq('whatsapp_connection_id', filter.connectionId)
-          .eq('active', true)
-          .order('name');
-        setDepartments(data || []);
-      } catch (error) {
-        console.error('Error loading departments:', error);
-      }
-    };
-
-    loadDepartments();
-  }, [filter.connectionId]);
+    loadAllFilterData();
+  }, [company?.id]);
 
   // Update filter when period changes
   useEffect(() => {
@@ -163,18 +171,25 @@ export default function CommercialManager() {
     setViewMode(value as 'commercial' | 'dashboard');
   };
 
-  const handleFilterTypeChange = (type: CommercialFilter['type']) => {
-    setFilter(prev => ({ ...prev, type, connectionId: undefined, departmentId: undefined }));
+  const handleSelectGeneral = () => {
+    setFilter({ type: 'general' });
+    setFilterOpen(false);
+    setFilterSearch('');
   };
 
-  const handleSecondaryFilterChange = (value: string) => {
-    if (filter.type === 'connection') {
-      setFilter(prev => ({ ...prev, connectionId: value, departmentId: undefined }));
-    }
+  const handleSelectConnection = (connectionId: string, departmentId?: string) => {
+    setFilter({
+      type: 'connection',
+      connectionId,
+      departmentId,
+    });
+    setFilterOpen(false);
+    setFilterSearch('');
   };
 
-  const handleDepartmentChange = (value: string) => {
-    setFilter(prev => ({ ...prev, departmentId: value === 'all' ? undefined : value }));
+  const handleClearFilter = () => {
+    setFilter({ type: 'general' });
+    setFilterSearch('');
   };
 
   const handlePeriodChange = (preset: PeriodPreset) => {
@@ -207,16 +222,35 @@ export default function CommercialManager() {
     }
   };
 
-  const getSecondaryValue = () => {
-    if (filter.type === 'connection') return filter.connectionId || '';
-    return '';
+  const getFilterDisplayText = () => {
+    if (filter.type === 'general') return 'Visão Geral';
+    if (filter.type === 'connection' && filter.connectionId) {
+      const conn = connections.find(c => c.id === filter.connectionId);
+      if (conn) {
+        if (filter.departmentId) {
+          const dept = departments.find(d => d.id === filter.departmentId);
+          return dept ? `${conn.name} - ${dept.name}` : conn.name;
+        }
+        return conn.name;
+      }
+    }
+    return 'Selecionar filtro';
   };
 
-  const getSecondaryOptions = () => {
-    if (filter.type === 'connection') {
-      return connections.map(c => ({ value: c.id, label: `${c.name} (${c.phone_number})` }));
-    }
-    return [];
+  const getFilterIcon = () => {
+    if (filter.type === 'general') return Globe;
+    return Wifi;
+  };
+
+  const filteredConnections = filterSearch
+    ? connections.filter(c => 
+        c.name.toLowerCase().includes(filterSearch.toLowerCase()) ||
+        c.phone_number.includes(filterSearch)
+      )
+    : connections;
+
+  const getDepartmentsForConnection = (connectionId: string) => {
+    return departments.filter(d => d.whatsapp_connection_id === connectionId);
   };
 
   // Redirect non-admins
@@ -249,9 +283,7 @@ export default function CommercialManager() {
     );
   }
 
-  const secondaryOptions = getSecondaryOptions();
-  const showSecondaryFilter = filter.type === 'connection';
-  const showDepartmentFilter = filter.type === 'connection' && filter.connectionId;
+  const FilterIcon = getFilterIcon();
 
   return (
     <div className="h-full overflow-auto p-3 md:p-6 space-y-4 md:space-y-6">
@@ -305,80 +337,174 @@ export default function CommercialManager() {
 
         {/* Filters */}
         <div className="flex items-center gap-3 flex-wrap">
-          <Select value={filter.type} onValueChange={(v) => handleFilterTypeChange(v as CommercialFilter['type'])}>
-            <SelectTrigger className="w-[180px]">
-              <SelectValue placeholder="Selecionar filtro" />
-            </SelectTrigger>
-            <SelectContent className="bg-popover">
-              <SelectItem value="general">
+          {/* Main Filter Dropdown */}
+          <DropdownMenu open={filterOpen} onOpenChange={setFilterOpen}>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" className="min-w-[200px] justify-between gap-2">
                 <div className="flex items-center gap-2">
-                  <Globe className="w-4 h-4" />
-                  Geral
+                  <FilterIcon className="h-4 w-4" />
+                  <span className="truncate">{getFilterDisplayText()}</span>
                 </div>
-              </SelectItem>
-              <SelectItem value="connection">
-                <div className="flex items-center gap-2">
-                  <Wifi className="w-4 h-4" />
-                  Por Conexão
+                <ChevronDown className="h-4 w-4 shrink-0 opacity-50" />
+              </Button>
+            </DropdownMenuTrigger>
+            
+            <DropdownMenuContent className="w-[280px]" align="start">
+              {/* Search */}
+              <div className="p-2 border-b border-border">
+                <div className="relative">
+                  <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Buscar..."
+                    value={filterSearch}
+                    onChange={(e) => setFilterSearch(e.target.value)}
+                    className="pl-8 h-8"
+                  />
                 </div>
-              </SelectItem>
-            </SelectContent>
-          </Select>
-
-          {showSecondaryFilter && (
-            <Select 
-              value={getSecondaryValue()} 
-              onValueChange={handleSecondaryFilterChange}
-              disabled={loadingFilters}
-            >
-              <SelectTrigger className="w-[220px]">
-                <SelectValue placeholder="Selecionar conexão..." />
-              </SelectTrigger>
-              <SelectContent className="bg-popover">
-                {secondaryOptions.length === 0 ? (
-                  <div className="py-2 px-3 text-sm text-muted-foreground">
-                    Nenhuma conexão ativa
-                  </div>
-                ) : (
-                  secondaryOptions.map(opt => (
-                    <SelectItem key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </SelectItem>
-                  ))
-                )}
-              </SelectContent>
-            </Select>
-          )}
-
-          {showDepartmentFilter && (
-            <Select 
-              value={filter.departmentId || 'all'} 
-              onValueChange={handleDepartmentChange}
-            >
-              <SelectTrigger className="w-[200px]">
-                <div className="flex items-center gap-2">
-                  <Users className="w-4 h-4" />
-                  <SelectValue placeholder="Departamento..." />
+              </div>
+              
+              {/* Visão Geral */}
+              <DropdownMenuItem 
+                onClick={handleSelectGeneral}
+                className="flex items-center gap-2 cursor-pointer"
+              >
+                <div className="w-4 h-4 flex items-center justify-center">
+                  {filter.type === 'general' ? (
+                    <Check className="h-4 w-4 text-primary" />
+                  ) : (
+                    <div className="w-3 h-3 rounded-full border border-muted-foreground/30" />
+                  )}
                 </div>
-              </SelectTrigger>
-              <SelectContent className="bg-popover">
-                <SelectItem value="all">
-                  Todos departamentos
-                </SelectItem>
-                {departments.length === 0 ? (
-                  <div className="py-2 px-3 text-sm text-muted-foreground">
-                    Nenhum departamento
-                  </div>
-                ) : (
-                  departments.map(dept => (
-                    <SelectItem key={dept.id} value={dept.id}>
-                      {dept.name}
-                    </SelectItem>
-                  ))
-                )}
-              </SelectContent>
-            </Select>
-          )}
+                <Globe className="h-4 w-4" />
+                <span>Visão Geral</span>
+              </DropdownMenuItem>
+              
+              <DropdownMenuSeparator />
+              
+              {/* Por Conexão - Submenu */}
+              <DropdownMenuSub>
+                <DropdownMenuSubTrigger className="flex items-center gap-2">
+                  <div className="w-4 h-4" />
+                  <Wifi className="h-4 w-4" />
+                  <span className="flex-1">Por Conexão</span>
+                  {filter.type === 'connection' && (
+                    <Badge variant="secondary" className="ml-auto text-xs h-5 px-1.5">1</Badge>
+                  )}
+                </DropdownMenuSubTrigger>
+                
+                <DropdownMenuSubContent className="w-[220px] max-h-[300px] overflow-y-auto">
+                  {loadingFilters ? (
+                    <div className="flex items-center justify-center py-4">
+                      <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                    </div>
+                  ) : filteredConnections.length === 0 ? (
+                    <div className="px-3 py-4 text-center text-sm text-muted-foreground">
+                      {filterSearch ? 'Nenhuma conexão encontrada' : 'Nenhuma conexão ativa'}
+                    </div>
+                  ) : (
+                    filteredConnections.map(conn => {
+                      const connDepartments = getDepartmentsForConnection(conn.id);
+                      const isConnSelected = filter.connectionId === conn.id;
+                      
+                      if (connDepartments.length === 0) {
+                        // Connection without departments - direct selection
+                        return (
+                          <DropdownMenuItem
+                            key={conn.id}
+                            onClick={() => handleSelectConnection(conn.id)}
+                            className="flex items-center gap-2 cursor-pointer"
+                          >
+                            <div className="w-4 h-4 flex items-center justify-center">
+                              {isConnSelected && !filter.departmentId ? (
+                                <Check className="h-4 w-4 text-primary" />
+                              ) : (
+                                <div className="w-3 h-3 rounded-full border border-muted-foreground/30" />
+                              )}
+                            </div>
+                            <Wifi className="h-4 w-4 text-muted-foreground" />
+                            <span className="truncate">{conn.name}</span>
+                          </DropdownMenuItem>
+                        );
+                      }
+                      
+                      // Connection with departments - nested submenu
+                      return (
+                        <DropdownMenuSub key={conn.id}>
+                          <DropdownMenuSubTrigger className="flex items-center gap-2">
+                            <div className="w-4 h-4 flex items-center justify-center">
+                              {isConnSelected ? (
+                                <Check className="h-4 w-4 text-primary" />
+                              ) : (
+                                <div className="w-3 h-3 rounded-full border border-muted-foreground/30" />
+                              )}
+                            </div>
+                            <Wifi className="h-4 w-4 text-muted-foreground" />
+                            <span className="flex-1 truncate">{conn.name}</span>
+                          </DropdownMenuSubTrigger>
+                          
+                          <DropdownMenuSubContent className="w-[200px]">
+                            {/* All departments */}
+                            <DropdownMenuItem
+                              onClick={() => handleSelectConnection(conn.id)}
+                              className="flex items-center gap-2 cursor-pointer"
+                            >
+                              <div className="w-4 h-4 flex items-center justify-center">
+                                {isConnSelected && !filter.departmentId ? (
+                                  <Check className="h-4 w-4 text-primary" />
+                                ) : (
+                                  <div className="w-3 h-3 rounded-full border border-muted-foreground/30" />
+                                )}
+                              </div>
+                              <Users className="h-4 w-4" />
+                              <span>Todos departamentos</span>
+                            </DropdownMenuItem>
+                            
+                            <DropdownMenuSeparator />
+                            
+                            {/* Individual departments */}
+                            {connDepartments.map(dept => (
+                              <DropdownMenuItem
+                                key={dept.id}
+                                onClick={() => handleSelectConnection(conn.id, dept.id)}
+                                className="flex items-center gap-2 cursor-pointer"
+                              >
+                                <div className="w-4 h-4 flex items-center justify-center">
+                                  {isConnSelected && filter.departmentId === dept.id ? (
+                                    <Check className="h-4 w-4 text-primary" />
+                                  ) : (
+                                    <div className="w-3 h-3 rounded-full border border-muted-foreground/30" />
+                                  )}
+                                </div>
+                                <div 
+                                  className="w-3 h-3 rounded-full shrink-0" 
+                                  style={{ backgroundColor: dept.color || '#6b7280' }}
+                                />
+                                <span className="truncate">{dept.name}</span>
+                              </DropdownMenuItem>
+                            ))}
+                          </DropdownMenuSubContent>
+                        </DropdownMenuSub>
+                      );
+                    })
+                  )}
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
+              
+              {/* Clear filter */}
+              {filter.type !== 'general' && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem 
+                    onClick={handleClearFilter}
+                    className="flex items-center gap-2 cursor-pointer text-muted-foreground"
+                  >
+                    <X className="h-4 w-4" />
+                    <span>Limpar filtro</span>
+                  </DropdownMenuItem>
+                </>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
 
           {/* Period Filter */}
           <div className="flex items-center gap-2">

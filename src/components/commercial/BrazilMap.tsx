@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect } from 'react';
 import BrazilHeatmap, { Tooltip } from 'react-brazil-heatmap';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { MapPin, Users, Handshake, Layers, ChevronRight, Loader2, ChevronDown, Check, Wifi } from 'lucide-react';
+import { MapPin, Users, Handshake, Kanban, ChevronRight, Loader2, ChevronDown, Check, Wifi } from 'lucide-react';
 import { StateCode, getStateName, STATE_CODES } from '@/lib/dddMapping';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
@@ -342,7 +342,7 @@ export function BrazilMap({ contactsByState, dealsByState }: BrazilMapProps) {
               {/* Por etapa do CRM - com submenus */}
               <DropdownMenuSub>
                 <DropdownMenuSubTrigger className="flex items-center gap-2">
-                  <Layers className="w-4 h-4" />
+                  <Kanban className="w-4 h-4" />
                   <span>Por etapa do CRM</span>
                 </DropdownMenuSubTrigger>
                 <DropdownMenuSubContent className="w-[200px]">
@@ -411,7 +411,7 @@ export function BrazilMap({ contactsByState, dealsByState }: BrazilMapProps) {
               </div>
             ) : filter === 'crm_stage' && !selectedStageId ? (
               <div className="flex flex-col items-center gap-2 text-muted-foreground px-4 text-center">
-                <Layers className="h-8 w-8" />
+                <Kanban className="h-8 w-8" />
                 <span className="text-sm">Selecione uma conexão e etapa do CRM acima</span>
               </div>
             ) : (
