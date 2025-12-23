@@ -833,6 +833,10 @@ export function ConversationActions({
                         loadingAction === 'move_stage'
                       }
                     >
+                      <span 
+                        className="w-2.5 h-2.5 rounded-full mr-2 flex-shrink-0" 
+                        style={{ backgroundColor: column.color || '#D6E5FF' }}
+                      />
                       <span className="flex-1">{column.name}</span>
                       {column.id === crmPosition?.column_id && (
                         <Badge variant="secondary" className="ml-2 text-xs">
