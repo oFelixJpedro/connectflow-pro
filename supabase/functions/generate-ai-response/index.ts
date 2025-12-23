@@ -7,6 +7,7 @@ import {
   analyzeVideoWithFileAPI,
   analyzeDocumentWithFileAPI
 } from '../_shared/gemini-file-api.ts';
+import { logAIUsage, extractGeminiUsage } from '../_shared/usage-tracker.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -288,6 +289,7 @@ serve(async (req) => {
     const fullPrompt = `${enrichedSystemPrompt}\n\nAnalise esta conversa e gere a próxima resposta imitando o estilo do atendente:\n\n${formattedMessages}`;
 
     // Call Gemini API
+    const startTime = Date.now();
     const response = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${geminiApiKey}`,
       {
@@ -302,6 +304,7 @@ serve(async (req) => {
         }),
       }
     );
+    const processingTime = Date.now() - startTime;
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -315,6 +318,24 @@ serve(async (req) => {
     const data = await response.json();
     console.log('📦 Gemini response received');
     
+    // Log AI usage
+    const usage = extractGeminiUsage(data);
+    if (companyId) {
+      logAIUsage(
+        supabase,
+        companyId,
+        'generate-ai-response',
+        'gemini-3-flash-preview',
+        usage.inputTokens,
+        usage.outputTokens,
+        processingTime,
+        { 
+          messageCount: recentMessages.length,
+          mediaAnalyzed: { images: imagesAnalyzed, videos: videosAnalyzed, documents: documentsAnalyzed, audios: audiosAnalyzed }
+        }
+      ).catch(err => console.error('[UsageTracker] Error:', err));
+    }
+    
     const generatedResponse = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
 
     if (!generatedResponse) {
@@ -327,6 +348,7 @@ serve(async (req) => {
 
     console.log('✅ Resposta gerada com sucesso');
     console.log('📝 Resposta:', generatedResponse.substring(0, 100) + '...');
+    console.log(`📊 Tokens: ${usage.inputTokens} in / ${usage.outputTokens} out`);
 
     return new Response(
       JSON.stringify({ response: generatedResponse }),
