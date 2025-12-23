@@ -18,7 +18,8 @@ import {
   X,
   Trash2,
   Pencil,
-  Bot
+  Bot,
+  Wifi
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -1301,8 +1302,15 @@ export function ChatPanel({
               <p className="font-medium text-sm text-foreground truncate">
                 {conversation.contact?.name || conversation.contact?.phoneNumber}
               </p>
-              <p className="text-xs text-muted-foreground">
-                {conversation.contact?.phoneNumber}
+              <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+                <span>{conversation.contact?.phoneNumber}</span>
+                {conversation.whatsappConnection?.name && (
+                  <>
+                    <span>-</span>
+                    <Wifi className="w-3 h-3 text-green-500" />
+                    <span>{conversation.whatsappConnection.name}</span>
+                  </>
+                )}
               </p>
             </div>
           </div>

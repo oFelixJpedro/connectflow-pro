@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { ChevronDown, Search, X, Link, Kanban } from 'lucide-react';
+import { ChevronDown, Search, X, Wifi, Kanban } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -285,7 +285,7 @@ export function KanbanStageHierarchySelector({
                   <DropdownMenuSub key={connId}>
                     <DropdownMenuSubTrigger className="cursor-pointer">
                       <div className="flex items-center gap-2 flex-1 min-w-0">
-                        <Link className="w-4 h-4 shrink-0 text-muted-foreground" />
+                        <Wifi className="w-4 h-4 shrink-0 text-muted-foreground" />
                         <span className="truncate">{connection?.name || 'Conexão'}</span>
                         {selectedCount > 0 && (
                           <Badge variant="secondary" className="ml-auto text-xs h-5 px-1.5 shrink-0">
