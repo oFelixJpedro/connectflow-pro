@@ -21,7 +21,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { useDashboardData } from '@/hooks/useDashboardData';
-import { DashboardFilters } from '@/components/dashboard/DashboardFilters';
+import { DashboardFilterSelector } from '@/components/dashboard/DashboardFilterSelector';
 import { ConversationPreviewModal } from '@/components/crm/ConversationPreviewModal';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -200,7 +200,7 @@ export default function Dashboard() {
 
         {/* Filters - Only for admin/owner */}
         {isAdmin && (
-          <DashboardFilters 
+          <DashboardFilterSelector 
             filter={filter} 
             onFilterChange={setFilter} 
             isAdmin={isAdmin} 
