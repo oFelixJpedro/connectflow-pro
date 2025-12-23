@@ -265,6 +265,27 @@ serve(async (req) => {
       });
     }
 
+    // Check if commercial pixel is enabled for this company
+    const { data: companyData } = await supabase
+      .from('companies')
+      .select('ai_optimization_settings, commercial_manager_enabled')
+      .eq('id', company_id)
+      .maybeSingle();
+    
+    const aiSettings = companyData?.ai_optimization_settings as { 
+      commercial_pixel_enabled?: boolean;
+      behavior_analysis_enabled?: boolean;
+      evaluation_frequency?: string;
+    } | null;
+    
+    // Skip if commercial pixel is disabled for this company
+    if (aiSettings?.commercial_pixel_enabled === false) {
+      console.log('⏭️ [PIXEL] Commercial pixel disabled for this company');
+      return new Response(JSON.stringify({ skipped: true, reason: 'disabled' }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
     console.log(`🔍 [PIXEL] Analyzing message for conversation ${conversation_id}`);
     console.log(`   - Direction: ${direction}, Type: ${message_type}`);
     console.log(`   - Content preview: ${(message_content || '').substring(0, 50)}...`);
@@ -621,7 +642,10 @@ ${hasMedia ? `IMPORTANTE: Esta mensagem contém mídia (${message_type}). Analis
     const outboundHasContent = message_content || hasMedia;
     const behaviorAnalysisEnabled = shouldAnalyzeBehavior(message_content, hasMedia);
     
-    if (!isInbound && geminiApiKey && outboundHasContent && behaviorAnalysisEnabled) {
+    // Check if behavior analysis is enabled in company settings
+    const behaviorSettingEnabled = aiSettings?.behavior_analysis_enabled !== false;
+    
+    if (!isInbound && geminiApiKey && outboundHasContent && behaviorAnalysisEnabled && behaviorSettingEnabled) {
       // Get conversation details to find the agent
       const { data: convDetails } = await supabase
         .from('conversations')
