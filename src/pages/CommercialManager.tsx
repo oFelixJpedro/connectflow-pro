@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { TrendingUp, LayoutDashboard, Loader2, Radio, Library, Globe, Phone, Users, Calendar, Lock } from 'lucide-react';
+import { TrendingUp, LayoutDashboard, Loader2, Radio, Library, Globe, Wifi, Users, Calendar, Lock } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -318,7 +318,7 @@ export default function CommercialManager() {
               </SelectItem>
               <SelectItem value="connection">
                 <div className="flex items-center gap-2">
-                  <Phone className="w-4 h-4" />
+                  <Wifi className="w-4 h-4" />
                   Por Conexão
                 </div>
               </SelectItem>

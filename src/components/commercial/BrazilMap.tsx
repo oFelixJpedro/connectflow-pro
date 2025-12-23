@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect } from 'react';
 import BrazilHeatmap, { Tooltip } from 'react-brazil-heatmap';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { MapPin, Users, Handshake, Layers, ChevronRight, Loader2, ChevronDown, Check } from 'lucide-react';
+import { MapPin, Users, Handshake, Layers, ChevronRight, Loader2, ChevronDown, Check, Wifi } from 'lucide-react';
 import { StateCode, getStateName, STATE_CODES } from '@/lib/dddMapping';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
@@ -362,6 +362,7 @@ export function BrazilMap({ contactsByState, dealsByState }: BrazilMapProps) {
                           onMouseEnter={() => fetchStagesForConnection(conn.id)}
                           onFocus={() => fetchStagesForConnection(conn.id)}
                         >
+                          <Wifi className="w-4 h-4 text-muted-foreground shrink-0" />
                           <span className="flex-1 truncate">{conn.name}</span>
                         </DropdownMenuSubTrigger>
                         <DropdownMenuSubContent className="w-[180px]">
