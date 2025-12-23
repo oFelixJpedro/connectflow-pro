@@ -49,6 +49,7 @@ interface ContactFormModalProps {
   tags: { id: string; name: string; color: string }[];
   onSave: (data: ContactFormData) => Promise<boolean | string>; // string = new contact ID
   preselectedConnectionId?: string | null;
+  requireInitialMessage?: boolean;
 }
 
 interface WhatsAppConnection {
@@ -89,7 +90,8 @@ export function ContactFormModal({
   contact,
   tags,
   onSave,
-  preselectedConnectionId
+  preselectedConnectionId,
+  requireInitialMessage = false
 }: ContactFormModalProps) {
   const { profile } = useAuth();
   const [loading, setLoading] = useState(false);
@@ -331,6 +333,17 @@ export function ContactFormModal({
     // For new contacts, connection is mandatory
     if (!contact && !selectedConnectionId) {
       return;
+    }
+
+    // If requireInitialMessage is true, validate that there's a message or media
+    if (!contact && requireInitialMessage) {
+      const hasMessage = initialMessage.trim().length > 0;
+      const hasMedia = initialMessageMedia !== null;
+      
+      if (!hasMessage && !hasMedia) {
+        toast.error('É necessário enviar uma mensagem inicial para criar o contato');
+        return;
+      }
     }
 
     // If connection migration is enabled, check for scheduled messages first
@@ -734,7 +747,13 @@ export function ContactFormModal({
                 <div className="space-y-4">
                   <div className="flex items-center gap-2">
                     <MessageSquare className="w-4 h-4 text-muted-foreground" />
-                    <Label className="text-base font-medium">Mensagem Inicial (Opcional)</Label>
+                    <Label className="text-base font-medium">
+                      Mensagem Inicial {requireInitialMessage ? (
+                        <span className="text-destructive">(Obrigatório)</span>
+                      ) : (
+                        <span className="text-muted-foreground">(Opcional)</span>
+                      )}
+                    </Label>
                   </div>
                   
                   <p className="text-xs text-muted-foreground">
