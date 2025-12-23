@@ -44,6 +44,7 @@ import { useTagsData, Tag } from '@/hooks/useTagsData';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { cn } from '@/lib/utils';
+import { DepartmentFilterSelector, DepartmentFilterValue } from '@/components/tags/DepartmentFilterSelector';
 
 const colorOptions = [
   '#EF4444', '#F97316', '#EAB308', '#22C55E', 
@@ -66,8 +67,8 @@ export default function Tags() {
 
   const isAdminOrOwner = userRole?.role === 'owner' || userRole?.role === 'admin';
   
-  // Filter state
-  const [filterDepartmentId, setFilterDepartmentId] = useState<string>('all');
+  // Filter state - now using hierarchical filter
+  const [filterValue, setFilterValue] = useState<DepartmentFilterValue>({ type: 'all' });
   
   // Add dialog state
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
@@ -132,12 +133,12 @@ export default function Tags() {
     if (searchQuery && !tag.name.toLowerCase().includes(searchQuery.toLowerCase())) {
       return false;
     }
-    // Filter by department
-    if (filterDepartmentId === 'global') {
+    // Filter by department using hierarchical filter
+    if (filterValue.type === 'global') {
       return !tag.department_id;
     }
-    if (filterDepartmentId !== 'all') {
-      return tag.department_id === filterDepartmentId;
+    if (filterValue.type === 'department') {
+      return tag.department_id === filterValue.departmentId;
     }
     return true;
   });
@@ -396,27 +397,10 @@ export default function Tags() {
             className="pl-9"
           />
         </div>
-        <Select value={filterDepartmentId} onValueChange={setFilterDepartmentId}>
-          <SelectTrigger className="w-full sm:w-[220px]">
-            <Building2 className="w-4 h-4 mr-2 text-muted-foreground" />
-            <SelectValue placeholder="Filtrar por departamento" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Todos os departamentos</SelectItem>
-            <SelectItem value="global">Apenas globais</SelectItem>
-            {departments.map((dept) => (
-              <SelectItem key={dept.id} value={dept.id}>
-                <div className="flex items-center gap-2">
-                  <div 
-                    className="w-3 h-3 rounded-full" 
-                    style={{ backgroundColor: dept.color || '#6366F1' }}
-                  />
-                  <span>{dept.name}</span>
-                </div>
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <DepartmentFilterSelector
+          value={filterValue}
+          onChange={setFilterValue}
+        />
       </div>
 
       {/* Tags Grid */}
@@ -497,10 +481,10 @@ export default function Tags() {
           <div className="col-span-full text-center py-12">
             <TagIcon className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
             <h3 className="text-lg font-medium text-foreground">
-              {searchQuery || filterDepartmentId !== 'all' ? 'Nenhuma tag encontrada' : 'Nenhuma tag criada'}
+              {searchQuery || filterValue.type !== 'all' ? 'Nenhuma tag encontrada' : 'Nenhuma tag criada'}
             </h3>
             <p className="text-sm text-muted-foreground mt-1">
-              {searchQuery || filterDepartmentId !== 'all'
+              {searchQuery || filterValue.type !== 'all'
                 ? 'Tente ajustar os filtros' 
                 : 'Crie sua primeira tag para começar a organizar'
               }
