@@ -334,16 +334,6 @@ export default function CommercialManager() {
               <Library className="w-4 h-4" />
               <span className="hidden sm:inline">Relatórios</span>
             </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={refreshData}
-              disabled={loading || insightsLoading}
-              className="flex items-center gap-2"
-            >
-              <RefreshCw className={cn("w-4 h-4", (loading || insightsLoading) && "animate-spin")} />
-              <span className="hidden sm:inline">Atualizar</span>
-            </Button>
             <Badge variant="outline" className="text-xs md:text-sm flex items-center gap-1 md:gap-2 w-fit">
               {loading || insightsLoading ? (
                 <Loader2 className="w-3 h-3 animate-spin" />
@@ -352,12 +342,6 @@ export default function CommercialManager() {
               )}
               <span className="hidden sm:inline">Tempo real</span> {format(currentTime, "HH:mm:ss", { locale: ptBR })}
             </Badge>
-            {lastInsightsUpdate && (
-              <Badge variant="secondary" className="text-xs flex items-center gap-1 w-fit">
-                <TrendingUp className="w-3 h-3" />
-                <span className="hidden sm:inline">Insights:</span> {format(new Date(lastInsightsUpdate), "HH:mm", { locale: ptBR })}
-              </Badge>
-            )}
           </div>
         </div>
 
@@ -441,10 +425,8 @@ export default function CommercialManager() {
                             className="flex items-center gap-2 cursor-pointer"
                           >
                             <div className="w-4 h-4 flex items-center justify-center">
-                              {isConnSelected && !filter.departmentId ? (
+                              {isConnSelected && !filter.departmentId && (
                                 <Check className="h-4 w-4 text-primary" />
-                              ) : (
-                                <div className="w-3 h-3 rounded-full border border-muted-foreground/30" />
                               )}
                             </div>
                             <Wifi className="h-4 w-4 text-muted-foreground" />
@@ -458,10 +440,8 @@ export default function CommercialManager() {
                         <DropdownMenuSub key={conn.id}>
                           <DropdownMenuSubTrigger className="flex items-center gap-2">
                             <div className="w-4 h-4 flex items-center justify-center">
-                              {isConnSelected ? (
+                              {isConnSelected && (
                                 <Check className="h-4 w-4 text-primary" />
-                              ) : (
-                                <div className="w-3 h-3 rounded-full border border-muted-foreground/30" />
                               )}
                             </div>
                             <Wifi className="h-4 w-4 text-muted-foreground" />
@@ -495,10 +475,8 @@ export default function CommercialManager() {
                                 className="flex items-center gap-2 cursor-pointer"
                               >
                                 <div className="w-4 h-4 flex items-center justify-center">
-                                  {isConnSelected && filter.departmentId === dept.id ? (
+                                  {isConnSelected && filter.departmentId === dept.id && (
                                     <Check className="h-4 w-4 text-primary" />
-                                  ) : (
-                                    <div className="w-3 h-3 rounded-full border border-muted-foreground/30" />
                                   )}
                                 </div>
                                 <div 
@@ -631,17 +609,27 @@ export default function CommercialManager() {
       />
 
       {/* Insights */}
-      <InsightsCard
-        loading={loading}
-        insightsLoading={insightsLoading}
-        strengths={data?.strengths || []}
-        weaknesses={data?.weaknesses || []}
-        positivePatterns={data?.positivePatterns || []}
-        negativePatterns={data?.negativePatterns || []}
-        insights={data?.insights || []}
-        criticalIssues={data?.criticalIssues || []}
-        finalRecommendation={data?.finalRecommendation || ''}
-      />
+      <div className="space-y-2">
+        {lastInsightsUpdate && (
+          <div className="flex items-center gap-2">
+            <Badge variant="secondary" className="text-xs flex items-center gap-1.5">
+              <TrendingUp className="w-3 h-3" />
+              Última atualização dos insights: {format(new Date(lastInsightsUpdate), "HH:mm", { locale: ptBR })}
+            </Badge>
+          </div>
+        )}
+        <InsightsCard
+          loading={loading}
+          insightsLoading={insightsLoading}
+          strengths={data?.strengths || []}
+          weaknesses={data?.weaknesses || []}
+          positivePatterns={data?.positivePatterns || []}
+          negativePatterns={data?.negativePatterns || []}
+          insights={data?.insights || []}
+          criticalIssues={data?.criticalIssues || []}
+          finalRecommendation={data?.finalRecommendation || ''}
+        />
+      </div>
 
       {/* Reports Modal */}
       <ReportsModal
