@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { ChevronDown, X, Tag as TagIcon, Link, Globe, Search } from 'lucide-react';
+import { ChevronDown, X, Tag as TagIcon, Wifi, Globe, Search } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -347,7 +347,7 @@ export function TagHierarchySelector({
               return (
                 <DropdownMenuSub key={connection.id}>
                   <DropdownMenuSubTrigger className="flex items-center gap-2 cursor-pointer">
-                    <Link className="w-4 h-4 text-muted-foreground shrink-0" />
+                    <Wifi className="w-4 h-4 text-muted-foreground shrink-0" />
                     <span className="flex-1 truncate">{connection.name}</span>
                     {connectionSelectedCount > 0 && (
                       <Badge variant="secondary" className="text-xs shrink-0">

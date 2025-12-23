@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { Search, Smartphone, ArrowLeft } from 'lucide-react';
+import { Search, Wifi, ArrowLeft } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
@@ -173,7 +173,7 @@ export function ConnectionSelector({ position, onSelect, onClose, onBack, title 
                     : 'hover:bg-accent/50'
                 )}
               >
-                <Smartphone className="h-4 w-4 text-primary flex-shrink-0" />
+                <Wifi className="h-4 w-4 text-primary flex-shrink-0" />
                 <div className="flex-1 min-w-0">
                   <div className="text-sm font-medium truncate">{conn.name}</div>
                   {conn.phone_number && (

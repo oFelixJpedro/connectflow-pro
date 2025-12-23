@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { ChevronDown, Search, X, Globe, User, Phone, Users, Circle, CheckCircle2, Link } from 'lucide-react';
+import { ChevronDown, Search, X, Globe, User, Wifi, Users, Circle, CheckCircle2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -186,9 +186,9 @@ export function DashboardFilterSelector({ filter, onFilterChange, isAdmin }: Das
       if (filter.departmentId) {
         const depts = departmentsByConnection[filter.connectionId] || [];
         const dept = depts.find((d) => d.id === filter.departmentId);
-        return { icon: Phone, text: `${connName} → ${dept?.name || 'Departamento'}` };
+        return { icon: Wifi, text: `${connName} → ${dept?.name || 'Departamento'}` };
       }
-      return { icon: Phone, text: connName };
+      return { icon: Wifi, text: connName };
     }
     return { icon: Globe, text: 'Selecionar filtro' };
   };
@@ -300,7 +300,7 @@ export function DashboardFilterSelector({ filter, onFilterChange, isAdmin }: Das
               <DropdownMenuSub>
                 <DropdownMenuSubTrigger className="cursor-pointer">
                   <div className="flex items-center gap-2 flex-1 min-w-0">
-                    <Phone className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    <Wifi className="h-4 w-4 shrink-0 text-muted-foreground" />
                     <span className="truncate">Por Conexão</span>
                     {filter.type === 'connection' && filter.connectionId && (
                       <Badge variant="secondary" className="ml-auto text-xs h-5 px-1.5 shrink-0">
@@ -339,7 +339,7 @@ export function DashboardFilterSelector({ filter, onFilterChange, isAdmin }: Das
                       <DropdownMenuSub key={connection.id}>
                         <DropdownMenuSubTrigger className="cursor-pointer">
                           <div className="flex items-center gap-2 flex-1 min-w-0">
-                            <Link className="w-4 h-4 shrink-0 text-muted-foreground" />
+                            <Wifi className="w-4 h-4 shrink-0 text-muted-foreground" />
                             <span className="truncate">
                               {connection.name || connection.phone_number}
                             </span>
