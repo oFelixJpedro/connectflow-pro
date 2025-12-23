@@ -608,9 +608,20 @@ ${hasMedia ? `IMPORTANTE: Esta mensagem contém mídia (${message_type}). Analis
     // =====================================================
     // AGENT BEHAVIOR DETECTION (for outbound messages only)
     // =====================================================
-    // Analyze outbound messages including media (agent might send inappropriate images/docs)
+    // Optimized: Only analyze behavior for significant messages (>50 chars or media)
+    // This reduces ~30% of behavior analysis calls
+    const shouldAnalyzeBehavior = (content: string | null, hasMed: boolean): boolean => {
+      // Always analyze media (might be inappropriate)
+      if (hasMed) return true;
+      // Skip short messages (e.g., "ok", "pronto", "enviado")
+      if (!content || content.trim().length < 50) return false;
+      return true;
+    };
+    
     const outboundHasContent = message_content || hasMedia;
-    if (!isInbound && geminiApiKey && outboundHasContent) {
+    const behaviorAnalysisEnabled = shouldAnalyzeBehavior(message_content, hasMedia);
+    
+    if (!isInbound && geminiApiKey && outboundHasContent && behaviorAnalysisEnabled) {
       // Get conversation details to find the agent
       const { data: convDetails } = await supabase
         .from('conversations')

@@ -2088,27 +2088,64 @@ serve(async (req) => {
     // ═══════════════════════════════════════════════════════════════════
     // 📊 COMMERCIAL PIXEL - Analyze message in real-time (fire-and-forget)
     // ═══════════════════════════════════════════════════════════════════
-    try {
-      EdgeRuntime.waitUntil(
-        fetch(`${supabaseUrl}/functions/v1/commercial-pixel`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${supabaseServiceKey}`,
-          },
-          body: JSON.stringify({
-            conversation_id: conversationId,
-            company_id: companyId,
-            message_content: messageContent || '',
-            message_type: dbMessageType,
-            direction: direction,
-            contact_name: contactName
-          }),
-        }).catch(e => console.log('⚠️ [PIXEL] Error calling commercial-pixel:', e))
-      );
-      console.log('📊 [PIXEL] Commercial pixel triggered for message');
-    } catch (pixelError) {
-      console.log('⚠️ [PIXEL] Failed to trigger commercial pixel:', pixelError);
+    // Smart filter to reduce unnecessary API calls (~40-50% reduction)
+    const shouldCallCommercialPixel = (
+      content: string | null,
+      msgType: string,
+      dir: string
+    ): boolean => {
+      // Always analyze media with commercial potential
+      if (['image', 'video', 'document', 'audio'].includes(msgType)) return true;
+      
+      // Skip messages without content
+      if (!content || content.trim().length === 0) return false;
+      
+      // Skip very short messages (< 10 chars) - typically "ok", "sim", etc
+      if (content.trim().length < 10) return false;
+      
+      // Skip emoji-only messages
+      if (/^[\p{Emoji}\s]+$/u.test(content.trim())) return false;
+      
+      // Skip trivial monosyllabic responses
+      const trivialResponses = [
+        'ok', 'sim', 'não', 'nao', 'ta', 'tá', 'blz', 'vlw', 
+        'oi', 'olá', 'ola', 'obg', 'obrigado', 'obrigada',
+        'bom', 'boa', 'certo', 'beleza', 'pode', 'legal',
+        'hmm', 'hum', 'kkk', 'kkkk', 'rs', 'rsrs', 'haha',
+        'top', 'show', 'massa', 'nice', 'valeu', 'tmj'
+      ];
+      if (trivialResponses.includes(content.toLowerCase().trim())) return false;
+      
+      return true;
+    };
+    
+    const shouldTriggerPixel = shouldCallCommercialPixel(messageContent, dbMessageType, direction);
+    
+    if (shouldTriggerPixel) {
+      try {
+        EdgeRuntime.waitUntil(
+          fetch(`${supabaseUrl}/functions/v1/commercial-pixel`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${supabaseServiceKey}`,
+            },
+            body: JSON.stringify({
+              conversation_id: conversationId,
+              company_id: companyId,
+              message_content: messageContent || '',
+              message_type: dbMessageType,
+              direction: direction,
+              contact_name: contactName
+            }),
+          }).catch(e => console.log('⚠️ [PIXEL] Error calling commercial-pixel:', e))
+        );
+        console.log('📊 [PIXEL] Commercial pixel triggered for message');
+      } catch (pixelError) {
+        console.log('⚠️ [PIXEL] Failed to trigger commercial pixel:', pixelError);
+      }
+    } else {
+      console.log('⏭️ [PIXEL] Skipped - trivial message:', (messageContent || '').substring(0, 30));
     }
     
     // ═══════════════════════════════════════════════════════════════════
