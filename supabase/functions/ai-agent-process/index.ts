@@ -23,6 +23,12 @@ import {
   inferMediaType
 } from "../_shared/gemini-file-api.ts";
 
+import {
+  logAIUsage,
+  extractGeminiUsage,
+  GEMINI_PRICING
+} from "../_shared/usage-tracker.ts";
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -1537,6 +1543,7 @@ Gere a resposta do atendente. Se precisar executar ações (mover no CRM, adicio
         requestBody.tool_config = { function_calling_config: { mode: 'AUTO' } };
       }
       
+      const aiStartTime = Date.now();
       const geminiResponse = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${GEMINI_API_KEY}`,
         {
@@ -1545,6 +1552,7 @@ Gere a resposta do atendente. Se precisar executar ações (mover no CRM, adicio
           body: JSON.stringify(requestBody)
         }
       );
+      const aiProcessingTime = Date.now() - aiStartTime;
 
       if (!geminiResponse.ok) {
         const errorText = await geminiResponse.text();
@@ -1567,6 +1575,23 @@ Gere a resposta do atendente. Se precisar executar ações (mover no CRM, adicio
 
       const aiData = await geminiResponse.json();
       console.log('📦 Resposta Gemini (texto + tools):', JSON.stringify(aiData, null, 2).substring(0, 500) + '...');
+      
+      // Log AI usage
+      const usage = extractGeminiUsage(aiData);
+      logAIUsage(
+        supabase,
+        companyId,
+        'ai-agent-process',
+        'gemini-3-flash-preview',
+        usage.inputTokens,
+        usage.outputTokens,
+        aiProcessingTime,
+        { 
+          agentId: agent.id,
+          conversationId,
+          hasTools: dynamicTools.length > 0
+        }
+      ).catch(err => console.error('[UsageTracker] Error:', err));
       
       const candidate = aiData.candidates?.[0];
       const parts = candidate?.content?.parts || [];
@@ -1607,6 +1632,14 @@ Gere a resposta do atendente. Se precisar executar ações (mover no CRM, adicio
           const retryData = await retryResponse.json();
           console.log('🔄 Retry texto result:', JSON.stringify(retryData, null, 2).substring(0, 500) + '...');
           aiResponse = retryData.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
+          
+          // Log retry usage
+          const retryUsage = extractGeminiUsage(retryData);
+          logAIUsage(
+            supabase, companyId, 'ai-agent-process', 'gemini-3-flash-preview',
+            retryUsage.inputTokens, retryUsage.outputTokens, 0,
+            { agentId: agent.id, conversationId, isRetry: true }
+          ).catch(err => console.error('[UsageTracker] Retry Error:', err));
         }
       }
       
