@@ -55,9 +55,8 @@ export default function CommercialManager() {
   const [customStartDate, setCustomStartDate] = useState<Date | undefined>();
   const [customEndDate, setCustomEndDate] = useState<Date | undefined>();
   const [datePickerOpen, setDatePickerOpen] = useState(false);
-  const { loading, data, liveMetrics, isAdmin, insightsLoading, refreshData } = useCommercialData(filter);
+  const { loading, data, liveMetrics, isAdmin, insightsLoading, refreshData, lastUpdated } = useCommercialData(filter);
   const [viewMode, setViewMode] = useState<'commercial' | 'dashboard'>('commercial');
-  const [currentTime, setCurrentTime] = useState(new Date());
   const [reportsModalOpen, setReportsModalOpen] = useState(false);
   const [showLockedModal, setShowLockedModal] = useState(false);
   
@@ -72,14 +71,6 @@ export default function CommercialManager() {
 
   // Check if commercial manager is enabled for this company
   const commercialManagerEnabled = (company as any)?.commercial_manager_enabled ?? false;
-
-  // Real-time clock update
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setCurrentTime(new Date());
-    }, 1000);
-    return () => clearInterval(interval);
-  }, []);
 
   // Load all filter data (connections and departments)
   useEffect(() => {
@@ -335,12 +326,12 @@ export default function CommercialManager() {
               <span className="hidden sm:inline">Relatórios</span>
             </Button>
             <Badge variant="outline" className="text-xs md:text-sm flex items-center gap-1 md:gap-2 w-fit">
-              {loading ? (
+              {loading || insightsLoading ? (
                 <Loader2 className="w-3 h-3 animate-spin" />
               ) : (
                 <Radio className="w-3 h-3 text-green-500 animate-pulse" />
               )}
-              <span className="hidden sm:inline">Tempo real</span> {format(currentTime, "HH:mm:ss", { locale: ptBR })}
+              <span className="hidden sm:inline">Atualizado</span> {format(lastUpdated, "HH:mm", { locale: ptBR })}
             </Badge>
           </div>
         </div>
