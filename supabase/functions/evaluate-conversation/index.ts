@@ -1,6 +1,7 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { logAIUsage, extractGeminiUsage } from '../_shared/usage-tracker.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -503,6 +504,7 @@ serve(async (req) => {
           requestBody.tools = [{ url_context: {} }];
         }
 
+        const evalStartTime = Date.now();
         const geminiResponse = await fetch(
           `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${geminiApiKey}`,
           {
@@ -511,6 +513,7 @@ serve(async (req) => {
             body: JSON.stringify(requestBody),
           }
         );
+        const evalProcessingTime = Date.now() - evalStartTime;
 
         if (!geminiResponse.ok) {
           const errorText = await geminiResponse.text();
@@ -521,6 +524,22 @@ serve(async (req) => {
 
         const geminiData = await geminiResponse.json();
         const responseText = geminiData.candidates?.[0]?.content?.parts?.[0]?.text;
+
+        // Log AI usage
+        const usage = extractGeminiUsage(geminiData);
+        logAIUsage(
+          supabase,
+          currentCompanyId,
+          'evaluate-conversation',
+          'gemini-3-flash-preview',
+          usage.inputTokens,
+          usage.outputTokens,
+          evalProcessingTime,
+          { 
+            conversationId: convId,
+            hasMedia: urlsToCache.length > 0
+          }
+        ).catch(err => console.error('[UsageTracker] Error:', err));
 
         if (!responseText) {
           results.push({ conversation_id: convId, success: false, error: 'Resposta vazia da IA' });

@@ -27,6 +27,7 @@ import CommercialManager from "./pages/CommercialManager";
 import NotFound from "./pages/NotFound";
 import DeveloperLogin from "./pages/developer/DeveloperLogin";
 import DeveloperDashboard from "./pages/developer/DeveloperDashboard";
+import DeveloperUsage from "./pages/developer/DeveloperUsage";
 
 // Landing pages
 import { LandingPage, PricingPage, TrialPage, CheckoutSuccess } from "./pages/landing";
@@ -61,6 +62,11 @@ const App = () => (
               <Route path="/developer/dashboard" element={
                 <DeveloperAuthProvider>
                   <DeveloperDashboard />
+                </DeveloperAuthProvider>
+              } />
+              <Route path="/developer/usage" element={
+                <DeveloperAuthProvider>
+                  <DeveloperUsage />
                 </DeveloperAuthProvider>
               } />
               

@@ -6,6 +6,7 @@ import {
   analyzeDocumentWithFileAPI,
   transcribeAudioWithFileAPI
 } from '../_shared/gemini-file-api.ts';
+import { logAIUsage, extractGeminiUsage } from '../_shared/usage-tracker.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -256,6 +257,8 @@ Gere o resumo estruturado conforme as instruções.`;
 
     console.log(`[summarize-chat] Mídias analisadas - Imagens: ${imagesAnalyzed}, Vídeos: ${videosAnalyzed}, Documentos: ${documentsAnalyzed}, Áudios: ${audiosAnalyzed}`);
 
+    const startTime = Date.now();
+    
     // Chamar Gemini 2.5 Flash
     const response = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${GEMINI_API_KEY}`,
@@ -281,9 +284,25 @@ Gere o resumo estruturado conforme as instruções.`;
     const data = await response.json();
     const generatedSummary = data.candidates?.[0]?.content?.parts?.[0]?.text || 'Não foi possível gerar o resumo.';
 
+    const processingTime = Date.now() - startTime;
     console.log('[summarize-chat] Resumo gerado com sucesso');
 
-    const mediaAnalyzed = {
+    // Log AI usage
+    if (companyId) {
+      const usage = extractGeminiUsage(data);
+      await logAIUsage(
+        supabase,
+        companyId,
+        'summarize-chat',
+        'gemini-3-flash-preview',
+        usage.inputTokens,
+        usage.outputTokens,
+        processingTime,
+        { messageCount: messages.length }
+      );
+    }
+
+    const mediaAnalyzedObj = {
       images: imagesAnalyzed,
       videos: videosAnalyzed,
       documents: documentsAnalyzed,
@@ -301,7 +320,7 @@ Gere o resumo estruturado conforme as instruções.`;
         contact_id: contactId || null,
         summary: generatedSummary,
         message_count: messages.length,
-        media_analyzed: mediaAnalyzed,
+        media_analyzed: mediaAnalyzedObj,
         generated_by: user?.id || null,
         updated_at: new Date().toISOString()
       }, {
@@ -320,7 +339,7 @@ Gere o resumo estruturado conforme as instruções.`;
       JSON.stringify({ 
         summary: generatedSummary, 
         messageCount: messages.length,
-        mediaAnalyzed,
+        mediaAnalyzed: mediaAnalyzedObj,
         savedAt: savedSummary?.updated_at || new Date().toISOString()
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
