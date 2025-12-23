@@ -285,17 +285,19 @@ function formatContextForPrompt(context: ConversationContext): string {
     }
   }
   
+  // Limit objections to 5 items (optimization)
   if (context.objecoes.length > 0) {
     parts.push(`\n### OBJEÇÕES LEVANTADAS:`);
-    for (const objecao of context.objecoes) {
-      parts.push(`- ${objecao}`);
+    for (const objecao of context.objecoes.slice(-5)) {
+      parts.push(`- ${objecao.length > 150 ? objecao.substring(0, 150) + '...' : objecao}`);
     }
   }
   
+  // Limit history summary to 3 items (optimization - reduced from 5)
   if (context.historico_resumido.length > 0) {
     parts.push(`\n### RESUMO DA CONVERSA (últimas interações):`);
-    for (const item of context.historico_resumido.slice(-5)) {
-      parts.push(`- ${item}`);
+    for (const item of context.historico_resumido.slice(-3)) {
+      parts.push(`- ${item.length > 100 ? item.substring(0, 100) + '...' : item}`);
     }
   }
   
@@ -728,18 +730,37 @@ serve(async (req) => {
       }
     }
 
-    // 6️⃣ Load conversation history
+    // 6️⃣ Load conversation history (OPTIMIZED: limit to 15 messages + use summary)
     console.log('\n┌─────────────────────────────────────────────────────────────────┐');
-    console.log('│ 4️⃣  CARREGAR HISTÓRICO DA CONVERSA                              │');
+    console.log('│ 4️⃣  CARREGAR HISTÓRICO DA CONVERSA (OTIMIZADO)                  │');
     console.log('└─────────────────────────────────────────────────────────────────┘');
 
+    // Optimized: Load only last 15 messages instead of 50 (~30% token reduction)
     const { data: historyMessages } = await supabase
       .from('messages')
       .select('content, direction, sender_type, message_type, media_url, created_at, metadata, is_internal_note')
       .eq('conversation_id', conversationId)
       .eq('is_internal_note', false)
-      .order('created_at', { ascending: true })
-      .limit(50);
+      .order('created_at', { ascending: false })
+      .limit(15);
+    
+    // Reverse to get chronological order
+    const orderedMessages = historyMessages ? [...historyMessages].reverse() : [];
+    
+    // Check if conversation has more history and load summary if available
+    let historySummary: string | null = null;
+    if (orderedMessages.length >= 15) {
+      const { data: summaryData } = await supabase
+        .from('chat_summaries')
+        .select('summary')
+        .eq('conversation_id', conversationId)
+        .maybeSingle();
+      
+      if (summaryData?.summary) {
+        historySummary = summaryData.summary;
+        console.log('📋 Using existing conversation summary for context');
+      }
+    }
 
     const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY')!;
     
@@ -749,71 +770,78 @@ serve(async (req) => {
     const videoUrls: string[] = [];
     const documentData: Array<{ url: string; fileName?: string }> = [];
 
-    if (historyMessages) {
-      for (const msg of historyMessages) {
-        if (!msg.content && !msg.media_url) continue;
-        
-        const role: 'user' | 'assistant' = msg.direction === 'inbound' ? 'user' : 'assistant';
-        let content = msg.content || '';
-        
-        // Handle media types with Gemini File API
-        if (msg.message_type === 'audio' && msg.media_url) {
-          const transcription = await transcribeAudioWithFileAPI(
-            msg.media_url, 
-            GEMINI_API_KEY,
-            supabase,
-            companyId
-          );
-          content = transcription || '[Áudio não transcrito]';
-        } else if (msg.message_type === 'image' && msg.media_url) {
-          imageUrls.push(msg.media_url);
-          const analysis = await analyzeMediaWithFileAPI(
-            supabase,
-            msg.media_url,
-            'image',
-            companyId,
-            GEMINI_API_KEY,
-            'Descreva esta imagem de forma concisa para contexto de atendimento.',
-          );
-          content = analysis 
-            ? `[Imagem: ${analysis}]${content ? ` - ${content}` : ''}`
-            : content || '[Imagem enviada]';
-        } else if (msg.message_type === 'video' && msg.media_url) {
-          videoUrls.push(msg.media_url);
-          const analysis = await analyzeMediaWithFileAPI(
-            supabase,
-            msg.media_url,
-            'video',
-            companyId,
-            GEMINI_API_KEY,
-            'Descreva este vídeo de forma concisa para contexto de atendimento.',
-          );
-          content = analysis 
-            ? `[Vídeo: ${analysis}]${content ? ` - ${content}` : ''}`
-            : content || '[Vídeo enviado]';
-        } else if (msg.message_type === 'document' && msg.media_url) {
-          const meta = msg.metadata as any;
-          const fileName = meta?.fileName || meta?.file_name || 'documento';
-          documentData.push({ url: msg.media_url, fileName });
-          const analysis = await analyzeMediaWithFileAPI(
-            supabase,
-            msg.media_url,
-            'document',
-            companyId,
-            GEMINI_API_KEY,
-            `Extraia informações relevantes deste documento para atendimento.`,
-            fileName
-          );
-          content = analysis 
-            ? `[Documento "${fileName}": ${analysis}]${content ? ` - ${content}` : ''}`
-            : content || `[Documento "${fileName}" enviado]`;
-        } else if (msg.message_type === 'sticker') {
-          content = '[Figurinha enviada]';
-        }
-        
-        if (content) {
-          conversationHistory.push({ role, content });
-        }
+    // Add summary as first message if available (provides context for older messages)
+    if (historySummary) {
+      conversationHistory.push({
+        role: 'assistant',
+        content: `[RESUMO DA CONVERSA ANTERIOR: ${historySummary}]`
+      });
+    }
+
+    // Process ordered messages (last 15)
+    for (const msg of orderedMessages) {
+      if (!msg.content && !msg.media_url) continue;
+      
+      const role: 'user' | 'assistant' = msg.direction === 'inbound' ? 'user' : 'assistant';
+      let content = msg.content || '';
+      
+      // Handle media types with Gemini File API
+      if (msg.message_type === 'audio' && msg.media_url) {
+        const transcription = await transcribeAudioWithFileAPI(
+          msg.media_url, 
+          GEMINI_API_KEY,
+          supabase,
+          companyId
+        );
+        content = transcription || '[Áudio não transcrito]';
+      } else if (msg.message_type === 'image' && msg.media_url) {
+        imageUrls.push(msg.media_url);
+        const analysis = await analyzeMediaWithFileAPI(
+          supabase,
+          msg.media_url,
+          'image',
+          companyId,
+          GEMINI_API_KEY,
+          'Descreva esta imagem de forma concisa para contexto de atendimento.',
+        );
+        content = analysis 
+          ? `[Imagem: ${analysis}]${content ? ` - ${content}` : ''}`
+          : content || '[Imagem enviada]';
+      } else if (msg.message_type === 'video' && msg.media_url) {
+        videoUrls.push(msg.media_url);
+        const analysis = await analyzeMediaWithFileAPI(
+          supabase,
+          msg.media_url,
+          'video',
+          companyId,
+          GEMINI_API_KEY,
+          'Descreva este vídeo de forma concisa para contexto de atendimento.',
+        );
+        content = analysis 
+          ? `[Vídeo: ${analysis}]${content ? ` - ${content}` : ''}`
+          : content || '[Vídeo enviado]';
+      } else if (msg.message_type === 'document' && msg.media_url) {
+        const meta = msg.metadata as any;
+        const fileName = meta?.fileName || meta?.file_name || 'documento';
+        documentData.push({ url: msg.media_url, fileName });
+        const analysis = await analyzeMediaWithFileAPI(
+          supabase,
+          msg.media_url,
+          'document',
+          companyId,
+          GEMINI_API_KEY,
+          `Extraia informações relevantes deste documento para atendimento.`,
+          fileName
+        );
+        content = analysis 
+          ? `[Documento "${fileName}": ${analysis}]${content ? ` - ${content}` : ''}`
+          : content || `[Documento "${fileName}" enviado]`;
+      } else if (msg.message_type === 'sticker') {
+        content = '[Figurinha enviada]';
+      }
+      
+      if (content) {
+        conversationHistory.push({ role, content });
       }
     }
     

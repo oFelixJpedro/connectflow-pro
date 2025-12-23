@@ -763,6 +763,7 @@ export type Database = {
       companies: {
         Row: {
           active: boolean | null
+          ai_optimization_settings: Json | null
           commercial_manager_enabled: boolean | null
           created_at: string | null
           id: string
@@ -782,6 +783,7 @@ export type Database = {
         }
         Insert: {
           active?: boolean | null
+          ai_optimization_settings?: Json | null
           commercial_manager_enabled?: boolean | null
           created_at?: string | null
           id?: string
@@ -801,6 +803,7 @@ export type Database = {
         }
         Update: {
           active?: boolean | null
+          ai_optimization_settings?: Json | null
           commercial_manager_enabled?: boolean | null
           created_at?: string | null
           id?: string

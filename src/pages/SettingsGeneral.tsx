@@ -6,6 +6,9 @@ import {
   Save,
   Upload,
   Loader2,
+  Bot,
+  TrendingDown,
+  AlertCircle,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -16,6 +19,8 @@ import { Separator } from '@/components/ui/separator';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Progress } from '@/components/ui/progress';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import {
   Select,
   SelectContent,
@@ -47,6 +52,18 @@ interface CompanySettings {
   description?: string;
 }
 
+interface AIOptimizationSettings {
+  commercial_pixel_enabled: boolean;
+  behavior_analysis_enabled: boolean;
+  evaluation_frequency: 'on_close' | 'daily' | 'disabled';
+}
+
+const defaultAISettings: AIOptimizationSettings = {
+  commercial_pixel_enabled: true,
+  behavior_analysis_enabled: true,
+  evaluation_frequency: 'on_close',
+};
+
 const defaultBusinessHours: BusinessHours = {
   enabled: true,
   timezone: 'America/Sao_Paulo',
@@ -75,6 +92,17 @@ export default function SettingsGeneral() {
   const [businessHours, setBusinessHours] = useState<BusinessHours>(defaultBusinessHours);
   const [savingCompany, setSavingCompany] = useState(false);
   const [uploadingLogo, setUploadingLogo] = useState(false);
+  
+  // AI Settings state
+  const [aiSettings, setAISettings] = useState<AIOptimizationSettings>(defaultAISettings);
+  const [savingAI, setSavingAI] = useState(false);
+  const [aiUsageStats, setAIUsageStats] = useState<{
+    todayCalls: number;
+    todayCost: number;
+    monthCalls: number;
+    monthCost: number;
+  } | null>(null);
+  const [loadingAIStats, setLoadingAIStats] = useState(false);
 
   // Load company data
   useEffect(() => {
@@ -89,8 +117,60 @@ export default function SettingsGeneral() {
           setBusinessHours(settings.businessHours);
         }
       }
+      
+      // Load AI settings
+      const aiOptSettings = (company as any).ai_optimization_settings as AIOptimizationSettings | null;
+      if (aiOptSettings) {
+        setAISettings({
+          commercial_pixel_enabled: aiOptSettings.commercial_pixel_enabled ?? true,
+          behavior_analysis_enabled: aiOptSettings.behavior_analysis_enabled ?? true,
+          evaluation_frequency: aiOptSettings.evaluation_frequency ?? 'on_close',
+        });
+      }
     }
   }, [company]);
+  
+  // Load AI usage stats
+  useEffect(() => {
+    if (company && isOwnerOrAdmin) {
+      loadAIUsageStats();
+    }
+  }, [company, isOwnerOrAdmin]);
+  
+  const loadAIUsageStats = async () => {
+    if (!company) return;
+    setLoadingAIStats(true);
+    try {
+      const now = new Date();
+      const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
+      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+      
+      // Today's usage
+      const { data: todayData } = await supabase
+        .from('ai_usage_log')
+        .select('estimated_cost')
+        .eq('company_id', company.id)
+        .gte('created_at', startOfDay);
+      
+      // Month's usage
+      const { data: monthData } = await supabase
+        .from('ai_usage_log')
+        .select('estimated_cost')
+        .eq('company_id', company.id)
+        .gte('created_at', startOfMonth);
+      
+      setAIUsageStats({
+        todayCalls: todayData?.length || 0,
+        todayCost: todayData?.reduce((sum, d) => sum + (Number(d.estimated_cost) || 0), 0) || 0,
+        monthCalls: monthData?.length || 0,
+        monthCost: monthData?.reduce((sum, d) => sum + (Number(d.estimated_cost) || 0), 0) || 0,
+      });
+    } catch (error) {
+      console.error('Error loading AI stats:', error);
+    } finally {
+      setLoadingAIStats(false);
+    }
+  };
 
   const handleLogoUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -187,6 +267,34 @@ export default function SettingsGeneral() {
       setSavingCompany(false);
     }
   };
+  
+  const handleSaveAISettings = async () => {
+    if (!company) return;
+    
+    setSavingAI(true);
+    try {
+      const { error } = await supabase
+        .from('companies')
+        .update({ ai_optimization_settings: aiSettings as any })
+        .eq('id', company.id);
+      
+      if (error) throw error;
+      
+      toast({
+        title: 'Configurações de IA salvas',
+        description: 'As otimizações de IA foram atualizadas.',
+      });
+    } catch (error) {
+      console.error('Error saving AI settings:', error);
+      toast({
+        title: 'Erro ao salvar',
+        description: 'Não foi possível salvar as configurações de IA.',
+        variant: 'destructive',
+      });
+    } finally {
+      setSavingAI(false);
+    }
+  };
 
 
   const updateBusinessHour = (
@@ -218,12 +326,16 @@ export default function SettingsGeneral() {
         </div>
 
         <Tabs defaultValue="notifications" className="space-y-4 md:space-y-6">
-          <TabsList className={cn("grid w-full h-auto", isOwnerOrAdmin ? "grid-cols-3" : "grid-cols-1")}>
+          <TabsList className={cn("grid w-full h-auto", isOwnerOrAdmin ? "grid-cols-4" : "grid-cols-1")}>
             {isOwnerOrAdmin && (
               <>
                 <TabsTrigger value="company" className="gap-2 py-2">
                   <Building2 className="w-4 h-4" />
                   <span className="text-xs sm:text-sm">Empresa</span>
+                </TabsTrigger>
+                <TabsTrigger value="ai" className="gap-2 py-2">
+                  <Bot className="w-4 h-4" />
+                  <span className="text-xs sm:text-sm">Uso de IA</span>
                 </TabsTrigger>
                 <TabsTrigger value="billing" className="gap-2 py-2">
                   <CreditCard className="w-4 h-4" />
@@ -479,6 +591,148 @@ export default function SettingsGeneral() {
                     </div>
                   </div>
                 </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* AI Usage Settings */}
+          <TabsContent value="ai" className="space-y-6">
+            {/* Usage Stats Card */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <TrendingDown className="w-5 h-5" />
+                  Consumo de IA
+                </CardTitle>
+                <CardDescription>
+                  Visualize o consumo de tokens e requisições de IA
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {loadingAIStats ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="w-6 h-6 animate-spin" />
+                  </div>
+                ) : aiUsageStats ? (
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div className="text-center p-4 bg-muted/50 rounded-lg">
+                      <p className="text-2xl font-bold">{aiUsageStats.todayCalls}</p>
+                      <p className="text-sm text-muted-foreground">Chamadas hoje</p>
+                    </div>
+                    <div className="text-center p-4 bg-muted/50 rounded-lg">
+                      <p className="text-2xl font-bold">R$ {aiUsageStats.todayCost.toFixed(2)}</p>
+                      <p className="text-sm text-muted-foreground">Custo hoje</p>
+                    </div>
+                    <div className="text-center p-4 bg-muted/50 rounded-lg">
+                      <p className="text-2xl font-bold">{aiUsageStats.monthCalls}</p>
+                      <p className="text-sm text-muted-foreground">Chamadas/mês</p>
+                    </div>
+                    <div className="text-center p-4 bg-muted/50 rounded-lg">
+                      <p className="text-2xl font-bold">R$ {aiUsageStats.monthCost.toFixed(2)}</p>
+                      <p className="text-sm text-muted-foreground">Custo/mês</p>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-muted-foreground text-center">Nenhum dado disponível</p>
+                )}
+                
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={loadAIUsageStats}
+                  disabled={loadingAIStats}
+                >
+                  {loadingAIStats && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                  Atualizar estatísticas
+                </Button>
+              </CardContent>
+            </Card>
+
+            {/* Optimization Toggles */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Bot className="w-5 h-5" />
+                  Otimizações de IA
+                </CardTitle>
+                <CardDescription>
+                  Configure quais recursos de IA estão ativos para economizar custos
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <Alert>
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertDescription>
+                    Desativar recursos pode reduzir custos, mas também afetará as análises comerciais.
+                  </AlertDescription>
+                </Alert>
+                
+                <div className="space-y-4">
+                  {/* Commercial Pixel Toggle */}
+                  <div className="flex items-center justify-between p-4 border rounded-lg">
+                    <div className="space-y-1">
+                      <Label className="font-medium">Análise Comercial (Commercial Pixel)</Label>
+                      <p className="text-sm text-muted-foreground">
+                        Analisa mensagens para detectar sinais de venda, objeções e qualificação de leads
+                      </p>
+                    </div>
+                    <Switch
+                      checked={aiSettings.commercial_pixel_enabled}
+                      onCheckedChange={(checked) => 
+                        setAISettings(prev => ({ ...prev, commercial_pixel_enabled: checked }))
+                      }
+                    />
+                  </div>
+
+                  {/* Behavior Analysis Toggle */}
+                  <div className="flex items-center justify-between p-4 border rounded-lg">
+                    <div className="space-y-1">
+                      <Label className="font-medium">Análise de Comportamento</Label>
+                      <p className="text-sm text-muted-foreground">
+                        Detecta comportamentos problemáticos dos vendedores (agressividade, negligência)
+                      </p>
+                    </div>
+                    <Switch
+                      checked={aiSettings.behavior_analysis_enabled}
+                      onCheckedChange={(checked) => 
+                        setAISettings(prev => ({ ...prev, behavior_analysis_enabled: checked }))
+                      }
+                    />
+                  </div>
+
+                  {/* Evaluation Frequency */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 border rounded-lg">
+                    <div className="space-y-1">
+                      <Label className="font-medium">Frequência de Avaliações</Label>
+                      <p className="text-sm text-muted-foreground">
+                        Quando avaliar a qualidade das conversas
+                      </p>
+                    </div>
+                    <Select
+                      value={aiSettings.evaluation_frequency}
+                      onValueChange={(value: 'on_close' | 'daily' | 'disabled') =>
+                        setAISettings(prev => ({ ...prev, evaluation_frequency: value }))
+                      }
+                    >
+                      <SelectTrigger className="w-full sm:w-[180px]">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="on_close">Ao fechar conversa</SelectItem>
+                        <SelectItem value="daily">Diariamente</SelectItem>
+                        <SelectItem value="disabled">Desativado</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                <Separator />
+
+                <Button onClick={handleSaveAISettings} disabled={savingAI}>
+                  {savingAI && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                  <Save className="w-4 h-4 mr-2" />
+                  Salvar configurações de IA
+                </Button>
               </CardContent>
             </Card>
           </TabsContent>
