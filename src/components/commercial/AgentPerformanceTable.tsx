@@ -4,6 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Users, ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { AgentIndividualModal } from './AgentIndividualModal';
@@ -88,71 +89,101 @@ export function AgentPerformanceTable({ loading, agents }: AgentPerformanceTable
               <p>Nenhum dado de atendente disponível</p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              {agents.map((agent, index) => (
-                <div
-                  key={agent.id}
-                  onClick={() => handleAgentClick(agent)}
-                  className="relative p-4 bg-muted/30 rounded-lg border cursor-pointer hover:bg-muted/50 hover:border-primary/30 transition-colors group flex flex-col"
-                >
-                  {/* Rank Badge */}
-                  <div className="absolute top-3 right-3 w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center">
-                    <span className="text-xs font-bold text-primary">#{index + 1}</span>
-                  </div>
+            <TooltipProvider delayDuration={300}>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                {agents.map((agent, index) => (
+                  <div
+                    key={agent.id}
+                    onClick={() => handleAgentClick(agent)}
+                    className="relative p-4 bg-muted/30 rounded-lg border cursor-pointer hover:bg-muted/50 hover:border-primary/30 transition-colors group flex flex-col"
+                  >
+                    {/* Rank Badge */}
+                    <div className="absolute top-3 right-3 w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center">
+                      <span className="text-xs font-bold text-primary">#{index + 1}</span>
+                    </div>
 
-                  {/* Avatar and Name */}
-                  <div className="flex flex-col items-center text-center mb-3">
-                    <Avatar className="w-14 h-14 mb-2">
-                      <AvatarImage src={agent.avatar_url} className="object-cover object-top" />
-                      <AvatarFallback className="bg-secondary text-secondary-foreground text-lg">
-                        {getInitials(agent.name)}
-                      </AvatarFallback>
-                    </Avatar>
-                    <span className="font-medium text-foreground text-sm truncate max-w-full">
-                      {agent.name}
-                    </span>
-                    <Badge 
-                      variant="outline" 
-                      className={cn("text-xs mt-1", levelLabels[agent.level].color)}
-                    >
-                      {levelLabels[agent.level].label}
-                    </Badge>
-                  </div>
+                    {/* Avatar and Name */}
+                    <div className="flex flex-col items-center text-center mb-3">
+                      <Avatar className="w-14 h-14 mb-2">
+                        <AvatarImage src={agent.avatar_url} className="object-cover object-top" />
+                        <AvatarFallback className="bg-secondary text-secondary-foreground text-lg">
+                          {getInitials(agent.name)}
+                        </AvatarFallback>
+                      </Avatar>
+                      <span className="font-medium text-foreground text-sm truncate max-w-full">
+                        {agent.name}
+                      </span>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Badge 
+                            variant="outline" 
+                            className={cn("text-xs mt-1 cursor-help", levelLabels[agent.level].color)}
+                          >
+                            {levelLabels[agent.level].label}
+                          </Badge>
+                        </TooltipTrigger>
+                        <TooltipContent side="top">
+                          <p className="text-xs">Classificação baseada em experiência e performance.</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </div>
 
-                  {/* Score */}
-                  <div className="flex items-center justify-center gap-2 mb-3">
-                    <span className="text-2xl font-bold text-foreground">
-                      {agent.score.toFixed(1)}
-                    </span>
-                    <span className="text-sm text-muted-foreground">/10</span>
-                  </div>
+                    {/* Score */}
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <div className="flex items-center justify-center gap-2 mb-3 cursor-help">
+                          <span className="text-2xl font-bold text-foreground">
+                            {agent.score.toFixed(1)}
+                          </span>
+                          <span className="text-sm text-muted-foreground">/10</span>
+                        </div>
+                      </TooltipTrigger>
+                      <TooltipContent side="top">
+                        <p className="text-xs">Nota média do atendente em todas as conversas (0-10).</p>
+                      </TooltipContent>
+                    </Tooltip>
 
-                  {/* Progress Bar */}
-                  <Progress 
-                    value={agent.score * 10} 
-                    className="h-2 mb-3" 
-                  />
+                    {/* Progress Bar */}
+                    <Progress 
+                      value={agent.score * 10} 
+                      className="h-2 mb-3" 
+                    />
 
-                  {/* Stats and Recommendation */}
-                  <div className="flex items-center justify-between mt-auto">
-                    <span className="text-xs text-muted-foreground">
-                      {agent.conversations} conv.
-                    </span>
-                    <Badge 
-                      variant="outline" 
-                      className={cn("text-xs", recommendationLabels[agent.recommendation].color)}
-                    >
-                      {recommendationLabels[agent.recommendation].label}
-                    </Badge>
-                  </div>
+                    {/* Stats and Recommendation */}
+                    <div className="flex items-center justify-between mt-auto">
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span className="text-xs text-muted-foreground cursor-help">
+                            {agent.conversations} conv.
+                          </span>
+                        </TooltipTrigger>
+                        <TooltipContent side="bottom">
+                          <p className="text-xs">Total de conversas atribuídas no período.</p>
+                        </TooltipContent>
+                      </Tooltip>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Badge 
+                            variant="outline" 
+                            className={cn("text-xs cursor-help", recommendationLabels[agent.recommendation].color)}
+                          >
+                            {recommendationLabels[agent.recommendation].label}
+                          </Badge>
+                        </TooltipTrigger>
+                        <TooltipContent side="bottom" className="max-w-[200px]">
+                          <p className="text-xs">Sugestão da IA: Promover, Manter, Treinar, Monitorar ou Ação Corretiva.</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </div>
 
-                  {/* Hover indicator */}
-                  <div className="absolute bottom-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <ChevronRight className="w-4 h-4 text-primary" />
+                    {/* Hover indicator */}
+                    <div className="absolute bottom-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <ChevronRight className="w-4 h-4 text-primary" />
+                    </div>
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            </TooltipProvider>
           )}
         </CardContent>
       </Card>
