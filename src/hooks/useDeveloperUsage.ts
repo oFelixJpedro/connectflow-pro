@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { callDeveloperFunction } from '@/lib/developerApi';
 
 interface AIUsageByFunction {
   function_name: string;
@@ -54,7 +55,7 @@ export function useDeveloperUsage() {
       const startDate = dateRange.start.toISOString();
       const endDate = dateRange.end.toISOString();
 
-      // Fetch AI usage logs
+      // Fetch AI usage logs (uses RLS policy that allows reading)
       const { data: aiLogs, error: aiError } = await supabase
         .from('ai_usage_log')
         .select('*')
@@ -64,14 +65,18 @@ export function useDeveloperUsage() {
 
       if (aiError) throw aiError;
 
-      // Fetch companies for mapping
-      const { data: companies, error: compError } = await supabase
-        .from('companies')
-        .select('id, name');
+      // Fetch companies via developer-data Edge Function (bypasses RLS)
+      const { data: companiesData, error: compError } = await callDeveloperFunction('developer-data', {
+        action: 'list_companies'
+      });
 
-      if (compError) throw compError;
+      if (compError) {
+        console.warn('Failed to fetch companies via developer-data:', compError);
+      }
 
-      const companyMap = new Map(companies?.map(c => [c.id, c.name]) || []);
+      // Build company map from Edge Function response
+      const companies = companiesData?.companies || [];
+      const companyMap = new Map<string, string>(companies.map((c: { id: string; name: string }) => [c.id, c.name]));
 
       // Aggregate by function
       const functionMap = new Map<string, AIUsageByFunction>();
