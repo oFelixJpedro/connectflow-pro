@@ -9,6 +9,12 @@ export interface Tag {
   color: string;
   description: string | null;
   company_id: string;
+  department_id: string | null;
+  department?: {
+    id: string;
+    name: string;
+    color: string | null;
+  } | null;
   created_at: string;
   conversationsCount?: number;
   contactsCount?: number;
@@ -18,6 +24,7 @@ export interface TagFormData {
   name: string;
   color: string;
   description?: string;
+  department_id?: string | null;
 }
 
 export function useTagsData() {
@@ -31,10 +38,17 @@ export function useTagsData() {
     try {
       setLoading(true);
 
-      // Fetch tags
+      // Fetch tags with department info
       const { data: tagsData, error: tagsError } = await supabase
         .from('tags')
-        .select('*')
+        .select(`
+          *,
+          departments:department_id (
+            id,
+            name,
+            color
+          )
+        `)
         .eq('company_id', profile.company_id)
         .order('name', { ascending: true });
 
@@ -68,6 +82,7 @@ export function useTagsData() {
 
         return {
           ...tag,
+          department: tag.departments || null,
           conversationsCount,
           contactsCount,
         };
@@ -101,8 +116,16 @@ export function useTagsData() {
           name: data.name.trim(),
           color: data.color,
           description: data.description?.trim() || null,
+          department_id: data.department_id || null,
         })
-        .select()
+        .select(`
+          *,
+          departments:department_id (
+            id,
+            name,
+            color
+          )
+        `)
         .single();
 
       if (error) {
@@ -119,6 +142,7 @@ export function useTagsData() {
 
       const tagWithCounts = {
         ...newTag,
+        department: newTag.departments || null,
         conversationsCount: 0,
         contactsCount: 0,
       };
@@ -146,15 +170,25 @@ export function useTagsData() {
     if (!profile?.company_id) return false;
 
     try {
-      const { error } = await supabase
+      const { data: updatedTag, error } = await supabase
         .from('tags')
         .update({
           name: data.name.trim(),
           color: data.color,
           description: data.description?.trim() || null,
+          department_id: data.department_id === undefined ? undefined : (data.department_id || null),
         })
         .eq('id', id)
-        .eq('company_id', profile.company_id);
+        .eq('company_id', profile.company_id)
+        .select(`
+          *,
+          departments:department_id (
+            id,
+            name,
+            color
+          )
+        `)
+        .single();
 
       if (error) {
         if (error.code === '23505') {
@@ -168,15 +202,24 @@ export function useTagsData() {
         throw error;
       }
 
-      setTags(prev =>
-        prev
-          .map(tag =>
-            tag.id === id
-              ? { ...tag, name: data.name.trim(), color: data.color, description: data.description?.trim() || null }
-              : tag
-          )
-          .sort((a, b) => a.name.localeCompare(b.name))
-      );
+      if (updatedTag) {
+        setTags(prev =>
+          prev
+            .map(tag =>
+              tag.id === id
+                ? { 
+                    ...tag, 
+                    name: data.name.trim(), 
+                    color: data.color, 
+                    description: data.description?.trim() || null,
+                    department_id: updatedTag.department_id,
+                    department: updatedTag.departments || null,
+                  }
+                : tag
+            )
+            .sort((a, b) => a.name.localeCompare(b.name))
+        );
+      }
 
       toast({
         title: 'Tag atualizada!',
