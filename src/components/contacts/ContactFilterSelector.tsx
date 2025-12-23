@@ -333,9 +333,9 @@ export function ContactFilterSelector({
                   <DropdownMenuSubTrigger className="flex items-center gap-2 cursor-pointer">
                     <Checkbox
                       checked={isConnSelected || areAllDepartmentsSelected(connection.id)}
-                      className="pointer-events-none"
                       onClick={(e) => {
                         e.stopPropagation();
+                        e.preventDefault();
                         handleConnectionToggle(connection.id);
                       }}
                     />
