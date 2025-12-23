@@ -3,10 +3,11 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useKanbanData } from '@/hooks/useKanbanData';
 import { supabase } from '@/integrations/supabase/client';
 import { KanbanBoard } from '@/components/crm/KanbanBoard';
-import { KanbanFilters } from '@/components/crm/KanbanFilters';
+import { CRMFilterSelector } from '@/components/crm/CRMFilterSelector';
 import { AddCardDialog } from '@/components/crm/AddCardDialog';
 import { ManageCRMModal } from '@/components/crm/ManageCRMModal';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { 
   Select, 
   SelectContent, 
@@ -14,7 +15,7 @@ import {
   SelectTrigger, 
   SelectValue 
 } from '@/components/ui/select';
-import { Loader2, LayoutGrid, Plus, Smartphone, Building2, Settings } from 'lucide-react';
+import { Loader2, LayoutGrid, Plus, Smartphone, Settings, Search, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
@@ -29,6 +30,7 @@ interface Department {
   id: string;
   name: string;
   whatsapp_connection_id: string;
+  color?: string;
 }
 
 interface ConnectionUserAccess {
@@ -43,7 +45,6 @@ export default function CRM() {
   const [connections, setConnections] = useState<Connection[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(null);
-  const [selectedDepartmentId, setSelectedDepartmentId] = useState<string | null>(null);
   const [loadingConnections, setLoadingConnections] = useState(true);
   const [hasCRMAccess, setHasCRMAccess] = useState<boolean | null>(null);
   const [addCardOpen, setAddCardOpen] = useState(false);
@@ -57,10 +58,10 @@ export default function CRM() {
 
   // Filters
   const [searchQuery, setSearchQuery] = useState('');
+  const [filterDepartmentIds, setFilterDepartmentIds] = useState<string[]>([]);
   const [filterResponsible, setFilterResponsible] = useState<string[]>([]);
   const [filterPriority, setFilterPriority] = useState<string[]>([]);
   const [filterTags, setFilterTags] = useState<string[]>([]);
-
   const isAdminOrOwner = userRole?.role === 'owner' || userRole?.role === 'admin';
 
   // Connection ID for kanban hook
@@ -208,7 +209,7 @@ export default function CRM() {
       try {
         const { data: allDepts, error } = await supabase
           .from('departments')
-          .select('id, name, whatsapp_connection_id')
+          .select('id, name, whatsapp_connection_id, color')
           .eq('active', true)
           .in('whatsapp_connection_id', connections.map(c => c.id));
 
@@ -295,7 +296,7 @@ export default function CRM() {
   const handleConnectionChange = (value: string) => {
     setSelectedConnectionId(value);
     // Reset department filter when changing connection
-    setSelectedDepartmentId(null);
+    setFilterDepartmentIds([]);
   };
 
   // Get cards to display with permission filtering
@@ -315,10 +316,10 @@ export default function CRM() {
 
   // Filter cards by department if selected
   const departmentFilteredCards = displayCards.filter(card => {
-    if (!selectedDepartmentId) return true;
+    if (filterDepartmentIds.length === 0) return true;
     
     // Filter by the conversation's department_id
-    return card.conversation_department_id === selectedDepartmentId;
+    return card.conversation_department_id && filterDepartmentIds.includes(card.conversation_department_id);
   });
 
   // Apply other filters
@@ -367,29 +368,25 @@ export default function CRM() {
 
   const clearFilters = () => {
     setSearchQuery('');
+    setFilterDepartmentIds([]);
     setFilterResponsible([]);
     setFilterPriority([]);
     setFilterTags([]);
   };
 
-  const hasActiveFilters = !!(searchQuery || filterResponsible.length > 0 || 
-    filterPriority.length > 0 || filterTags.length > 0);
+  const hasActiveFilters = !!(searchQuery || filterDepartmentIds.length > 0 || 
+    filterResponsible.length > 0 || filterPriority.length > 0 || filterTags.length > 0);
 
   // Get contact count message
   const getContactCountMessage = () => {
     const count = filteredCards.length;
-    const total = departmentFilteredCards.length;
+    const total = displayCards.length;
     
     if (hasActiveFilters && count !== total) {
       return `${count} de ${total} cards (filtrados)`;
     }
     
-    if (!selectedDepartmentId) {
-      return `${count} cards nesta conexão`;
-    }
-    
-    const deptName = departments.find(d => d.id === selectedDepartmentId)?.name;
-    return `${count} cards (${deptName})`;
+    return `${count} cards nesta conexão`;
   };
 
   // Loading state
@@ -454,31 +451,6 @@ export default function CRM() {
             </SelectContent>
           </Select>
 
-          {/* Department Selector */}
-          {filteredDepartments.length > 0 && (
-            <Select 
-              value={selectedDepartmentId || 'all'} 
-              onValueChange={(v) => setSelectedDepartmentId(v === 'all' ? null : v)}
-            >
-              <SelectTrigger className="w-[160px] md:w-[200px]">
-                <div className="flex items-center gap-2">
-                  <Building2 className="w-4 h-4 text-muted-foreground" />
-                  <SelectValue placeholder="Departamento" />
-                </div>
-              </SelectTrigger>
-              <SelectContent className="bg-popover">
-                <SelectItem value="all">
-                  <span>Todos os departamentos</span>
-                </SelectItem>
-                <div className="my-1 border-t" />
-                {filteredDepartments.map(dept => (
-                  <SelectItem key={dept.id} value={dept.id}>
-                    <span>{dept.name}</span>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
 
           {/* Contact count */}
           <span className="text-xs md:text-sm text-muted-foreground">
@@ -515,7 +487,7 @@ export default function CRM() {
         existingContactIds={displayCards.map(c => c.contact_id)}
         onAddCard={createCard}
         connectionId={selectedConnectionId}
-        departmentId={selectedDepartmentId}
+        departmentId={filterDepartmentIds.length === 1 ? filterDepartmentIds[0] : null}
         isAssignedOnly={selectedConnectionId ? assignedOnlyConnectionIds.has(selectedConnectionId) : false}
       />
 
@@ -527,20 +499,46 @@ export default function CRM() {
       />
 
       {/* Filters */}
-      <KanbanFilters
-        searchQuery={searchQuery}
-        onSearchChange={setSearchQuery}
-        filterResponsible={filterResponsible}
-        onResponsibleChange={setFilterResponsible}
-        filterPriority={filterPriority}
-        onPriorityChange={setFilterPriority}
-        filterTags={filterTags}
-        onTagsChange={setFilterTags}
-        teamMembers={teamMembers}
-        availableTags={allTags}
-        hasActiveFilters={hasActiveFilters}
-        onClearFilters={clearFilters}
-      />
+      <div className="flex items-center gap-3 px-4 py-3 border-b bg-muted/30">
+        {/* Search */}
+        <div className="relative flex-1 max-w-sm">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <Input
+            placeholder="Buscar por nome ou telefone..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+
+        {/* CRM Filter Selector */}
+        <CRMFilterSelector
+          departments={filteredDepartments}
+          selectedDepartmentIds={filterDepartmentIds}
+          onDepartmentChange={setFilterDepartmentIds}
+          teamMembers={teamMembers}
+          selectedResponsibleIds={filterResponsible}
+          onResponsibleChange={setFilterResponsible}
+          selectedPriorities={filterPriority}
+          onPriorityChange={setFilterPriority}
+          availableTags={allTags}
+          selectedTags={filterTags}
+          onTagsChange={setFilterTags}
+        />
+
+        {/* Clear Filters */}
+        {hasActiveFilters && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={clearFilters}
+            className="text-muted-foreground"
+          >
+            <X className="w-4 h-4 mr-1" />
+            Limpar filtros
+          </Button>
+        )}
+      </div>
 
       {/* Board */}
       {loading ? (
