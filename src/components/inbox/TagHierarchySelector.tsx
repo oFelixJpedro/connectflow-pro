@@ -266,7 +266,7 @@ export function TagHierarchySelector({
   const handleMouseLeaveGlobal = () => {
     globalTimeoutRef.current = setTimeout(() => {
       setHoveredGlobal(false);
-    }, 50);
+    }, 150);
   };
 
   const handleMouseEnterGlobalSubmenu = () => {
@@ -277,7 +277,9 @@ export function TagHierarchySelector({
   };
 
   const handleMouseLeaveGlobalSubmenu = () => {
-    setHoveredGlobal(false);
+    globalTimeoutRef.current = setTimeout(() => {
+      setHoveredGlobal(false);
+    }, 150);
   };
 
   // Connection hover handlers
@@ -296,7 +298,7 @@ export function TagHierarchySelector({
     connectionTimeoutRef.current = setTimeout(() => {
       setHoveredConnectionId(null);
       setHoveredDepartmentId(null);
-    }, 50);
+    }, 150);
   };
 
   const handleMouseEnterConnectionSubmenu = () => {
@@ -307,8 +309,10 @@ export function TagHierarchySelector({
   };
 
   const handleMouseLeaveConnectionSubmenu = () => {
-    setHoveredConnectionId(null);
-    setHoveredDepartmentId(null);
+    connectionTimeoutRef.current = setTimeout(() => {
+      setHoveredConnectionId(null);
+      setHoveredDepartmentId(null);
+    }, 150);
   };
 
   // Department hover handlers
@@ -323,7 +327,7 @@ export function TagHierarchySelector({
   const handleMouseLeaveDepartment = () => {
     departmentTimeoutRef.current = setTimeout(() => {
       setHoveredDepartmentId(null);
-    }, 50);
+    }, 150);
   };
 
   const handleMouseEnterDepartmentSubmenu = () => {
@@ -334,7 +338,9 @@ export function TagHierarchySelector({
   };
 
   const handleMouseLeaveDepartmentSubmenu = () => {
-    setHoveredDepartmentId(null);
+    departmentTimeoutRef.current = setTimeout(() => {
+      setHoveredDepartmentId(null);
+    }, 150);
   };
 
   const hasTags = allTags.length > 0;
@@ -417,13 +423,14 @@ export function TagHierarchySelector({
                     <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
                   </div>
 
-                  {/* Global tags submenu */}
+                  {/* Global tags submenu with bridge area */}
                   {hoveredGlobal && (
                     <div 
-                      className="absolute left-full top-0 ml-1 z-50 bg-popover border border-border rounded-md shadow-md min-w-[200px]"
+                      className="absolute left-full top-0 z-50 pl-1"
                       onMouseEnter={handleMouseEnterGlobalSubmenu}
                       onMouseLeave={handleMouseLeaveGlobalSubmenu}
                     >
+                    <div className="bg-popover border border-border rounded-md shadow-md min-w-[200px]">
                       <div className="p-2 border-b border-border">
                         <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
                           Tags Globais
@@ -453,6 +460,7 @@ export function TagHierarchySelector({
                           ))}
                         </div>
                       </ScrollArea>
+                    </div>
                     </div>
                   )}
                 </div>
@@ -494,10 +502,11 @@ export function TagHierarchySelector({
                   {/* Departments submenu */}
                   {hoveredConnectionId === connection.id && connection.departments.length > 0 && (
                     <div 
-                      className="absolute left-full top-0 ml-1 z-50 bg-popover border border-border rounded-md shadow-md min-w-[200px]"
+                      className="absolute left-full top-0 z-50 pl-1"
                       onMouseEnter={handleMouseEnterConnectionSubmenu}
                       onMouseLeave={handleMouseLeaveConnectionSubmenu}
                     >
+                    <div className="bg-popover border border-border rounded-md shadow-md min-w-[200px]">
                       <div className="p-2 border-b border-border">
                         <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
                           Departamentos
@@ -544,10 +553,11 @@ export function TagHierarchySelector({
                                 {/* Tags submenu */}
                                 {hoveredDepartmentId === dept.id && (
                                   <div 
-                                    className="absolute left-full top-0 ml-1 z-50 bg-popover border border-border rounded-md shadow-md min-w-[180px]"
+                                    className="absolute left-full top-0 z-50 pl-1"
                                     onMouseEnter={handleMouseEnterDepartmentSubmenu}
                                     onMouseLeave={handleMouseLeaveDepartmentSubmenu}
                                   >
+                                  <div className="bg-popover border border-border rounded-md shadow-md min-w-[180px]">
                                     <div className="p-2 border-b border-border">
                                       <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
                                         Tags
@@ -578,12 +588,14 @@ export function TagHierarchySelector({
                                       </div>
                                     </ScrollArea>
                                   </div>
+                                  </div>
                                 )}
                               </div>
                             );
                           })}
                         </div>
                       </ScrollArea>
+                    </div>
                     </div>
                   )}
                 </div>
