@@ -10,7 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { MessageSquare, Smartphone, CheckCheck, Bell } from 'lucide-react';
+import { MessageSquare, Wifi, CheckCheck, Bell } from 'lucide-react';
 import { NotificationItem, NotificationData } from './NotificationItem';
 import { NoAccessModal, AccessDeniedReason } from './NoAccessModal';
 import { ConversationPreviewModal } from '@/components/crm/ConversationPreviewModal';
@@ -117,7 +117,7 @@ export function NotificationsModal({
           >
             <TabsList className="grid w-full grid-cols-2">
               <TabsTrigger value="whatsapp" className="gap-2">
-                <Smartphone className="w-4 h-4" />
+                <Wifi className="w-4 h-4" />
                 WhatsApp
                 {whatsappUnread > 0 && (
                   <Badge variant="destructive" className="ml-1 px-1.5 py-0 text-xs min-w-5">

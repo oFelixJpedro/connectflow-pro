@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from 'react';
-import { Globe, User, Building2, Smartphone } from 'lucide-react';
+import { Globe, User, Building2, Wifi } from 'lucide-react';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import {
@@ -61,7 +61,7 @@ const visibilityOptions: {
   {
     value: 'connection',
     label: 'Conexão',
-    icon: <Smartphone className="w-4 h-4" />,
+    icon: <Wifi className="w-4 h-4" />,
     description: 'Visível para usuários da conexão',
   },
 ];

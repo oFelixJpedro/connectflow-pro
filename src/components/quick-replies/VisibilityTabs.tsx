@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Globe, User, Building2, Smartphone, Filter, Search, X, ChevronRight, Check } from 'lucide-react';
+import { Globe, User, Building2, Wifi, Filter, Search, X, ChevronRight, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { QuickReplyVisibility } from '@/hooks/useQuickRepliesData';
 import { useAuth } from '@/contexts/AuthContext';
@@ -84,7 +84,7 @@ export function VisibilityTabs({
         const conn = connections.find(c => c.id === selectedConnectionId);
         return { 
           label: conn ? conn.name : 'Conexão', 
-          icon: <Smartphone className="w-4 h-4" /> 
+          icon: <Wifi className="w-4 h-4" /> 
         };
       default:
         return { label: 'Filtrar', icon: <Filter className="w-4 h-4" /> };
@@ -237,7 +237,7 @@ export function VisibilityTabs({
           {hasConnection && filteredConnections.length > 0 && (
             <DropdownMenuSub>
               <DropdownMenuSubTrigger className="gap-2">
-                <Smartphone className="w-4 h-4" />
+                <Wifi className="w-4 h-4" />
                 <span className="flex-1">Conexão</span>
                 {activeTab === 'connection' && selectedConnectionId && (
                   <Badge variant="secondary" className="ml-auto text-xs">1</Badge>
@@ -259,7 +259,7 @@ export function VisibilityTabs({
                     }}
                   >
                     <div className="flex items-center gap-2 flex-1">
-                      <Smartphone className="w-4 h-4 text-muted-foreground" />
+                      <Wifi className="w-4 h-4 text-muted-foreground" />
                       <div className="flex flex-col">
                         <span className="text-sm">{conn.name}</span>
                         <span className="text-xs text-muted-foreground">{conn.phone_number}</span>
@@ -322,7 +322,7 @@ export function VisibilityTabs({
           )}
           {activeTab === 'connection' && selectedConnectionId && (
             <Badge variant="secondary" className="gap-1 text-xs">
-              <Smartphone className="w-3 h-3" />
+              <Wifi className="w-3 h-3" />
               {connections.find(c => c.id === selectedConnectionId)?.name || 'Conexão'}
               <button 
                 onClick={() => {

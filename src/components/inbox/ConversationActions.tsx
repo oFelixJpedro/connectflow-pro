@@ -4,7 +4,7 @@ import {
   User,
   UserMinus,
   ArrowRight,
-  FolderInput,
+  Building2,
   CheckCircle,
   Loader2,
   Contact,
@@ -725,7 +725,7 @@ export function ConversationActions({
           {/* Mover para departamento */}
           <DropdownMenuSub>
             <DropdownMenuSubTrigger disabled={!canMoveDepartment}>
-              <FolderInput className="w-4 h-4 mr-2" />
+              <Building2 className="w-4 h-4 mr-2" />
               <span>Mover para departamento...</span>
             </DropdownMenuSubTrigger>
             <DropdownMenuPortal>

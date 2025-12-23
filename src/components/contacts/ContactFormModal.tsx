@@ -31,7 +31,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { X, Loader2, LayoutGrid, Trash2, Smartphone, AlertTriangle, Users, Paperclip, MessageSquare, Image, Video, FileText, Mic, Square, Play, Pause, RotateCcw } from 'lucide-react';
+import { X, Loader2, Kanban, Trash2, Wifi, AlertTriangle, Users, Paperclip, MessageSquare, Image, Video, FileText, Mic, Square, Play, Pause, RotateCcw } from 'lucide-react';
 import { Contact, ContactFormData } from '@/hooks/useContactsData';
 import { useContactCRM } from '@/hooks/useContactCRM';
 import { supabase } from '@/integrations/supabase/client';
@@ -975,7 +975,7 @@ export function ContactFormModal({
                 
                 <div className="space-y-4">
                   <div className="flex items-center gap-2">
-                    <Smartphone className="w-4 h-4 text-muted-foreground" />
+                    <Wifi className="w-4 h-4 text-muted-foreground" />
                     <Label className="text-base font-medium">Conexão Atual</Label>
                   </div>
                   
@@ -1155,7 +1155,7 @@ export function ContactFormModal({
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <LayoutGrid className="w-4 h-4 text-muted-foreground" />
+                      <Kanban className="w-4 h-4 text-muted-foreground" />
                       <Label className="text-base font-medium">Posição no CRM</Label>
                     </div>
                     {crmLoading ? (
