@@ -207,8 +207,8 @@ export function VisibilitySelector({
             </SelectTrigger>
             <SelectContent>
               {connectionsWithDepartments.map((conn) => (
-                <SelectItem key={conn.id} value={conn.id}>
-                  <div className="flex flex-col">
+                <SelectItem key={conn.id} value={conn.id} className="items-start">
+                  <div className="flex flex-col items-start text-left">
                     <span>{conn.name}</span>
                     <span className="text-xs text-muted-foreground">{conn.phone_number}</span>
                   </div>
@@ -257,8 +257,8 @@ export function VisibilitySelector({
             </SelectTrigger>
             <SelectContent>
               {connections.map((conn) => (
-                <SelectItem key={conn.id} value={conn.id}>
-                  <div className="flex flex-col">
+                <SelectItem key={conn.id} value={conn.id} className="items-start">
+                  <div className="flex flex-col items-start text-left">
                     <span>{conn.name}</span>
                     <span className="text-xs text-muted-foreground">{conn.phone_number}</span>
                   </div>
