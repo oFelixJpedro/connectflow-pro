@@ -13,6 +13,7 @@ import { Separator } from '@/components/ui/separator';
 import { MultiSelectDropdown } from '@/components/ui/multi-select-dropdown';
 import { DepartmentHierarchySelector } from '@/components/inbox/DepartmentHierarchySelector';
 import { TagHierarchySelector } from '@/components/inbox/TagHierarchySelector';
+import { KanbanStageHierarchySelector } from '@/components/inbox/KanbanStageHierarchySelector';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { ALL_CONNECTIONS_ID } from '@/components/inbox/ConnectionSelector';
@@ -24,12 +25,6 @@ interface Agent {
 }
 
 
-interface KanbanColumn {
-  id: string;
-  name: string;
-  color: string;
-  connectionId: string;
-}
 
 interface ConversationFiltersProps {
   connectionId: string | null;
@@ -57,11 +52,9 @@ export function ConversationFiltersComponent({
   const { userRole, profile } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
   const [agents, setAgents] = useState<Agent[]>([]);
-  const [kanbanColumns, setKanbanColumns] = useState<KanbanColumn[]>([]);
   const [localFilters, setLocalFilters] = useState<FiltersType>(filters);
 
   const isAdminOrOwner = userRole?.role === 'owner' || userRole?.role === 'admin';
-  const isAllConnections = connectionId === ALL_CONNECTIONS_ID;
 
   // Load agents for admin/owner
   useEffect(() => {
@@ -88,93 +81,6 @@ export function ConversationFiltersComponent({
     loadAgents();
   }, [isAdminOrOwner]);
 
-
-  // Load kanban columns for the connection(s)
-  useEffect(() => {
-    async function loadKanbanColumns() {
-      if (!connectionId) {
-        setKanbanColumns([]);
-        return;
-      }
-
-      try {
-        if (isAllConnections && profile?.company_id) {
-          // Get all boards for company connections
-          const { data: connections } = await supabase
-            .from('whatsapp_connections')
-            .select('id')
-            .eq('company_id', profile.company_id)
-            .eq('active', true);
-
-          if (!connections || connections.length === 0) {
-            setKanbanColumns([]);
-            return;
-          }
-
-          const connectionIds = connections.map(c => c.id);
-
-          const { data: boards } = await supabase
-            .from('kanban_boards')
-            .select('id, whatsapp_connection_id')
-            .in('whatsapp_connection_id', connectionIds);
-
-          if (!boards || boards.length === 0) {
-            setKanbanColumns([]);
-            return;
-          }
-
-          const boardIds = boards.map(b => b.id);
-
-          const { data: columns } = await supabase
-            .from('kanban_columns')
-            .select('id, name, color, board_id')
-            .in('board_id', boardIds)
-            .order('position');
-
-          if (columns) {
-            // Map board_id to connection_id
-            const boardToConnection = new Map(boards.map(b => [b.id, b.whatsapp_connection_id]));
-            setKanbanColumns(columns.map(c => ({
-              id: c.id,
-              name: c.name,
-              color: c.color || '#3B82F6',
-              connectionId: boardToConnection.get(c.board_id) || '',
-            })));
-          }
-        } else {
-          // Single connection
-          const { data: boardData } = await supabase
-            .from('kanban_boards')
-            .select('id')
-            .eq('whatsapp_connection_id', connectionId)
-            .maybeSingle();
-
-          if (!boardData) {
-            setKanbanColumns([]);
-            return;
-          }
-
-          const { data } = await supabase
-            .from('kanban_columns')
-            .select('id, name, color')
-            .eq('board_id', boardData.id)
-            .order('position');
-
-          setKanbanColumns((data || []).map(c => ({
-            id: c.id,
-            name: c.name,
-            color: c.color || '#3B82F6',
-            connectionId: connectionId,
-          })));
-        }
-      } catch (error) {
-        console.error('[ConversationFilters] Error loading kanban columns:', error);
-        setKanbanColumns([]);
-      }
-    }
-
-    loadKanbanColumns();
-  }, [connectionId, isAllConnections, profile?.company_id]);
 
   // Sync local filters when props change
   useEffect(() => {
@@ -229,7 +135,6 @@ export function ConversationFiltersComponent({
 
   // Convert options for dropdowns
   const agentOptions = agents.map(a => ({ value: a.id, label: a.full_name }));
-  const kanbanOptions = kanbanColumns.map(k => ({ value: k.id, label: k.name, color: k.color }));
 
   return (
     <Popover open={isOpen} onOpenChange={setIsOpen}>
@@ -316,28 +221,21 @@ export function ConversationFiltersComponent({
             </div>
             <Separator />
 
-            {/* Kanban Funnel Stage Filter - Multi-select */}
-            {kanbanColumns.length > 0 && (
-              <>
-                <div className="space-y-2">
-                  <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                    Estágio do Funil
-                  </Label>
-                  <MultiSelectDropdown
-                    options={kanbanOptions}
-                    values={localFilters.kanbanColumnIds || []}
-                    onChange={(values) => setLocalFilters(prev => ({ 
-                      ...prev, 
-                      kanbanColumnIds: values.length > 0 ? values : undefined 
-                    }))}
-                    placeholder="Todos os estágios"
-                    searchPlaceholder="Buscar estágio..."
-                    emptyMessage="Nenhum estágio encontrado"
-                  />
-                </div>
-                <Separator />
-              </>
-            )}
+            {/* Kanban Funnel Stage Filter - Hierarchical selector */}
+            <div className="space-y-2">
+              <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                Estágio do Funil
+              </Label>
+              <KanbanStageHierarchySelector
+                selectedConnectionId={connectionId}
+                selectedStageIds={localFilters.kanbanColumnIds || []}
+                onChange={(ids) => setLocalFilters(prev => ({ 
+                  ...prev, 
+                  kanbanColumnIds: ids.length > 0 ? ids : undefined 
+                }))}
+              />
+            </div>
+            <Separator />
 
             {/* Status Filter with Checkboxes */}
             <div className="space-y-2">
