@@ -10,7 +10,7 @@ import {
   LogOut,
   Building2,
   User,
-  LayoutGrid,
+  Kanban,
   Bell,
   Bot,
 } from 'lucide-react';
@@ -70,7 +70,7 @@ const baseMenuItems = [
     adminOnly: false,
   },
   { 
-    icon: LayoutGrid, 
+    icon: Kanban, 
     label: 'CRM', 
     path: '/crm',
     badgeKey: null as string | null,

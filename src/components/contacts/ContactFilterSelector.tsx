@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { ChevronDown, ChevronRight, Search, X, Smartphone, Users, Check } from 'lucide-react';
+import { ChevronDown, ChevronRight, Search, X, Wifi, Users, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -319,7 +319,7 @@ export function ContactFilterSelector({
                       checked={isConnSelected}
                       className="pointer-events-none"
                     />
-                    <Smartphone className="h-4 w-4" />
+                    <Wifi className="h-4 w-4" />
                     <span className="flex-1 truncate">
                       {connection.name || connection.phone_number}
                     </span>
@@ -331,7 +331,7 @@ export function ContactFilterSelector({
               return (
                 <DropdownMenuSub key={connection.id}>
                   <DropdownMenuSubTrigger className="flex items-center gap-2 cursor-pointer">
-                    <Smartphone className="h-4 w-4" />
+                    <Wifi className="h-4 w-4" />
                     <span className="flex-1 truncate">
                       {connection.name || connection.phone_number}
                     </span>
@@ -424,7 +424,7 @@ export function ContactFilterSelector({
               className="text-xs flex items-center gap-1 pr-1"
             >
               {item.type === 'connection' ? (
-                <Smartphone className="h-3 w-3" />
+                <Wifi className="h-3 w-3" />
               ) : item.color ? (
                 <div
                   className="w-2 h-2 rounded-full shrink-0"

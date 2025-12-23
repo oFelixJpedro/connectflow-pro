@@ -17,7 +17,7 @@ import {
   Download,
   Upload,
   MessageSquare,
-  LayoutGrid,
+  Kanban,
   User,
   Bot,
   Clock,
@@ -48,7 +48,7 @@ const getEventIcon = (eventType: ContactEventType) => {
     imported: <Upload className={`${iconClass} text-cyan-600`} />,
     exported: <Download className={`${iconClass} text-indigo-600`} />,
     conversation_started: <MessageSquare className={`${iconClass} text-orange-600`} />,
-    crm_added: <LayoutGrid className={`${iconClass} text-purple-600`} />
+    crm_added: <Kanban className={`${iconClass} text-purple-600`} />
   };
   return icons[eventType] || <Clock className={iconClass} />;
 };
