@@ -342,14 +342,14 @@ export default function Tags() {
       </Card>
 
       {/* Search and Filter */}
-      <div className="flex flex-col sm:flex-row gap-3">
+      <div className="flex flex-col sm:flex-row sm:items-center gap-3">
         <div className="relative flex-1 md:max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
             placeholder="Buscar tags..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-9"
+            className="pl-9 h-9"
           />
         </div>
         <DepartmentFilterSelector

@@ -172,7 +172,7 @@ export function ConversationList({
               placeholder="Buscar conversa..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9 bg-muted/50 border-0"
+              className="pl-9 h-9 bg-muted/50 border-0"
             />
           </div>
 
