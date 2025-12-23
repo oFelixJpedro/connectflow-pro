@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Globe, User, Building2, Wifi, Filter, Search, X, ChevronRight, Check } from 'lucide-react';
+import { Globe, User, Building2, Wifi, Filter, Search, X, ChevronRight, Check, ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { QuickReplyVisibility } from '@/hooks/useQuickRepliesData';
 import { useAuth } from '@/contexts/AuthContext';
@@ -138,6 +138,7 @@ export function VisibilityTabs({
                 {selectedCount}
               </Badge>
             )}
+            <ChevronDown className="h-4 w-4 opacity-50" />
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="w-64 bg-popover">
