@@ -35,7 +35,7 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const SUBSCRIPTION_CHECK_INTERVAL = 60000; // 60 seconds
+const SUBSCRIPTION_CHECK_INTERVAL = 600000; // 10 minutes (was 60 seconds - optimized)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -55,12 +55,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   
   const subscriptionIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Check subscription status via Stripe
+  // Check subscription status via Stripe (with cache optimization)
   const checkSubscription = useCallback(async () => {
-    if (!session) return;
+    if (!session || !company?.id) return;
 
     try {
-      console.log('[AuthContext] Checking subscription status...');
+      // Check if we have a recent cache (less than 10 minutes old)
+      const cacheData = company.subscription_cache as { subscribed?: boolean; product_id?: string; subscription_end?: string } | null;
+      const cacheUpdatedAt = company.subscription_cache_updated_at;
+      
+      if (cacheData && cacheUpdatedAt) {
+        const cacheAge = Date.now() - new Date(cacheUpdatedAt).getTime();
+        const TEN_MINUTES = 10 * 60 * 1000;
+        
+        if (cacheAge < TEN_MINUTES && cacheData.subscribed !== undefined) {
+          console.log('[AuthContext] Using cached subscription status (age:', Math.round(cacheAge / 1000), 's)');
+          setSubscription({
+            subscribed: cacheData.subscribed || false,
+            productId: cacheData.product_id || null,
+            subscriptionEnd: cacheData.subscription_end || null,
+            lastChecked: new Date(cacheUpdatedAt),
+          });
+          return;
+        }
+      }
+
+      console.log('[AuthContext] Checking subscription status via Stripe...');
       const { data, error } = await supabase.functions.invoke('check-subscription');
       
       if (error) {
@@ -80,7 +100,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch (err) {
       console.error('[AuthContext] Subscription check failed:', err);
     }
-  }, [session]);
+  }, [session, company?.id, company?.subscription_cache, company?.subscription_cache_updated_at]);
 
   // Refresh company data from database
   const refreshCompany = useCallback(async () => {

@@ -843,19 +843,24 @@ ${hasMedia ? `NOTA: O vendedor enviou uma mídia (${message_type}). Considere se
       console.log('⚠️ [PIXEL] Error updating metrics:', metricsError);
     }
 
-    // Log message event
-    await supabase.from('conversation_events').insert({
-      conversation_id,
-      company_id,
-      event_type: 'message',
-      event_data: {
-        direction,
-        message_type,
-        content_preview: (message_content || '').substring(0, 100),
-        contact_name
-      },
-      ai_insights: aiAnalysis || {}
-    });
+    // OPTIMIZATION: Only log events for closing/disqualification signals (not all messages)
+    // Message data is already stored in the messages table - no need to duplicate here
+    if (aiAnalysis && (aiAnalysis.is_closing_signal || aiAnalysis.is_disqualification_signal)) {
+      const eventType = aiAnalysis.is_closing_signal ? 'closing_signal' : 'disqualification';
+      await supabase.from('conversation_events').insert({
+        conversation_id,
+        company_id,
+        event_type: eventType,
+        event_data: {
+          direction,
+          message_type,
+          content_preview: (message_content || '').substring(0, 100),
+          contact_name
+        },
+        ai_insights: aiAnalysis || {}
+      });
+      console.log(`📌 [PIXEL] Logged ${eventType} event`);
+    }
 
     // ALWAYS update aggregated dashboard data
     const { data: allMetrics } = await supabase

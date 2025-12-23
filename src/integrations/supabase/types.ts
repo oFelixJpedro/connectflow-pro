@@ -777,6 +777,8 @@ export type Database = {
           slug: string
           stripe_customer_id: string | null
           stripe_subscription_id: string | null
+          subscription_cache: Json | null
+          subscription_cache_updated_at: string | null
           subscription_status: string | null
           trial_ends_at: string | null
           updated_at: string | null
@@ -797,6 +799,8 @@ export type Database = {
           slug: string
           stripe_customer_id?: string | null
           stripe_subscription_id?: string | null
+          subscription_cache?: Json | null
+          subscription_cache_updated_at?: string | null
           subscription_status?: string | null
           trial_ends_at?: string | null
           updated_at?: string | null
@@ -817,6 +821,8 @@ export type Database = {
           slug?: string
           stripe_customer_id?: string | null
           stripe_subscription_id?: string | null
+          subscription_cache?: Json | null
+          subscription_cache_updated_at?: string | null
           subscription_status?: string | null
           trial_ends_at?: string | null
           updated_at?: string | null
@@ -3111,6 +3117,7 @@ export type Database = {
       }
       cleanup_expired_insights_jobs: { Args: never; Returns: number }
       cleanup_expired_media_cache: { Args: never; Returns: number }
+      cleanup_old_conversation_events: { Args: never; Returns: number }
       create_internal_chat_room: {
         Args: { p_description?: string; p_name?: string; p_type: string }
         Returns: string
@@ -3144,6 +3151,7 @@ export type Database = {
         Returns: undefined
       }
       is_admin_or_owner: { Args: never; Returns: boolean }
+      optimize_tables: { Args: never; Returns: undefined }
       reset_daily_dashboard_counters: { Args: never; Returns: undefined }
       room_belongs_to_user_company: {
         Args: { room_id: string }
