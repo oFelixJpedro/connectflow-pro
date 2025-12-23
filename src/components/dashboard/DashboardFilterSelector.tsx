@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { ChevronDown, Search, X, Globe, User, Phone, Users, Circle, CheckCircle2 } from 'lucide-react';
+import { ChevronDown, Search, X, Globe, User, Phone, Users, Circle, CheckCircle2, Link } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -206,13 +206,13 @@ export function DashboardFilterSelector({ filter, onFilterChange, isAdmin }: Das
   );
 
   return (
-    <div className="flex flex-col gap-2">
+    <div className="flex flex-col gap-2 w-fit">
       <DropdownMenu open={open} onOpenChange={setOpen}>
         <DropdownMenuTrigger asChild>
           <Button
             variant="outline"
             disabled={loading}
-            className="w-auto min-w-[200px] justify-between"
+            className="w-fit min-w-[200px] max-w-[350px] justify-between"
           >
             <div className="flex items-center gap-2 truncate">
               <DisplayIcon className="h-4 w-4 shrink-0" />
@@ -260,15 +260,16 @@ export function DashboardFilterSelector({ filter, onFilterChange, isAdmin }: Das
             {/* By Agent submenu */}
             {filteredAgents.length > 0 && (
               <DropdownMenuSub>
-                <DropdownMenuSubTrigger className="flex items-center gap-2 cursor-pointer">
-                  <RadioIndicator selected={filter.type === 'agent'} />
-                  <User className="h-4 w-4 text-muted-foreground" />
-                  <span className="flex-1">Por Atendente</span>
-                  {filter.type === 'agent' && filter.agentId && (
-                    <Badge variant="secondary" className="ml-auto text-xs">
-                      1
-                    </Badge>
-                  )}
+                <DropdownMenuSubTrigger className="cursor-pointer">
+                  <div className="flex items-center gap-2 flex-1 min-w-0">
+                    <User className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    <span className="truncate">Por Atendente</span>
+                    {filter.type === 'agent' && filter.agentId && (
+                      <Badge variant="secondary" className="ml-auto text-xs h-5 px-1.5 shrink-0">
+                        1
+                      </Badge>
+                    )}
+                  </div>
                 </DropdownMenuSubTrigger>
 
                 <DropdownMenuSubContent className="min-w-[200px] max-h-[300px] overflow-y-auto bg-popover">
@@ -297,15 +298,16 @@ export function DashboardFilterSelector({ filter, onFilterChange, isAdmin }: Das
             {/* By Connection submenu */}
             {filteredConnections.length > 0 && (
               <DropdownMenuSub>
-                <DropdownMenuSubTrigger className="flex items-center gap-2 cursor-pointer">
-                  <RadioIndicator selected={filter.type === 'connection'} />
-                  <Phone className="h-4 w-4 text-muted-foreground" />
-                  <span className="flex-1">Por Conexão</span>
-                  {filter.type === 'connection' && filter.connectionId && (
-                    <Badge variant="secondary" className="ml-auto text-xs">
-                      1
-                    </Badge>
-                  )}
+                <DropdownMenuSubTrigger className="cursor-pointer">
+                  <div className="flex items-center gap-2 flex-1 min-w-0">
+                    <Phone className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    <span className="truncate">Por Conexão</span>
+                    {filter.type === 'connection' && filter.connectionId && (
+                      <Badge variant="secondary" className="ml-auto text-xs h-5 px-1.5 shrink-0">
+                        1
+                      </Badge>
+                    )}
+                  </div>
                 </DropdownMenuSubTrigger>
 
                 <DropdownMenuSubContent className="min-w-[220px] max-h-[300px] overflow-y-auto bg-popover">
@@ -335,11 +337,18 @@ export function DashboardFilterSelector({ filter, onFilterChange, isAdmin }: Das
                     // Connection with departments - nested submenu
                     return (
                       <DropdownMenuSub key={connection.id}>
-                        <DropdownMenuSubTrigger className="flex items-center gap-2 cursor-pointer">
-                          <RadioIndicator selected={isConnectionOrDeptSelected(connection.id)} />
-                          <span className="flex-1 truncate">
-                            {connection.name || connection.phone_number}
-                          </span>
+                        <DropdownMenuSubTrigger className="cursor-pointer">
+                          <div className="flex items-center gap-2 flex-1 min-w-0">
+                            <Link className="w-4 h-4 shrink-0 text-muted-foreground" />
+                            <span className="truncate">
+                              {connection.name || connection.phone_number}
+                            </span>
+                            {isConnectionOrDeptSelected(connection.id) && (
+                              <Badge variant="secondary" className="ml-auto text-xs h-5 px-1.5 shrink-0">
+                                1
+                              </Badge>
+                            )}
+                          </div>
                         </DropdownMenuSubTrigger>
 
                         <DropdownMenuSubContent className="min-w-[180px] bg-popover">
