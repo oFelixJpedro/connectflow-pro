@@ -1,5 +1,5 @@
-import { useState, useEffect, useMemo } from 'react';
-import { ChevronRight, ChevronsUpDown, X, Building2 } from 'lucide-react';
+import { useState, useEffect, useMemo, useRef } from 'react';
+import { ChevronRight, ChevronsUpDown, X, Building2, Search } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -11,11 +11,6 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
-import {
-  HoverCard,
-  HoverCardContent,
-  HoverCardTrigger,
-} from '@/components/ui/hover-card';
 import { Input } from '@/components/ui/input';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
@@ -53,7 +48,6 @@ function toPastelColor(hexColor: string): { background: string; text: string } {
   const g = parseInt(hex.substr(2, 2), 16) || 128;
   const b = parseInt(hex.substr(4, 2), 16) || 128;
   
-  // Mix with white (30% original, 70% white) for pastel effect
   const pastelR = Math.round(r * 0.3 + 255 * 0.7);
   const pastelG = Math.round(g * 0.3 + 255 * 0.7);
   const pastelB = Math.round(b * 0.3 + 255 * 0.7);
@@ -77,6 +71,8 @@ export function DepartmentHierarchySelector({
   const [connectionsWithDepts, setConnectionsWithDepts] = useState<ConnectionWithDepartments[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [hoveredConnectionId, setHoveredConnectionId] = useState<string | null>(null);
+  
+  const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const isAllConnections = selectedConnectionId === ALL_CONNECTIONS_ID;
   const isAdminOrOwner = userRole?.role === 'owner' || userRole?.role === 'admin';
@@ -92,7 +88,6 @@ export function DepartmentHierarchySelector({
         let connectionIds: string[] = [];
 
         if (isAllConnections) {
-          // Get all connections user has access to
           if (isAdminOrOwner) {
             const { data: connections } = await supabase
               .from('whatsapp_connections')
@@ -104,7 +99,6 @@ export function DepartmentHierarchySelector({
             if (connections) {
               connectionIds = connections.map(c => c.id);
               
-              // Load departments for all connections
               const { data: departments } = await supabase
                 .from('departments')
                 .select('id, name, color, whatsapp_connection_id')
@@ -129,7 +123,6 @@ export function DepartmentHierarchySelector({
               setConnectionsWithDepts(result);
             }
           } else {
-            // Non-admin: get only connections user is assigned to
             const { data: userConnections } = await supabase
               .from('connection_users')
               .select('connection_id, whatsapp_connections(id, name, phone_number)')
@@ -169,7 +162,6 @@ export function DepartmentHierarchySelector({
             }
           }
         } else if (selectedConnectionId) {
-          // Single connection selected
           const { data: connection } = await supabase
             .from('whatsapp_connections')
             .select('id, name, phone_number')
@@ -209,19 +201,25 @@ export function DepartmentHierarchySelector({
     loadData();
   }, [selectedConnectionId, profile?.company_id, profile?.id, isAllConnections, isAdminOrOwner]);
 
-  // All departments flat for counting
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (hoverTimeoutRef.current) {
+        clearTimeout(hoverTimeoutRef.current);
+      }
+    };
+  }, []);
+
   const allDepartments = useMemo(() => 
     connectionsWithDepts.flatMap(c => c.departments),
     [connectionsWithDepts]
   );
 
-  // Selected departments with details
   const selectedDepartments = useMemo(() => 
     allDepartments.filter(d => selectedDepartmentIds.includes(d.id)),
     [allDepartments, selectedDepartmentIds]
   );
 
-  // Filter connections by search
   const filteredConnections = useMemo(() => {
     if (!searchQuery) return connectionsWithDepts;
     const query = searchQuery.toLowerCase();
@@ -246,11 +244,9 @@ export function DepartmentHierarchySelector({
     const connectionDeptIds = connection.departments.map(d => d.id);
     
     if (checked) {
-      // Add all departments from this connection
       const newIds = [...new Set([...selectedDepartmentIds, ...connectionDeptIds])];
       onChange(newIds);
     } else {
-      // Remove all departments from this connection
       onChange(selectedDepartmentIds.filter(id => !connectionDeptIds.includes(id)));
     }
   };
@@ -273,10 +269,34 @@ export function DepartmentHierarchySelector({
     onChange(selectedDepartmentIds.filter(id => id !== departmentId));
   };
 
-  // Check if we have any departments to show
+  const handleMouseEnterConnection = (connectionId: string) => {
+    if (hoverTimeoutRef.current) {
+      clearTimeout(hoverTimeoutRef.current);
+      hoverTimeoutRef.current = null;
+    }
+    setHoveredConnectionId(connectionId);
+  };
+
+  const handleMouseLeaveConnection = () => {
+    hoverTimeoutRef.current = setTimeout(() => {
+      setHoveredConnectionId(null);
+    }, 50);
+  };
+
+  const handleMouseEnterSubmenu = () => {
+    if (hoverTimeoutRef.current) {
+      clearTimeout(hoverTimeoutRef.current);
+      hoverTimeoutRef.current = null;
+    }
+  };
+
+  const handleMouseLeaveSubmenu = () => {
+    setHoveredConnectionId(null);
+  };
+
   const hasDepartments = allDepartments.length > 0;
 
-  if (!hasDepartments) {
+  if (!hasDepartments && !isLoading) {
     return null;
   }
 
@@ -312,12 +332,15 @@ export function DepartmentHierarchySelector({
         >
           {/* Search */}
           <div className="p-2 border-b border-border">
-            <Input
-              placeholder="Buscar conexão ou departamento..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="h-8"
-            />
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Input
+                placeholder="Buscar conexão ou departamento..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="h-8 pl-8"
+              />
+            </div>
           </div>
 
           <ScrollArea className="max-h-64">
@@ -328,62 +351,57 @@ export function DepartmentHierarchySelector({
                 </p>
               ) : (
                 filteredConnections.map((connection) => (
-                  <HoverCard 
-                    key={connection.id} 
-                    openDelay={100} 
-                    closeDelay={100}
-                    open={hoveredConnectionId === connection.id}
-                    onOpenChange={(isOpen) => setHoveredConnectionId(isOpen ? connection.id : null)}
+                  <div 
+                    key={connection.id}
+                    className="relative"
+                    onMouseEnter={() => handleMouseEnterConnection(connection.id)}
+                    onMouseLeave={handleMouseLeaveConnection}
                   >
-                    <HoverCardTrigger asChild>
-                      <div
-                        className={cn(
-                          "flex items-center justify-between px-2 py-1.5 rounded-md cursor-pointer transition-colors",
-                          "hover:bg-accent"
-                        )}
-                      >
-                        <div className="flex items-center gap-2 flex-1 min-w-0">
-                          <Checkbox
-                            checked={isConnectionFullySelected(connection.id)}
-                            ref={(ref) => {
-                              if (ref && isConnectionPartiallySelected(connection.id)) {
-                                (ref as any).indeterminate = true;
-                              }
-                            }}
-                            onCheckedChange={(checked) => 
-                              handleSelectAllConnection(connection.id, checked as boolean)
-                            }
-                            onClick={(e) => e.stopPropagation()}
-                          />
-                          <span className="text-sm truncate">{connection.name}</span>
-                          {connection.departments.filter(d => selectedDepartmentIds.includes(d.id)).length > 0 && (
-                            <Badge variant="secondary" className="text-xs shrink-0">
-                              {connection.departments.filter(d => selectedDepartmentIds.includes(d.id)).length}
-                            </Badge>
-                          )}
-                        </div>
-                        <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
-                      </div>
-                    </HoverCardTrigger>
-                    <HoverCardContent 
-                      side="right" 
-                      align="start" 
-                      sideOffset={8}
-                      className="w-56 p-0 bg-popover"
+                    <div
+                      className={cn(
+                        "flex items-center justify-between px-2 py-1.5 rounded-md cursor-pointer transition-colors",
+                        "hover:bg-accent",
+                        hoveredConnectionId === connection.id && "bg-accent"
+                      )}
                     >
-                      <div className="p-2 border-b border-border">
-                        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                          Departamentos
-                        </p>
+                      <div className="flex items-center gap-2 flex-1 min-w-0">
+                        <Checkbox
+                          checked={isConnectionFullySelected(connection.id)}
+                          ref={(ref) => {
+                            if (ref && isConnectionPartiallySelected(connection.id)) {
+                              (ref as any).indeterminate = true;
+                            }
+                          }}
+                          onCheckedChange={(checked) => 
+                            handleSelectAllConnection(connection.id, checked as boolean)
+                          }
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                        <span className="text-sm truncate">{connection.name}</span>
+                        {connection.departments.filter(d => selectedDepartmentIds.includes(d.id)).length > 0 && (
+                          <Badge variant="secondary" className="text-xs shrink-0">
+                            {connection.departments.filter(d => selectedDepartmentIds.includes(d.id)).length}
+                          </Badge>
+                        )}
                       </div>
-                      <ScrollArea className="max-h-48">
-                        <div className="p-2 space-y-1">
-                          {connection.departments.length === 0 ? (
-                            <p className="text-sm text-muted-foreground text-center py-2">
-                              Nenhum departamento
-                            </p>
-                          ) : (
-                            connection.departments.map((dept) => (
+                      <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
+                    </div>
+
+                    {/* Submenu - departments */}
+                    {hoveredConnectionId === connection.id && connection.departments.length > 0 && (
+                      <div 
+                        className="absolute left-full top-0 ml-1 z-50 bg-popover border border-border rounded-md shadow-md min-w-[220px]"
+                        onMouseEnter={handleMouseEnterSubmenu}
+                        onMouseLeave={handleMouseLeaveSubmenu}
+                      >
+                        <div className="p-2 border-b border-border">
+                          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                            Departamentos
+                          </p>
+                        </div>
+                        <ScrollArea className="max-h-48">
+                          <div className="p-2 space-y-1">
+                            {connection.departments.map((dept) => (
                               <div
                                 key={dept.id}
                                 className="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-accent cursor-pointer"
@@ -404,12 +422,12 @@ export function DepartmentHierarchySelector({
                                   {dept.name}
                                 </Label>
                               </div>
-                            ))
-                          )}
-                        </div>
-                      </ScrollArea>
-                    </HoverCardContent>
-                  </HoverCard>
+                            ))}
+                          </div>
+                        </ScrollArea>
+                      </div>
+                    )}
+                  </div>
                 ))
               )}
             </div>

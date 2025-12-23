@@ -1,5 +1,5 @@
-import { useState, useEffect, useMemo } from 'react';
-import { ChevronRight, ChevronsUpDown, X, Tag as TagIcon, Link, Globe } from 'lucide-react';
+import { useState, useEffect, useMemo, useRef } from 'react';
+import { ChevronRight, ChevronsUpDown, X, Tag as TagIcon, Link, Globe, Search } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -11,11 +11,6 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
-import {
-  HoverCard,
-  HoverCardContent,
-  HoverCardTrigger,
-} from '@/components/ui/hover-card';
 import { Input } from '@/components/ui/input';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
@@ -67,9 +62,15 @@ export function TagHierarchySelector({
   const [connectionsWithData, setConnectionsWithData] = useState<ConnectionWithData[]>([]);
   const [globalTags, setGlobalTags] = useState<Tag[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  
+  // Hover states for multi-level menus
+  const [hoveredGlobal, setHoveredGlobal] = useState(false);
   const [hoveredConnectionId, setHoveredConnectionId] = useState<string | null>(null);
   const [hoveredDepartmentId, setHoveredDepartmentId] = useState<string | null>(null);
-  const [isHoverLocked, setIsHoverLocked] = useState(false);
+  
+  const globalTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const connectionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const departmentTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const isAllConnections = selectedConnectionId === ALL_CONNECTIONS_ID;
   const isAdminOrOwner = userRole?.role === 'owner' || userRole?.role === 'admin';
@@ -82,7 +83,6 @@ export function TagHierarchySelector({
       setIsLoading(true);
 
       try {
-        // Load all tags
         const { data: allTags } = await supabase
           .from('tags')
           .select('id, name, color, department_id')
@@ -95,7 +95,6 @@ export function TagHierarchySelector({
           return;
         }
 
-        // Global tags (no department)
         const globalTagsList = allTags
           .filter(t => !t.department_id)
           .map(t => ({
@@ -107,7 +106,6 @@ export function TagHierarchySelector({
           }));
         setGlobalTags(globalTagsList);
 
-        // Load departments to map tags to connections
         let connectionIds: string[] = [];
         
         if (isAllConnections || !selectedConnectionId) {
@@ -144,14 +142,12 @@ export function TagHierarchySelector({
           return;
         }
 
-        // Load connections
         const { data: connections } = await supabase
           .from('whatsapp_connections')
           .select('id, name')
           .in('id', connectionIds)
           .order('name');
 
-        // Load departments
         const { data: departments } = await supabase
           .from('departments')
           .select('id, name, color, whatsapp_connection_id')
@@ -159,11 +155,9 @@ export function TagHierarchySelector({
           .eq('active', true)
           .order('name');
 
-        // Map tags to departments
         const departmentIds = (departments || []).map(d => d.id);
         const deptTags = allTags.filter(t => t.department_id && departmentIds.includes(t.department_id));
 
-        // Build hierarchy
         const result: ConnectionWithData[] = (connections || []).map(conn => {
           const connDepts = (departments || [])
             .filter(d => d.whatsapp_connection_id === conn.id)
@@ -203,19 +197,25 @@ export function TagHierarchySelector({
     loadData();
   }, [selectedConnectionId, profile?.company_id, profile?.id, isAllConnections, isAdminOrOwner]);
 
-  // All tags flat
+  // Cleanup timeouts on unmount
+  useEffect(() => {
+    return () => {
+      if (globalTimeoutRef.current) clearTimeout(globalTimeoutRef.current);
+      if (connectionTimeoutRef.current) clearTimeout(connectionTimeoutRef.current);
+      if (departmentTimeoutRef.current) clearTimeout(departmentTimeoutRef.current);
+    };
+  }, []);
+
   const allTags = useMemo(() => [
     ...globalTags,
     ...connectionsWithData.flatMap(c => c.tags),
   ], [globalTags, connectionsWithData]);
 
-  // Selected tags with details
   const selectedTags = useMemo(() => 
     allTags.filter(t => selectedTagIds.includes(t.id)),
     [allTags, selectedTagIds]
   );
 
-  // Filter by search
   const filteredGlobalTags = useMemo(() => {
     if (!searchQuery) return globalTags;
     const query = searchQuery.toLowerCase();
@@ -251,9 +251,90 @@ export function TagHierarchySelector({
       .filter(t => t.departmentId === departmentId);
   };
 
-  const getTagsByConnection = (connectionId: string) => {
-    const conn = connectionsWithData.find(c => c.id === connectionId);
-    return conn?.tags || [];
+  // Global hover handlers
+  const handleMouseEnterGlobal = () => {
+    if (globalTimeoutRef.current) {
+      clearTimeout(globalTimeoutRef.current);
+      globalTimeoutRef.current = null;
+    }
+    // Close connection hover when entering global
+    setHoveredConnectionId(null);
+    setHoveredDepartmentId(null);
+    setHoveredGlobal(true);
+  };
+
+  const handleMouseLeaveGlobal = () => {
+    globalTimeoutRef.current = setTimeout(() => {
+      setHoveredGlobal(false);
+    }, 50);
+  };
+
+  const handleMouseEnterGlobalSubmenu = () => {
+    if (globalTimeoutRef.current) {
+      clearTimeout(globalTimeoutRef.current);
+      globalTimeoutRef.current = null;
+    }
+  };
+
+  const handleMouseLeaveGlobalSubmenu = () => {
+    setHoveredGlobal(false);
+  };
+
+  // Connection hover handlers
+  const handleMouseEnterConnection = (connectionId: string) => {
+    if (connectionTimeoutRef.current) {
+      clearTimeout(connectionTimeoutRef.current);
+      connectionTimeoutRef.current = null;
+    }
+    // Close global hover when entering connection
+    setHoveredGlobal(false);
+    setHoveredDepartmentId(null);
+    setHoveredConnectionId(connectionId);
+  };
+
+  const handleMouseLeaveConnection = () => {
+    connectionTimeoutRef.current = setTimeout(() => {
+      setHoveredConnectionId(null);
+      setHoveredDepartmentId(null);
+    }, 50);
+  };
+
+  const handleMouseEnterConnectionSubmenu = () => {
+    if (connectionTimeoutRef.current) {
+      clearTimeout(connectionTimeoutRef.current);
+      connectionTimeoutRef.current = null;
+    }
+  };
+
+  const handleMouseLeaveConnectionSubmenu = () => {
+    setHoveredConnectionId(null);
+    setHoveredDepartmentId(null);
+  };
+
+  // Department hover handlers
+  const handleMouseEnterDepartment = (departmentId: string) => {
+    if (departmentTimeoutRef.current) {
+      clearTimeout(departmentTimeoutRef.current);
+      departmentTimeoutRef.current = null;
+    }
+    setHoveredDepartmentId(departmentId);
+  };
+
+  const handleMouseLeaveDepartment = () => {
+    departmentTimeoutRef.current = setTimeout(() => {
+      setHoveredDepartmentId(null);
+    }, 50);
+  };
+
+  const handleMouseEnterDepartmentSubmenu = () => {
+    if (departmentTimeoutRef.current) {
+      clearTimeout(departmentTimeoutRef.current);
+      departmentTimeoutRef.current = null;
+    }
+  };
+
+  const handleMouseLeaveDepartmentSubmenu = () => {
+    setHoveredDepartmentId(null);
   };
 
   const hasTags = allTags.length > 0;
@@ -261,6 +342,8 @@ export function TagHierarchySelector({
   if (!hasTags && !isLoading) {
     return null;
   }
+
+  const selectedGlobalCount = globalTags.filter(t => selectedTagIds.includes(t.id)).length;
 
   return (
     <div className={cn("space-y-2", className)}>
@@ -294,194 +377,216 @@ export function TagHierarchySelector({
         >
           {/* Search */}
           <div className="p-2 border-b border-border">
-            <Input
-              placeholder="Buscar tags..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="h-8"
-            />
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Input
+                placeholder="Buscar tags..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="h-8 pl-8"
+              />
+            </div>
           </div>
 
           <ScrollArea className="max-h-64">
             <div className="p-2 space-y-1">
-              {/* Global tags section */}
+              {/* Global tags with hover submenu */}
               {filteredGlobalTags.length > 0 && (
-                <>
-                  <div className="px-2 py-1">
-                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1">
-                      <Globe className="w-3 h-3" />
-                      Tags Globais
-                    </p>
-                  </div>
-                  {filteredGlobalTags.map((tag) => (
-                    <div
-                      key={tag.id}
-                      className="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-accent cursor-pointer"
-                      onClick={() => handleTagToggle(tag.id)}
-                    >
-                      <Checkbox
-                        checked={selectedTagIds.includes(tag.id)}
-                        onCheckedChange={() => handleTagToggle(tag.id)}
-                        onClick={(e) => e.stopPropagation()}
-                      />
-                      <span
-                        className="w-2.5 h-2.5 rounded-full shrink-0"
-                        style={{ backgroundColor: tag.color }}
-                      />
-                      <Label className="text-sm cursor-pointer truncate">
-                        {tag.name}
-                      </Label>
+                <div 
+                  className="relative"
+                  onMouseEnter={handleMouseEnterGlobal}
+                  onMouseLeave={handleMouseLeaveGlobal}
+                >
+                  <div
+                    className={cn(
+                      "flex items-center justify-between px-2 py-1.5 rounded-md cursor-pointer transition-colors",
+                      "hover:bg-accent",
+                      hoveredGlobal && "bg-accent",
+                      selectedGlobalCount > 0 && "bg-accent/50"
+                    )}
+                  >
+                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                      <Globe className="w-4 h-4 text-muted-foreground shrink-0" />
+                      <span className="text-sm truncate">Tags Globais</span>
+                      {selectedGlobalCount > 0 && (
+                        <Badge variant="secondary" className="text-xs shrink-0">
+                          {selectedGlobalCount}
+                        </Badge>
+                      )}
                     </div>
-                  ))}
-                  {filteredConnections.length > 0 && (
-                    <div className="my-2 border-t border-border" />
+                    <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
+                  </div>
+
+                  {/* Global tags submenu */}
+                  {hoveredGlobal && (
+                    <div 
+                      className="absolute left-full top-0 ml-1 z-50 bg-popover border border-border rounded-md shadow-md min-w-[200px]"
+                      onMouseEnter={handleMouseEnterGlobalSubmenu}
+                      onMouseLeave={handleMouseLeaveGlobalSubmenu}
+                    >
+                      <div className="p-2 border-b border-border">
+                        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                          Tags Globais
+                        </p>
+                      </div>
+                      <ScrollArea className="max-h-48">
+                        <div className="p-2 space-y-1">
+                          {filteredGlobalTags.map((tag) => (
+                            <div
+                              key={tag.id}
+                              className="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-accent cursor-pointer"
+                              onClick={() => handleTagToggle(tag.id)}
+                            >
+                              <Checkbox
+                                checked={selectedTagIds.includes(tag.id)}
+                                onCheckedChange={() => handleTagToggle(tag.id)}
+                                onClick={(e) => e.stopPropagation()}
+                              />
+                              <span
+                                className="w-2.5 h-2.5 rounded-full shrink-0"
+                                style={{ backgroundColor: tag.color }}
+                              />
+                              <Label className="text-sm cursor-pointer truncate">
+                                {tag.name}
+                              </Label>
+                            </div>
+                          ))}
+                        </div>
+                      </ScrollArea>
+                    </div>
                   )}
-                </>
+                </div>
+              )}
+
+              {/* Separator */}
+              {filteredGlobalTags.length > 0 && filteredConnections.length > 0 && (
+                <div className="my-1 border-t border-border" />
               )}
 
               {/* Connections with departments and tags */}
               {filteredConnections.map((connection) => (
-                <HoverCard 
+                <div 
                   key={connection.id}
-                  openDelay={150}
-                  closeDelay={100}
-                  open={hoveredConnectionId === connection.id}
-                  onOpenChange={(isOpen) => {
-                    if (isOpen) {
-                      if (!isHoverLocked) {
-                        setHoveredConnectionId(connection.id);
-                        setHoveredDepartmentId(null);
-                      }
-                    } else {
-                      setHoveredConnectionId(null);
-                      setIsHoverLocked(true);
-                      setTimeout(() => setIsHoverLocked(false), 100);
-                    }
-                  }}
+                  className="relative"
+                  onMouseEnter={() => handleMouseEnterConnection(connection.id)}
+                  onMouseLeave={handleMouseLeaveConnection}
                 >
-                  <HoverCardTrigger asChild>
-                    <div
-                      className={cn(
-                        "flex items-center justify-between px-2 py-1.5 rounded-md cursor-pointer transition-colors",
-                        "hover:bg-accent",
-                        connection.tags.some(t => selectedTagIds.includes(t.id)) && "bg-accent/50"
-                      )}
-                    >
-                      <div className="flex items-center gap-2 flex-1 min-w-0">
-                        <Link className="w-4 h-4 text-muted-foreground shrink-0" />
-                        <span className="text-sm truncate">{connection.name}</span>
-                        {connection.tags.filter(t => selectedTagIds.includes(t.id)).length > 0 && (
-                          <Badge variant="secondary" className="text-xs shrink-0">
-                            {connection.tags.filter(t => selectedTagIds.includes(t.id)).length}
-                          </Badge>
-                        )}
-                      </div>
-                      <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
-                    </div>
-                  </HoverCardTrigger>
-                  <HoverCardContent 
-                    side="right" 
-                    align="start" 
-                    sideOffset={8}
-                    className="w-56 p-0 bg-popover"
+                  <div
+                    className={cn(
+                      "flex items-center justify-between px-2 py-1.5 rounded-md cursor-pointer transition-colors",
+                      "hover:bg-accent",
+                      hoveredConnectionId === connection.id && "bg-accent",
+                      connection.tags.some(t => selectedTagIds.includes(t.id)) && "bg-accent/50"
+                    )}
                   >
-                    <div className="p-2 border-b border-border">
-                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                        Departamentos
-                      </p>
+                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                      <Link className="w-4 h-4 text-muted-foreground shrink-0" />
+                      <span className="text-sm truncate">{connection.name}</span>
+                      {connection.tags.filter(t => selectedTagIds.includes(t.id)).length > 0 && (
+                        <Badge variant="secondary" className="text-xs shrink-0">
+                          {connection.tags.filter(t => selectedTagIds.includes(t.id)).length}
+                        </Badge>
+                      )}
                     </div>
-                    <ScrollArea className="max-h-48">
-                      <div className="p-2 space-y-1">
-                        {connection.departments.length === 0 ? (
-                          <p className="text-sm text-muted-foreground text-center py-2">
-                            Nenhum departamento
-                          </p>
-                        ) : (
-                          connection.departments.map((dept) => {
+                    <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
+                  </div>
+
+                  {/* Departments submenu */}
+                  {hoveredConnectionId === connection.id && connection.departments.length > 0 && (
+                    <div 
+                      className="absolute left-full top-0 ml-1 z-50 bg-popover border border-border rounded-md shadow-md min-w-[200px]"
+                      onMouseEnter={handleMouseEnterConnectionSubmenu}
+                      onMouseLeave={handleMouseLeaveConnectionSubmenu}
+                    >
+                      <div className="p-2 border-b border-border">
+                        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                          Departamentos
+                        </p>
+                      </div>
+                      <ScrollArea className="max-h-48">
+                        <div className="p-2 space-y-1">
+                          {connection.departments.map((dept) => {
                             const deptTags = getTagsByDepartment(dept.id);
                             if (deptTags.length === 0) return null;
                             
+                            const selectedDeptCount = deptTags.filter(t => selectedTagIds.includes(t.id)).length;
+                            
                             return (
-                              <HoverCard
+                              <div
                                 key={dept.id}
-                                openDelay={150}
-                                closeDelay={100}
-                                open={hoveredDepartmentId === dept.id}
-                                onOpenChange={(isOpen) => {
-                                  if (isOpen) {
-                                    setHoveredDepartmentId(dept.id);
-                                  } else {
-                                    setHoveredDepartmentId(null);
-                                  }
-                                }}
+                                className="relative"
+                                onMouseEnter={() => handleMouseEnterDepartment(dept.id)}
+                                onMouseLeave={handleMouseLeaveDepartment}
                               >
-                                <HoverCardTrigger asChild>
-                                  <div
-                                    className={cn(
-                                      "flex items-center justify-between px-2 py-1.5 rounded-md cursor-pointer transition-colors",
-                                      "hover:bg-accent",
-                                      deptTags.some(t => selectedTagIds.includes(t.id)) && "bg-accent/50"
-                                    )}
-                                  >
-                                    <div className="flex items-center gap-2 flex-1 min-w-0">
-                                      <span
-                                        className="w-2.5 h-2.5 rounded-full shrink-0"
-                                        style={{ backgroundColor: dept.color || '#6366F1' }}
-                                      />
-                                      <span className="text-sm truncate">{dept.name}</span>
-                                      {deptTags.filter(t => selectedTagIds.includes(t.id)).length > 0 && (
-                                        <Badge variant="secondary" className="text-xs shrink-0">
-                                          {deptTags.filter(t => selectedTagIds.includes(t.id)).length}
-                                        </Badge>
-                                      )}
-                                    </div>
-                                    <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
-                                  </div>
-                                </HoverCardTrigger>
-                                <HoverCardContent 
-                                  side="right" 
-                                  align="start" 
-                                  sideOffset={8}
-                                  className="w-52 p-0 bg-popover"
+                                <div
+                                  className={cn(
+                                    "flex items-center justify-between px-2 py-1.5 rounded-md cursor-pointer transition-colors",
+                                    "hover:bg-accent",
+                                    hoveredDepartmentId === dept.id && "bg-accent",
+                                    selectedDeptCount > 0 && "bg-accent/50"
+                                  )}
                                 >
-                                  <div className="p-2 border-b border-border">
-                                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                                      Tags
-                                    </p>
+                                  <div className="flex items-center gap-2 flex-1 min-w-0">
+                                    <span
+                                      className="w-2.5 h-2.5 rounded-full shrink-0"
+                                      style={{ backgroundColor: dept.color || '#6366F1' }}
+                                    />
+                                    <span className="text-sm truncate">{dept.name}</span>
+                                    {selectedDeptCount > 0 && (
+                                      <Badge variant="secondary" className="text-xs shrink-0">
+                                        {selectedDeptCount}
+                                      </Badge>
+                                    )}
                                   </div>
-                                  <ScrollArea className="max-h-40">
-                                    <div className="p-2 space-y-1">
-                                      {deptTags.map((tag) => (
-                                        <div
-                                          key={tag.id}
-                                          className="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-accent cursor-pointer"
-                                          onClick={() => handleTagToggle(tag.id)}
-                                        >
-                                          <Checkbox
-                                            checked={selectedTagIds.includes(tag.id)}
-                                            onCheckedChange={() => handleTagToggle(tag.id)}
-                                            onClick={(e) => e.stopPropagation()}
-                                          />
-                                          <span
-                                            className="w-2.5 h-2.5 rounded-full shrink-0"
-                                            style={{ backgroundColor: tag.color }}
-                                          />
-                                          <Label className="text-sm cursor-pointer truncate">
-                                            {tag.name}
-                                          </Label>
-                                        </div>
-                                      ))}
+                                  <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
+                                </div>
+
+                                {/* Tags submenu */}
+                                {hoveredDepartmentId === dept.id && (
+                                  <div 
+                                    className="absolute left-full top-0 ml-1 z-50 bg-popover border border-border rounded-md shadow-md min-w-[180px]"
+                                    onMouseEnter={handleMouseEnterDepartmentSubmenu}
+                                    onMouseLeave={handleMouseLeaveDepartmentSubmenu}
+                                  >
+                                    <div className="p-2 border-b border-border">
+                                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                                        Tags
+                                      </p>
                                     </div>
-                                  </ScrollArea>
-                                </HoverCardContent>
-                              </HoverCard>
+                                    <ScrollArea className="max-h-40">
+                                      <div className="p-2 space-y-1">
+                                        {deptTags.map((tag) => (
+                                          <div
+                                            key={tag.id}
+                                            className="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-accent cursor-pointer"
+                                            onClick={() => handleTagToggle(tag.id)}
+                                          >
+                                            <Checkbox
+                                              checked={selectedTagIds.includes(tag.id)}
+                                              onCheckedChange={() => handleTagToggle(tag.id)}
+                                              onClick={(e) => e.stopPropagation()}
+                                            />
+                                            <span
+                                              className="w-2.5 h-2.5 rounded-full shrink-0"
+                                              style={{ backgroundColor: tag.color }}
+                                            />
+                                            <Label className="text-sm cursor-pointer truncate">
+                                              {tag.name}
+                                            </Label>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </ScrollArea>
+                                  </div>
+                                )}
+                              </div>
                             );
-                          })
-                        )}
-                      </div>
-                    </ScrollArea>
-                  </HoverCardContent>
-                </HoverCard>
+                          })}
+                        </div>
+                      </ScrollArea>
+                    </div>
+                  )}
+                </div>
               ))}
 
               {filteredGlobalTags.length === 0 && filteredConnections.length === 0 && (
