@@ -9,6 +9,7 @@ import {
   analyzeDocumentWithFileAPI
 } from '../_shared/gemini-file-api.ts';
 import { getCachedAnalysis, saveCacheAnalysis } from '../_shared/media-cache.ts';
+import { logAIUsage } from '../_shared/usage-tracker.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -96,6 +97,7 @@ async function analyzeConversationBatch(
   supabase?: any,
   companyId?: string
 ): Promise<BatchAnalysisResult> {
+  const startTime = Date.now();
   try {
     console.log(`[generate-agent-recommendation] 📦 Analyzing batch ${batchIndex + 1} with ${conversations.length} conversations`);
     
@@ -240,6 +242,24 @@ Se não houver problemas, retorne array vazio em "problematicas".`;
     const result = await response.json();
     const responseText = result.candidates?.[0]?.content?.parts?.[0]?.text || '';
     
+    // Extract usage metadata for tracking
+    const usageMetadata = result.usageMetadata;
+    const usage = {
+      input: usageMetadata?.promptTokenCount || Math.ceil(batchPrompt.length / 4),
+      output: usageMetadata?.candidatesTokenCount || Math.ceil(responseText.length / 4)
+    };
+    
+    // Log AI usage
+    if (supabase && companyId) {
+      await logAIUsage(
+        supabase, companyId, 'generate-agent-recommendation-batch',
+        'gemini-3-flash-preview',
+        usage.input, usage.output,
+        Date.now() - startTime,
+        { batch_index: batchIndex, conversations_count: conversations.length, total_media: totalMedia }
+      );
+    }
+    
     console.log(`[generate-agent-recommendation] ✅ Batch ${batchIndex + 1} response preview:`, responseText.substring(0, 200));
 
     // Parse do JSON
@@ -309,8 +329,11 @@ Se não houver problemas, retorne array vazio em "problematicas".`;
 async function consolidateAndGenerateRecommendation(
   batchResults: BatchAnalysisResult[],
   agentData: AgentRecommendationRequest,
-  geminiApiKey: string
+  geminiApiKey: string,
+  supabase?: any,
+  companyId?: string
 ): Promise<string> {
+  const startTime = Date.now();
   console.log('[generate-agent-recommendation] 🔄 Consolidating', batchResults.length, 'batch results');
 
   // Consolida estatísticas de todos os batches
@@ -441,6 +464,24 @@ ${totalMedias > 0 ? '6. **Inclua observações sobre as mídias** - padrões pos
   const result = await response.json();
   const recommendation = result.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
 
+  // Extract usage metadata for tracking
+  const usageMetadata = result.usageMetadata;
+  const usage = {
+    input: usageMetadata?.promptTokenCount || Math.ceil(prompt.length / 4),
+    output: usageMetadata?.candidatesTokenCount || Math.ceil(recommendation.length / 4)
+  };
+  
+  // Log AI usage for consolidation
+  if (supabase && companyId) {
+    await logAIUsage(
+      supabase, companyId, 'generate-agent-recommendation-consolidate',
+      'gemini-3-flash-preview',
+      usage.input, usage.output,
+      Date.now() - startTime,
+      { agent_name: agentData.agentName, total_batches: batchResults.length, total_medias: totalMedias }
+    );
+  }
+
   console.log('[generate-agent-recommendation] ✅ Final recommendation generated, length:', recommendation.length);
 
   return recommendation;
@@ -509,7 +550,7 @@ serve(async (req) => {
     }
 
     // Etapa 2: Consolidação e geração da recomendação final
-    const recommendation = await consolidateAndGenerateRecommendation(batchResults, data, geminiApiKey);
+    const recommendation = await consolidateAndGenerateRecommendation(batchResults, data, geminiApiKey, supabase, companyId);
 
     // Prepara estatísticas para retorno
     const mediaAnalyzed = {

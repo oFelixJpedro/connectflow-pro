@@ -6,6 +6,7 @@ import {
   analyzeDocumentWithFileAPI,
   transcribeAudioWithFileAPI 
 } from '../_shared/gemini-file-api.ts';
+import { logAIUsage, calculateCost, GEMINI_PRICING } from '../_shared/usage-tracker.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -163,8 +164,9 @@ function parseAIResponse(responseText: string): any | null {
   return null;
 }
 
-// Call Gemini API (text only)
-async function callGemini(prompt: string, geminiApiKey: string): Promise<any | null> {
+// Call Gemini API (text only) - returns { parsed, usage }
+async function callGemini(prompt: string, geminiApiKey: string): Promise<{ parsed: any | null; usage: { input: number; output: number } }> {
+  const defaultUsage = { input: 0, output: 0 };
   try {
     const response = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${geminiApiKey}`,
@@ -184,23 +186,32 @@ async function callGemini(prompt: string, geminiApiKey: string): Promise<any | n
     if (!response.ok) {
       const errorText = await response.text();
       console.log('⚠️ [PIXEL] Gemini API error:', response.status, errorText.substring(0, 200));
-      return null;
+      return { parsed: null, usage: defaultUsage };
     }
 
     const data = await response.json();
     const responseText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
     
-    console.log('📄 [PIXEL] Gemini response (first 300 chars):', responseText.substring(0, 300));
+    // Extract usage metadata
+    const usageMetadata = data.usageMetadata;
+    const usage = {
+      input: usageMetadata?.promptTokenCount || Math.ceil(prompt.length / 4),
+      output: usageMetadata?.candidatesTokenCount || Math.ceil(responseText.length / 4)
+    };
     
-    return parseAIResponse(responseText);
+    console.log('📄 [PIXEL] Gemini response (first 300 chars):', responseText.substring(0, 300));
+    console.log(`📊 [PIXEL] Token usage: ${usage.input} in / ${usage.output} out`);
+    
+    return { parsed: parseAIResponse(responseText), usage };
   } catch (error) {
     console.log('⚠️ [PIXEL] Gemini call error:', error);
-    return null;
+    return { parsed: null, usage: defaultUsage };
   }
 }
 
-// Call Gemini API with multimodal support (text + images/videos/documents)
-async function callGeminiMultimodal(parts: any[], geminiApiKey: string): Promise<any | null> {
+// Call Gemini API with multimodal support (text + images/videos/documents) - returns { parsed, usage }
+async function callGeminiMultimodal(parts: any[], geminiApiKey: string): Promise<{ parsed: any | null; usage: { input: number; output: number } }> {
+  const defaultUsage = { input: 0, output: 0 };
   try {
     const response = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${geminiApiKey}`,
@@ -220,18 +231,27 @@ async function callGeminiMultimodal(parts: any[], geminiApiKey: string): Promise
     if (!response.ok) {
       const errorText = await response.text();
       console.log('⚠️ [PIXEL] Gemini Multimodal API error:', response.status, errorText.substring(0, 200));
-      return null;
+      return { parsed: null, usage: defaultUsage };
     }
 
     const data = await response.json();
     const responseText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
     
-    console.log('📄 [PIXEL] Gemini Multimodal response (first 300 chars):', responseText.substring(0, 300));
+    // Extract usage metadata
+    const usageMetadata = data.usageMetadata;
+    const textPart = parts.find(p => p.text)?.text || '';
+    const usage = {
+      input: usageMetadata?.promptTokenCount || Math.ceil(textPart.length / 4),
+      output: usageMetadata?.candidatesTokenCount || Math.ceil(responseText.length / 4)
+    };
     
-    return parseAIResponse(responseText);
+    console.log('📄 [PIXEL] Gemini Multimodal response (first 300 chars):', responseText.substring(0, 300));
+    console.log(`📊 [PIXEL] Multimodal token usage: ${usage.input} in / ${usage.output} out`);
+    
+    return { parsed: parseAIResponse(responseText), usage };
   } catch (error) {
     console.log('⚠️ [PIXEL] Gemini Multimodal call error:', error);
-    return null;
+    return { parsed: null, usage: defaultUsage };
   }
 }
 
@@ -468,10 +488,21 @@ ${messageDescription}
 ${hasMedia ? `IMPORTANTE: Esta mensagem contém mídia (${message_type}). Analise o conteúdo visual/áudio se disponível para entender melhor a intenção do lead.` : ''}`;
 
       console.log('🤖 [PIXEL] Calling Gemini for message analysis...');
+      const startTime = Date.now();
       
       // Since we now use File API for media analysis, the content already contains the analysis
       // No need for multimodal call - the mediaAnalysis is already included in processedContent
-      aiAnalysis = await callGemini(fullPrompt, geminiApiKey);
+      const analysisResult = await callGemini(fullPrompt, geminiApiKey);
+      aiAnalysis = analysisResult.parsed;
+      
+      // Log AI usage
+      await logAIUsage(
+        supabase, company_id, 'commercial-pixel-analysis',
+        'gemini-3-flash-preview',
+        analysisResult.usage.input, analysisResult.usage.output,
+        Date.now() - startTime,
+        { conversation_id, direction, message_type, has_media: hasMedia }
+      );
       
       if (aiAnalysis) {
         console.log('✅ [PIXEL] AI Analysis parsed successfully:', JSON.stringify(aiAnalysis));
@@ -735,9 +766,35 @@ ${hasMedia ? `NOTA: O vendedor enviou uma mídia (${message_type}). Considere se
           }
           
           // Call text-only with media description included
-          behaviorResult = await callGemini(behaviorPrompt + mediaDescription, geminiApiKey);
+          const behaviorStartTime = Date.now();
+          const behaviorResponse = await callGemini(behaviorPrompt + mediaDescription, geminiApiKey);
+          const behaviorParsed = behaviorResponse.parsed;
+          
+          // Log AI usage for behavior analysis
+          await logAIUsage(
+            supabase, company_id, 'commercial-pixel-behavior',
+            'gemini-3-flash-preview',
+            behaviorResponse.usage.input, behaviorResponse.usage.output,
+            Date.now() - behaviorStartTime,
+            { conversation_id, has_media: hasMedia }
+          );
+          
+          behaviorResult = behaviorParsed;
         } else {
-          behaviorResult = await callGemini(behaviorPrompt, geminiApiKey);
+          const behaviorStartTime = Date.now();
+          const behaviorResponse = await callGemini(behaviorPrompt, geminiApiKey);
+          const behaviorParsed = behaviorResponse.parsed;
+          
+          // Log AI usage for behavior analysis
+          await logAIUsage(
+            supabase, company_id, 'commercial-pixel-behavior',
+            'gemini-3-flash-preview',
+            behaviorResponse.usage.input, behaviorResponse.usage.output,
+            Date.now() - behaviorStartTime,
+            { conversation_id }
+          );
+          
+          behaviorResult = behaviorParsed;
         }
 
         if (behaviorResult && behaviorResult.has_issue && behaviorResult.alert_type && behaviorResult.confidence >= 0.7) {
@@ -971,9 +1028,20 @@ ${conversationText}
 --- FIM DA CONVERSA ---`;
 
         console.log(`🤖 [PIXEL] Calling Gemini for evaluation with media analyses:`, mediaCount);
+        const evalStartTime = Date.now();
         
         // Use text-only call since media content is already analyzed and included in text
-        const evalResult = await callGemini(textPrompt, geminiApiKey);
+        const evalResponse = await callGemini(textPrompt, geminiApiKey);
+        const evalResult = evalResponse.parsed;
+        
+        // Log AI usage for evaluation
+        await logAIUsage(
+          supabase, company_id, 'commercial-pixel-evaluation',
+          'gemini-3-flash-preview',
+          evalResponse.usage.input, evalResponse.usage.output,
+          Date.now() - evalStartTime,
+          { conversation_id, message_count: allMessages.length, media_count: mediaAnalyses.length }
+        );
         
         if (evalResult) {
           console.log('✅ [PIXEL] Evaluation result:', JSON.stringify(evalResult));
@@ -1209,20 +1277,31 @@ Dados das avaliações de qualidade:
 - Pontos de melhoria: ${evalAggregated.all_weaknesses.slice(0, 10).join(', ') || 'Nenhum ainda'}`;
 
       console.log('🤖 [PIXEL] Calling Gemini for insights aggregation...');
-      const insightsResult = await callGemini(insightsPrompt, geminiApiKey);
+      const insightsStartTime = Date.now();
+      const insightsResponse = await callGemini(insightsPrompt, geminiApiKey);
+      const insightsParsed = insightsResponse.parsed;
       
-      if (insightsResult) {
-        console.log('✅ [PIXEL] Insights generated:', JSON.stringify(insightsResult));
+      // Log AI usage for insights
+      await logAIUsage(
+        supabase, company_id, 'commercial-pixel-insights',
+        'gemini-3-flash-preview',
+        insightsResponse.usage.input, insightsResponse.usage.output,
+        Date.now() - insightsStartTime,
+        { total_conversations: aggregatedData.total_conversations, total_evaluations: evalAggregated.total_evaluations }
+      );
+      
+      if (insightsParsed) {
+        console.log('✅ [PIXEL] Insights generated:', JSON.stringify(insightsParsed));
         
         // Save aggregated insights to dashboard WITH agent_rankings
         const aggregatedInsights = {
-          strengths: insightsResult.strengths || [],
-          weaknesses: insightsResult.weaknesses || [],
-          positive_patterns: insightsResult.positive_patterns || [],
-          negative_patterns: insightsResult.negative_patterns || [],
-          critical_issues: insightsResult.critical_issues || [],
-          insights: insightsResult.insights || [],
-          final_recommendation: insightsResult.final_recommendation || '',
+          strengths: insightsParsed.strengths || [],
+          weaknesses: insightsParsed.weaknesses || [],
+          positive_patterns: insightsParsed.positive_patterns || [],
+          negative_patterns: insightsParsed.negative_patterns || [],
+          critical_issues: insightsParsed.critical_issues || [],
+          insights: insightsParsed.insights || [],
+          final_recommendation: insightsParsed.final_recommendation || '',
           criteria_scores: {
             communication: parseFloat(evalAggregated.avg_communication as string) || 0,
             objectivity: parseFloat(evalAggregated.avg_objectivity as string) || 0,
