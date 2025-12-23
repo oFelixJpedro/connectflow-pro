@@ -627,7 +627,11 @@ export function ContactFormModal({
   const hasValidPhone = formData.phone_number.replace(/\D/g, '').length >= 8;
   const hasValidName = formData.name.trim().length > 0;
   
-  const canSave = !loading && !needsDepartmentSelection && !needsConnectionForNewContact && hasValidPhone && hasValidName;
+  // Check if initial message is required but missing
+  const needsInitialMessage = !contact && requireInitialMessage && 
+    initialMessage.trim().length === 0 && initialMessageMedia === null;
+  
+  const canSave = !loading && !needsDepartmentSelection && !needsConnectionForNewContact && hasValidPhone && hasValidName && !needsInitialMessage;
 
   return (
     <>
@@ -748,11 +752,7 @@ export function ContactFormModal({
                   <div className="flex items-center gap-2">
                     <MessageSquare className="w-4 h-4 text-muted-foreground" />
                     <Label className="text-base font-medium">
-                      Mensagem Inicial {requireInitialMessage ? (
-                        <span className="text-destructive">(Obrigatório)</span>
-                      ) : (
-                        <span className="text-muted-foreground">(Opcional)</span>
-                      )}
+                      Mensagem Inicial {requireInitialMessage && <span className="text-destructive">*</span>}
                     </Label>
                   </div>
                   
