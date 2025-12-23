@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { ChevronDown, X, Building2, Search } from 'lucide-react';
+import { ChevronDown, X, Building2, Search, Link } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -327,18 +327,16 @@ export function DepartmentHierarchySelector({
 
                 return (
                   <DropdownMenuSub key={connection.id}>
-                    <DropdownMenuSubTrigger className="flex items-center gap-2 cursor-pointer">
-                      <Checkbox
-                        checked={fullySelected}
-                        className="pointer-events-none"
-                        {...(partiallySelected ? { "data-state": "indeterminate" } : {})}
-                      />
-                      <span className="flex-1 truncate">{connection.name}</span>
-                      {selectedCount > 0 && (
-                        <Badge variant="secondary" className="text-xs shrink-0">
-                          {selectedCount}
-                        </Badge>
-                      )}
+                    <DropdownMenuSubTrigger className="cursor-pointer">
+                      <div className="flex items-center gap-2 flex-1 min-w-0">
+                        <Link className="w-4 h-4 shrink-0 text-muted-foreground" />
+                        <span className="truncate">{connection.name}</span>
+                        {selectedCount > 0 && (
+                          <Badge variant="secondary" className="ml-auto text-xs h-5 px-1.5 shrink-0">
+                            {selectedCount}
+                          </Badge>
+                        )}
+                      </div>
                     </DropdownMenuSubTrigger>
                     <DropdownMenuSubContent className="min-w-[220px]">
                       {/* Select all option */}
