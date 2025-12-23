@@ -334,6 +334,43 @@ export function useContactCRM(contactId: string | null) {
     loadData();
   }, [loadData]);
 
+  // ============================================================
+  // REALTIME: Subscription para atualizar posição do card
+  // ============================================================
+  useEffect(() => {
+    if (!contactId) return;
+
+    console.log('[useContactCRM] Iniciando subscription real-time para contactId:', contactId);
+
+    const channel = supabase
+      .channel(`crm-card-${contactId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*', // INSERT, UPDATE, DELETE
+          schema: 'public',
+          table: 'kanban_cards',
+          filter: `contact_id=eq.${contactId}`,
+        },
+        async (payload) => {
+          console.log('[useContactCRM] Evento real-time recebido:', payload.eventType);
+          
+          if (payload.eventType === 'DELETE') {
+            setCurrentPosition(null);
+          } else {
+            // Recarrega a posição com os dados completos (incluindo nome da coluna)
+            await loadCurrentPosition(contactId, boards);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      console.log('[useContactCRM] Removendo subscription real-time');
+      supabase.removeChannel(channel);
+    };
+  }, [contactId, boards]);
+
   return {
     connections,
     boards,
