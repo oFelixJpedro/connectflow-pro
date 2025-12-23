@@ -532,6 +532,53 @@ export type Database = {
           },
         ]
       }
+      ai_usage_log: {
+        Row: {
+          company_id: string | null
+          created_at: string | null
+          estimated_cost: number | null
+          function_name: string
+          id: string
+          input_tokens: number | null
+          metadata: Json | null
+          model: string
+          output_tokens: number | null
+          processing_time_ms: number | null
+        }
+        Insert: {
+          company_id?: string | null
+          created_at?: string | null
+          estimated_cost?: number | null
+          function_name: string
+          id?: string
+          input_tokens?: number | null
+          metadata?: Json | null
+          model: string
+          output_tokens?: number | null
+          processing_time_ms?: number | null
+        }
+        Update: {
+          company_id?: string | null
+          created_at?: string | null
+          estimated_cost?: number | null
+          function_name?: string
+          id?: string
+          input_tokens?: number | null
+          metadata?: Json | null
+          model?: string
+          output_tokens?: number | null
+          processing_time_ms?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_usage_log_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       chat_summaries: {
         Row: {
           contact_id: string | null
@@ -2892,6 +2939,71 @@ export type Database = {
             columns: ["department_id"]
             isOneToOne: false
             referencedRelation: "departments"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      usage_metrics: {
+        Row: {
+          active_users: number | null
+          ai_estimated_cost: number | null
+          ai_input_tokens: number | null
+          ai_output_tokens: number | null
+          ai_requests: number | null
+          company_id: string | null
+          created_at: string | null
+          db_rows_conversations: number | null
+          db_rows_messages: number | null
+          db_size_bytes: number | null
+          id: string
+          messages_received: number | null
+          messages_sent: number | null
+          metric_date: string
+          storage_bytes: number | null
+          storage_files_count: number | null
+        }
+        Insert: {
+          active_users?: number | null
+          ai_estimated_cost?: number | null
+          ai_input_tokens?: number | null
+          ai_output_tokens?: number | null
+          ai_requests?: number | null
+          company_id?: string | null
+          created_at?: string | null
+          db_rows_conversations?: number | null
+          db_rows_messages?: number | null
+          db_size_bytes?: number | null
+          id?: string
+          messages_received?: number | null
+          messages_sent?: number | null
+          metric_date: string
+          storage_bytes?: number | null
+          storage_files_count?: number | null
+        }
+        Update: {
+          active_users?: number | null
+          ai_estimated_cost?: number | null
+          ai_input_tokens?: number | null
+          ai_output_tokens?: number | null
+          ai_requests?: number | null
+          company_id?: string | null
+          created_at?: string | null
+          db_rows_conversations?: number | null
+          db_rows_messages?: number | null
+          db_size_bytes?: number | null
+          id?: string
+          messages_received?: number | null
+          messages_sent?: number | null
+          metric_date?: string
+          storage_bytes?: number | null
+          storage_files_count?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "usage_metrics_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
             referencedColumns: ["id"]
           },
         ]
