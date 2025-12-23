@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
@@ -33,12 +33,28 @@ export interface ContactCRMPosition {
   priority: 'low' | 'medium' | 'high' | 'urgent';
 }
 
+// Custom event name for local CRM updates
+const CRM_POSITION_CHANGED_EVENT = 'crm-position-changed';
+
 export function useContactCRM(contactId: string | null) {
   const { profile, company, userRole } = useAuth();
   const [connections, setConnections] = useState<CRMConnection[]>([]);
   const [boards, setBoards] = useState<Map<string, CRMBoard>>(new Map());
   const [currentPosition, setCurrentPosition] = useState<ContactCRMPosition | null>(null);
   const [loading, setLoading] = useState(false);
+
+  // Refs to avoid stale closures in realtime handler
+  const boardsRef = useRef<Map<string, CRMBoard>>(new Map());
+  const contactIdRef = useRef<string | null>(null);
+
+  // Keep refs in sync
+  useEffect(() => {
+    boardsRef.current = boards;
+  }, [boards]);
+
+  useEffect(() => {
+    contactIdRef.current = contactId;
+  }, [contactId]);
 
   const isAdminOrOwner = userRole?.role === 'owner' || userRole?.role === 'admin';
 
@@ -172,6 +188,13 @@ export function useContactCRM(contactId: string | null) {
     }
   };
 
+  // Dispatch local event for immediate update in same browser
+  const dispatchPositionChangedEvent = (cId: string) => {
+    window.dispatchEvent(
+      new CustomEvent(CRM_POSITION_CHANGED_EVENT, { detail: { contactId: cId } })
+    );
+  };
+
   // Create or move card to a specific column
   const setCardPosition = async (
     cId: string,
@@ -300,8 +323,12 @@ export function useContactCRM(contactId: string | null) {
         toast.success('Contato adicionado ao CRM');
       }
 
-      // Reload position
+      // Reload position immediately
       await loadCurrentPosition(cId, boards);
+      
+      // Dispatch local event for other instances of this hook
+      dispatchPositionChangedEvent(cId);
+      
       return true;
     } catch (error) {
       console.error('Error setting card position:', error);
@@ -321,6 +348,10 @@ export function useContactCRM(contactId: string | null) {
       if (error) throw error;
 
       setCurrentPosition(null);
+      
+      // Dispatch local event
+      dispatchPositionChangedEvent(cId);
+      
       toast.success('Contato removido do CRM');
       return true;
     } catch (error) {
@@ -333,6 +364,27 @@ export function useContactCRM(contactId: string | null) {
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  // ============================================================
+  // LOCAL EVENT: Listen for position changes from same browser
+  // ============================================================
+  useEffect(() => {
+    const handlePositionChanged = (event: Event) => {
+      const customEvent = event as CustomEvent<{ contactId: string }>;
+      const changedContactId = customEvent.detail?.contactId;
+      
+      if (changedContactId && changedContactId === contactIdRef.current) {
+        console.log('[useContactCRM] Local event received, reloading position');
+        loadCurrentPosition(changedContactId, boardsRef.current);
+      }
+    };
+
+    window.addEventListener(CRM_POSITION_CHANGED_EVENT, handlePositionChanged);
+    
+    return () => {
+      window.removeEventListener(CRM_POSITION_CHANGED_EVENT, handlePositionChanged);
+    };
+  }, []); // Empty deps - uses refs
 
   // ============================================================
   // REALTIME: Subscription para atualizar posição do card
@@ -353,23 +405,36 @@ export function useContactCRM(contactId: string | null) {
           filter: `contact_id=eq.${contactId}`,
         },
         async (payload) => {
-          console.log('[useContactCRM] Evento real-time recebido:', payload.eventType);
+          console.log('[useContactCRM] Evento real-time recebido:', payload.eventType, payload);
+          
+          const currentContactId = contactIdRef.current;
+          if (!currentContactId) return;
           
           if (payload.eventType === 'DELETE') {
             setCurrentPosition(null);
           } else {
             // Recarrega a posição com os dados completos (incluindo nome da coluna)
-            await loadCurrentPosition(contactId, boards);
+            await loadCurrentPosition(currentContactId, boardsRef.current);
           }
         }
       )
-      .subscribe();
+      .subscribe((status, err) => {
+        console.log('[useContactCRM] Subscription status:', status, err || '');
+        
+        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          console.error('[useContactCRM] Realtime subscription failed:', status, err);
+        }
+        
+        if (status === 'SUBSCRIBED') {
+          console.log('[useContactCRM] Realtime subscription active');
+        }
+      });
 
     return () => {
       console.log('[useContactCRM] Removendo subscription real-time');
       supabase.removeChannel(channel);
     };
-  }, [contactId, boards]);
+  }, [contactId]); // Only depends on contactId, uses refs for boards
 
   return {
     connections,
