@@ -10,21 +10,12 @@ import {
 } from '@/components/ui/popover';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
-import { MultiSelectDropdown } from '@/components/ui/multi-select-dropdown';
 import { DepartmentHierarchySelector } from '@/components/inbox/DepartmentHierarchySelector';
 import { TagHierarchySelector } from '@/components/inbox/TagHierarchySelector';
 import { KanbanStageHierarchySelector } from '@/components/inbox/KanbanStageHierarchySelector';
-import { supabase } from '@/integrations/supabase/client';
+import { AgentHierarchySelector } from '@/components/inbox/AgentHierarchySelector';
 import { useAuth } from '@/contexts/AuthContext';
-import { ALL_CONNECTIONS_ID } from '@/components/inbox/ConnectionSelector';
 import type { ConversationFilters as FiltersType } from '@/types';
-
-interface Agent {
-  id: string;
-  full_name: string;
-}
-
-
 
 interface ConversationFiltersProps {
   connectionId: string | null;
@@ -49,38 +40,11 @@ export function ConversationFiltersComponent({
   currentUserId,
   isRestricted = false,
 }: ConversationFiltersProps) {
-  const { userRole, profile } = useAuth();
+  const { userRole } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
-  const [agents, setAgents] = useState<Agent[]>([]);
   const [localFilters, setLocalFilters] = useState<FiltersType>(filters);
 
   const isAdminOrOwner = userRole?.role === 'owner' || userRole?.role === 'admin';
-
-  // Load agents for admin/owner
-  useEffect(() => {
-    async function loadAgents() {
-      if (!isAdminOrOwner) {
-        setAgents([]);
-        return;
-      }
-
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('id, full_name')
-        .eq('active', true)
-        .order('full_name');
-
-      if (error) {
-        console.error('[ConversationFilters] Error loading agents:', error);
-        return;
-      }
-
-      setAgents(data || []);
-    }
-
-    loadAgents();
-  }, [isAdminOrOwner]);
-
 
   // Sync local filters when props change
   useEffect(() => {
@@ -133,9 +97,6 @@ export function ConversationFiltersComponent({
     setLocalFilters(prev => ({ ...prev, status: newStatuses }));
   };
 
-  // Convert options for dropdowns
-  const agentOptions = agents.map(a => ({ value: a.id, label: a.full_name }));
-
   return (
     <Popover open={isOpen} onOpenChange={setIsOpen}>
       <PopoverTrigger asChild>
@@ -167,22 +128,18 @@ export function ConversationFiltersComponent({
         <div className="flex-1 overflow-y-auto min-h-0">
           <div className="p-3 space-y-4">
             {/* Agent Filter - Only for admin/owner - Multi-select */}
-            {isAdminOrOwner && agents.length > 0 && (
+            {isAdminOrOwner && (
               <>
                 <div className="space-y-2">
                   <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
                     Por Atendente
                   </Label>
-                  <MultiSelectDropdown
-                    options={agentOptions}
-                    values={localFilters.filterByAgentIds || []}
-                    onChange={(values) => setLocalFilters(prev => ({ 
+                  <AgentHierarchySelector
+                    selectedAgentIds={localFilters.filterByAgentIds || []}
+                    onChange={(ids) => setLocalFilters(prev => ({ 
                       ...prev, 
-                      filterByAgentIds: values.length > 0 ? values : undefined 
+                      filterByAgentIds: ids.length > 0 ? ids : undefined 
                     }))}
-                    placeholder="Todos os atendentes"
-                    searchPlaceholder="Buscar atendente..."
-                    emptyMessage="Nenhum atendente encontrado"
                   />
                 </div>
                 <Separator />
