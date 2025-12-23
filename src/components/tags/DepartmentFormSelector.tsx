@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { ChevronDown, Building2, Globe, Link, Search, Check } from 'lucide-react';
+import { ChevronDown, Building2, Globe, Wifi, Search, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -245,9 +245,11 @@ export function DepartmentFormSelector({
           ) : (
             filteredConnections.map((connection) => (
               <DropdownMenuSub key={connection.id}>
-                <DropdownMenuSubTrigger className="flex items-center gap-2 cursor-pointer">
-                  <Link className="w-4 h-4 text-muted-foreground shrink-0" />
-                  <span className="flex-1 truncate">{connection.name}</span>
+                <DropdownMenuSubTrigger className="flex items-center gap-2 cursor-pointer text-left">
+                  <Wifi className="w-4 h-4 text-muted-foreground shrink-0" />
+                  <div className="flex-1 min-w-0 text-left">
+                    <span className="block truncate">{connection.name}</span>
+                  </div>
                   <span className="text-xs text-muted-foreground shrink-0">
                     ({connection.departments.length})
                   </span>
