@@ -1,8 +1,10 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { Search, Check, Plus, ArrowLeft } from 'lucide-react';
+import { Search, Plus, ArrowLeft, Building2 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import { useTagsData } from '@/hooks/useTagsData';
+import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/integrations/supabase/client';
 
 interface TagSelectorProps {
   position: { x: number; y: number };
@@ -13,11 +15,33 @@ interface TagSelectorProps {
 
 export function TagSelector({ position, onSelect, onClose, onBack }: TagSelectorProps) {
   const { tags, loading } = useTagsData();
+  const { profile, userRole } = useAuth();
   const [search, setSearch] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [userDepartmentIds, setUserDepartmentIds] = useState<string[]>([]);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  const isAdminOrOwner = userRole?.role === 'owner' || userRole?.role === 'admin';
   const inputRef = useRef<HTMLInputElement>(null);
   const [openUpward, setOpenUpward] = useState(false);
+
+  // Load user's departments
+  useEffect(() => {
+    const loadUserDepartments = async () => {
+      if (!profile?.id) return;
+
+      const { data, error } = await supabase
+        .from('department_users')
+        .select('department_id')
+        .eq('user_id', profile.id);
+
+      if (!error && data) {
+        setUserDepartmentIds(data.map(d => d.department_id));
+      }
+    };
+
+    loadUserDepartments();
+  }, [profile?.id]);
 
   // Calculate if modal should open upward
   useEffect(() => {
@@ -26,13 +50,28 @@ export function TagSelector({ position, onSelect, onClose, onBack }: TagSelector
     setOpenUpward(spaceBelow < modalHeight && position.y > modalHeight);
   }, [position]);
 
-  const filteredTags = useMemo(() => {
-    if (!search) return tags;
-    const searchLower = search.toLowerCase();
+  // Filter tags based on user's department permissions
+  const permittedTags = useMemo(() => {
+    if (isAdminOrOwner) {
+      // Admins/owners can see and use all tags
+      return tags;
+    }
+
+    // Regular users can only use:
+    // 1. Global tags (no department)
+    // 2. Tags from departments they belong to
     return tags.filter(tag => 
+      !tag.department_id || userDepartmentIds.includes(tag.department_id)
+    );
+  }, [tags, isAdminOrOwner, userDepartmentIds]);
+
+  const filteredTags = useMemo(() => {
+    if (!search) return permittedTags;
+    const searchLower = search.toLowerCase();
+    return permittedTags.filter(tag => 
       tag.name.toLowerCase().includes(searchLower)
     );
-  }, [tags, search]);
+  }, [permittedTags, search]);
 
   // Allow creating new tag if search doesn't match existing
   const canCreateNew = search && !filteredTags.some(t => t.name.toLowerCase() === search.toLowerCase());
@@ -156,7 +195,19 @@ export function TagSelector({ position, onSelect, onClose, onBack }: TagSelector
                     className="w-3 h-3 rounded-full flex-shrink-0"
                     style={{ backgroundColor: tag.color }}
                   />
-                  <span className="text-sm truncate">{tag.name}</span>
+                  <span className="text-sm truncate flex-1">{tag.name}</span>
+                  {tag.department && (
+                    <span 
+                      className="text-xs px-1.5 py-0.5 rounded-full flex items-center gap-1"
+                      style={{
+                        backgroundColor: `${tag.department.color || '#6366F1'}20`,
+                        color: tag.department.color || '#6366F1',
+                      }}
+                    >
+                      <Building2 className="w-2.5 h-2.5" />
+                      {tag.department.name}
+                    </span>
+                  )}
                 </button>
               ))}
               
