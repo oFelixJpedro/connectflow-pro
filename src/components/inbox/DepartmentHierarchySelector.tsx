@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { ChevronDown, X, Building2, Search, Link } from 'lucide-react';
+import { ChevronDown, X, Building2, Search, Wifi } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -329,7 +329,7 @@ export function DepartmentHierarchySelector({
                   <DropdownMenuSub key={connection.id}>
                     <DropdownMenuSubTrigger className="cursor-pointer">
                       <div className="flex items-center gap-2 flex-1 min-w-0">
-                        <Link className="w-4 h-4 shrink-0 text-muted-foreground" />
+                        <Wifi className="w-4 h-4 shrink-0 text-muted-foreground" />
                         <span className="truncate">{connection.name}</span>
                         {selectedCount > 0 && (
                           <Badge variant="secondary" className="ml-auto text-xs h-5 px-1.5 shrink-0">
