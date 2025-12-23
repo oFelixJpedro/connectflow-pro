@@ -1589,6 +1589,66 @@ export function useInboxData() {
   }, [profile?.company_id]);
 
   // ============================================================
+  // REALTIME: ÚLTIMA MENSAGEM (para atualizar prévia na lista)
+  // ============================================================
+  useEffect(() => {
+    if (!profile?.company_id) return;
+
+    console.log('[Realtime] Iniciando subscription para última mensagem');
+
+    const channel: RealtimeChannel = supabase
+      .channel(`inbox-last-messages-${profile.company_id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'messages',
+        },
+        (payload) => {
+          const newMsg = payload.new as Record<string, unknown>;
+          
+          // Ignorar notas internas
+          if (newMsg.is_internal_note) return;
+          
+          const conversationId = newMsg.conversation_id as string;
+          
+          console.log('[Realtime] Nova mensagem para atualizar prévia:', conversationId);
+          
+          // Atualizar lastMessage na lista de conversas
+          setConversations(prev => prev.map(c => {
+            if (c.id !== conversationId) return c;
+            
+            return {
+              ...c,
+              lastMessage: {
+                id: newMsg.id as string,
+                conversationId: newMsg.conversation_id as string,
+                direction: newMsg.direction as Message['direction'],
+                senderType: (newMsg.sender_type || 'contact') as Message['senderType'],
+                messageType: (newMsg.message_type || 'text') as Message['messageType'],
+                content: (newMsg.content as string) || undefined,
+                status: (newMsg.status || 'sent') as Message['status'],
+                metadata: {},
+                isInternalNote: false,
+                createdAt: newMsg.created_at as string,
+                updatedAt: (newMsg.updated_at as string) || (newMsg.created_at as string),
+              },
+            };
+          }));
+        }
+      )
+      .subscribe((status) => {
+        console.log('[Realtime] Status subscription última mensagem:', status);
+      });
+
+    return () => {
+      console.log('[Realtime] Cancelando subscription última mensagem');
+      supabase.removeChannel(channel);
+    };
+  }, [profile?.company_id]);
+
+  // ============================================================
   // ENVIAR/REMOVER REAÇÃO
   // ============================================================
   const sendReaction = useCallback(async (
