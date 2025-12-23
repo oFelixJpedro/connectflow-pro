@@ -1,4 +1,4 @@
-import { Globe, User, Users, Smartphone } from 'lucide-react';
+import { Globe, User, Users, Wifi } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { QuickReplyVisibility } from '@/hooks/useQuickRepliesData';
 
@@ -29,7 +29,7 @@ const visibilityConfig: Record<QuickReplyVisibility, {
   },
   connection: {
     label: 'Conexão',
-    icon: <Smartphone className="w-3 h-3" />,
+    icon: <Wifi className="w-3 h-3" />,
     variant: 'outline',
   },
 };

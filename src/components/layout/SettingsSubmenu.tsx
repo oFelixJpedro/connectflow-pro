@@ -4,7 +4,7 @@ import {
   Tag,
   Building2,
   Zap,
-  Plug,
+  Wifi,
   UsersRound,
   X
 } from 'lucide-react';
@@ -44,7 +44,7 @@ const settingsMenuItems = [
     adminOnly: false,
   },
   { 
-    icon: Plug, 
+    icon: Wifi, 
     label: 'Conexões', 
     path: '/settings/connections',
     adminOnly: true,

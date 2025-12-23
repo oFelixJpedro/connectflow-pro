@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { 
   Plus, 
-  Smartphone, 
   Wifi, 
   WifiOff, 
   RefreshCw, 
@@ -594,7 +593,7 @@ export default function Connections() {
         <CardContent className="pt-4 md:pt-6 px-4 md:px-6">
           <div className="flex items-start gap-3 md:gap-4">
             <div className="w-8 h-8 md:w-10 md:h-10 bg-primary/10 rounded-lg flex items-center justify-center flex-shrink-0">
-              <Smartphone className="w-4 h-4 md:w-5 md:h-5 text-primary" />
+              <Wifi className="w-4 h-4 md:w-5 md:h-5 text-primary" />
             </div>
             <div>
               <h3 className="font-medium text-foreground text-sm md:text-base">Como funciona?</h3>
@@ -625,7 +624,7 @@ export default function Connections() {
                           'w-10 h-10 rounded-lg flex items-center justify-center shrink-0',
                           connection.status === 'connected' ? 'bg-success/10' : 'bg-muted'
                         )}>
-                          <Smartphone className={cn(
+                          <Wifi className={cn(
                             'w-5 h-5',
                             connection.status === 'connected' ? 'text-success' : 'text-muted-foreground'
                           )} />
@@ -711,7 +710,7 @@ export default function Connections() {
                             'w-10 h-10 rounded-lg flex items-center justify-center',
                             connection.status === 'connected' ? 'bg-success/10' : 'bg-muted'
                           )}>
-                            <Smartphone className={cn(
+                            <Wifi className={cn(
                               'w-5 h-5',
                               connection.status === 'connected' ? 'text-success' : 'text-muted-foreground'
                             )} />
@@ -778,7 +777,7 @@ export default function Connections() {
         <Card className="border-dashed">
           <CardContent className="py-8 md:py-12 flex flex-col items-center justify-center text-center px-4">
             <div className="w-12 h-12 md:w-16 md:h-16 bg-muted rounded-full flex items-center justify-center mb-4">
-              <Smartphone className="w-6 h-6 md:w-8 md:h-8 text-muted-foreground" />
+              <Wifi className="w-6 h-6 md:w-8 md:h-8 text-muted-foreground" />
             </div>
             <h3 className="font-medium text-foreground mb-1">Nenhuma conexão ainda</h3>
             <p className="text-sm text-muted-foreground mb-4">

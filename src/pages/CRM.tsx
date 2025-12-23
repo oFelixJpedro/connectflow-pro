@@ -15,7 +15,7 @@ import {
   SelectTrigger, 
   SelectValue 
 } from '@/components/ui/select';
-import { Loader2, LayoutGrid, Plus, Smartphone, Settings, Search, X } from 'lucide-react';
+import { Loader2, Kanban, Plus, Wifi, Settings, Search, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
@@ -402,7 +402,7 @@ export default function CRM() {
   if (!hasCRMAccess) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center gap-4 p-8">
-        <LayoutGrid className="w-16 h-16 text-muted-foreground" />
+        <Kanban className="w-16 h-16 text-muted-foreground" />
         <h2 className="text-xl font-semibold">Acesso Restrito</h2>
         <p className="text-muted-foreground text-center max-w-md">
           Você não tem permissão para acessar o CRM. Entre em contato com um administrador.
@@ -415,7 +415,7 @@ export default function CRM() {
   if (connections.length === 0) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center gap-4 p-8">
-        <LayoutGrid className="w-16 h-16 text-muted-foreground" />
+        <Kanban className="w-16 h-16 text-muted-foreground" />
         <h2 className="text-xl font-semibold">Nenhuma Conexão Disponível</h2>
         <p className="text-muted-foreground text-center max-w-md">
           Você precisa de uma conexão WhatsApp ativa para usar o CRM.
@@ -440,7 +440,7 @@ export default function CRM() {
               {connections.map(conn => (
                 <SelectItem key={conn.id} value={conn.id}>
                   <div className="flex items-center gap-2">
-                    <Smartphone className="w-4 h-4 text-green-500" />
+                    <Wifi className="w-4 h-4 text-green-500" />
                     <span className="truncate">{conn.name}</span>
                     <span className="text-xs text-muted-foreground hidden md:inline">
                       ({conn.phone_number})
