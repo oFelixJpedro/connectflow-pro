@@ -132,6 +132,25 @@ export function ConversationList({
       .slice(0, 2);
   };
 
+  // Helper to generate message preview text
+  const getMessagePreview = (conversation: Conversation): string => {
+    const lastMessage = conversation.lastMessage;
+    if (!lastMessage) return '';
+    
+    // For media types, show indicator
+    switch (lastMessage.messageType) {
+      case 'image': return '📷 Imagem';
+      case 'video': return '🎥 Vídeo';
+      case 'audio': return '🎵 Áudio';
+      case 'document': return '📄 Documento';
+      case 'sticker': return '🏷️ Sticker';
+      case 'location': return '📍 Localização';
+      case 'contact': return '👤 Contato';
+      default:
+        return lastMessage.content || '';
+    }
+  };
+
   return (
     <div className="w-full md:w-80 lg:w-80 border-r border-border bg-card flex flex-col h-full">
       {/* Header with connection selector */}
@@ -281,12 +300,28 @@ export function ConversationList({
                         </span>
                       </div>
                       
-                      <p className={cn(
-                        "text-xs truncate mt-0.5",
-                        isUnread ? "text-foreground font-semibold" : "text-muted-foreground"
-                      )}>
-                        {conversation.contact?.phoneNumber}
-                      </p>
+                      {/* Last message preview with tooltip */}
+                      <TooltipProvider delayDuration={300}>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <p className={cn(
+                              "text-xs truncate mt-0.5 cursor-default",
+                              isUnread ? "text-foreground font-semibold" : "text-muted-foreground"
+                            )}>
+                              {getMessagePreview(conversation) || conversation.contact?.phoneNumber}
+                            </p>
+                          </TooltipTrigger>
+                          {getMessagePreview(conversation) && (
+                            <TooltipContent 
+                              side="bottom" 
+                              align="start"
+                              className="max-w-[300px] break-words"
+                            >
+                              <p className="text-sm">{getMessagePreview(conversation)}</p>
+                            </TooltipContent>
+                          )}
+                        </Tooltip>
+                      </TooltipProvider>
 
                       {/* Assignment, department badges and contact tags */}
                       <div className="flex items-center gap-1 mt-2 flex-wrap max-w-full overflow-hidden">

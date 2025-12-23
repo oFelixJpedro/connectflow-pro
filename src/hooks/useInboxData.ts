@@ -409,7 +409,46 @@ export function useInboxData() {
 
       console.log('[useInboxData] Conversas carregadas:', data?.length || 0);
       
-      let transformedConversations = (data || []).map(transformConversation);
+      // Fetch last message for each conversation
+      const conversationIds = (data || []).map(c => c.id);
+      let lastMessageMap = new Map<string, any>();
+      
+      if (conversationIds.length > 0) {
+        const { data: lastMessages } = await supabase
+          .from('messages')
+          .select('conversation_id, content, message_type, direction, sender_type, is_internal_note, created_at')
+          .in('conversation_id', conversationIds)
+          .eq('is_internal_note', false)
+          .order('created_at', { ascending: false });
+
+        // Create map with last message per conversation (first occurrence is most recent)
+        lastMessages?.forEach(m => {
+          if (!lastMessageMap.has(m.conversation_id)) {
+            lastMessageMap.set(m.conversation_id, m);
+          }
+        });
+      }
+      
+      let transformedConversations = (data || []).map(db => {
+        const conversation = transformConversation(db);
+        const lastMsg = lastMessageMap.get(db.id);
+        if (lastMsg) {
+          conversation.lastMessage = {
+            id: lastMsg.id || '',
+            conversationId: lastMsg.conversation_id,
+            direction: lastMsg.direction,
+            senderType: lastMsg.sender_type,
+            messageType: lastMsg.message_type,
+            content: lastMsg.content || undefined,
+            status: 'read',
+            metadata: {},
+            isInternalNote: false,
+            createdAt: lastMsg.created_at,
+            updatedAt: lastMsg.created_at,
+          };
+        }
+        return conversation;
+      });
 
       // Apply kanban column filter (post-query since it requires contact_id lookup) - array of column IDs
       if (conversationFilters.kanbanColumnIds && conversationFilters.kanbanColumnIds.length > 0) {
