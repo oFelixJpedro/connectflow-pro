@@ -2856,6 +2856,7 @@ export type Database = {
           color: string | null
           company_id: string
           created_at: string | null
+          department_id: string | null
           description: string | null
           id: string
           name: string
@@ -2864,6 +2865,7 @@ export type Database = {
           color?: string | null
           company_id: string
           created_at?: string | null
+          department_id?: string | null
           description?: string | null
           id?: string
           name: string
@@ -2872,6 +2874,7 @@ export type Database = {
           color?: string | null
           company_id?: string
           created_at?: string | null
+          department_id?: string | null
           description?: string | null
           id?: string
           name?: string
@@ -2882,6 +2885,13 @@ export type Database = {
             columns: ["company_id"]
             isOneToOne: false
             referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tags_department_id_fkey"
+            columns: ["department_id"]
+            isOneToOne: false
+            referencedRelation: "departments"
             referencedColumns: ["id"]
           },
         ]

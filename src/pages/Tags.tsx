@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Plus, Search, Tag as TagIcon, Edit2, Trash2, MoreHorizontal, Loader2 } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Plus, Search, Tag as TagIcon, Edit2, Trash2, MoreHorizontal, Loader2, Building2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -30,10 +30,19 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useTagsData, Tag } from '@/hooks/useTagsData';
+import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/integrations/supabase/client';
 import { cn } from '@/lib/utils';
 
 const colorOptions = [
@@ -42,15 +51,30 @@ const colorOptions = [
   '#EC4899', '#64748B'
 ];
 
+interface Department {
+  id: string;
+  name: string;
+  color: string | null;
+}
+
 export default function Tags() {
   const { tags, loading, createTag, updateTag, deleteTag } = useTagsData();
+  const { profile, userRole } = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [userDepartmentIds, setUserDepartmentIds] = useState<string[]>([]);
+
+  const isAdminOrOwner = userRole?.role === 'owner' || userRole?.role === 'admin';
+  
+  // Filter state
+  const [filterDepartmentId, setFilterDepartmentId] = useState<string>('all');
   
   // Add dialog state
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [tagName, setTagName] = useState('');
   const [tagColor, setTagColor] = useState(colorOptions[0]);
   const [tagDescription, setTagDescription] = useState('');
+  const [tagDepartmentId, setTagDepartmentId] = useState<string>('global');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Edit dialog state
@@ -59,14 +83,63 @@ export default function Tags() {
   const [editTagName, setEditTagName] = useState('');
   const [editTagColor, setEditTagColor] = useState('');
   const [editTagDescription, setEditTagDescription] = useState('');
+  const [editTagDepartmentId, setEditTagDepartmentId] = useState<string>('global');
 
   // Delete confirmation state
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [tagToDelete, setTagToDelete] = useState<Tag | null>(null);
 
+  // Load departments
+  useEffect(() => {
+    const loadDepartments = async () => {
+      if (!profile?.company_id) return;
+
+      const { data, error } = await supabase
+        .from('departments')
+        .select('id, name, color')
+        .eq('active', true)
+        .order('name');
+
+      if (!error && data) {
+        setDepartments(data);
+      }
+    };
+
+    const loadUserDepartments = async () => {
+      if (!profile?.id) return;
+
+      const { data, error } = await supabase
+        .from('department_users')
+        .select('department_id')
+        .eq('user_id', profile.id);
+
+      if (!error && data) {
+        setUserDepartmentIds(data.map(d => d.department_id));
+      }
+    };
+
+    loadDepartments();
+    loadUserDepartments();
+  }, [profile?.company_id, profile?.id]);
+
+  // Filter departments user can assign to
+  const availableDepartments = isAdminOrOwner 
+    ? departments 
+    : departments.filter(d => userDepartmentIds.includes(d.id));
+
   const filteredTags = tags.filter((tag) => {
-    if (!searchQuery) return true;
-    return tag.name.toLowerCase().includes(searchQuery.toLowerCase());
+    // Filter by search
+    if (searchQuery && !tag.name.toLowerCase().includes(searchQuery.toLowerCase())) {
+      return false;
+    }
+    // Filter by department
+    if (filterDepartmentId === 'global') {
+      return !tag.department_id;
+    }
+    if (filterDepartmentId !== 'all') {
+      return tag.department_id === filterDepartmentId;
+    }
+    return true;
   });
 
   const handleAdd = async () => {
@@ -77,6 +150,7 @@ export default function Tags() {
       name: tagName,
       color: tagColor,
       description: tagDescription,
+      department_id: tagDepartmentId === 'global' ? null : tagDepartmentId,
     });
     setIsSubmitting(false);
 
@@ -90,6 +164,7 @@ export default function Tags() {
     setTagName('');
     setTagColor(colorOptions[0]);
     setTagDescription('');
+    setTagDepartmentId('global');
   };
 
   const handleOpenEdit = (tag: Tag) => {
@@ -97,6 +172,7 @@ export default function Tags() {
     setEditTagName(tag.name);
     setEditTagColor(tag.color);
     setEditTagDescription(tag.description || '');
+    setEditTagDepartmentId(tag.department_id || 'global');
     setIsEditDialogOpen(true);
   };
 
@@ -108,6 +184,7 @@ export default function Tags() {
       name: editTagName,
       color: editTagColor,
       description: editTagDescription,
+      department_id: editTagDepartmentId === 'global' ? null : editTagDepartmentId,
     });
     setIsSubmitting(false);
 
@@ -202,6 +279,37 @@ export default function Tags() {
                   maxLength={200}
                 />
               </div>
+
+              <div className="space-y-2">
+                <Label>Departamento (opcional)</Label>
+                <Select value={tagDepartmentId} onValueChange={setTagDepartmentId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione um departamento" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="global">
+                      <div className="flex items-center gap-2">
+                        <Building2 className="w-4 h-4 text-muted-foreground" />
+                        <span>Global (todos podem usar)</span>
+                      </div>
+                    </SelectItem>
+                    {availableDepartments.map((dept) => (
+                      <SelectItem key={dept.id} value={dept.id}>
+                        <div className="flex items-center gap-2">
+                          <div 
+                            className="w-3 h-3 rounded-full" 
+                            style={{ backgroundColor: dept.color || '#6366F1' }}
+                          />
+                          <span>{dept.name}</span>
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Tags vinculadas a um departamento só podem ser usadas por membros desse departamento.
+                </p>
+              </div>
               
               <div className="space-y-2">
                 <Label>Cor</Label>
@@ -277,15 +385,38 @@ export default function Tags() {
         </CardContent>
       </Card>
 
-      {/* Search */}
-      <div className="relative w-full md:max-w-md">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-        <Input
-          placeholder="Buscar tags..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="pl-9"
-        />
+      {/* Search and Filter */}
+      <div className="flex flex-col sm:flex-row gap-3">
+        <div className="relative flex-1 md:max-w-md">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <Input
+            placeholder="Buscar tags..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+        <Select value={filterDepartmentId} onValueChange={setFilterDepartmentId}>
+          <SelectTrigger className="w-full sm:w-[220px]">
+            <Building2 className="w-4 h-4 mr-2 text-muted-foreground" />
+            <SelectValue placeholder="Filtrar por departamento" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Todos os departamentos</SelectItem>
+            <SelectItem value="global">Apenas globais</SelectItem>
+            {departments.map((dept) => (
+              <SelectItem key={dept.id} value={dept.id}>
+                <div className="flex items-center gap-2">
+                  <div 
+                    className="w-3 h-3 rounded-full" 
+                    style={{ backgroundColor: dept.color || '#6366F1' }}
+                  />
+                  <span>{dept.name}</span>
+                </div>
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       {/* Tags Grid */}
@@ -324,6 +455,24 @@ export default function Tags() {
                 </DropdownMenu>
               </div>
 
+              {/* Department Badge */}
+              {tag.department && (
+                <div className="mt-2">
+                  <Badge 
+                    variant="secondary" 
+                    className="text-xs"
+                    style={{
+                      backgroundColor: `${tag.department.color || '#6366F1'}20`,
+                      color: tag.department.color || '#6366F1',
+                      borderColor: `${tag.department.color || '#6366F1'}40`
+                    }}
+                  >
+                    <Building2 className="w-3 h-3 mr-1" />
+                    {tag.department.name}
+                  </Badge>
+                </div>
+              )}
+
               {tag.description && (
                 <p className="text-xs text-muted-foreground mt-2 line-clamp-2">
                   {tag.description}
@@ -348,11 +497,11 @@ export default function Tags() {
           <div className="col-span-full text-center py-12">
             <TagIcon className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
             <h3 className="text-lg font-medium text-foreground">
-              {searchQuery ? 'Nenhuma tag encontrada' : 'Nenhuma tag criada'}
+              {searchQuery || filterDepartmentId !== 'all' ? 'Nenhuma tag encontrada' : 'Nenhuma tag criada'}
             </h3>
             <p className="text-sm text-muted-foreground mt-1">
-              {searchQuery 
-                ? 'Tente buscar com outros termos' 
+              {searchQuery || filterDepartmentId !== 'all'
+                ? 'Tente ajustar os filtros' 
                 : 'Crie sua primeira tag para começar a organizar'
               }
             </p>
@@ -365,7 +514,7 @@ export default function Tags() {
         setIsEditDialogOpen(open);
         if (!open) setEditingTag(null);
       }}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Editar Tag</DialogTitle>
             <DialogDescription>
@@ -395,6 +544,37 @@ export default function Tags() {
                 rows={2}
                 maxLength={200}
               />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Departamento (opcional)</Label>
+              <Select value={editTagDepartmentId} onValueChange={setEditTagDepartmentId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione um departamento" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="global">
+                    <div className="flex items-center gap-2">
+                      <Building2 className="w-4 h-4 text-muted-foreground" />
+                      <span>Global (todos podem usar)</span>
+                    </div>
+                  </SelectItem>
+                  {availableDepartments.map((dept) => (
+                    <SelectItem key={dept.id} value={dept.id}>
+                      <div className="flex items-center gap-2">
+                        <div 
+                          className="w-3 h-3 rounded-full" 
+                          style={{ backgroundColor: dept.color || '#6366F1' }}
+                        />
+                        <span>{dept.name}</span>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Tags vinculadas a um departamento só podem ser usadas por membros desse departamento.
+              </p>
             </div>
             
             <div className="space-y-2">
