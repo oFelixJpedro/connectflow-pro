@@ -291,8 +291,7 @@ export function ContactFilterSelector({
                 handleSelectAll();
               }}
             >
-              <Checkbox checked={isAllSelected} className="pointer-events-none" />
-              <Users className="h-4 w-4" />
+              <Users className="h-4 w-4 text-muted-foreground" />
               <span className="font-medium">Todos os contatos</span>
             </DropdownMenuItem>
 
@@ -334,9 +333,9 @@ export function ContactFilterSelector({
                   <DropdownMenuSubTrigger className="flex items-center gap-2 cursor-pointer">
                     <Checkbox
                       checked={isConnSelected || areAllDepartmentsSelected(connection.id)}
-                      className="pointer-events-none"
                       onClick={(e) => {
                         e.stopPropagation();
+                        e.preventDefault();
                         handleConnectionToggle(connection.id);
                       }}
                     />
