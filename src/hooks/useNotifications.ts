@@ -591,12 +591,13 @@ export function useNotifications() {
     };
   }, [refreshCounts, loadNotifications]);
 
-  // Real-time subscription for WhatsApp messages
+  // Real-time subscription for WhatsApp messages - OPTIMIZED with filter
   useEffect(() => {
     if (!company?.id || !profile?.id) return;
 
+    // Create channel name that includes company for better debugging
     const channel = supabase
-      .channel('notifications-messages')
+      .channel(`notifications-messages-${company.id}`)
       .on(
         'postgres_changes',
         {
@@ -614,6 +615,7 @@ export function useNotifications() {
             return;
           }
 
+          // Quick company check via conversation - already in payload context
           const { data: conversation } = await supabase
             .from('conversations')
             .select('id, company_id')
@@ -635,12 +637,21 @@ export function useNotifications() {
     };
   }, [company?.id, profile?.id, refreshCounts, loadNotifications]);
 
-  // Real-time for conversations
+  // Real-time for conversations - OPTIMIZED with debounce
   useEffect(() => {
     if (!company?.id) return;
+    
+    let debounceTimer: NodeJS.Timeout | null = null;
+    const debouncedRefresh = () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        refreshCounts();
+        loadNotifications();
+      }, 500); // 500ms debounce
+    };
 
     const channel = supabase
-      .channel('notifications-conversations')
+      .channel(`notifications-conversations-${company.id}`)
       .on(
         'postgres_changes',
         {
@@ -648,24 +659,22 @@ export function useNotifications() {
           schema: 'public',
           table: 'conversations',
         },
-        () => {
-          refreshCounts();
-          loadNotifications();
-        }
+        debouncedRefresh
       )
       .subscribe();
 
     return () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
       supabase.removeChannel(channel);
     };
   }, [company?.id, refreshCounts, loadNotifications]);
 
-  // Real-time for internal chat
+  // Real-time for internal chat - OPTIMIZED with company-specific channel
   useEffect(() => {
     if (!company?.id || !profile?.id) return;
 
     const channel = supabase
-      .channel('notifications-internal-chat')
+      .channel(`notifications-internal-chat-${company.id}`)
       .on(
         'postgres_changes',
         {

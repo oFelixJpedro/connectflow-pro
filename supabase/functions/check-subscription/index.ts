@@ -7,6 +7,8 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+const CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes cache
+
 const logStep = (step: string, details?: any) => {
   const detailsStr = details ? ` - ${JSON.stringify(details)}` : '';
   console.log(`[CHECK-SUBSCRIPTION] ${step}${detailsStr}`);
@@ -41,6 +43,40 @@ serve(async (req) => {
     const user = userData.user;
     if (!user?.email) throw new Error("User not authenticated or email not available");
     logStep("User authenticated", { userId: user.id, email: user.email });
+
+    // Get user's company to check cache
+    const { data: profileData } = await supabaseClient
+      .from('profiles')
+      .select('company_id')
+      .eq('id', user.id)
+      .single();
+
+    let companyId: string | null = null;
+    
+    if (profileData?.company_id) {
+      companyId = profileData.company_id;
+      
+      // Check cache in company table
+      const { data: companyData } = await supabaseClient
+        .from('companies')
+        .select('subscription_cache, subscription_cache_updated_at')
+        .eq('id', companyId)
+        .single();
+
+      if (companyData?.subscription_cache && companyData?.subscription_cache_updated_at) {
+        const cacheAge = Date.now() - new Date(companyData.subscription_cache_updated_at).getTime();
+        
+        if (cacheAge < CACHE_TTL_MS) {
+          const cache = companyData.subscription_cache as { subscribed: boolean; product_id: string | null; subscription_end: string | null };
+          logStep("Returning cached subscription data", { cacheAge: Math.round(cacheAge / 1000) + 's' });
+          return new Response(JSON.stringify(cache), {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+            status: 200,
+          });
+        }
+        logStep("Cache expired, fetching fresh data");
+      }
+    }
 
     const stripe = new Stripe(stripeKey, { apiVersion: "2025-08-27.basil" });
 
@@ -86,11 +122,25 @@ serve(async (req) => {
       logStep("No active subscription found");
     }
 
-    return new Response(JSON.stringify({
+    const result = {
       subscribed: hasActiveSub,
       product_id: productId,
       subscription_end: subscriptionEnd
-    }), {
+    };
+
+    // Update cache in company table
+    if (companyId) {
+      await supabaseClient
+        .from('companies')
+        .update({
+          subscription_cache: result,
+          subscription_cache_updated_at: new Date().toISOString()
+        })
+        .eq('id', companyId);
+      logStep("Cache updated in database");
+    }
+
+    return new Response(JSON.stringify(result), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
       status: 200,
     });
