@@ -2,6 +2,7 @@ import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { transcribeAudio } from "../_shared/media-cache.ts";
+import { logAIUsage } from "../_shared/usage-tracker.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -44,12 +45,25 @@ serve(async (req) => {
     }
 
     // Use the shared transcribeAudio function with caching support
+    const startTime = Date.now();
     const transcription = await transcribeAudio(
       audioUrl,
       GEMINI_API_KEY,
       supabase,
       companyId
     );
+    
+    // Log AI usage
+    if (supabase && companyId && transcription) {
+      await logAIUsage(
+        supabase, companyId, 'transcribe-audio',
+        'gemini-3-flash-preview',
+        Math.ceil(1000), // Approximate input tokens for audio
+        Math.ceil((transcription?.length || 0) / 4),
+        Date.now() - startTime,
+        { audio_url: audioUrl.substring(0, 100) }
+      );
+    }
     
     console.log('Transcription result:', transcription ? `${transcription.substring(0, 100)}...` : '(empty)');
 
