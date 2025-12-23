@@ -30,13 +30,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -45,6 +38,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { cn } from '@/lib/utils';
 import { DepartmentFilterSelector, DepartmentFilterValue } from '@/components/tags/DepartmentFilterSelector';
+import { DepartmentFormSelector } from '@/components/tags/DepartmentFormSelector';
 
 const colorOptions = [
   '#EF4444', '#F97316', '#EAB308', '#22C55E', 
@@ -63,7 +57,6 @@ export default function Tags() {
   const { profile, userRole } = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
   const [departments, setDepartments] = useState<Department[]>([]);
-  const [userDepartmentIds, setUserDepartmentIds] = useState<string[]>([]);
 
   const isAdminOrOwner = userRole?.role === 'owner' || userRole?.role === 'admin';
   
@@ -90,7 +83,7 @@ export default function Tags() {
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [tagToDelete, setTagToDelete] = useState<Tag | null>(null);
 
-  // Load departments
+  // Load departments for display purposes only (the form selector loads its own)
   useEffect(() => {
     const loadDepartments = async () => {
       if (!profile?.company_id) return;
@@ -106,27 +99,9 @@ export default function Tags() {
       }
     };
 
-    const loadUserDepartments = async () => {
-      if (!profile?.id) return;
-
-      const { data, error } = await supabase
-        .from('department_users')
-        .select('department_id')
-        .eq('user_id', profile.id);
-
-      if (!error && data) {
-        setUserDepartmentIds(data.map(d => d.department_id));
-      }
-    };
-
     loadDepartments();
-    loadUserDepartments();
-  }, [profile?.company_id, profile?.id]);
+  }, [profile?.company_id]);
 
-  // Filter departments user can assign to
-  const availableDepartments = isAdminOrOwner 
-    ? departments 
-    : departments.filter(d => userDepartmentIds.includes(d.id));
 
   const filteredTags = tags.filter((tag) => {
     // Filter by search
@@ -283,30 +258,10 @@ export default function Tags() {
 
               <div className="space-y-2">
                 <Label>Departamento (opcional)</Label>
-                <Select value={tagDepartmentId} onValueChange={setTagDepartmentId}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Selecione um departamento" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="global">
-                      <div className="flex items-center gap-2">
-                        <Building2 className="w-4 h-4 text-muted-foreground" />
-                        <span>Global (todos podem usar)</span>
-                      </div>
-                    </SelectItem>
-                    {availableDepartments.map((dept) => (
-                      <SelectItem key={dept.id} value={dept.id}>
-                        <div className="flex items-center gap-2">
-                          <div 
-                            className="w-3 h-3 rounded-full" 
-                            style={{ backgroundColor: dept.color || '#6366F1' }}
-                          />
-                          <span>{dept.name}</span>
-                        </div>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <DepartmentFormSelector
+                  value={tagDepartmentId}
+                  onChange={setTagDepartmentId}
+                />
                 <p className="text-xs text-muted-foreground">
                   Tags vinculadas a um departamento só podem ser usadas por membros desse departamento.
                 </p>
@@ -532,30 +487,10 @@ export default function Tags() {
 
             <div className="space-y-2">
               <Label>Departamento (opcional)</Label>
-              <Select value={editTagDepartmentId} onValueChange={setEditTagDepartmentId}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecione um departamento" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="global">
-                    <div className="flex items-center gap-2">
-                      <Building2 className="w-4 h-4 text-muted-foreground" />
-                      <span>Global (todos podem usar)</span>
-                    </div>
-                  </SelectItem>
-                  {availableDepartments.map((dept) => (
-                    <SelectItem key={dept.id} value={dept.id}>
-                      <div className="flex items-center gap-2">
-                        <div 
-                          className="w-3 h-3 rounded-full" 
-                          style={{ backgroundColor: dept.color || '#6366F1' }}
-                        />
-                        <span>{dept.name}</span>
-                      </div>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <DepartmentFormSelector
+                value={editTagDepartmentId}
+                onChange={setEditTagDepartmentId}
+              />
               <p className="text-xs text-muted-foreground">
                 Tags vinculadas a um departamento só podem ser usadas por membros desse departamento.
               </p>

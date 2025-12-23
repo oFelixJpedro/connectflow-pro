@@ -199,10 +199,9 @@ export function DepartmentFilterSelector({
   };
 
   const handleMouseLeaveConnection = () => {
-    // Small delay to allow moving to submenu
     hoverTimeoutRef.current = setTimeout(() => {
       setHoveredConnectionId(null);
-    }, 50);
+    }, 150);
   };
 
   const handleMouseEnterSubmenu = () => {
@@ -213,7 +212,9 @@ export function DepartmentFilterSelector({
   };
 
   const handleMouseLeaveSubmenu = () => {
-    setHoveredConnectionId(null);
+    hoverTimeoutRef.current = setTimeout(() => {
+      setHoveredConnectionId(null);
+    }, 150);
   };
 
   return (
@@ -324,14 +325,15 @@ export function DepartmentFilterSelector({
                     <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
                   </div>
 
-                  {/* Submenu - departments */}
+                  {/* Submenu - departments with bridge area */}
                   {hoveredConnectionId === connection.id && connection.departments.length > 0 && (
                     <div 
                       ref={submenuRef}
-                      className="absolute left-full top-0 ml-1 z-50 bg-popover border border-border rounded-md shadow-md min-w-[200px]"
+                      className="absolute left-full top-0 z-50 pl-1"
                       onMouseEnter={handleMouseEnterSubmenu}
                       onMouseLeave={handleMouseLeaveSubmenu}
                     >
+                    <div className="bg-popover border border-border rounded-md shadow-md min-w-[200px]">
                       <div className="p-2 border-b border-border">
                         <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
                           Departamentos
@@ -358,6 +360,7 @@ export function DepartmentFilterSelector({
                           ))}
                         </div>
                       </ScrollArea>
+                    </div>
                     </div>
                   )}
                 </div>
