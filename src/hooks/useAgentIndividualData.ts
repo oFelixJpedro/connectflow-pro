@@ -77,6 +77,7 @@ export function useAgentIndividualData(agentId: string | null, agentName?: strin
   const [recommendationLoading, setRecommendationLoading] = useState(false);
   const [data, setData] = useState<AgentIndividualData | null>(null);
   const [alertsOffset, setAlertsOffset] = useState(0);
+  const [refetchTrigger, setRefetchTrigger] = useState(0);
 
   const fetchAlerts = useCallback(async (offset: number, existingAlerts: AgentAlert[] = []) => {
     if (!agentId || !profile?.company_id) return { alerts: existingAlerts, hasMore: false, total: 0 };
@@ -467,7 +468,11 @@ export function useAgentIndividualData(agentId: string | null, agentName?: strin
     };
 
     fetchData();
-  }, [agentId, profile?.company_id, agentName, agentLevel, fetchAlerts, generateAIRecommendation]);
+  }, [agentId, profile?.company_id, agentName, agentLevel, fetchAlerts, generateAIRecommendation, refetchTrigger]);
 
-  return { loading, loadingMore, recommendationLoading, data, loadMoreAlerts };
+  const refetch = useCallback(async () => {
+    setRefetchTrigger(prev => prev + 1);
+  }, []);
+
+  return { loading, loadingMore, recommendationLoading, data, loadMoreAlerts, refetch };
 }

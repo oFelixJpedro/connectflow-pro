@@ -7,9 +7,11 @@ import {
 } from '@/components/ui/dialog';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { 
   MessageSquare, 
   TrendingUp, 
@@ -23,7 +25,8 @@ import {
   AlertTriangle,
   CheckCircle,
   XCircle,
-  Sparkles
+  Sparkles,
+  RefreshCw
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { CriteriaRadarChart } from './CriteriaRadarChart';
@@ -77,17 +80,24 @@ function getInitials(name: string) {
 }
 
 export function AgentIndividualModal({ open, onOpenChange, agent }: AgentIndividualModalProps) {
-  const { loading, loadingMore, recommendationLoading, data, loadMoreAlerts } = useAgentIndividualData(
+  const { loading, loadingMore, recommendationLoading, data, loadMoreAlerts, refetch } = useAgentIndividualData(
     agent?.id || null,
     agent?.name,
     agent?.level
   );
   const [selectedAlert, setSelectedAlert] = useState<AgentAlert | null>(null);
   const [chatPreviewOpen, setChatPreviewOpen] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   const handleViewConversation = (alert: AgentAlert) => {
     setSelectedAlert(alert);
     setChatPreviewOpen(true);
+  };
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await refetch();
+    setRefreshing(false);
   };
 
   if (!agent) return null;
@@ -142,6 +152,23 @@ export function AgentIndividualModal({ open, onOpenChange, agent }: AgentIndivid
               </div>
               
               <div className="flex items-center gap-3">
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={handleRefresh}
+                        disabled={loading || refreshing || recommendationLoading}
+                      >
+                        <RefreshCw className={cn("w-4 h-4", (refreshing || loading) && "animate-spin")} />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p className="text-xs">Atualizar dados e recomendações</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
                 <div className="text-right">
                   <p className="text-3xl font-bold text-foreground">
                     {agent.score.toFixed(1)}
@@ -175,61 +202,91 @@ export function AgentIndividualModal({ open, onOpenChange, agent }: AgentIndivid
               ) : data ? (
                 <>
                   {/* Metrics Cards */}
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    <Card>
-                      <CardContent className="p-4">
-                        <div className="flex items-center gap-2 text-muted-foreground mb-2">
-                          <MessageSquare className="w-4 h-4" />
-                          <span className="text-xs">Conversas</span>
-                        </div>
-                        <p className="text-2xl font-bold">{data.metrics.totalConversations}</p>
-                      </CardContent>
-                    </Card>
+                  <TooltipProvider delayDuration={300}>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Card className="cursor-help">
+                            <CardContent className="p-4">
+                              <div className="flex items-center gap-2 text-muted-foreground mb-2">
+                                <MessageSquare className="w-4 h-4" />
+                                <span className="text-xs">Conversas</span>
+                              </div>
+                              <p className="text-2xl font-bold">{data.metrics.totalConversations}</p>
+                            </CardContent>
+                          </Card>
+                        </TooltipTrigger>
+                        <TooltipContent side="bottom">
+                          <p className="text-xs">Total de conversas atribuídas a este atendente.</p>
+                        </TooltipContent>
+                      </Tooltip>
 
-                    <Card>
-                      <CardContent className="p-4">
-                        <div className="flex items-center gap-2 text-muted-foreground mb-2">
-                          <Target className="w-4 h-4" />
-                          <span className="text-xs">Conversão</span>
-                        </div>
-                        <p className="text-2xl font-bold">{data.metrics.conversionRate.toFixed(1)}%</p>
-                        <div className="flex items-center gap-2 mt-1 text-xs">
-                          <span className="text-success">{data.metrics.closedDeals} ganhos</span>
-                          <span className="text-muted-foreground">•</span>
-                          <span className="text-destructive">{data.metrics.lostDeals} perdidos</span>
-                        </div>
-                      </CardContent>
-                    </Card>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Card className="cursor-help">
+                            <CardContent className="p-4">
+                              <div className="flex items-center gap-2 text-muted-foreground mb-2">
+                                <Target className="w-4 h-4" />
+                                <span className="text-xs">Conversão</span>
+                              </div>
+                              <p className="text-2xl font-bold">{data.metrics.conversionRate.toFixed(1)}%</p>
+                              <div className="flex items-center gap-2 mt-1 text-xs">
+                                <span className="text-success">{data.metrics.closedDeals} ganhos</span>
+                                <span className="text-muted-foreground">•</span>
+                                <span className="text-destructive">{data.metrics.lostDeals} perdidos</span>
+                              </div>
+                            </CardContent>
+                          </Card>
+                        </TooltipTrigger>
+                        <TooltipContent side="bottom">
+                          <p className="text-xs">Percentual de leads que fecharam em relação ao total.</p>
+                        </TooltipContent>
+                      </Tooltip>
 
-                    <Card>
-                      <CardContent className="p-4">
-                        <div className="flex items-center gap-2 text-muted-foreground mb-2">
-                          <Clock className="w-4 h-4" />
-                          <span className="text-xs">Tempo Resposta</span>
-                        </div>
-                        <p className="text-2xl font-bold">{data.metrics.avgResponseTime.toFixed(0)}</p>
-                        <p className="text-xs text-muted-foreground">minutos (média)</p>
-                      </CardContent>
-                    </Card>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Card className="cursor-help">
+                            <CardContent className="p-4">
+                              <div className="flex items-center gap-2 text-muted-foreground mb-2">
+                                <Clock className="w-4 h-4" />
+                                <span className="text-xs">Tempo Resposta</span>
+                              </div>
+                              <p className="text-2xl font-bold">{data.metrics.avgResponseTime.toFixed(0)}</p>
+                              <p className="text-xs text-muted-foreground">minutos (média)</p>
+                            </CardContent>
+                          </Card>
+                        </TooltipTrigger>
+                        <TooltipContent side="bottom">
+                          <p className="text-xs">Tempo médio em minutos para responder o cliente.</p>
+                        </TooltipContent>
+                      </Tooltip>
 
-                    <Card>
-                      <CardContent className="p-4">
-                        <div className="flex items-center gap-2 text-muted-foreground mb-2">
-                          <AlertTriangle className="w-4 h-4" />
-                          <span className="text-xs">Alertas</span>
-                        </div>
-                        <p className={cn(
-                          "text-2xl font-bold",
-                          data.totalAlerts > 0 && "text-warning"
-                        )}>
-                          {data.totalAlerts}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          {data.alerts.filter(a => a.severity === 'critical' || a.severity === 'high').length} críticos
-                        </p>
-                      </CardContent>
-                    </Card>
-                  </div>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Card className="cursor-help">
+                            <CardContent className="p-4">
+                              <div className="flex items-center gap-2 text-muted-foreground mb-2">
+                                <AlertTriangle className="w-4 h-4" />
+                                <span className="text-xs">Alertas</span>
+                              </div>
+                              <p className={cn(
+                                "text-2xl font-bold",
+                                data.totalAlerts > 0 && "text-warning"
+                              )}>
+                                {data.totalAlerts}
+                              </p>
+                              <p className="text-xs text-muted-foreground">
+                                {data.alerts.filter(a => a.severity === 'critical' || a.severity === 'high').length} críticos
+                              </p>
+                            </CardContent>
+                          </Card>
+                        </TooltipTrigger>
+                        <TooltipContent side="bottom">
+                          <p className="text-xs">Alertas comportamentais detectados pela IA.</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </div>
+                  </TooltipProvider>
 
                   {/* Radar Chart and Strengths/Weaknesses */}
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
