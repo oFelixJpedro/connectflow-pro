@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { Globe, User, Building2, Smartphone } from 'lucide-react';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
@@ -16,6 +16,7 @@ import { supabase } from '@/integrations/supabase/client';
 interface Department {
   id: string;
   name: string;
+  whatsapp_connection_id: string;
 }
 
 interface Connection {
@@ -77,6 +78,9 @@ export function VisibilitySelector({
   const [departments, setDepartments] = useState<Department[]>([]);
   const [connections, setConnections] = useState<Connection[]>([]);
   const [loading, setLoading] = useState(true);
+  
+  // Local state for connection selection when choosing department
+  const [selectedConnectionForDepartment, setSelectedConnectionForDepartment] = useState<string | null>(null);
 
   const isAdminOrOwner = userRole?.role === 'owner' || userRole?.role === 'admin';
 
@@ -88,17 +92,15 @@ export function VisibilitySelector({
       setLoading(true);
       
       try {
-        // Load departments
+        // Load departments with whatsapp_connection_id
         if (isAdminOrOwner) {
-          // Admin/owner sees all departments in the company
           const { data: deptData } = await supabase
             .from('departments')
-            .select('id, name')
+            .select('id, name, whatsapp_connection_id')
             .eq('active', true)
             .order('name');
           setDepartments(deptData || []);
         } else {
-          // Regular user sees only their departments
           const { data: userDepts } = await supabase
             .from('department_users')
             .select('department_id')
@@ -108,7 +110,7 @@ export function VisibilitySelector({
             const deptIds = userDepts.map(d => d.department_id);
             const { data: deptData } = await supabase
               .from('departments')
-              .select('id, name')
+              .select('id, name, whatsapp_connection_id')
               .in('id', deptIds)
               .eq('active', true)
               .order('name');
@@ -118,7 +120,6 @@ export function VisibilitySelector({
 
         // Load connections
         if (isAdminOrOwner) {
-          // Admin/owner sees all connections in the company
           const { data: connData } = await supabase
             .from('whatsapp_connections')
             .select('id, name, phone_number')
@@ -127,7 +128,6 @@ export function VisibilitySelector({
             .order('name');
           setConnections(connData || []);
         } else {
-          // Regular user sees only their connections
           const { data: userConns } = await supabase
             .from('connection_users')
             .select('connection_id')
@@ -155,28 +155,92 @@ export function VisibilitySelector({
     loadData();
   }, [profile?.company_id, profile?.id, isAdminOrOwner]);
 
+  // Initialize selectedConnectionForDepartment when editing
+  useEffect(() => {
+    if (visibility === 'department' && selectedDepartmentId) {
+      const dept = departments.find(d => d.id === selectedDepartmentId);
+      if (dept) {
+        setSelectedConnectionForDepartment(dept.whatsapp_connection_id);
+      }
+    }
+  }, [visibility, selectedDepartmentId, departments]);
+
+  // Group departments by connection
+  const departmentsByConnection = useMemo(() => {
+    const grouped: Record<string, Department[]> = {};
+    departments.forEach((dept) => {
+      const connId = dept.whatsapp_connection_id;
+      if (!grouped[connId]) grouped[connId] = [];
+      grouped[connId].push(dept);
+    });
+    return grouped;
+  }, [departments]);
+
+  // Get connections that have departments
+  const connectionsWithDepartments = useMemo(() => {
+    return connections.filter(conn => departmentsByConnection[conn.id]?.length > 0);
+  }, [connections, departmentsByConnection]);
+
+  // Filtered departments based on selected connection
+  const filteredDepartments = useMemo(() => {
+    if (!selectedConnectionForDepartment) return [];
+    return departmentsByConnection[selectedConnectionForDepartment] || [];
+  }, [departmentsByConnection, selectedConnectionForDepartment]);
+
   const hasDepartments = departments.length > 0;
   const hasConnections = connections.length > 0;
 
   const renderDropdown = (option: typeof visibilityOptions[0]) => {
     if (option.value === 'department' && visibility === 'department' && hasDepartments) {
       return (
-        <div className="mt-2 ml-7">
+        <div className="mt-2 ml-7 space-y-2">
+          {/* Connection selector for department filtering */}
           <Select 
-            value={selectedDepartmentId || ''} 
-            onValueChange={(v) => onDepartmentChange(v || null)}
+            value={selectedConnectionForDepartment || ''} 
+            onValueChange={(v) => {
+              setSelectedConnectionForDepartment(v || null);
+              onDepartmentChange(null); // Clear department when connection changes
+            }}
           >
             <SelectTrigger className="w-full">
-              <SelectValue placeholder="Selecione o departamento" />
+              <SelectValue placeholder="Selecione a conexão" />
             </SelectTrigger>
             <SelectContent>
-              {departments.map((dept) => (
-                <SelectItem key={dept.id} value={dept.id}>
-                  {dept.name}
+              {connectionsWithDepartments.map((conn) => (
+                <SelectItem key={conn.id} value={conn.id}>
+                  <div className="flex flex-col">
+                    <span>{conn.name}</span>
+                    <span className="text-xs text-muted-foreground">{conn.phone_number}</span>
+                  </div>
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
+
+          {/* Department selector - only shows after connection is selected */}
+          {selectedConnectionForDepartment && filteredDepartments.length > 0 && (
+            <Select 
+              value={selectedDepartmentId || ''} 
+              onValueChange={(v) => onDepartmentChange(v || null)}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Selecione o departamento" />
+              </SelectTrigger>
+              <SelectContent>
+                {filteredDepartments.map((dept) => (
+                  <SelectItem key={dept.id} value={dept.id}>
+                    {dept.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+
+          {selectedConnectionForDepartment && filteredDepartments.length === 0 && (
+            <p className="text-xs text-muted-foreground">
+              Nenhum departamento encontrado para esta conexão
+            </p>
+          )}
         </div>
       );
     }
@@ -215,7 +279,17 @@ export function VisibilitySelector({
         <Label>Visibilidade</Label>
         <RadioGroup 
           value={visibility} 
-          onValueChange={(v) => onVisibilityChange(v as QuickReplyVisibility)}
+          onValueChange={(v) => {
+            onVisibilityChange(v as QuickReplyVisibility);
+            // Reset selections when changing visibility type
+            if (v !== 'department') {
+              setSelectedConnectionForDepartment(null);
+              onDepartmentChange(null);
+            }
+            if (v !== 'connection') {
+              onConnectionChange(null);
+            }
+          }}
           className="space-y-2"
         >
           {visibilityOptions.map((option) => {
