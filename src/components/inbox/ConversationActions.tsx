@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   MoreVertical,
   User,
@@ -13,8 +13,10 @@ import {
   RotateCcw,
   Star,
   MailWarning,
+  Kanban,
 } from 'lucide-react';
 import { MediaGalleryModal } from './MediaGalleryModal';
+import { useContactCRM } from '@/hooks/useContactCRM';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -87,6 +89,53 @@ export function ConversationActions({
   const isAssignedToMe = conversation.assignedUserId === currentUserId;
   const isClosed = conversation.status === 'closed';
   const isAdminOrOwner = ['owner', 'admin'].includes(currentUserRole);
+
+  // CRM hook for funnel stages
+  const {
+    boards: crmBoards,
+    currentPosition: crmPosition,
+    setCardPosition,
+    refresh: refreshCRM,
+  } = useContactCRM(conversation.contactId || null);
+
+  // Get available CRM columns for current connection
+  const availableCrmColumns = useMemo(() => {
+    if (!conversation.whatsappConnectionId || crmBoards.size === 0) return [];
+    
+    // Find the board for this connection
+    const board = crmBoards.get(conversation.whatsappConnectionId);
+    
+    return board?.columns || [];
+  }, [crmBoards, conversation.whatsappConnectionId]);
+
+  // Handler to move contact to a CRM stage
+  const handleMoveToStage = async (columnId: string) => {
+    if (!conversation.contactId || !conversation.whatsappConnectionId) return;
+    
+    setLoadingAction('move_stage');
+    try {
+      await setCardPosition(
+        conversation.contactId,
+        conversation.whatsappConnectionId,
+        columnId
+      );
+      toast({
+        title: 'Posição atualizada',
+        description: 'O contato foi movido no funil.',
+      });
+      refreshCRM();
+      onAction();
+    } catch (error: any) {
+      console.error('[ConversationActions] Erro ao mover no funil:', error);
+      toast({
+        title: 'Erro',
+        description: error.message || 'Não foi possível mover o contato.',
+        variant: 'destructive',
+      });
+    } finally {
+      setLoadingAction(null);
+    }
+  };
 
   // Check if user is following this conversation
   useEffect(() => {
@@ -753,6 +802,41 @@ export function ConversationActions({
                       {dept.is_default && dept.id !== conversation.departmentId && (
                         <Badge variant="outline" className="ml-2 text-xs">
                           Padrão
+                        </Badge>
+                      )}
+                    </DropdownMenuItem>
+                  ))
+                )}
+              </DropdownMenuSubContent>
+            </DropdownMenuPortal>
+          </DropdownMenuSub>
+
+          {/* Mover no funil CRM */}
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger disabled={availableCrmColumns.length === 0}>
+              <Kanban className="w-4 h-4 mr-2" />
+              <span>Mover no funil...</span>
+            </DropdownMenuSubTrigger>
+            <DropdownMenuPortal>
+              <DropdownMenuSubContent className="z-[110]">
+                {availableCrmColumns.length === 0 ? (
+                  <DropdownMenuItem disabled>
+                    Nenhuma etapa disponível
+                  </DropdownMenuItem>
+                ) : (
+                  availableCrmColumns.map((column) => (
+                    <DropdownMenuItem
+                      key={column.id}
+                      onClick={() => handleMoveToStage(column.id)}
+                      disabled={
+                        column.id === crmPosition?.column_id ||
+                        loadingAction === 'move_stage'
+                      }
+                    >
+                      <span className="flex-1">{column.name}</span>
+                      {column.id === crmPosition?.column_id && (
+                        <Badge variant="secondary" className="ml-2 text-xs">
+                          Atual
                         </Badge>
                       )}
                     </DropdownMenuItem>
