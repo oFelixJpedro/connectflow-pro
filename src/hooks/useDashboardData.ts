@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { startOfDay, endOfDay, subDays, startOfWeek, endOfWeek } from 'date-fns';
-import type { DashboardFilter, FilterType } from '@/components/dashboard/DashboardFilters';
+import type { DashboardFilter, FilterType } from '@/components/dashboard/DashboardFilterSelector';
 
 interface DashboardMetrics {
   todayConversations: number;
