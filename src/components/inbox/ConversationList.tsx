@@ -386,6 +386,7 @@ export function ConversationList({
           return result ? result.id : false;
         }}
         preselectedConnectionId={selectedConnectionId}
+        requireInitialMessage={true}
       />
     </div>
   );
