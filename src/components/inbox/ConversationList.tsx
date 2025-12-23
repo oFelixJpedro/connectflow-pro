@@ -315,9 +315,9 @@ export function ConversationList({
                             <TooltipContent 
                               side="bottom" 
                               align="start"
-                              className="max-w-[300px] break-words"
+                              className="max-w-[300px] break-words z-[9999] bg-popover border border-border shadow-lg"
                             >
-                              <p className="text-sm">{getMessagePreview(conversation)}</p>
+                              <p className="text-sm whitespace-pre-wrap">{getMessagePreview(conversation)}</p>
                             </TooltipContent>
                           )}
                         </Tooltip>
