@@ -1,18 +1,14 @@
-import { useState, useEffect, useMemo } from 'react';
-import { ChevronRight, Building2, Globe, Link } from 'lucide-react';
+import { useState, useEffect, useMemo, useRef } from 'react';
+import { ChevronRight, Building2, Globe, Link, Search } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Input } from '@/components/ui/input';
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
-import {
-  HoverCard,
-  HoverCardContent,
-  HoverCardTrigger,
-} from '@/components/ui/hover-card';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -53,10 +49,13 @@ export function DepartmentFilterSelector({
 }: DepartmentFilterSelectorProps) {
   const { profile, userRole } = useAuth();
   const [open, setOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
   const [connectionsWithDepts, setConnectionsWithDepts] = useState<ConnectionWithDepartments[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [hoveredConnectionId, setHoveredConnectionId] = useState<string | null>(null);
-  const [isHoverLocked, setIsHoverLocked] = useState(false);
+  
+  const submenuRef = useRef<HTMLDivElement>(null);
+  const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const isAdminOrOwner = userRole?.role === 'owner' || userRole?.role === 'admin';
 
@@ -154,12 +153,30 @@ export function DepartmentFilterSelector({
     loadData();
   }, [profile?.company_id, profile?.id, isAdminOrOwner]);
 
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (hoverTimeoutRef.current) {
+        clearTimeout(hoverTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  // Filter connections by search
+  const filteredConnections = useMemo(() => {
+    if (!searchQuery) return connectionsWithDepts;
+    const query = searchQuery.toLowerCase();
+    return connectionsWithDepts.filter(c => 
+      c.name.toLowerCase().includes(query) ||
+      c.departments.some(d => d.name.toLowerCase().includes(query))
+    );
+  }, [connectionsWithDepts, searchQuery]);
+
   // Get selected label
   const selectedLabel = useMemo(() => {
     if (value.type === 'all') return 'Todos os departamentos';
     if (value.type === 'global') return 'Apenas globais';
     
-    // Find department name
     for (const conn of connectionsWithDepts) {
       const dept = conn.departments.find(d => d.id === value.departmentId);
       if (dept) return dept.name;
@@ -170,6 +187,32 @@ export function DepartmentFilterSelector({
   const handleSelectDepartment = (dept: Department) => {
     onChange({ type: 'department', departmentId: dept.id, connectionId: dept.connectionId });
     setOpen(false);
+    setHoveredConnectionId(null);
+  };
+
+  const handleMouseEnterConnection = (connectionId: string) => {
+    if (hoverTimeoutRef.current) {
+      clearTimeout(hoverTimeoutRef.current);
+      hoverTimeoutRef.current = null;
+    }
+    setHoveredConnectionId(connectionId);
+  };
+
+  const handleMouseLeaveConnection = () => {
+    // Small delay to allow moving to submenu
+    hoverTimeoutRef.current = setTimeout(() => {
+      setHoveredConnectionId(null);
+    }, 50);
+  };
+
+  const handleMouseEnterSubmenu = () => {
+    if (hoverTimeoutRef.current) {
+      clearTimeout(hoverTimeoutRef.current);
+      hoverTimeoutRef.current = null;
+    }
+  };
+
+  const handleMouseLeaveSubmenu = () => {
     setHoveredConnectionId(null);
   };
 
@@ -199,6 +242,19 @@ export function DepartmentFilterSelector({
           align="start"
           sideOffset={4}
         >
+          {/* Search */}
+          <div className="p-2 border-b border-border">
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Input
+                placeholder="Buscar..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="h-8 pl-8"
+              />
+            </div>
+          </div>
+
           <ScrollArea className="max-h-80">
             <div className="p-1">
               {/* All departments option */}
@@ -234,71 +290,56 @@ export function DepartmentFilterSelector({
               </div>
 
               {/* Separator */}
-              {connectionsWithDepts.length > 0 && (
+              {filteredConnections.length > 0 && (
                 <div className="my-1 border-t border-border" />
               )}
 
-              {/* Connections with hover for departments */}
-              {connectionsWithDepts.map((connection) => (
-                <HoverCard 
+              {/* Connections with instant hover for departments */}
+              {filteredConnections.map((connection) => (
+                <div 
                   key={connection.id} 
-                  openDelay={150} 
-                  closeDelay={100}
-                  open={hoveredConnectionId === connection.id}
-                  onOpenChange={(isOpen) => {
-                    if (isOpen) {
-                      if (!isHoverLocked) {
-                        setHoveredConnectionId(connection.id);
-                      }
-                    } else {
-                      // When closing, lock briefly to prevent instant re-trigger on another item
-                      setHoveredConnectionId(null);
-                      setIsHoverLocked(true);
-                      setTimeout(() => setIsHoverLocked(false), 100);
-                    }
-                  }}
+                  className="relative"
+                  onMouseEnter={() => handleMouseEnterConnection(connection.id)}
+                  onMouseLeave={handleMouseLeaveConnection}
                 >
-                  <HoverCardTrigger asChild>
-                    <div
-                      className={cn(
-                        "flex items-center justify-between px-3 py-2 rounded-md cursor-pointer transition-colors",
-                        "hover:bg-accent",
-                        value.type === 'department' && 
-                          connection.departments.some(d => d.id === value.departmentId) && 
-                          "bg-accent/50"
-                      )}
-                    >
-                      <div className="flex items-center gap-2 flex-1 min-w-0">
-                        <Link className="w-4 h-4 text-muted-foreground shrink-0" />
-                        <span className="text-sm truncate">{connection.name}</span>
-                        {connection.departments.length > 0 && (
-                          <span className="text-xs text-muted-foreground shrink-0">
-                            ({connection.departments.length})
-                          </span>
-                        )}
-                      </div>
-                      <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
-                    </div>
-                  </HoverCardTrigger>
-                  <HoverCardContent 
-                    side="right" 
-                    align="start" 
-                    sideOffset={8}
-                    className="w-52 p-0 bg-popover"
+                  <div
+                    className={cn(
+                      "flex items-center justify-between px-3 py-2 rounded-md cursor-pointer transition-colors",
+                      "hover:bg-accent",
+                      hoveredConnectionId === connection.id && "bg-accent",
+                      value.type === 'department' && 
+                        connection.departments.some(d => d.id === value.departmentId) && 
+                        "bg-accent/50"
+                    )}
                   >
-                    <div className="p-2 border-b border-border">
-                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                        Departamentos
-                      </p>
+                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                      <Link className="w-4 h-4 text-muted-foreground shrink-0" />
+                      <span className="text-sm truncate">{connection.name}</span>
+                      {connection.departments.length > 0 && (
+                        <span className="text-xs text-muted-foreground shrink-0">
+                          ({connection.departments.length})
+                        </span>
+                      )}
                     </div>
-                    <ScrollArea className="max-h-48">
-                      <div className="p-1">
-                        {connection.departments.length === 0 ? (
-                          <p className="text-sm text-muted-foreground text-center py-3">
-                            Nenhum departamento
-                          </p>
-                        ) : (
-                          connection.departments.map((dept) => (
+                    <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
+                  </div>
+
+                  {/* Submenu - departments */}
+                  {hoveredConnectionId === connection.id && connection.departments.length > 0 && (
+                    <div 
+                      ref={submenuRef}
+                      className="absolute left-full top-0 ml-1 z-50 bg-popover border border-border rounded-md shadow-md min-w-[200px]"
+                      onMouseEnter={handleMouseEnterSubmenu}
+                      onMouseLeave={handleMouseLeaveSubmenu}
+                    >
+                      <div className="p-2 border-b border-border">
+                        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                          Departamentos
+                        </p>
+                      </div>
+                      <ScrollArea className="max-h-48">
+                        <div className="p-1">
+                          {connection.departments.map((dept) => (
                             <div
                               key={dept.id}
                               className={cn(
@@ -314,17 +355,23 @@ export function DepartmentFilterSelector({
                               />
                               <span className="text-sm truncate">{dept.name}</span>
                             </div>
-                          ))
-                        )}
-                      </div>
-                    </ScrollArea>
-                  </HoverCardContent>
-                </HoverCard>
+                          ))}
+                        </div>
+                      </ScrollArea>
+                    </div>
+                  )}
+                </div>
               ))}
 
               {isLoading && (
                 <div className="py-4 text-center">
                   <span className="text-sm text-muted-foreground">Carregando...</span>
+                </div>
+              )}
+
+              {!isLoading && filteredConnections.length === 0 && searchQuery && (
+                <div className="py-4 text-center">
+                  <span className="text-sm text-muted-foreground">Nenhum resultado encontrado</span>
                 </div>
               )}
             </div>
