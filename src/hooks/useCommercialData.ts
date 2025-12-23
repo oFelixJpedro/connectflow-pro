@@ -1485,6 +1485,14 @@ export function useCommercialData(filter?: CommercialFilter) {
     // Using aggregatedInsightsRef.current inside fetchData to access the latest value
   }, [profile?.company_id, isAdmin, filter?.type, filter?.connectionId, filter?.departmentId, filter?.startDate, filter?.endDate, hasActiveFilter, hasActiveFilterForInsights, fetchCompanyLiveMetrics, fetchFilteredInsights, startInsightsJob]);
 
+  // Manual refresh function
+  const refreshData = useCallback(() => {
+    // Invalidate cache
+    insightsCacheRef.current = null;
+    // Trigger refetch by updating lastUpdated which will cause component re-render
+    setLastUpdated(new Date());
+  }, []);
+
   return {
     loading,
     data,
@@ -1498,5 +1506,6 @@ export function useCommercialData(filter?: CommercialFilter) {
     insightsProgress,
     insightsCurrentStep,
     insightsJobId,
+    refreshData,
   };
 }
