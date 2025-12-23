@@ -209,6 +209,7 @@ export function useCommercialData(filter?: CommercialFilter) {
   const [liveMetrics, setLiveMetrics] = useState<LiveMetrics | null>(null);
   const [aggregatedInsights, setAggregatedInsights] = useState<AggregatedInsights>(DEFAULT_INSIGHTS);
   const [lastUpdated, setLastUpdated] = useState(new Date());
+  const [lastInsightsUpdate, setLastInsightsUpdate] = useState<string | null>(null);
   const [evaluating, setEvaluating] = useState(false);
   const [insightsLoading, setInsightsLoading] = useState(false);
   const [refetchTrigger, setRefetchTrigger] = useState(0);
@@ -773,6 +774,11 @@ export function useCommercialData(filter?: CommercialFilter) {
             average_score: insights.average_score || 0,
             qualified_leads_percent: insights.qualified_leads_percent || 0,
           });
+        }
+        
+        // Set last insights update timestamp
+        if (dashboard.last_insights_update) {
+          setLastInsightsUpdate(dashboard.last_insights_update);
         }
       } else {
         // No dashboard data, set with calculated values
@@ -1495,12 +1501,72 @@ export function useCommercialData(filter?: CommercialFilter) {
     setLastUpdated(new Date());
   }, []);
 
+  // Realtime subscription for company_live_dashboard
+  useEffect(() => {
+    if (!profile?.company_id) return;
+
+    console.log('📡 Setting up realtime subscription for company_live_dashboard');
+
+    const channel = supabase
+      .channel('commercial-live-dashboard')
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'company_live_dashboard',
+          filter: `company_id=eq.${profile.company_id}`,
+        },
+        (payload) => {
+          console.log('📡 Realtime update received:', payload);
+          const newData = payload.new as any;
+          
+          // Update live metrics
+          setLiveMetrics(prev => ({
+            ...prev,
+            todayMessages: newData.today_messages || 0,
+            todayNewConversations: newData.today_new_conversations || 0,
+            todayContractsClosed: newData.today_contracts_closed || 0,
+            todayLeadsLost: newData.today_leads_lost || 0,
+            activeConversations: newData.active_conversations || 0,
+            hotLeads: newData.hot_leads || 0,
+            warmLeads: newData.warm_leads || 0,
+            coldLeads: newData.cold_leads || 0,
+            avgResponseTime: newData.current_avg_response_time || 0,
+            avgSentiment: newData.current_avg_sentiment || 'neutral',
+          }));
+
+          // Update insights if they changed
+          if (newData.aggregated_insights) {
+            const insights = newData.aggregated_insights as AggregatedInsights;
+            if (insights.strengths?.length || insights.weaknesses?.length) {
+              setAggregatedInsights(insights);
+            }
+          }
+
+          // Update last insights timestamp
+          if (newData.last_insights_update) {
+            setLastInsightsUpdate(newData.last_insights_update);
+          }
+
+          setLastUpdated(new Date());
+        }
+      )
+      .subscribe();
+
+    return () => {
+      console.log('📡 Cleaning up realtime subscription');
+      supabase.removeChannel(channel);
+    };
+  }, [profile?.company_id]);
+
   return {
     loading,
     data,
     liveMetrics,
     aggregatedInsights,
     lastUpdated,
+    lastInsightsUpdate,
     isAdmin,
     evaluating,
     evaluateConversations,
