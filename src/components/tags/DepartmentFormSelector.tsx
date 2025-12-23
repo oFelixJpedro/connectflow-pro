@@ -1,16 +1,20 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
-import { ChevronRight, ChevronsUpDown, Building2, Globe, Link, Search } from 'lucide-react';
+import { useState, useEffect, useMemo } from 'react';
+import { ChevronDown, Building2, Globe, Link, Search, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { Input } from '@/components/ui/input';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSub,
+  DropdownMenuSubTrigger,
+  DropdownMenuSubContent,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 
 interface Department {
   id: string;
@@ -46,13 +50,9 @@ export function DepartmentFormSelector({
   const [searchQuery, setSearchQuery] = useState('');
   const [connectionsWithDepts, setConnectionsWithDepts] = useState<ConnectionWithDepartments[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [hoveredConnectionId, setHoveredConnectionId] = useState<string | null>(null);
-  
-  const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const isAdminOrOwner = userRole?.role === 'owner' || userRole?.role === 'admin';
 
-  // Load connections and departments
   useEffect(() => {
     async function loadData() {
       if (!profile?.company_id) return;
@@ -96,7 +96,6 @@ export function DepartmentFormSelector({
             setConnectionsWithDepts(result.filter(c => c.departments.length > 0));
           }
         } else {
-          // Non-admin: get user's assigned departments
           const { data: userDepts } = await supabase
             .from('department_users')
             .select('department_id, departments(id, name, color, whatsapp_connection_id, whatsapp_connections(id, name))')
@@ -139,16 +138,6 @@ export function DepartmentFormSelector({
     loadData();
   }, [profile?.company_id, profile?.id, isAdminOrOwner]);
 
-  // Cleanup timeout on unmount
-  useEffect(() => {
-    return () => {
-      if (hoverTimeoutRef.current) {
-        clearTimeout(hoverTimeoutRef.current);
-      }
-    };
-  }, []);
-
-  // Filter connections by search
   const filteredConnections = useMemo(() => {
     if (!searchQuery) return connectionsWithDepts;
     const query = searchQuery.toLowerCase();
@@ -163,7 +152,6 @@ export function DepartmentFormSelector({
       );
   }, [connectionsWithDepts, searchQuery]);
 
-  // Get selected label
   const selectedLabel = useMemo(() => {
     if (value === 'global') return 'Global (todos podem usar)';
     
@@ -183,46 +171,16 @@ export function DepartmentFormSelector({
     return null;
   }, [value, connectionsWithDepts]);
 
-  const handleSelectDepartment = (deptId: string) => {
+  const handleSelect = (deptId: string) => {
     onChange(deptId);
     setOpen(false);
-    setHoveredConnectionId(null);
-  };
-
-  const handleMouseEnterConnection = (connectionId: string) => {
-    if (hoverTimeoutRef.current) {
-      clearTimeout(hoverTimeoutRef.current);
-      hoverTimeoutRef.current = null;
-    }
-    setHoveredConnectionId(connectionId);
-  };
-
-  const handleMouseLeaveConnection = () => {
-    hoverTimeoutRef.current = setTimeout(() => {
-      setHoveredConnectionId(null);
-    }, 150);
-  };
-
-  const handleMouseEnterSubmenu = () => {
-    if (hoverTimeoutRef.current) {
-      clearTimeout(hoverTimeoutRef.current);
-      hoverTimeoutRef.current = null;
-    }
-  };
-
-  const handleMouseLeaveSubmenu = () => {
-    hoverTimeoutRef.current = setTimeout(() => {
-      setHoveredConnectionId(null);
-    }, 150);
   };
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
+    <DropdownMenu open={open} onOpenChange={setOpen}>
+      <DropdownMenuTrigger asChild>
         <Button
           variant="outline"
-          role="combobox"
-          aria-expanded={open}
           disabled={disabled || isLoading}
           className={cn(
             'w-full justify-between font-normal h-10',
@@ -243,16 +201,12 @@ export function DepartmentFormSelector({
             )}
             <span className="truncate">{selectedLabel}</span>
           </span>
-          <ChevronsUpDown className="h-4 w-4 shrink-0 opacity-50" />
+          <ChevronDown className="h-4 w-4 shrink-0 opacity-50" />
         </Button>
-      </PopoverTrigger>
-      <PopoverContent 
-        className="w-[280px] p-0 bg-popover" 
-        align="start"
-        sideOffset={4}
-      >
+      </DropdownMenuTrigger>
+      <DropdownMenuContent className="w-[280px]" align="start">
         {/* Search */}
-        <div className="p-2 border-b border-border">
+        <div className="p-2">
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input
@@ -260,110 +214,68 @@ export function DepartmentFormSelector({
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="h-8 pl-8"
+              onClick={(e) => e.stopPropagation()}
             />
           </div>
         </div>
 
-        <ScrollArea className="max-h-80">
-          <div className="p-1">
-            {/* Global option */}
-            <div
-              className={cn(
-                "flex items-center gap-2 px-3 py-2 rounded-md cursor-pointer transition-colors",
-                "hover:bg-accent",
-                value === 'global' && "bg-accent"
-              )}
-              onClick={() => handleSelectDepartment('global')}
-            >
-              <Globe className="w-4 h-4 text-muted-foreground" />
-              <span className="text-sm">Global (todos podem usar)</span>
+        <DropdownMenuSeparator />
+
+        <div className="max-h-80 overflow-y-auto">
+          {/* Global option */}
+          <DropdownMenuItem
+            className="flex items-center gap-2 cursor-pointer"
+            onClick={() => handleSelect('global')}
+          >
+            <Globe className="w-4 h-4 text-muted-foreground" />
+            <span className="flex-1">Global (todos podem usar)</span>
+            {value === 'global' && <Check className="w-4 h-4 text-primary" />}
+          </DropdownMenuItem>
+
+          {filteredConnections.length > 0 && <DropdownMenuSeparator />}
+
+          {isLoading ? (
+            <div className="py-4 text-center">
+              <span className="text-sm text-muted-foreground">Carregando...</span>
             </div>
-
-            {/* Separator */}
-            {filteredConnections.length > 0 && (
-              <div className="my-1 border-t border-border" />
-            )}
-
-            {/* Connections with hover for departments */}
-            {filteredConnections.map((connection) => (
-              <div 
-                key={connection.id} 
-                className="relative"
-                onMouseEnter={() => handleMouseEnterConnection(connection.id)}
-                onMouseLeave={handleMouseLeaveConnection}
-              >
-                <div
-                  className={cn(
-                    "flex items-center justify-between px-3 py-2 rounded-md cursor-pointer transition-colors",
-                    "hover:bg-accent",
-                    hoveredConnectionId === connection.id && "bg-accent",
-                    connection.departments.some(d => d.id === value) && "bg-accent/50"
-                  )}
-                >
-                  <div className="flex items-center gap-2 flex-1 min-w-0">
-                    <Link className="w-4 h-4 text-muted-foreground shrink-0" />
-                    <span className="text-sm truncate">{connection.name}</span>
-                    <span className="text-xs text-muted-foreground shrink-0">
-                      ({connection.departments.length})
-                    </span>
-                  </div>
-                  <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
-                </div>
-
-                {/* Submenu - departments with bridge area */}
-                {hoveredConnectionId === connection.id && connection.departments.length > 0 && (
-                  <div 
-                    className="absolute left-full top-0 z-50 pl-1"
-                    onMouseEnter={handleMouseEnterSubmenu}
-                    onMouseLeave={handleMouseLeaveSubmenu}
-                  >
-                    <div className="bg-popover border border-border rounded-md shadow-md min-w-[200px]">
-                      <div className="p-2 border-b border-border">
-                        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                          Departamentos
-                        </p>
-                      </div>
-                      <ScrollArea className="max-h-48">
-                        <div className="p-1">
-                          {connection.departments.map((dept) => (
-                            <div
-                              key={dept.id}
-                              className={cn(
-                                "flex items-center gap-2 px-3 py-2 rounded-md cursor-pointer transition-colors",
-                                "hover:bg-accent",
-                                value === dept.id && "bg-accent"
-                              )}
-                              onClick={() => handleSelectDepartment(dept.id)}
-                            >
-                              <div 
-                                className="w-3 h-3 rounded-full shrink-0"
-                                style={{ backgroundColor: dept.color || '#6366F1' }}
-                              />
-                              <span className="text-sm truncate">{dept.name}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </ScrollArea>
-                    </div>
-                  </div>
-                )}
-              </div>
-            ))}
-
-            {isLoading && (
-              <div className="py-4 text-center">
-                <span className="text-sm text-muted-foreground">Carregando...</span>
-              </div>
-            )}
-
-            {!isLoading && filteredConnections.length === 0 && searchQuery && (
-              <div className="py-4 text-center">
-                <span className="text-sm text-muted-foreground">Nenhum resultado encontrado</span>
-              </div>
-            )}
-          </div>
-        </ScrollArea>
-      </PopoverContent>
-    </Popover>
+          ) : filteredConnections.length === 0 && searchQuery ? (
+            <div className="py-4 text-center">
+              <span className="text-sm text-muted-foreground">Nenhum resultado encontrado</span>
+            </div>
+          ) : (
+            filteredConnections.map((connection) => (
+              <DropdownMenuSub key={connection.id}>
+                <DropdownMenuSubTrigger className="flex items-center gap-2 cursor-pointer">
+                  <Link className="w-4 h-4 text-muted-foreground shrink-0" />
+                  <span className="flex-1 truncate">{connection.name}</span>
+                  <span className="text-xs text-muted-foreground shrink-0">
+                    ({connection.departments.length})
+                  </span>
+                </DropdownMenuSubTrigger>
+                <DropdownMenuSubContent className="min-w-[200px]">
+                  {connection.departments.map((dept) => {
+                    const isSelected = value === dept.id;
+                    return (
+                      <DropdownMenuItem
+                        key={dept.id}
+                        className="flex items-center gap-2 cursor-pointer"
+                        onClick={() => handleSelect(dept.id)}
+                      >
+                        <div 
+                          className="w-3 h-3 rounded-full shrink-0"
+                          style={{ backgroundColor: dept.color || '#6366F1' }}
+                        />
+                        <span className="flex-1 truncate">{dept.name}</span>
+                        {isSelected && <Check className="w-4 h-4 text-primary" />}
+                      </DropdownMenuItem>
+                    );
+                  })}
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
+            ))
+          )}
+        </div>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

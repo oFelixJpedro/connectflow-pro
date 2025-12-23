@@ -1,20 +1,23 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
-import { ChevronRight, ChevronsUpDown, X, Building2, Search } from 'lucide-react';
+import { useState, useEffect, useMemo } from 'react';
+import { ChevronDown, X, Building2, Search } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Label } from '@/components/ui/label';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
 import { Input } from '@/components/ui/input';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { ALL_CONNECTIONS_ID } from '@/components/inbox/ConnectionSelector';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSub,
+  DropdownMenuSubTrigger,
+  DropdownMenuSubContent,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 
 interface Department {
   id: string;
@@ -41,7 +44,6 @@ interface DepartmentHierarchySelectorProps {
   className?: string;
 }
 
-// Convert hex color to pastel version
 function toPastelColor(hexColor: string): { background: string; text: string } {
   const hex = hexColor.replace('#', '');
   const r = parseInt(hex.substr(0, 2), 16) || 128;
@@ -70,14 +72,10 @@ export function DepartmentHierarchySelector({
   const [searchQuery, setSearchQuery] = useState('');
   const [connectionsWithDepts, setConnectionsWithDepts] = useState<ConnectionWithDepartments[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [hoveredConnectionId, setHoveredConnectionId] = useState<string | null>(null);
-  
-  const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const isAllConnections = selectedConnectionId === ALL_CONNECTIONS_ID;
   const isAdminOrOwner = userRole?.role === 'owner' || userRole?.role === 'admin';
 
-  // Load connections and departments
   useEffect(() => {
     async function loadData() {
       if (!profile?.company_id) return;
@@ -201,15 +199,6 @@ export function DepartmentHierarchySelector({
     loadData();
   }, [selectedConnectionId, profile?.company_id, profile?.id, isAllConnections, isAdminOrOwner]);
 
-  // Cleanup timeout on unmount
-  useEffect(() => {
-    return () => {
-      if (hoverTimeoutRef.current) {
-        clearTimeout(hoverTimeoutRef.current);
-      }
-    };
-  }, []);
-
   const allDepartments = useMemo(() => 
     connectionsWithDepts.flatMap(c => c.departments),
     [connectionsWithDepts]
@@ -223,13 +212,20 @@ export function DepartmentHierarchySelector({
   const filteredConnections = useMemo(() => {
     if (!searchQuery) return connectionsWithDepts;
     const query = searchQuery.toLowerCase();
-    return connectionsWithDepts.filter(c => 
-      c.name.toLowerCase().includes(query) ||
-      c.departments.some(d => d.name.toLowerCase().includes(query))
-    );
+    return connectionsWithDepts
+      .map(c => ({
+        ...c,
+        departments: c.departments.filter(d => d.name.toLowerCase().includes(query)),
+      }))
+      .filter(c => 
+        c.name.toLowerCase().includes(query) ||
+        c.departments.length > 0
+      );
   }, [connectionsWithDepts, searchQuery]);
 
-  const handleDepartmentToggle = (departmentId: string) => {
+  const handleDepartmentToggle = (departmentId: string, e?: React.MouseEvent) => {
+    e?.preventDefault();
+    e?.stopPropagation();
     if (selectedDepartmentIds.includes(departmentId)) {
       onChange(selectedDepartmentIds.filter(id => id !== departmentId));
     } else {
@@ -237,17 +233,20 @@ export function DepartmentHierarchySelector({
     }
   };
 
-  const handleSelectAllConnection = (connectionId: string, checked: boolean) => {
+  const handleSelectAllConnection = (connectionId: string, e?: React.MouseEvent) => {
+    e?.preventDefault();
+    e?.stopPropagation();
     const connection = connectionsWithDepts.find(c => c.id === connectionId);
     if (!connection) return;
 
     const connectionDeptIds = connection.departments.map(d => d.id);
+    const allSelected = connection.departments.every(d => selectedDepartmentIds.includes(d.id));
     
-    if (checked) {
+    if (allSelected) {
+      onChange(selectedDepartmentIds.filter(id => !connectionDeptIds.includes(id)));
+    } else {
       const newIds = [...new Set([...selectedDepartmentIds, ...connectionDeptIds])];
       onChange(newIds);
-    } else {
-      onChange(selectedDepartmentIds.filter(id => !connectionDeptIds.includes(id)));
     }
   };
 
@@ -269,33 +268,6 @@ export function DepartmentHierarchySelector({
     onChange(selectedDepartmentIds.filter(id => id !== departmentId));
   };
 
-  const handleMouseEnterConnection = (connectionId: string) => {
-    if (hoverTimeoutRef.current) {
-      clearTimeout(hoverTimeoutRef.current);
-      hoverTimeoutRef.current = null;
-    }
-    setHoveredConnectionId(connectionId);
-  };
-
-  const handleMouseLeaveConnection = () => {
-    hoverTimeoutRef.current = setTimeout(() => {
-      setHoveredConnectionId(null);
-    }, 150);
-  };
-
-  const handleMouseEnterSubmenu = () => {
-    if (hoverTimeoutRef.current) {
-      clearTimeout(hoverTimeoutRef.current);
-      hoverTimeoutRef.current = null;
-    }
-  };
-
-  const handleMouseLeaveSubmenu = () => {
-    hoverTimeoutRef.current = setTimeout(() => {
-      setHoveredConnectionId(null);
-    }, 150);
-  };
-
   const hasDepartments = allDepartments.length > 0;
 
   if (!hasDepartments && !isLoading) {
@@ -304,12 +276,10 @@ export function DepartmentHierarchySelector({
 
   return (
     <div className={cn("space-y-2", className)}>
-      <Popover open={open} onOpenChange={setOpen}>
-        <PopoverTrigger asChild>
+      <DropdownMenu open={open} onOpenChange={setOpen}>
+        <DropdownMenuTrigger asChild>
           <Button
             variant="outline"
-            role="combobox"
-            aria-expanded={open}
             disabled={disabled || isLoading}
             className={cn(
               'w-full justify-between font-normal h-9',
@@ -324,16 +294,12 @@ export function DepartmentHierarchySelector({
                 ? selectedDepartments[0]?.name
                 : `${selectedDepartmentIds.length} departamentos`}
             </span>
-            <ChevronsUpDown className="h-4 w-4 shrink-0 opacity-50" />
+            <ChevronDown className="h-4 w-4 shrink-0 opacity-50" />
           </Button>
-        </PopoverTrigger>
-        <PopoverContent 
-          className="w-80 p-0 bg-popover" 
-          align="start"
-          sideOffset={4}
-        >
+        </DropdownMenuTrigger>
+        <DropdownMenuContent className="w-80" align="start">
           {/* Search */}
-          <div className="p-2 border-b border-border">
+          <div className="p-2">
             <div className="relative">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input
@@ -341,118 +307,97 @@ export function DepartmentHierarchySelector({
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="h-8 pl-8"
+                onClick={(e) => e.stopPropagation()}
               />
             </div>
           </div>
 
-          <ScrollArea className="max-h-64">
-            <div className="p-2 space-y-1">
-              {filteredConnections.length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-4">
-                  Nenhuma conexão encontrada
-                </p>
-              ) : (
-                filteredConnections.map((connection) => (
-                  <div 
-                    key={connection.id}
-                    className="relative"
-                    onMouseEnter={() => handleMouseEnterConnection(connection.id)}
-                    onMouseLeave={handleMouseLeaveConnection}
-                  >
-                    <div
-                      className={cn(
-                        "flex items-center justify-between px-2 py-1.5 rounded-md cursor-pointer transition-colors",
-                        "hover:bg-accent",
-                        hoveredConnectionId === connection.id && "bg-accent"
-                      )}
-                    >
-                      <div className="flex items-center gap-2 flex-1 min-w-0">
-                        <Checkbox
-                          checked={isConnectionFullySelected(connection.id)}
-                          ref={(ref) => {
-                            if (ref && isConnectionPartiallySelected(connection.id)) {
-                              (ref as any).indeterminate = true;
-                            }
-                          }}
-                          onCheckedChange={(checked) => 
-                            handleSelectAllConnection(connection.id, checked as boolean)
-                          }
-                          onClick={(e) => e.stopPropagation()}
-                        />
-                        <span className="text-sm truncate">{connection.name}</span>
-                        {connection.departments.filter(d => selectedDepartmentIds.includes(d.id)).length > 0 && (
-                          <Badge variant="secondary" className="text-xs shrink-0">
-                            {connection.departments.filter(d => selectedDepartmentIds.includes(d.id)).length}
-                          </Badge>
-                        )}
-                      </div>
-                      <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
-                    </div>
+          <DropdownMenuSeparator />
 
-                    {/* Submenu - departments with bridge area */}
-                    {hoveredConnectionId === connection.id && connection.departments.length > 0 && (
-                      <div 
-                        className="absolute left-full top-0 z-50 pl-1"
-                        onMouseEnter={handleMouseEnterSubmenu}
-                        onMouseLeave={handleMouseLeaveSubmenu}
+          <div className="max-h-64 overflow-y-auto">
+            {filteredConnections.length === 0 ? (
+              <div className="py-4 text-center">
+                <span className="text-sm text-muted-foreground">Nenhuma conexão encontrada</span>
+              </div>
+            ) : (
+              filteredConnections.map((connection) => {
+                const fullySelected = isConnectionFullySelected(connection.id);
+                const partiallySelected = isConnectionPartiallySelected(connection.id);
+                const selectedCount = connection.departments.filter(d => selectedDepartmentIds.includes(d.id)).length;
+
+                return (
+                  <DropdownMenuSub key={connection.id}>
+                    <DropdownMenuSubTrigger className="flex items-center gap-2 cursor-pointer">
+                      <Checkbox
+                        checked={fullySelected}
+                        className="pointer-events-none"
+                        {...(partiallySelected ? { "data-state": "indeterminate" } : {})}
+                      />
+                      <span className="flex-1 truncate">{connection.name}</span>
+                      {selectedCount > 0 && (
+                        <Badge variant="secondary" className="text-xs shrink-0">
+                          {selectedCount}
+                        </Badge>
+                      )}
+                    </DropdownMenuSubTrigger>
+                    <DropdownMenuSubContent className="min-w-[220px]">
+                      {/* Select all option */}
+                      <DropdownMenuItem
+                        className="flex items-center gap-2 cursor-pointer"
+                        onClick={(e) => handleSelectAllConnection(connection.id, e)}
                       >
-                      <div className="bg-popover border border-border rounded-md shadow-md min-w-[220px]">
-                        <div className="p-2 border-b border-border">
-                          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                            Departamentos
-                          </p>
+                        <Checkbox checked={fullySelected} className="pointer-events-none" />
+                        <span className="font-medium">Selecionar todos</span>
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      
+                      {connection.departments.length === 0 ? (
+                        <div className="py-2 px-3 text-sm text-muted-foreground">
+                          Nenhum departamento
                         </div>
-                        <ScrollArea className="max-h-48">
-                          <div className="p-2 space-y-1">
-                            {connection.departments.map((dept) => (
-                              <div
-                                key={dept.id}
-                                className="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-accent cursor-pointer"
-                                onClick={() => handleDepartmentToggle(dept.id)}
-                              >
-                                <Checkbox
-                                  checked={selectedDepartmentIds.includes(dept.id)}
-                                  onCheckedChange={() => handleDepartmentToggle(dept.id)}
-                                  onClick={(e) => e.stopPropagation()}
+                      ) : (
+                        connection.departments.map((dept) => {
+                          const isSelected = selectedDepartmentIds.includes(dept.id);
+                          return (
+                            <DropdownMenuItem
+                              key={dept.id}
+                              className="flex items-center gap-2 cursor-pointer"
+                              onClick={(e) => handleDepartmentToggle(dept.id, e)}
+                            >
+                              <Checkbox checked={isSelected} className="pointer-events-none" />
+                              {dept.color && (
+                                <span
+                                  className="w-2.5 h-2.5 rounded-full shrink-0"
+                                  style={{ backgroundColor: dept.color }}
                                 />
-                                {dept.color && (
-                                  <span
-                                    className="w-2.5 h-2.5 rounded-full shrink-0"
-                                    style={{ backgroundColor: dept.color }}
-                                  />
-                                )}
-                                <Label className="text-sm cursor-pointer truncate">
-                                  {dept.name}
-                                </Label>
-                              </div>
-                            ))}
-                          </div>
-                        </ScrollArea>
-                      </div>
-                      </div>
-                    )}
-                  </div>
-                ))
-              )}
-            </div>
-          </ScrollArea>
+                              )}
+                              <span className="flex-1 truncate">{dept.name}</span>
+                            </DropdownMenuItem>
+                          );
+                        })
+                      )}
+                    </DropdownMenuSubContent>
+                  </DropdownMenuSub>
+                );
+              })
+            )}
+          </div>
 
           {/* Clear button */}
           {selectedDepartmentIds.length > 0 && (
-            <div className="p-2 border-t border-border">
-              <Button
-                variant="ghost"
-                size="sm"
-                className="w-full text-muted-foreground"
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                className="flex items-center justify-center gap-1 text-muted-foreground cursor-pointer"
                 onClick={() => onChange([])}
               >
-                <X className="w-4 h-4 mr-1" />
+                <X className="w-4 h-4" />
                 Limpar seleção
-              </Button>
-            </div>
+              </DropdownMenuItem>
+            </>
           )}
-        </PopoverContent>
-      </Popover>
+        </DropdownMenuContent>
+      </DropdownMenu>
 
       {/* Selected badges with pastel colors */}
       {selectedDepartments.length > 0 && (
@@ -464,18 +409,23 @@ export function DepartmentHierarchySelector({
                 key={dept.id}
                 variant="secondary"
                 className="text-xs px-2 py-0.5 gap-1"
-                style={pastelStyle ? { backgroundColor: pastelStyle.background, color: pastelStyle.text } : undefined}
+                style={pastelStyle ? {
+                  backgroundColor: pastelStyle.background,
+                  color: pastelStyle.text,
+                } : undefined}
               >
                 {dept.name}
-                <X
-                  className="h-3 w-3 cursor-pointer hover:opacity-70"
+                <button
                   onClick={(e) => handleRemoveDepartment(dept.id, e)}
-                />
+                  className="ml-0.5 hover:opacity-70"
+                >
+                  <X className="h-3 w-3" />
+                </button>
               </Badge>
             );
           })}
           {selectedDepartments.length > 3 && (
-            <Badge variant="outline" className="text-xs px-2 py-0.5">
+            <Badge variant="secondary" className="text-xs">
               +{selectedDepartments.length - 3}
             </Badge>
           )}
