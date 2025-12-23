@@ -211,6 +211,7 @@ export function useCommercialData(filter?: CommercialFilter) {
   const [lastUpdated, setLastUpdated] = useState(new Date());
   const [evaluating, setEvaluating] = useState(false);
   const [insightsLoading, setInsightsLoading] = useState(false);
+  const [refetchTrigger, setRefetchTrigger] = useState(0);
   
   // Async job state
   const [insightsJobId, setInsightsJobId] = useState<string | null>(null);
@@ -1483,13 +1484,14 @@ export function useCommercialData(filter?: CommercialFilter) {
     fetchData();
     // IMPORTANT: aggregatedInsights removed from dependencies to prevent race condition
     // Using aggregatedInsightsRef.current inside fetchData to access the latest value
-  }, [profile?.company_id, isAdmin, filter?.type, filter?.connectionId, filter?.departmentId, filter?.startDate, filter?.endDate, hasActiveFilter, hasActiveFilterForInsights, fetchCompanyLiveMetrics, fetchFilteredInsights, startInsightsJob]);
+  }, [profile?.company_id, isAdmin, filter?.type, filter?.connectionId, filter?.departmentId, filter?.startDate, filter?.endDate, hasActiveFilter, hasActiveFilterForInsights, fetchCompanyLiveMetrics, fetchFilteredInsights, startInsightsJob, refetchTrigger]);
 
   // Manual refresh function
   const refreshData = useCallback(() => {
     // Invalidate cache
     insightsCacheRef.current = null;
-    // Trigger refetch by updating lastUpdated which will cause component re-render
+    // Trigger refetch
+    setRefetchTrigger(prev => prev + 1);
     setLastUpdated(new Date());
   }, []);
 
