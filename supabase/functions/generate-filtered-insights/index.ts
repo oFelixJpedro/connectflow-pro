@@ -1,6 +1,7 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { logAIUsage, extractGeminiUsage } from '../_shared/usage-tracker.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -439,6 +440,21 @@ IMPORTANTE:
     const geminiData = await response.json();
     const textContent = geminiData.candidates?.[0]?.content?.parts?.[0]?.text;
     
+    // Log AI usage for batch analysis
+    if (supabase && companyId) {
+      const usage = extractGeminiUsage(geminiData);
+      await logAIUsage(
+        supabase,
+        companyId,
+        'generate-filtered-insights-batch',
+        'gemini-3-flash-preview',
+        usage.inputTokens,
+        usage.outputTokens,
+        0,
+        { batchIndex, conversationCount: batch.length }
+      );
+    }
+    
     if (!textContent) {
       console.error(`[Batch ${batchIndex}] No content in response`);
       return { ...defaultResult, mediaStats };
@@ -503,7 +519,9 @@ async function consolidateBatchResults(
   batchResults: BatchAnalysisResult[],
   overallMetrics: { criteriaScores: CriteriaScores; totalEvaluations: number; avgScore: number },
   filterDescription: string | undefined,
-  geminiApiKey: string
+  geminiApiKey: string,
+  supabase?: any,
+  companyId?: string
 ): Promise<FilteredInsightsResult> {
   console.log(`[Consolidate] Consolidating ${batchResults.length} batch results`);
   
@@ -636,6 +654,21 @@ IMPORTANTE:
     
     const geminiData = await response.json();
     const textContent = geminiData.candidates?.[0]?.content?.parts?.[0]?.text;
+    
+    // Log AI usage for consolidation
+    if (supabase && companyId) {
+      const usage = extractGeminiUsage(geminiData);
+      await logAIUsage(
+        supabase,
+        companyId,
+        'generate-filtered-insights-consolidate',
+        'gemini-3-flash-preview',
+        usage.inputTokens,
+        usage.outputTokens,
+        0,
+        { batchCount: batchResults.length, totalEvaluations: overallMetrics.totalEvaluations }
+      );
+    }
     
     if (!textContent) {
       console.error('[Consolidate] No content in response');
@@ -794,7 +827,9 @@ serve(async (req) => {
         batchResults,
         { criteriaScores, totalEvaluations, avgScore },
         filterDescription,
-        geminiApiKey
+        geminiApiKey,
+        supabase,
+        companyId
       );
       
       console.log(`[generate-filtered-insights] Completed with ${insights.mediaStats?.total || 0} medias analyzed`);
@@ -884,6 +919,21 @@ IMPORTANTE: Seja conciso. Cada item deve ter no máximo 100 caracteres. Responda
 
     const geminiData = await response.json();
     const textContent = geminiData.candidates?.[0]?.content?.parts?.[0]?.text;
+
+    // Log AI usage for legacy path
+    if (companyId) {
+      const usage = extractGeminiUsage(geminiData);
+      await logAIUsage(
+        supabase,
+        companyId,
+        'generate-filtered-insights-legacy',
+        'gemini-3-flash-preview',
+        usage.inputTokens,
+        usage.outputTokens,
+        0,
+        { evaluationCount: totalEvaluations }
+      );
+    }
 
     if (!textContent) {
       throw new Error('No content in Gemini response');
