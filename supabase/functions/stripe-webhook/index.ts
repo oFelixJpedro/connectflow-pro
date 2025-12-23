@@ -148,6 +148,10 @@ async function handleCheckoutCompleted(
   const updateData = buildCompanyUpdateData(subscription);
   updateData.stripe_customer_id = session.customer as string;
   updateData.stripe_subscription_id = subscriptionId;
+  
+  // Invalidate subscription cache so next check gets fresh data
+  updateData.subscription_cache = null;
+  updateData.subscription_cache_updated_at = null;
 
   const { error: updateError } = await supabase
     .from("companies")
@@ -157,7 +161,7 @@ async function handleCheckoutCompleted(
   if (updateError) {
     logStep("Error updating company", { error: updateError.message });
   } else {
-    logStep("Company updated successfully", { companyId, updateData });
+    logStep("Company updated successfully (cache invalidated)", { companyId, updateData });
   }
 }
 
@@ -217,6 +221,10 @@ async function handleSubscriptionUpdated(
   });
 
   const updateData = buildCompanyUpdateData(fullSubscription);
+  
+  // Invalidate subscription cache
+  updateData.subscription_cache = null;
+  updateData.subscription_cache_updated_at = null;
 
   const { error: updateError } = await supabase
     .from("companies")
@@ -226,7 +234,7 @@ async function handleSubscriptionUpdated(
   if (updateError) {
     logStep("Error updating company", { error: updateError.message });
   } else {
-    logStep("Subscription updated for company", { companyId, status: updateData.subscription_status });
+    logStep("Subscription updated for company (cache invalidated)", { companyId, status: updateData.subscription_status });
   }
 }
 
@@ -256,13 +264,16 @@ async function handleSubscriptionDeleted(
       max_users: 1,
       max_ai_agents: 0,
       commercial_manager_enabled: false,
+      // Invalidate cache
+      subscription_cache: null,
+      subscription_cache_updated_at: null,
     })
     .eq("id", company.id);
 
   if (updateError) {
     logStep("Error updating company on cancellation", { error: updateError.message });
   } else {
-    logStep("Subscription cancelled for company", { companyId: company.id });
+    logStep("Subscription cancelled for company (cache invalidated)", { companyId: company.id });
   }
 }
 
