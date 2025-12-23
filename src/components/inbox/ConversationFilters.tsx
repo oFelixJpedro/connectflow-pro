@@ -12,6 +12,7 @@ import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import { MultiSelectDropdown } from '@/components/ui/multi-select-dropdown';
 import { DepartmentHierarchySelector } from '@/components/inbox/DepartmentHierarchySelector';
+import { TagHierarchySelector } from '@/components/inbox/TagHierarchySelector';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { ALL_CONNECTIONS_ID } from '@/components/inbox/ConnectionSelector';
@@ -22,11 +23,6 @@ interface Agent {
   full_name: string;
 }
 
-interface Tag {
-  id: string;
-  name: string;
-  color: string;
-}
 
 interface KanbanColumn {
   id: string;
@@ -61,7 +57,6 @@ export function ConversationFiltersComponent({
   const { userRole, profile } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
   const [agents, setAgents] = useState<Agent[]>([]);
-  const [tags, setTags] = useState<Tag[]>([]);
   const [kanbanColumns, setKanbanColumns] = useState<KanbanColumn[]>([]);
   const [localFilters, setLocalFilters] = useState<FiltersType>(filters);
 
@@ -93,24 +88,6 @@ export function ConversationFiltersComponent({
     loadAgents();
   }, [isAdminOrOwner]);
 
-  // Load tags
-  useEffect(() => {
-    async function loadTags() {
-      const { data, error } = await supabase
-        .from('tags')
-        .select('id, name, color')
-        .order('name');
-
-      if (error) {
-        console.error('[ConversationFilters] Error loading tags:', error);
-        return;
-      }
-
-      setTags(data || []);
-    }
-
-    loadTags();
-  }, []);
 
   // Load kanban columns for the connection(s)
   useEffect(() => {
@@ -252,7 +229,6 @@ export function ConversationFiltersComponent({
 
   // Convert options for dropdowns
   const agentOptions = agents.map(a => ({ value: a.id, label: a.full_name }));
-  const tagOptions = tags.map(t => ({ value: t.id, label: t.name, color: t.color }));
   const kanbanOptions = kanbanColumns.map(k => ({ value: k.id, label: k.name, color: k.color }));
 
   return (
@@ -324,25 +300,21 @@ export function ConversationFiltersComponent({
             </div>
             <Separator />
 
-            {/* Tags Filter - Multi-select */}
-            {tags.length > 0 && (
-              <>
-                <div className="space-y-2">
-                  <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                    Tags
-                  </Label>
-                  <MultiSelectDropdown
-                    options={tagOptions}
-                    values={localFilters.tags || []}
-                    onChange={(values) => setLocalFilters(prev => ({ ...prev, tags: values.length > 0 ? values : undefined }))}
-                    placeholder="Todas as tags"
-                    searchPlaceholder="Buscar tags..."
-                    emptyMessage="Nenhuma tag encontrada"
-                  />
-                </div>
-                <Separator />
-              </>
-            )}
+            {/* Tags Filter - Hierarchical selector */}
+            <div className="space-y-2">
+              <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                Tags
+              </Label>
+              <TagHierarchySelector
+                selectedConnectionId={connectionId}
+                selectedTagIds={localFilters.tags || []}
+                onChange={(ids) => setLocalFilters(prev => ({ 
+                  ...prev, 
+                  tags: ids.length > 0 ? ids : undefined 
+                }))}
+              />
+            </div>
+            <Separator />
 
             {/* Kanban Funnel Stage Filter - Multi-select */}
             {kanbanColumns.length > 0 && (
