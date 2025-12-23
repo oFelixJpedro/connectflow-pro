@@ -46,8 +46,8 @@ export interface Department {
 }
 
 export interface ContactFilters {
-  connectionId: string;
-  departmentId: string;
+  connectionIds: string[];
+  departmentIds: string[];
 }
 
 interface ConnectionUserAccess {
@@ -71,12 +71,23 @@ export function useContactsData() {
     const saved = localStorage.getItem('contactsFilters');
     if (saved) {
       try {
-        return JSON.parse(saved);
+        const parsed = JSON.parse(saved);
+        // Migrate from old format
+        if (typeof parsed.connectionId === 'string') {
+          return {
+            connectionIds: parsed.connectionId === 'all' ? [] : [parsed.connectionId],
+            departmentIds: parsed.departmentId === 'all' ? [] : [parsed.departmentId],
+          };
+        }
+        return {
+          connectionIds: parsed.connectionIds || [],
+          departmentIds: parsed.departmentIds || [],
+        };
       } catch {
-        return { connectionId: 'all', departmentId: 'all' };
+        return { connectionIds: [], departmentIds: [] };
       }
     }
-    return { connectionId: 'all', departmentId: 'all' };
+    return { connectionIds: [], departmentIds: [] };
   });
   const [stats, setStats] = useState({
     total: 0,
@@ -201,12 +212,12 @@ export function useContactsData() {
             // Apply additional filters
             let filteredConvData = convData || [];
             
-            if (filters.connectionId !== 'all') {
-              filteredConvData = filteredConvData.filter(c => c.whatsapp_connection_id === filters.connectionId);
+            if (filters.connectionIds.length > 0) {
+              filteredConvData = filteredConvData.filter(c => filters.connectionIds.includes(c.whatsapp_connection_id || ''));
             }
             
-            if (filters.departmentId !== 'all') {
-              filteredConvData = filteredConvData.filter(c => c.department_id === filters.departmentId);
+            if (filters.departmentIds.length > 0) {
+              filteredConvData = filteredConvData.filter(c => filters.departmentIds.includes(c.department_id || ''));
             }
 
             // Apply department access restrictions
@@ -260,12 +271,12 @@ export function useContactsData() {
           return;
         }
 
-        if (filters.connectionId !== 'all') {
-          conversationQuery = conversationQuery.eq('whatsapp_connection_id', filters.connectionId);
+        if (filters.connectionIds.length > 0) {
+          conversationQuery = conversationQuery.in('whatsapp_connection_id', filters.connectionIds);
         }
 
-        if (filters.departmentId !== 'all') {
-          conversationQuery = conversationQuery.eq('department_id', filters.departmentId);
+        if (filters.departmentIds.length > 0) {
+          conversationQuery = conversationQuery.in('department_id', filters.departmentIds);
         }
 
         const { data: convData, error: convError } = await conversationQuery;
@@ -307,7 +318,7 @@ export function useContactsData() {
       }
 
       // If filtering by connection or department, we need to get contacts that have conversations
-      if (filters.connectionId !== 'all' || filters.departmentId !== 'all' || (!isAdminOrOwner && accessibleConnectionIds)) {
+      if (filters.connectionIds.length > 0 || filters.departmentIds.length > 0 || (!isAdminOrOwner && accessibleConnectionIds)) {
         // Get contact IDs that match the filter criteria via conversations
         let conversationQuery = supabase
           .from('conversations')
@@ -323,12 +334,12 @@ export function useContactsData() {
           return;
         }
 
-        if (filters.connectionId !== 'all') {
-          conversationQuery = conversationQuery.eq('whatsapp_connection_id', filters.connectionId);
+        if (filters.connectionIds.length > 0) {
+          conversationQuery = conversationQuery.in('whatsapp_connection_id', filters.connectionIds);
         }
 
-        if (filters.departmentId !== 'all') {
-          conversationQuery = conversationQuery.eq('department_id', filters.departmentId);
+        if (filters.departmentIds.length > 0) {
+          conversationQuery = conversationQuery.in('department_id', filters.departmentIds);
         }
 
         const { data: convData, error: convError } = await conversationQuery;
@@ -533,7 +544,7 @@ export function useContactsData() {
     if (profile?.company_id) {
       loadContacts();
     }
-  }, [filters.connectionId, filters.departmentId, profile?.company_id]);
+  }, [filters.connectionIds, filters.departmentIds, profile?.company_id]);
 
   const createContact = async (data: ContactFormData): Promise<Contact | null> => {
     if (!profile?.company_id) return null;

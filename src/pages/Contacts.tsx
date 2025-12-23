@@ -49,18 +49,12 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import { ContactFilterSelector } from '@/components/contacts/ContactFilterSelector';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { format } from 'date-fns';
@@ -434,93 +428,20 @@ export default function Contacts() {
         </div>
 
         {/* Connection and Department Filters */}
-        <div className="flex items-center gap-4 flex-wrap">
-          {/* Connection Filter */}
+        <div className="flex items-start gap-4 flex-wrap">
           <div className="flex flex-col gap-1">
             <label className="text-sm font-medium text-muted-foreground">
-              Filtrar por Conexão:
+              Filtrar contatos:
             </label>
-            <Select
-              value={filters.connectionId}
-              onValueChange={(value) => setFilters({ ...filters, connectionId: value, departmentId: 'all' })}
-            >
-              <SelectTrigger className="w-[220px]">
-                <SelectValue placeholder="Todas as Conexões" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">
-                  <div className="flex items-center gap-2">
-                    <Smartphone className="w-4 h-4" />
-                    Todas as Conexões
-                  </div>
-                </SelectItem>
-                {connections.map((conn) => (
-                  <SelectItem key={conn.id} value={conn.id}>
-                    {conn.name || conn.phone_number}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <ContactFilterSelector
+              connections={connections}
+              departments={departments}
+              selectedConnectionIds={filters.connectionIds}
+              selectedDepartmentIds={filters.departmentIds}
+              onConnectionChange={(ids) => setFilters(prev => ({ ...prev, connectionIds: ids }))}
+              onDepartmentChange={(ids) => setFilters(prev => ({ ...prev, departmentIds: ids }))}
+            />
           </div>
-
-          {/* Department Filter */}
-          <div className="flex flex-col gap-1">
-            <label className="text-sm font-medium text-muted-foreground">
-              Filtrar por Departamento:
-            </label>
-            <Select
-              value={filters.departmentId}
-              onValueChange={(value) => setFilters({ ...filters, departmentId: value })}
-            >
-              <SelectTrigger className="w-[220px]">
-                <SelectValue placeholder="Todos os Departamentos" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">
-                  <div className="flex items-center gap-2">
-                    <Users className="w-4 h-4" />
-                    Todos os Departamentos
-                  </div>
-                </SelectItem>
-                {(filters.connectionId === 'all' 
-                  ? departments 
-                  : departments.filter(d => d.whatsapp_connection_id === filters.connectionId)
-                ).map((dept) => (
-                  <SelectItem key={dept.id} value={dept.id}>
-                    {dept.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* Active Filters Badges */}
-          {(filters.connectionId !== 'all' || filters.departmentId !== 'all') && (
-            <div className="flex items-center gap-2 ml-auto">
-              <span className="text-sm text-muted-foreground">Filtros ativos:</span>
-              {filters.connectionId !== 'all' && (
-                <Badge variant="secondary" className="bg-primary/10 text-primary border-primary/20">
-                  <Smartphone className="w-3 h-3 mr-1" />
-                  {connections.find(c => c.id === filters.connectionId)?.name || 'Conexão'}
-                </Badge>
-              )}
-              {filters.departmentId !== 'all' && (
-                <Badge variant="secondary" className="bg-violet-100 text-violet-700 border-violet-200">
-                  <Users className="w-3 h-3 mr-1" />
-                  {departments.find(d => d.id === filters.departmentId)?.name || 'Departamento'}
-                </Badge>
-              )}
-              <Button
-                variant="ghost"
-                size="sm"
-                className="text-destructive hover:text-destructive"
-                onClick={() => setFilters({ connectionId: 'all', departmentId: 'all' })}
-              >
-                <X className="w-4 h-4 mr-1" />
-                Limpar
-              </Button>
-            </div>
-          )}
         </div>
       </div>
 
