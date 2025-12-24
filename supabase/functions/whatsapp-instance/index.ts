@@ -270,16 +270,23 @@ Deno.serve(async (req) => {
       console.log('🔍 [STATUS] ========== VERIFICANDO STATUS ==========')
       console.log('🔍 [STATUS] Instance name:', instanceName)
       
-      // Primeiro buscar instance_token do banco
-      const { data: connection } = await supabaseClient
+      // Usar service role para atualizar banco de forma confiável
+      const serviceRoleClient = createClient(
+        Deno.env.get('SUPABASE_URL') ?? '',
+        Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+      )
+      
+      // Primeiro buscar dados da conexão
+      const { data: connection } = await serviceRoleClient
         .from('whatsapp_connections')
-        .select('instance_token')
+        .select('instance_token, id, status, phone_number, company_id')
         .eq('session_id', instanceName)
         .maybeSingle()
       
       const tokenToUse = connection?.instance_token || UAZAPI_API_KEY
       console.log('🔍 [STATUS] Token source:', connection?.instance_token ? 'instance_token from DB' : 'UAZAPI_API_KEY')
       console.log('🔍 [STATUS] Token (first 8 chars):', tokenToUse?.substring(0, 8))
+      console.log('🔍 [STATUS] Current DB status:', connection?.status)
 
       // Tentar com instance name na query string
       const statusUrl = `${UAZAPI_BASE_URL}/instance/status?name=${encodeURIComponent(instanceName)}`
@@ -374,6 +381,90 @@ Deno.serve(async (req) => {
         phoneNumber = data.instance?.owner || data.phone || data.number
         console.log('✅ [STATUS] DETECTADO COMO CONECTADO!')
         console.log('✅ [STATUS] phoneNumber extraído:', phoneNumber)
+        
+        // ═══════════════════════════════════════════════════════════════
+        // 🔄 AUTO-UPDATE: Atualizar banco automaticamente quando conectar
+        // ═══════════════════════════════════════════════════════════════
+        if (connection && connection.status !== 'connected' && phoneNumber) {
+          const normalizedPhone = phoneNumber.replace(/\D/g, '')
+          console.log('📝 [STATUS] Atualizando banco automaticamente...')
+          console.log('📝 [STATUS] normalized phone:', normalizedPhone)
+          
+          const { error: updateError } = await serviceRoleClient
+            .from('whatsapp_connections')
+            .update({
+              status: 'connected',
+              phone_number: phoneNumber,
+              original_phone_normalized: normalizedPhone,
+              last_connected_at: new Date().toISOString(),
+              qr_code: null
+            })
+            .eq('id', connection.id)
+          
+          if (updateError) {
+            console.error('❌ [STATUS] Erro ao atualizar banco:', updateError)
+          } else {
+            console.log('✅ [STATUS] Banco atualizado com sucesso!')
+            
+            // ═══════════════════════════════════════════════════════════════
+            // 🔄 AUTO-MIGRATE: Migrar conversas de conexão arquivada
+            // ═══════════════════════════════════════════════════════════════
+            if (normalizedPhone && normalizedPhone.length >= 10 && connection.company_id) {
+              console.log('🔍 [AUTO-MIGRATE] Verificando conexão arquivada com mesmo número...')
+              
+              const { data: archivedConnection } = await serviceRoleClient
+                .from('whatsapp_connections')
+                .select('id, name')
+                .eq('company_id', connection.company_id)
+                .eq('original_phone_normalized', normalizedPhone)
+                .not('archived_at', 'is', null)
+                .neq('id', connection.id)
+                .limit(1)
+                .maybeSingle()
+              
+              if (archivedConnection) {
+                console.log('🔄 [AUTO-MIGRATE] Conexão arquivada encontrada:', archivedConnection.name)
+                
+                // Contar conversas
+                const { count: conversationsCount } = await serviceRoleClient
+                  .from('conversations')
+                  .select('*', { count: 'exact', head: true })
+                  .eq('whatsapp_connection_id', archivedConnection.id)
+                
+                // Migrar conversas
+                const { error: migrateError } = await serviceRoleClient
+                  .from('conversations')
+                  .update({ whatsapp_connection_id: connection.id })
+                  .eq('whatsapp_connection_id', archivedConnection.id)
+                
+                if (migrateError) {
+                  console.error('❌ [AUTO-MIGRATE] Erro ao migrar:', migrateError)
+                } else {
+                  console.log('✅ [AUTO-MIGRATE] Migradas', conversationsCount, 'conversas!')
+                  
+                  // Registrar migração
+                  await serviceRoleClient
+                    .from('connection_migrations')
+                    .insert({
+                      company_id: connection.company_id,
+                      source_connection_id: archivedConnection.id,
+                      target_connection_id: connection.id,
+                      migration_type: 'auto_same_number',
+                      migrated_conversations_count: conversationsCount || 0
+                    })
+                  
+                  // Marcar como migrada
+                  await serviceRoleClient
+                    .from('whatsapp_connections')
+                    .update({ archived_reason: 'migrated' })
+                    .eq('id', archivedConnection.id)
+                }
+              } else {
+                console.log('ℹ️ [AUTO-MIGRATE] Nenhuma conexão arquivada com mesmo número')
+              }
+            }
+          }
+        }
       } else if (isConnecting) {
         status = 'connecting'
         console.log('🔄 [STATUS] Status: connecting')
