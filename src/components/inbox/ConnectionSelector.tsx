@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Check, ChevronDown, Wifi, WifiOff, Loader2, Layers } from 'lucide-react';
+import { Check, ChevronDown, Wifi, WifiOff, Loader2, Layers, Archive } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -13,12 +13,15 @@ import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
 
 export const ALL_CONNECTIONS_ID = 'all';
+export const ARCHIVED_CONNECTIONS_ID = 'archived';
 
 export interface WhatsAppConnectionItem {
   id: string;
   name: string;
   phoneNumber: string;
-  status: 'connected' | 'disconnected' | 'qr_ready' | 'connecting' | 'error';
+  status: 'connected' | 'disconnected' | 'qr_ready' | 'connecting' | 'error' | 'archived';
+  archivedAt?: string | null;
+  archivedReason?: string | null;
 }
 
 interface ConnectionSelectorProps {
@@ -52,6 +55,7 @@ export function ConnectionSelector({
   
   const { profile } = useAuth();
   const [connections, setConnections] = useState<WhatsAppConnectionItem[]>([]);
+  const [archivedConnections, setArchivedConnections] = useState<WhatsAppConnectionItem[]>([]);
   const [isLoading, setIsLoading] = useState(!overrideConnections);
   const [isOpen, setIsOpen] = useState(false);
   const [userRole, setUserRole] = useState<string | null>(null);
@@ -115,11 +119,13 @@ export function ConnectionSelector({
 
         // Owner and admin see all connections
         if (role === 'owner' || role === 'admin') {
+          // Active connections
           const { data: connectionsData, error } = await supabase
             .from('whatsapp_connections')
-            .select('id, name, phone_number, status')
+            .select('id, name, phone_number, status, archived_at, archived_reason')
             .eq('company_id', profile.company_id)
             .eq('status', 'connected')
+            .is('archived_at', null)
             .order('name');
 
           if (error) {
@@ -127,6 +133,24 @@ export function ConnectionSelector({
             return;
           }
           data = connectionsData;
+          
+          // Archived connections (for owners/admins only)
+          const { data: archivedData } = await supabase
+            .from('whatsapp_connections')
+            .select('id, name, phone_number, status, archived_at, archived_reason')
+            .eq('company_id', profile.company_id)
+            .not('archived_at', 'is', null)
+            .order('archived_at', { ascending: false });
+          
+          const archivedTransformed: WhatsAppConnectionItem[] = (archivedData || []).map((c: any) => ({
+            id: c.id,
+            name: c.name,
+            phoneNumber: c.phone_number,
+            status: 'archived' as const,
+            archivedAt: c.archived_at,
+            archivedReason: c.archived_reason,
+          }));
+          setArchivedConnections(archivedTransformed);
         } else {
           // Agents and viewers: only show connections where they have explicit access
           const { data: userAssignments, error: assignmentsError } = await supabase
@@ -152,9 +176,10 @@ export function ConnectionSelector({
               .from('whatsapp_connections')
               .select('id, name, phone_number, status')
               .eq('company_id', profile.company_id)
-              .eq('status', 'connected')
-              .in('id', connectionIds)
-              .order('name');
+            .eq('status', 'connected')
+            .is('archived_at', null)
+            .in('id', connectionIds)
+            .order('name');
 
             if (connectionsError) {
               console.error('🔵 ConnectionSelector - ERRO na query:', connectionsError);
@@ -213,10 +238,12 @@ export function ConnectionSelector({
     loadConnections();
   }, [profile?.company_id, profile?.id, onConnectionChange, onNoConnections]);
 
-  const selectedConnection = selectedConnectionId === ALL_CONNECTIONS_ID 
+  const selectedConnection = selectedConnectionId === ALL_CONNECTIONS_ID || selectedConnectionId === ARCHIVED_CONNECTIONS_ID
     ? null 
-    : connections.find(c => c.id === selectedConnectionId);
+    : connections.find(c => c.id === selectedConnectionId) || archivedConnections.find(c => c.id === selectedConnectionId);
   const isAllSelected = selectedConnectionId === ALL_CONNECTIONS_ID;
+  const isArchivedSelected = selectedConnectionId === ARCHIVED_CONNECTIONS_ID;
+  const selectedArchivedConnection = archivedConnections.find(c => c.id === selectedConnectionId);
 
   console.log('🔵 ConnectionSelector - RENDER', { isLoading, connectionsCount: connections.length, selectedConnection: selectedConnection?.name, isAllSelected });
 
@@ -229,7 +256,7 @@ export function ConnectionSelector({
     );
   }
 
-  if (connections.length === 0) {
+  if (connections.length === 0 && archivedConnections.length === 0) {
     console.log('🔵 ConnectionSelector - Sem conexões disponíveis');
     return (
       <div className="flex items-center gap-2 px-3 py-2 bg-muted/50 rounded-lg border border-border">
@@ -239,8 +266,9 @@ export function ConnectionSelector({
     );
   }
 
-  // Só mostra opção "Todas" se houver mais de 1 conexão
+  // Só mostra opção "Todas" se houver mais de 1 conexão ativa
   const showAllOption = connections.length > 1;
+  const showArchivedOption = archivedConnections.length > 0;
 
   return (
     <DropdownMenu open={isOpen} onOpenChange={setIsOpen}>
@@ -252,18 +280,32 @@ export function ConnectionSelector({
           <div className="flex items-center gap-2 min-w-0">
             {isAllSelected ? (
               <Layers className="w-4 h-4 text-primary shrink-0" />
+            ) : isArchivedSelected ? (
+              <Archive className="w-4 h-4 text-muted-foreground shrink-0" />
+            ) : selectedArchivedConnection ? (
+              <div className="relative">
+                <WifiOff className="w-4 h-4 text-muted-foreground shrink-0" />
+                <div className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-destructive rounded-full" />
+              </div>
             ) : selectedConnection?.status === 'connected' ? (
               <Wifi className="w-4 h-4 text-success shrink-0" />
             ) : (
               <WifiOff className="w-4 h-4 text-muted-foreground shrink-0" />
             )}
             <div className="text-left min-w-0">
-              <p className="text-sm font-medium truncate">
-                {isAllSelected ? 'Todas as conexões' : selectedConnection?.name || 'Selecione uma conexão'}
+              <p className={cn(
+                "text-sm font-medium truncate",
+                selectedArchivedConnection && "line-through text-muted-foreground"
+              )}>
+                {isAllSelected ? 'Todas as conexões' : isArchivedSelected ? 'Desconectadas' : selectedConnection?.name || 'Selecione uma conexão'}
               </p>
               {isAllSelected ? (
                 <p className="text-xs text-muted-foreground truncate">
                   {connections.length} conexões disponíveis
+                </p>
+              ) : isArchivedSelected ? (
+                <p className="text-xs text-muted-foreground truncate">
+                  {archivedConnections.length} conexões arquivadas
                 </p>
               ) : selectedConnection && (
                 <p className="text-xs text-muted-foreground truncate">
@@ -336,6 +378,62 @@ export function ConnectionSelector({
             )}
           </DropdownMenuItem>
         ))}
+        
+        {/* Archived connections section */}
+        {showArchivedOption && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onClick={() => {
+                onConnectionChange(ARCHIVED_CONNECTIONS_ID);
+                localStorage.setItem('selectedConnectionId', ARCHIVED_CONNECTIONS_ID);
+                setIsOpen(false);
+              }}
+              className={cn(
+                'flex items-center gap-3 py-3 px-3 cursor-pointer',
+                isArchivedSelected && 'bg-muted'
+              )}
+            >
+              <Archive className="w-4 h-4 text-muted-foreground shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium truncate text-muted-foreground">Desconectadas</p>
+                <p className="text-xs text-muted-foreground truncate">
+                  {archivedConnections.length} conexões arquivadas
+                </p>
+              </div>
+              {isArchivedSelected && (
+                <Check className="w-4 h-4 text-primary shrink-0" />
+              )}
+            </DropdownMenuItem>
+            {archivedConnections.map((connection) => (
+              <DropdownMenuItem
+                key={connection.id}
+                onClick={() => {
+                  onConnectionChange(connection.id);
+                  localStorage.setItem('selectedConnectionId', connection.id);
+                  setIsOpen(false);
+                }}
+                className={cn(
+                  'flex items-center gap-3 py-3 px-3 cursor-pointer ml-4',
+                  connection.id === selectedConnectionId && 'bg-muted'
+                )}
+              >
+                <div className="relative">
+                  <WifiOff className="w-4 h-4 text-muted-foreground shrink-0" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate line-through text-muted-foreground">{connection.name}</p>
+                  <p className="text-xs text-muted-foreground truncate">
+                    {formatPhoneNumber(connection.phoneNumber)}
+                  </p>
+                </div>
+                {connection.id === selectedConnectionId && (
+                  <Check className="w-4 h-4 text-primary shrink-0" />
+                )}
+              </DropdownMenuItem>
+            ))}
+          </>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );
