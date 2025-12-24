@@ -1367,6 +1367,7 @@ export type Database = {
           created_at: string | null
           department_id: string | null
           id: string
+          is_group: boolean | null
           last_message_at: string | null
           metadata: Json | null
           priority: Database["public"]["Enums"]["conversation_priority"] | null
@@ -1386,6 +1387,7 @@ export type Database = {
           created_at?: string | null
           department_id?: string | null
           id?: string
+          is_group?: boolean | null
           last_message_at?: string | null
           metadata?: Json | null
           priority?: Database["public"]["Enums"]["conversation_priority"] | null
@@ -1405,6 +1407,7 @@ export type Database = {
           created_at?: string | null
           department_id?: string | null
           id?: string
+          is_group?: boolean | null
           last_message_at?: string | null
           metadata?: Json | null
           priority?: Database["public"]["Enums"]["conversation_priority"] | null
