@@ -484,18 +484,20 @@ Deno.serve(async (req) => {
     }
 
     // ========== ACTION: LOGOUT ==========
+    // Desconecta da UAZAPI mas mantém instância (pode reconectar depois)
+    // Atualiza status no banco para 'disconnected'
     if (action === 'logout') {
-      console.log('Disconnecting instance:', instanceName)
+      console.log('🔌 [LOGOUT] Disconnecting instance:', instanceName)
       
       // Buscar instance_token do banco
       const { data: connection } = await supabaseClient
         .from('whatsapp_connections')
-        .select('instance_token')
+        .select('instance_token, id')
         .eq('session_id', instanceName)
         .maybeSingle()
       
       const tokenToUse = connection?.instance_token || UAZAPI_API_KEY
-      console.log('Using token:', connection?.instance_token ? 'instance_token from DB' : 'UAZAPI_API_KEY')
+      console.log('🔌 [LOGOUT] Using token:', connection?.instance_token ? 'instance_token from DB' : 'UAZAPI_API_KEY')
 
       const instanceHeaders = {
         'Accept': 'application/json',
@@ -508,10 +510,10 @@ Deno.serve(async (req) => {
         headers: instanceHeaders
       })
 
-      console.log('Disconnect status:', response.status)
+      console.log('🔌 [LOGOUT] Disconnect status:', response.status)
       
       const responseText = await response.text()
-      console.log('Disconnect response:', responseText)
+      console.log('🔌 [LOGOUT] Disconnect response:', responseText)
 
       let data
       try {
@@ -520,25 +522,46 @@ Deno.serve(async (req) => {
         data = { message: responseText }
       }
 
+      // NOVO: Atualizar status no banco para 'disconnected'
+      if (connection?.id) {
+        console.log('🔌 [LOGOUT] Updating database status to disconnected...')
+        const { error: updateError } = await supabaseClient
+          .from('whatsapp_connections')
+          .update({ 
+            status: 'disconnected',
+            qr_code: null,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', connection.id)
+        
+        if (updateError) {
+          console.error('🔌 [LOGOUT] Failed to update database:', updateError)
+        } else {
+          console.log('🔌 [LOGOUT] ✅ Database updated successfully')
+        }
+      }
+
       return new Response(
         JSON.stringify({ success: true, data }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
 
-    // ========== ACTION: DELETE ==========
-    if (action === 'delete') {
-      console.log('Deleting instance:', instanceName)
+    // ========== ACTION: ARCHIVE ==========
+    // Remove da UAZAPI mas MANTÉM registro no banco (para migração/backup)
+    // Libera slot de conexão
+    if (action === 'archive') {
+      console.log('📦 [ARCHIVE] Archiving instance:', instanceName)
       
       // Buscar instance token do banco
       const { data: connection } = await supabaseClient
         .from('whatsapp_connections')
-        .select('instance_token')
+        .select('instance_token, id')
         .eq('session_id', instanceName)
-        .single()
+        .maybeSingle()
       
       if (connection?.instance_token) {
-        console.log('Found instance token, deleting from UAZAPI...')
+        console.log('📦 [ARCHIVE] Found instance token, deleting from UAZAPI...')
         
         // Deletar na UAZAPI usando instance token
         const instanceHeaders = {
@@ -546,40 +569,116 @@ Deno.serve(async (req) => {
           'token': connection.instance_token
         }
         
-        // URL correta: /instance sem query string
         const deleteResponse = await fetch(`${UAZAPI_BASE_URL}/instance`, {
           method: 'DELETE',
           headers: instanceHeaders
         })
         
-        console.log('Delete response status:', deleteResponse.status)
+        console.log('📦 [ARCHIVE] UAZAPI delete status:', deleteResponse.status)
         
         const deleteText = await deleteResponse.text()
-        console.log('Delete response:', deleteText)
+        console.log('📦 [ARCHIVE] UAZAPI delete response:', deleteText)
       } else {
-        console.log('No instance token found, skipping UAZAPI deletion')
+        console.log('📦 [ARCHIVE] No instance token found, skipping UAZAPI deletion')
       }
       
-      // Sempre deletar do banco (mesmo se falhar na UAZAPI)
+      // ATUALIZAR no banco (NÃO deletar) - preservar histórico
+      if (connection?.id) {
+        console.log('📦 [ARCHIVE] Updating database with archived status...')
+        const { data: updatedConnection, error: updateError } = await supabaseClient
+          .from('whatsapp_connections')
+          .update({ 
+            status: 'disconnected',
+            archived_at: new Date().toISOString(),
+            archived_reason: 'user_archived',
+            active: false,
+            qr_code: null,
+            instance_token: null, // Limpar token já que foi removido da UAZAPI
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', connection.id)
+          .select()
+          .single()
+        
+        if (updateError) {
+          console.error('📦 [ARCHIVE] Failed to update database:', updateError)
+          return new Response(
+            JSON.stringify({ error: 'Failed to archive in database', details: updateError }),
+            { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
+        }
+        
+        console.log('📦 [ARCHIVE] ✅ Instance archived successfully!', updatedConnection)
+        
+        return new Response(
+          JSON.stringify({ 
+            success: true, 
+            message: 'Instance archived',
+            connection: updatedConnection
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      } else {
+        console.error('📦 [ARCHIVE] Connection not found in database')
+        return new Response(
+          JSON.stringify({ error: 'Connection not found' }),
+          { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+    }
+
+    // ========== ACTION: DELETE_PERMANENT ==========
+    // Remove da UAZAPI E deleta registro do banco permanentemente
+    if (action === 'delete_permanent') {
+      console.log('🗑️ [DELETE_PERMANENT] Permanently deleting instance:', instanceName)
+      
+      // Buscar instance token do banco
+      const { data: connection } = await supabaseClient
+        .from('whatsapp_connections')
+        .select('instance_token')
+        .eq('session_id', instanceName)
+        .maybeSingle()
+      
+      if (connection?.instance_token) {
+        console.log('🗑️ [DELETE_PERMANENT] Found instance token, deleting from UAZAPI...')
+        
+        const instanceHeaders = {
+          'Accept': 'application/json',
+          'token': connection.instance_token
+        }
+        
+        const deleteResponse = await fetch(`${UAZAPI_BASE_URL}/instance`, {
+          method: 'DELETE',
+          headers: instanceHeaders
+        })
+        
+        console.log('🗑️ [DELETE_PERMANENT] UAZAPI delete status:', deleteResponse.status)
+        const deleteText = await deleteResponse.text()
+        console.log('🗑️ [DELETE_PERMANENT] UAZAPI delete response:', deleteText)
+      } else {
+        console.log('🗑️ [DELETE_PERMANENT] No instance token found, skipping UAZAPI deletion')
+      }
+      
+      // DELETAR do banco permanentemente
       const { error: deleteError } = await supabaseClient
         .from('whatsapp_connections')
         .delete()
         .eq('session_id', instanceName)
       
       if (deleteError) {
-        console.error('Failed to delete from database:', deleteError)
+        console.error('🗑️ [DELETE_PERMANENT] Failed to delete from database:', deleteError)
         return new Response(
           JSON.stringify({ error: 'Failed to delete from database' }),
           { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         )
       }
       
-      console.log('✅ Instance deleted successfully!')
+      console.log('🗑️ [DELETE_PERMANENT] ✅ Instance permanently deleted!')
       
       return new Response(
         JSON.stringify({ 
           success: true, 
-          message: 'Instance deleted'
+          message: 'Instance permanently deleted'
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
@@ -675,13 +774,13 @@ Deno.serve(async (req) => {
     }
 
     console.error('Invalid action received:', action)
-    console.error('Valid actions are: init, status, logout, delete, update_webhook')
+    console.error('Valid actions are: init, status, logout, archive, delete_permanent, update_webhook')
 
     return new Response(
       JSON.stringify({ 
         error: 'Invalid action',
         received: action,
-        valid: ['init', 'status', 'logout', 'delete', 'update_webhook']
+        valid: ['init', 'status', 'logout', 'archive', 'delete_permanent', 'update_webhook']
       }),
       { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )
