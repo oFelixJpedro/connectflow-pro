@@ -1,5 +1,5 @@
-import { useState, useCallback } from 'react';
-import { X, Download, ImageOff, Loader2, ZoomIn, GripVertical } from 'lucide-react';
+import { useState, useCallback, useEffect } from 'react';
+import { X, Download, ImageOff, Loader2, ZoomIn, GripVertical, Save } from 'lucide-react';
 import {
   Tooltip,
   TooltipContent,
@@ -13,6 +13,7 @@ import {
   DialogClose,
 } from '@/components/ui/dialog';
 import { LinkifyText } from '@/components/ui/linkify-text';
+
 interface ImageMessageProps {
   src: string;
   alt?: string;
@@ -47,6 +48,29 @@ export function ImageMessage({
   const [isLightboxOpen, setIsLightboxOpen] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [dragStartPos, setDragStartPos] = useState<{ x: number; y: number } | null>(null);
+  const [blobUrl, setBlobUrl] = useState<string | null>(null);
+
+  // Cleanup blob URL on unmount
+  useEffect(() => {
+    return () => {
+      if (blobUrl) {
+        URL.revokeObjectURL(blobUrl);
+      }
+    };
+  }, [blobUrl]);
+
+  // Preload image as local Blob to bypass DLP policies
+  const preloadAsBlob = useCallback(async () => {
+    try {
+      const response = await fetch(src, { mode: 'cors' });
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      setBlobUrl(objectUrl);
+    } catch (error) {
+      console.warn('Não foi possível pré-carregar imagem como blob:', error);
+      // Fallback: continue using original URL
+    }
+  }, [src]);
 
   const handleDragStart = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     if (isLoading || hasError) {
@@ -56,17 +80,26 @@ export function ImageMessage({
     
     setIsDragging(true);
     
+    // Use blob URL if available (bypasses DLP), otherwise original
+    const downloadUrl = blobUrl || src;
+    
     // Extract filename from URL or generate one
     const urlParts = src.split('/');
     const urlFileName = urlParts[urlParts.length - 1]?.split('?')[0];
     const fileName = urlFileName || `imagem-${Date.now()}.jpg`;
     
+    // Detect MIME type from extension
+    const mimeType = fileName.match(/\.png$/i) ? 'image/png' 
+                   : fileName.match(/\.gif$/i) ? 'image/gif'
+                   : fileName.match(/\.webp$/i) ? 'image/webp'
+                   : 'image/jpeg';
+    
     // DownloadURL format: MIME:filename:URL (for direct download when dropping)
-    e.dataTransfer.setData('DownloadURL', `image/jpeg:${fileName}:${src}`);
+    e.dataTransfer.setData('DownloadURL', `${mimeType}:${fileName}:${downloadUrl}`);
     
     // Fallbacks for other apps
-    e.dataTransfer.setData('text/uri-list', src);
-    e.dataTransfer.setData('text/plain', src);
+    e.dataTransfer.setData('text/uri-list', downloadUrl);
+    e.dataTransfer.setData('text/plain', downloadUrl);
     
     e.dataTransfer.effectAllowed = 'copy';
     
@@ -75,7 +108,7 @@ export function ImageMessage({
     if (img) {
       e.dataTransfer.setDragImage(img, 50, 50);
     }
-  }, [src, isLoading, hasError]);
+  }, [src, blobUrl, isLoading, hasError]);
 
   const handleDragEnd = useCallback(() => {
     setIsDragging(false);
@@ -108,7 +141,8 @@ export function ImageMessage({
   const handleLoad = useCallback(() => {
     setIsLoading(false);
     setHasError(false);
-  }, []);
+    preloadAsBlob(); // Preload as blob after image loads
+  }, [preloadAsBlob]);
 
   const handleError = useCallback(() => {
     setIsLoading(false);
@@ -117,6 +151,33 @@ export function ImageMessage({
 
   const handleDownload = useCallback(() => {
     window.open(src, '_blank', 'noopener,noreferrer');
+  }, [src]);
+
+  // Quick save: forces download using Blob technique
+  const handleQuickSave = useCallback(async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    
+    try {
+      const response = await fetch(src, { mode: 'cors' });
+      const blob = await response.blob();
+      
+      // Extract filename
+      const urlParts = src.split('/');
+      const urlFileName = urlParts[urlParts.length - 1]?.split('?')[0];
+      const fileName = urlFileName || `imagem-${Date.now()}.jpg`;
+      
+      // Create temporary link for download
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(link.href);
+    } catch (error) {
+      // Fallback: open in new tab
+      window.open(src, '_blank', 'noopener,noreferrer');
+    }
   }, [src]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
@@ -244,6 +305,23 @@ export function ImageMessage({
               <GripVertical className="w-3.5 h-3.5" />
             </div>
           </div>
+        )}
+
+        {/* Quick Save button - alternative to drag */}
+        {!isLoading && !hasError && (
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={handleQuickSave}
+            className={cn(
+              "absolute top-2 right-10 h-7 w-7 rounded-full",
+              "bg-black/30 hover:bg-black/50 text-white",
+              "opacity-0 group-hover:opacity-100 transition-opacity"
+            )}
+            aria-label="Salvar rapidamente"
+          >
+            <Save className="w-3.5 h-3.5" />
+          </Button>
         )}
 
         {/* Download button */}
