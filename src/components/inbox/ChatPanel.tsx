@@ -1949,7 +1949,7 @@ export function ChatPanel({
 
         {!isRecordingAudio && !audioFile && !isRecordingNoteAudio && (
           <div className="flex items-center gap-1.5">
-            {/* 1. Agendar mensagem */}
+            {/* 1. Agendar mensagem - só disponível se atribuída ao usuário atual */}
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
@@ -1957,13 +1957,17 @@ export function ChatPanel({
                   variant="ghost"
                   size="icon"
                   onClick={() => setScheduleModalOpen(true)}
-                  disabled={!conversation?.contact?.id}
+                  disabled={!conversation?.contact?.id || conversation?.assignedUserId !== currentUserId}
                   className="h-9 w-9 flex-shrink-0"
                 >
                   <CalendarClock className="w-5 h-5" />
                 </Button>
               </TooltipTrigger>
-              <TooltipContent>Agendar mensagem</TooltipContent>
+              <TooltipContent>
+                {conversation?.assignedUserId !== currentUserId 
+                  ? 'Atribua a conversa para você para agendar mensagens'
+                  : 'Agendar mensagem'}
+              </TooltipContent>
             </Tooltip>
 
             {/* 2. Ativar nota interna */}
@@ -2258,7 +2262,7 @@ export function ChatPanel({
       />
 
       {/* Schedule Message Modal */}
-      {conversation?.contact?.id && (
+      {conversation?.contact?.id && conversation?.assignedUserId === currentUserId && (
         <ScheduleMessageModal
           open={scheduleModalOpen}
           onOpenChange={setScheduleModalOpen}
