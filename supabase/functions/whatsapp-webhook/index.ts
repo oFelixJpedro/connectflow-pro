@@ -1597,7 +1597,7 @@ serve(async (req) => {
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         )
       }
-      console.log(`📱 Processando mensagem de grupo (habilitado para ${connection.name})`)
+      console.log(`📱 Processando mensagem de grupo (habilitado para ${connection.name}) - IA automática DESATIVADA para grupos`)
     }
     
     // Update instance_token if missing in DB
@@ -1837,7 +1837,8 @@ serve(async (req) => {
           status: 'open',
           unread_count: isFromMe ? 0 : 1,
           last_message_at: messageTimestamp,
-          channel: 'whatsapp'
+          channel: 'whatsapp',
+          is_group: isGroupMessage // ← Marcar conversas de grupo
         })
         .select('id')
         .single()
@@ -2088,72 +2089,80 @@ serve(async (req) => {
     // ═══════════════════════════════════════════════════════════════════
     // 📊 COMMERCIAL PIXEL - Analyze message in real-time (fire-and-forget)
     // ═══════════════════════════════════════════════════════════════════
-    // Smart filter to reduce unnecessary API calls (~40-50% reduction)
-    const shouldCallCommercialPixel = (
-      content: string | null,
-      msgType: string,
-      dir: string
-    ): boolean => {
-      // Always analyze media with commercial potential
-      if (['image', 'video', 'document', 'audio'].includes(msgType)) return true;
-      
-      // Skip messages without content
-      if (!content || content.trim().length === 0) return false;
-      
-      // Skip very short messages (< 10 chars) - typically "ok", "sim", etc
-      if (content.trim().length < 10) return false;
-      
-      // Skip emoji-only messages
-      if (/^[\p{Emoji}\s]+$/u.test(content.trim())) return false;
-      
-      // Skip trivial monosyllabic responses
-      const trivialResponses = [
-        'ok', 'sim', 'não', 'nao', 'ta', 'tá', 'blz', 'vlw', 
-        'oi', 'olá', 'ola', 'obg', 'obrigado', 'obrigada',
-        'bom', 'boa', 'certo', 'beleza', 'pode', 'legal',
-        'hmm', 'hum', 'kkk', 'kkkk', 'rs', 'rsrs', 'haha',
-        'top', 'show', 'massa', 'nice', 'valeu', 'tmj'
-      ];
-      if (trivialResponses.includes(content.toLowerCase().trim())) return false;
-      
-      return true;
-    };
-    
-    const shouldTriggerPixel = shouldCallCommercialPixel(messageContent, dbMessageType, direction);
-    
-    if (shouldTriggerPixel) {
-      try {
-        EdgeRuntime.waitUntil(
-          fetch(`${supabaseUrl}/functions/v1/commercial-pixel`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${supabaseServiceKey}`,
-            },
-            body: JSON.stringify({
-              conversation_id: conversationId,
-              company_id: companyId,
-              message_content: messageContent || '',
-              message_type: dbMessageType,
-              direction: direction,
-              contact_name: contactName
-            }),
-          }).catch(e => console.log('⚠️ [PIXEL] Error calling commercial-pixel:', e))
-        );
-        console.log('📊 [PIXEL] Commercial pixel triggered for message');
-      } catch (pixelError) {
-        console.log('⚠️ [PIXEL] Failed to trigger commercial pixel:', pixelError);
-      }
+    // BLOQUEADO PARA GRUPOS - grupos geram muitas mensagens, custo elevado
+    if (isGroupMessage) {
+      console.log('⏭️ [PIXEL] Skipped - group message (cost control)');
     } else {
-      console.log('⏭️ [PIXEL] Skipped - trivial message:', (messageContent || '').substring(0, 30));
+      // Smart filter to reduce unnecessary API calls (~40-50% reduction)
+      const shouldCallCommercialPixel = (
+        content: string | null,
+        msgType: string,
+        dir: string
+      ): boolean => {
+        // Always analyze media with commercial potential
+        if (['image', 'video', 'document', 'audio'].includes(msgType)) return true;
+        
+        // Skip messages without content
+        if (!content || content.trim().length === 0) return false;
+        
+        // Skip very short messages (< 10 chars) - typically "ok", "sim", etc
+        if (content.trim().length < 10) return false;
+        
+        // Skip emoji-only messages
+        if (/^[\p{Emoji}\s]+$/u.test(content.trim())) return false;
+        
+        // Skip trivial monosyllabic responses
+        const trivialResponses = [
+          'ok', 'sim', 'não', 'nao', 'ta', 'tá', 'blz', 'vlw', 
+          'oi', 'olá', 'ola', 'obg', 'obrigado', 'obrigada',
+          'bom', 'boa', 'certo', 'beleza', 'pode', 'legal',
+          'hmm', 'hum', 'kkk', 'kkkk', 'rs', 'rsrs', 'haha',
+          'top', 'show', 'massa', 'nice', 'valeu', 'tmj'
+        ];
+        if (trivialResponses.includes(content.toLowerCase().trim())) return false;
+        
+        return true;
+      };
+      
+      const shouldTriggerPixel = shouldCallCommercialPixel(messageContent, dbMessageType, direction);
+      
+      if (shouldTriggerPixel) {
+        try {
+          EdgeRuntime.waitUntil(
+            fetch(`${supabaseUrl}/functions/v1/commercial-pixel`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${supabaseServiceKey}`,
+              },
+              body: JSON.stringify({
+                conversation_id: conversationId,
+                company_id: companyId,
+                message_content: messageContent || '',
+                message_type: dbMessageType,
+                direction: direction,
+                contact_name: contactName
+              }),
+            }).catch(e => console.log('⚠️ [PIXEL] Error calling commercial-pixel:', e))
+          );
+          console.log('📊 [PIXEL] Commercial pixel triggered for message');
+        } catch (pixelError) {
+          console.log('⚠️ [PIXEL] Failed to trigger commercial pixel:', pixelError);
+        }
+      } else {
+        console.log('⏭️ [PIXEL] Skipped - trivial message:', (messageContent || '').substring(0, 30));
+      }
     }
     
     // ═══════════════════════════════════════════════════════════════════
     // 🤖 PROCESS AI AGENT (BATCH SYSTEM)
     // ═══════════════════════════════════════════════════════════════════
+    // BLOQUEADO PARA GRUPOS - grupos geram muitas mensagens, custo elevado de IA
     // Process AI agent for text, audio and image messages (not stickers, documents, videos)
     const aiSupportedTypes = ['text', 'audio', 'image', 'video', 'document'];
-    if (!isFromMe && aiSupportedTypes.includes(dbMessageType)) {
+    if (isGroupMessage) {
+      console.log('⏭️ [AI-AGENT] Skipped - group message (cost control)');
+    } else if (!isFromMe && aiSupportedTypes.includes(dbMessageType)) {
       const messageData = {
         content: messageContent || '',
         type: dbMessageType,
