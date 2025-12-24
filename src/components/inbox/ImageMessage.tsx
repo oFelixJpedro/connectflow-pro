@@ -1,5 +1,10 @@
 import { useState, useCallback } from 'react';
-import { X, Download, ImageOff, Loader2, ZoomIn } from 'lucide-react';
+import { X, Download, ImageOff, Loader2, ZoomIn, GripVertical } from 'lucide-react';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import {
@@ -40,6 +45,17 @@ export function ImageMessage({
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
   const [isLightboxOpen, setIsLightboxOpen] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+
+  const handleDragStart = useCallback((e: React.DragEvent<HTMLImageElement>) => {
+    setIsDragging(true);
+    e.dataTransfer.setData('text/uri-list', src);
+    e.dataTransfer.effectAllowed = 'copy';
+  }, [src]);
+
+  const handleDragEnd = useCallback(() => {
+    setIsDragging(false);
+  }, []);
 
   const handleLoad = useCallback(() => {
     setIsLoading(false);
@@ -84,21 +100,24 @@ export function ImageMessage({
 
   return (
     <>
-      <div 
-        className={cn(
-          "relative rounded-xl overflow-hidden cursor-pointer group",
-          "w-full max-w-[300px] md:max-w-[300px]",
-          "transition-transform duration-200 hover:scale-[1.02]",
-          isOutbound 
-            ? "bg-primary/10 dark:bg-primary/20" 
-            : "bg-muted"
-        )}
-        onClick={() => !isLoading && !hasError && setIsLightboxOpen(true)}
-        onKeyDown={handleKeyDown}
-        role="button"
-        tabIndex={0}
-        aria-label={`${alt}. Clique para ampliar.`}
-      >
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <div 
+            className={cn(
+              "relative rounded-xl overflow-hidden cursor-pointer group",
+              "w-full max-w-[300px] md:max-w-[300px]",
+              "transition-all duration-200 hover:scale-[1.02]",
+              isOutbound 
+                ? "bg-primary/10 dark:bg-primary/20" 
+                : "bg-muted",
+              isDragging && "ring-2 ring-primary scale-105"
+            )}
+            onClick={() => !isLoading && !hasError && setIsLightboxOpen(true)}
+            onKeyDown={handleKeyDown}
+            role="button"
+            tabIndex={0}
+            aria-label={`${alt}. Clique para ampliar.`}
+          >
         {/* Loading skeleton */}
         {isLoading && (
           <div 
@@ -128,8 +147,11 @@ export function ImageMessage({
             src={src}
             alt={alt}
             loading="lazy"
+            draggable="true"
             onLoad={handleLoad}
             onError={handleError}
+            onDragStart={handleDragStart}
+            onDragEnd={handleDragEnd}
             className={cn(
               "w-full h-auto object-cover max-h-[400px]",
               "transition-opacity duration-200",
@@ -140,6 +162,15 @@ export function ImageMessage({
               minHeight: isLoading ? '120px' : undefined
             }}
           />
+        )}
+
+        {/* Drag overlay */}
+        {isDragging && (
+          <div className="absolute inset-0 bg-primary/30 flex items-center justify-center rounded-xl border-2 border-dashed border-primary pointer-events-none">
+            <span className="text-xs font-medium text-primary-foreground bg-primary px-2 py-1 rounded">
+              Solte para salvar
+            </span>
+          </div>
         )}
 
         {/* Hover overlay */}
@@ -155,7 +186,16 @@ export function ImageMessage({
           </div>
         )}
 
-      {/* Download button */}
+        {/* Drag indicator */}
+        {!isLoading && !hasError && (
+          <div className="absolute top-2 left-2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+            <div className="bg-black/30 text-white rounded-full p-1.5">
+              <GripVertical className="w-3.5 h-3.5" />
+            </div>
+          </div>
+        )}
+
+        {/* Download button */}
         {!isLoading && !hasError && (
           <Button
             variant="ghost"
@@ -175,18 +215,23 @@ export function ImageMessage({
           </Button>
         )}
 
-        {/* Caption */}
-        {caption && (
-          <div 
-            className={cn(
-              "px-3 py-2 text-sm leading-relaxed",
-              isOutbound ? "text-foreground" : "text-foreground"
-            )}
-          >
-            <LinkifyText text={caption} />
-          </div>
-        )}
-      </div>
+          {/* Caption */}
+          {caption && (
+            <div 
+              className={cn(
+                "px-3 py-2 text-sm leading-relaxed",
+                isOutbound ? "text-foreground" : "text-foreground"
+              )}
+            >
+              <LinkifyText text={caption} />
+            </div>
+          )}
+        </div>
+      </TooltipTrigger>
+      <TooltipContent side="top" className="text-xs">
+        Arraste para salvar ou clique para ampliar
+      </TooltipContent>
+    </Tooltip>
 
 
       {/* Lightbox */}
