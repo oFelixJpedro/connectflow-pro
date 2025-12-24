@@ -232,8 +232,30 @@ export function useInboxData() {
           return;
         }
       } else {
-        // Single connection mode - original logic
-        if (!isAdminOrOwner && user?.id) {
+        // Single connection mode - check if it's an archived connection
+        const { data: connectionData } = await supabase
+          .from('whatsapp_connections')
+          .select('id, archived_at')
+          .eq('id', selectedConnectionId)
+          .maybeSingle();
+        
+        const isArchivedSpecificConnection = connectionData?.archived_at !== null;
+        
+        // If it's an archived connection, only allow admin/owner access
+        if (isArchivedSpecificConnection) {
+          if (!isAdminOrOwner) {
+            setConversations([]);
+            setIsLoadingConversations(false);
+            toast({
+              title: 'Sem acesso',
+              description: 'Apenas administradores podem ver conexões excluídas.',
+              variant: 'destructive',
+            });
+            return;
+          }
+          // Admin/owner can view archived connection - skip access checks
+        } else if (!isAdminOrOwner && user?.id) {
+          // Non-archived connection - original logic for access control
           // Check connection_users for this user - include department_access_mode
           const { data: accessData } = await supabase
             .from('connection_users')

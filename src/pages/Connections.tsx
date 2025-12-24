@@ -12,7 +12,6 @@ import {
   X,
   Users,
   AlertTriangle,
-  Archive,
   Upload
 } from 'lucide-react';
 import { ImportConversationsModal } from '@/components/connections/ImportConversationsModal';
@@ -623,25 +622,6 @@ export default function Connections() {
     }
   }
 
-  // Permanently delete an archived connection
-  async function handlePermanentDelete(connection: WhatsAppConnection) {
-    if (!confirm('ATENÇÃO: Esta ação irá excluir PERMANENTEMENTE a conexão e TODO o histórico de conversas associado. Esta ação NÃO pode ser desfeita. Deseja continuar?')) return;
-
-    try {
-      // Delete from database (cascade will delete conversations)
-      await supabase
-        .from('whatsapp_connections')
-        .delete()
-        .eq('id', connection.id);
-
-      toast.success('Conexão excluída permanentemente');
-      loadConnections();
-    } catch (error) {
-      console.error('Error deleting connection:', error);
-      toast.error('Erro ao excluir conexão');
-    }
-  }
-
   // Open import modal for a connection
   function handleOpenImportModal(connection: WhatsAppConnection) {
     setSelectedConnectionForImport(connection);
@@ -684,9 +664,12 @@ export default function Connections() {
     );
   }
 
-  // Check connection limit before opening dialog
+  // Check connection limit before opening dialog (only count active connections)
+  const activeConnections = connections.filter(c => !c.archived_at);
+  const archivedConnections = connections.filter(c => c.archived_at);
+  
   const handleAddConnection = () => {
-    const currentCount = connections.length;
+    const currentCount = activeConnections.length;
     if (currentCount >= maxConnections) {
       setShowLimitModal(true);
       return;
@@ -695,13 +678,41 @@ export default function Connections() {
     setIsDialogOpen(true);
   };
 
+  // Permanent delete confirmation state
+  const [permanentDeleteDialogOpen, setPermanentDeleteDialogOpen] = useState(false);
+  const [connectionToDelete, setConnectionToDelete] = useState<WhatsAppConnection | null>(null);
+
+  function handleOpenPermanentDeleteDialog(connection: WhatsAppConnection) {
+    setConnectionToDelete(connection);
+    setPermanentDeleteDialogOpen(true);
+  }
+
+  async function confirmPermanentDelete() {
+    if (!connectionToDelete) return;
+    
+    try {
+      await supabase
+        .from('whatsapp_connections')
+        .delete()
+        .eq('id', connectionToDelete.id);
+
+      toast.success('Backup excluído permanentemente');
+      setPermanentDeleteDialogOpen(false);
+      setConnectionToDelete(null);
+      loadConnections();
+    } catch (error) {
+      console.error('Error permanently deleting connection:', error);
+      toast.error('Erro ao excluir backup');
+    }
+  }
+
   return (
     <div className="h-full overflow-auto p-4 md:p-6 space-y-4 md:space-y-6">
       {/* Connection Limit Modal */}
       <ConnectionLimitReachedModal
         open={showLimitModal}
         onClose={() => setShowLimitModal(false)}
-        currentConnections={connections.length}
+        currentConnections={activeConnections.length}
         maxConnections={maxConnections}
       />
 
@@ -714,7 +725,7 @@ export default function Connections() {
           </p>
           {maxConnections < 999 && (
             <p className="text-xs text-muted-foreground mt-1">
-              <span className="font-medium">{connections.length}</span> de <span className="font-medium">{maxConnections}</span> conexões utilizadas
+              <span className="font-medium">{activeConnections.length}</span> de <span className="font-medium">{maxConnections}</span> conexões utilizadas
             </p>
           )}
         </div>
@@ -742,12 +753,12 @@ export default function Connections() {
         </CardContent>
       </Card>
 
-      {/* Connections - Cards on mobile, Table on desktop */}
-      {connections.length > 0 ? (
+      {/* Active Connections - Cards on mobile, Table on desktop */}
+      {activeConnections.length > 0 ? (
         <>
           {/* Mobile: Cards */}
           <div className="grid gap-3 md:hidden">
-            {connections.map((connection) => {
+            {activeConnections.map((connection) => {
               const status = statusConfig[connection.status || 'disconnected'];
               const StatusIcon = status.icon;
               
@@ -784,43 +795,30 @@ export default function Connections() {
                             <Settings className="w-4 h-4 mr-2" />
                             Configurações
                           </DropdownMenuItem>
-                          {/* Import conversations option for active connections */}
-                          {!connection.archived_at && (
-                            <DropdownMenuItem onClick={() => handleOpenImportModal(connection)}>
-                              <Upload className="w-4 h-4 mr-2" />
-                              Importar Conversas
-                            </DropdownMenuItem>
-                          )}
+                          <DropdownMenuItem onClick={() => handleOpenImportModal(connection)}>
+                            <Upload className="w-4 h-4 mr-2" />
+                            Importar Conversas
+                          </DropdownMenuItem>
                           {connection.status === 'connected' && (
                             <DropdownMenuItem onClick={() => handleDisconnect(connection)}>
                               <WifiOff className="w-4 h-4 mr-2" />
                               Desconectar
                             </DropdownMenuItem>
                           )}
-                          {(connection.status === 'disconnected' || connection.status === 'error') && !connection.archived_at && (
+                          {(connection.status === 'disconnected' || connection.status === 'error') && (
                             <DropdownMenuItem onClick={() => handleReconnect(connection)}>
                               <RefreshCw className="w-4 h-4 mr-2" />
                               Reconectar
                             </DropdownMenuItem>
                           )}
                           <DropdownMenuSeparator />
-                          {!connection.archived_at ? (
-                            <DropdownMenuItem 
-                              className="text-warning"
-                              onClick={() => handleArchiveConnection(connection)}
-                            >
-                              <Archive className="w-4 h-4 mr-2" />
-                              Arquivar
-                            </DropdownMenuItem>
-                          ) : (
-                            <DropdownMenuItem 
-                              className="text-destructive"
-                              onClick={() => handlePermanentDelete(connection)}
-                            >
-                              <Trash2 className="w-4 h-4 mr-2" />
-                              Excluir Permanentemente
-                            </DropdownMenuItem>
-                          )}
+                          <DropdownMenuItem 
+                            className="text-destructive"
+                            onClick={() => handleArchiveConnection(connection)}
+                          >
+                            <Trash2 className="w-4 h-4 mr-2" />
+                            Deletar
+                          </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </div>
@@ -851,7 +849,7 @@ export default function Connections() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {connections.map((connection) => {
+                {activeConnections.map((connection) => {
                   const status = statusConfig[connection.status || 'disconnected'];
                   const StatusIcon = status.icon;
                   
@@ -896,43 +894,30 @@ export default function Connections() {
                               <Settings className="w-4 h-4 mr-2" />
                               Configurações
                             </DropdownMenuItem>
-                            {/* Import conversations option for active connections */}
-                            {!connection.archived_at && (
-                              <DropdownMenuItem onClick={() => handleOpenImportModal(connection)}>
-                                <Upload className="w-4 h-4 mr-2" />
-                                Importar Conversas
-                              </DropdownMenuItem>
-                            )}
+                            <DropdownMenuItem onClick={() => handleOpenImportModal(connection)}>
+                              <Upload className="w-4 h-4 mr-2" />
+                              Importar Conversas
+                            </DropdownMenuItem>
                             {connection.status === 'connected' && (
                               <DropdownMenuItem onClick={() => handleDisconnect(connection)}>
                                 <WifiOff className="w-4 h-4 mr-2" />
                                 Desconectar
                               </DropdownMenuItem>
                             )}
-                            {(connection.status === 'disconnected' || connection.status === 'error') && !connection.archived_at && (
+                            {(connection.status === 'disconnected' || connection.status === 'error') && (
                               <DropdownMenuItem onClick={() => handleReconnect(connection)}>
                                 <RefreshCw className="w-4 h-4 mr-2" />
                                 Reconectar
                               </DropdownMenuItem>
                             )}
                             <DropdownMenuSeparator />
-                            {!connection.archived_at ? (
-                              <DropdownMenuItem 
-                                className="text-warning"
-                                onClick={() => handleArchiveConnection(connection)}
-                              >
-                                <Archive className="w-4 h-4 mr-2" />
-                                Arquivar
-                              </DropdownMenuItem>
-                            ) : (
-                              <DropdownMenuItem 
-                                className="text-destructive"
-                                onClick={() => handlePermanentDelete(connection)}
-                              >
-                                <Trash2 className="w-4 h-4 mr-2" />
-                                Excluir Permanentemente
-                              </DropdownMenuItem>
-                            )}
+                            <DropdownMenuItem 
+                              className="text-destructive"
+                              onClick={() => handleArchiveConnection(connection)}
+                            >
+                              <Trash2 className="w-4 h-4 mr-2" />
+                              Deletar
+                            </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </TableCell>
@@ -949,7 +934,7 @@ export default function Connections() {
             <div className="w-12 h-12 md:w-16 md:h-16 bg-muted rounded-full flex items-center justify-center mb-4">
               <Wifi className="w-6 h-6 md:w-8 md:h-8 text-muted-foreground" />
             </div>
-            <h3 className="font-medium text-foreground mb-1">Nenhuma conexão ainda</h3>
+            <h3 className="font-medium text-foreground mb-1">Nenhuma conexão ativa</h3>
             <p className="text-sm text-muted-foreground mb-4">
               Conecte seu primeiro WhatsApp para começar a atender
             </p>
@@ -959,6 +944,114 @@ export default function Connections() {
             </Button>
           </CardContent>
         </Card>
+      )}
+
+      {/* Archived/Deleted Connections Section */}
+      {archivedConnections.length > 0 && (
+        <div className="space-y-4">
+          <div className="flex items-center gap-2">
+            <Trash2 className="w-5 h-5 text-muted-foreground" />
+            <h2 className="text-lg font-semibold text-muted-foreground">
+              Conexões Excluídas ({archivedConnections.length})
+            </h2>
+          </div>
+          
+          {/* Mobile: Cards - Grayscale */}
+          <div className="grid gap-3 md:hidden">
+            {archivedConnections.map((connection) => (
+              <Card key={connection.id} className="opacity-60 grayscale">
+                <CardContent className="p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0 bg-muted">
+                        <WifiOff className="w-5 h-5 text-muted-foreground" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="font-medium truncate line-through text-muted-foreground">{connection.name}</p>
+                        <p className="text-sm text-muted-foreground truncate">{connection.phone_number}</p>
+                      </div>
+                    </div>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0">
+                          <MoreHorizontal className="w-4 h-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="bg-popover">
+                        <DropdownMenuItem 
+                          className="text-destructive"
+                          onClick={() => handleOpenPermanentDeleteDialog(connection)}
+                        >
+                          <Trash2 className="w-4 h-4 mr-2" />
+                          Excluir Backup
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                  <div className="mt-3">
+                    <Badge variant="outline" className="bg-muted/50 text-muted-foreground border-muted">
+                      <WifiOff className="w-3 h-3 mr-1" />
+                      Excluída
+                    </Badge>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+
+          {/* Desktop: Table - Grayscale */}
+          <Card className="hidden md:block opacity-60 grayscale">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Nome</TableHead>
+                  <TableHead>Número</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-right">Ações</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {archivedConnections.map((connection) => (
+                  <TableRow key={connection.id}>
+                    <TableCell className="font-medium">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-lg flex items-center justify-center bg-muted">
+                          <WifiOff className="w-5 h-5 text-muted-foreground" />
+                        </div>
+                        <span className="line-through text-muted-foreground">{connection.name}</span>
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">{connection.phone_number}</TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className="bg-muted/50 text-muted-foreground border-muted">
+                        <WifiOff className="w-3 h-3 mr-1" />
+                        Excluída
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon" className="h-8 w-8">
+                            <MoreHorizontal className="w-4 h-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="bg-popover">
+                          <DropdownMenuItem 
+                            className="text-destructive"
+                            onClick={() => handleOpenPermanentDeleteDialog(connection)}
+                          >
+                            <Trash2 className="w-4 h-4 mr-2" />
+                            Excluir Backup
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </Card>
+        </div>
       )}
 
       {/* Connection Dialog */}
@@ -1085,20 +1178,20 @@ export default function Connections() {
         }}
       />
 
-      {/* Archive Confirmation Dialog */}
+      {/* Delete Connection Confirmation Dialog (archives but preserves history) */}
       <AlertDialog open={archiveDialogOpen} onOpenChange={setArchiveDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle className="flex items-center gap-2">
-              <Archive className="w-5 h-5 text-warning" />
-              Arquivar Conexão
+              <Trash2 className="w-5 h-5 text-destructive" />
+              Deletar Conexão
             </AlertDialogTitle>
             <AlertDialogDescription className="space-y-2">
               <p>
-                Ao arquivar esta conexão, ela será desconectada do WhatsApp, mas <strong>todo o histórico de conversas será preservado</strong>.
+                Ao deletar esta conexão, ela será desconectada do WhatsApp, mas <strong>todo o histórico de conversas será preservado</strong>.
               </p>
               <p className="text-muted-foreground">
-                As conversas arquivadas poderão ser visualizadas através do filtro "Desconectadas" no inbox.
+                As conversas poderão ser visualizadas através do filtro "Desconectadas" no inbox.
               </p>
               <p className="text-muted-foreground">
                 Você poderá importar essas conversas para uma nova conexão a qualquer momento.
@@ -1109,9 +1202,46 @@ export default function Connections() {
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
             <AlertDialogAction 
               onClick={confirmArchiveConnection}
-              className="bg-warning text-warning-foreground hover:bg-warning/90"
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              Arquivar Conexão
+              Deletar Conexão
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Permanent Delete Backup Confirmation Dialog */}
+      <AlertDialog open={permanentDeleteDialogOpen} onOpenChange={setPermanentDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2 text-destructive">
+              <AlertTriangle className="w-5 h-5" />
+              Excluir Backup Permanentemente
+            </AlertDialogTitle>
+            <AlertDialogDescription className="space-y-3">
+              <p className="font-semibold text-destructive">
+                ⚠️ ATENÇÃO: Esta ação é IRREVERSÍVEL!
+              </p>
+              <p>
+                Ao excluir o backup desta conexão, você perderá:
+              </p>
+              <ul className="list-disc list-inside space-y-1 text-muted-foreground">
+                <li>Todo o histórico de conversas</li>
+                <li>Todas as mensagens enviadas e recebidas</li>
+                <li>Todos os arquivos de mídia compartilhados</li>
+              </ul>
+              <p className="text-sm text-muted-foreground border-t pt-3">
+                Esta ação <strong>NÃO</strong> pode ser desfeita.
+              </p>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={confirmPermanentDelete}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Excluir Permanentemente
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -1127,6 +1257,7 @@ export default function Connections() {
         targetConnectionId={selectedConnectionForImport?.id || ''}
         targetConnectionName={selectedConnectionForImport?.name || ''}
         companyId={company?.id || ''}
+        onSuccess={loadConnections}
       />
     </div>
   );

@@ -72,13 +72,14 @@ export function ImportConversationsModal({
         .select('id, name, phone_number, archived_at, archived_reason')
         .eq('company_id', companyId)
         .not('archived_at', 'is', null)
+        .neq('id', targetConnectionId) // Exclude target connection from list
         .order('archived_at', { ascending: false });
 
       if (error) throw error;
       setArchivedConnections((data || []) as ArchivedConnection[]);
     } catch (error) {
       console.error('Error loading archived connections:', error);
-      toast.error('Erro ao carregar conexões arquivadas');
+      toast.error('Erro ao carregar conexões excluídas');
     } finally {
       setLoading(false);
     }
