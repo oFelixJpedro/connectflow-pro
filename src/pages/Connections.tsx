@@ -69,11 +69,8 @@ type DialogStep = 'name' | 'qr' | 'connecting';
 export default function Connections() {
   const { company, session, userRole } = useAuth();
 
-  // Check permissions - redirect non-admins
+  // Define isAdminOrOwner early but don't return yet (hooks must run first)
   const isAdminOrOwner = userRole?.role === 'owner' || userRole?.role === 'admin';
-  if (!isAdminOrOwner) {
-    return <Navigate to="/dashboard" replace />;
-  }
 
   // Connection limit state
   const [showLimitModal, setShowLimitModal] = useState(false);
@@ -101,6 +98,10 @@ export default function Connections() {
   // Archive confirmation dialog state
   const [archiveDialogOpen, setArchiveDialogOpen] = useState(false);
   const [connectionToArchive, setConnectionToArchive] = useState<WhatsAppConnection | null>(null);
+  
+  // Permanent delete confirmation state
+  const [permanentDeleteDialogOpen, setPermanentDeleteDialogOpen] = useState(false);
+  const [connectionToDelete, setConnectionToDelete] = useState<WhatsAppConnection | null>(null);
 
   useEffect(() => {
     if (company?.id) {
@@ -114,6 +115,11 @@ export default function Connections() {
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
     };
   }, []);
+
+  // Check permissions - redirect non-admins (must be after all hooks)
+  if (!isAdminOrOwner) {
+    return <Navigate to="/dashboard" replace />;
+  }
 
   async function loadConnections() {
     if (!company?.id) return;
@@ -677,10 +683,6 @@ export default function Connections() {
     resetDialogState();
     setIsDialogOpen(true);
   };
-
-  // Permanent delete confirmation state
-  const [permanentDeleteDialogOpen, setPermanentDeleteDialogOpen] = useState(false);
-  const [connectionToDelete, setConnectionToDelete] = useState<WhatsAppConnection | null>(null);
 
   function handleOpenPermanentDeleteDialog(connection: WhatsAppConnection) {
     setConnectionToDelete(connection);
