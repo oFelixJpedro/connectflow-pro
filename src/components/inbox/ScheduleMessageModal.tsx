@@ -53,6 +53,8 @@ interface ScheduleMessageModalProps {
   contactId: string;
   contactName: string;
   conversationId?: string;
+  assignedUserId?: string | null;
+  currentUserId?: string;
 }
 
 type MessageType = 'text' | 'image' | 'video' | 'audio' | 'document';
