@@ -254,7 +254,7 @@ export function ChatPanel({
 
   // Correct text with AI handler
   const handleCorrectText = async () => {
-    if (!inputValue.trim() || isCorrectingText || isInternalNoteMode) return;
+    if (!inputValue.trim() || isCorrectingText) return;
     
     setIsCorrectingText(true);
     try {
@@ -266,6 +266,10 @@ export function ChatPanel({
       
       if (data?.correctedText) {
         setInputValue(data.correctedText);
+        // Auto-focus the textarea after correction
+        setTimeout(() => {
+          textareaRef.current?.focus();
+        }, 100);
         if (data.hasChanges) {
           toast({ 
             title: 'Texto corrigido', 

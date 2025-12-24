@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { X, MessageSquare, Users, Send, Circle, Mic, Paperclip, Image, Video, FileText, Loader2, Plus, MoreVertical, UsersRound } from 'lucide-react';
+import { X, MessageSquare, Users, Send, Circle, Mic, Paperclip, Image, Video, FileText, Loader2, Plus, MoreVertical, UsersRound, Pencil } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -13,6 +13,7 @@ import { useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { toast } from '@/hooks/use-toast';
+import { supabase } from '@/integrations/supabase/client';
 
 // Import media components
 import { AudioPlayer } from '@/components/inbox/AudioPlayer';
@@ -55,6 +56,7 @@ export default function InternalChat() {
 
   const [messageInput, setMessageInput] = useState('');
   const [isSending, setIsSending] = useState(false);
+  const [isCorrectingText, setIsCorrectingText] = useState(false);
   const [isRecordingAudio, setIsRecordingAudio] = useState(false);
   const [audioFile, setAudioFile] = useState<File | null>(null);
   const [imageFile, setImageFile] = useState<File | null>(null);
@@ -911,6 +913,46 @@ export default function InternalChat() {
                         disabled={isSending}
                       />
                     </div>
+
+                    {/* Correct text button (when there is text) */}
+                    {messageInput.trim() && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={async () => {
+                          if (isCorrectingText) return;
+                          setIsCorrectingText(true);
+                          try {
+                            const { data, error } = await supabase.functions.invoke('correct-text', {
+                              body: { text: messageInput }
+                            });
+                            if (error) throw error;
+                            if (data?.correctedText) {
+                              setMessageInput(data.correctedText);
+                              setTimeout(() => inputRef.current?.focus(), 100);
+                              if (data.hasChanges) {
+                                toast({ title: 'Texto corrigido' });
+                              } else {
+                                toast({ title: 'Texto já está correto' });
+                              }
+                            }
+                          } catch (error) {
+                            toast({ title: 'Erro ao corrigir', variant: 'destructive' });
+                          } finally {
+                            setIsCorrectingText(false);
+                          }
+                        }}
+                        className="flex-shrink-0 text-muted-foreground hover:text-foreground"
+                        disabled={isCorrectingText}
+                        title="Corrigir texto"
+                      >
+                        {isCorrectingText ? (
+                          <Loader2 className="w-5 h-5 animate-spin" />
+                        ) : (
+                          <Pencil className="w-5 h-5" />
+                        )}
+                      </Button>
+                    )}
 
                     {/* Mic button (when no text) */}
                     {!messageInput.trim() && (

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -10,7 +10,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Phone, Mail, MessageSquare, Plus, Trash2, Upload, Paperclip, Send, History, X } from 'lucide-react';
+import { Phone, Mail, MessageSquare, Plus, Trash2, Upload, Paperclip, Send, History, X, Pencil, Loader2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { toast } from 'sonner';
@@ -58,6 +58,8 @@ export function KanbanCardDrawer({ card, columns, teamMembers, open, onOpenChang
   const [newTagName, setNewTagName] = useState('');
   const [loading, setLoading] = useState(false);
   const [isConversationPreviewOpen, setIsConversationPreviewOpen] = useState(false);
+  const [isCorrectingComment, setIsCorrectingComment] = useState(false);
+  const commentTextareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     if (card && open) {
@@ -243,7 +245,39 @@ export function KanbanCardDrawer({ card, columns, teamMembers, open, onOpenChang
 
             <TabsContent value="comments" className="space-y-3">
               <div className="flex gap-2">
-                <Textarea placeholder="Adicionar comentário..." value={newComment} onChange={e => setNewComment(e.target.value)} rows={2} />
+                <Textarea ref={commentTextareaRef} placeholder="Adicionar comentário..." value={newComment} onChange={e => setNewComment(e.target.value)} rows={2} className="flex-1" />
+                {newComment.trim() && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={async () => {
+                      if (isCorrectingComment) return;
+                      setIsCorrectingComment(true);
+                      try {
+                        const { data, error } = await supabase.functions.invoke('correct-text', {
+                          body: { text: newComment }
+                        });
+                        if (error) throw error;
+                        if (data?.correctedText) {
+                          setNewComment(data.correctedText);
+                          setTimeout(() => commentTextareaRef.current?.focus(), 100);
+                          if (data.hasChanges) {
+                            toast.success('Texto corrigido');
+                          } else {
+                            toast.info('Texto já está correto');
+                          }
+                        }
+                      } catch (error) {
+                        toast.error('Erro ao corrigir');
+                      } finally {
+                        setIsCorrectingComment(false);
+                      }
+                    }}
+                    disabled={isCorrectingComment}
+                  >
+                    {isCorrectingComment ? <Loader2 className="w-4 h-4 animate-spin" /> : <Pencil className="w-4 h-4" />}
+                  </Button>
+                )}
                 <Button size="sm" onClick={handleAddComment} disabled={loading || !newComment.trim()}><Send className="w-4 h-4" /></Button>
               </div>
               <ScrollArea className="h-48">
