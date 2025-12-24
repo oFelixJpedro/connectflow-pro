@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { 
   X, 
   Phone, 
@@ -15,7 +15,8 @@ import {
   Check,
   StickyNote,
   History,
-  Sparkles
+  Sparkles,
+  Pencil
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -78,6 +79,8 @@ export function ContactPanel({ conversation, onClose, onContactUpdated, onScroll
   const [notes, setNotes] = useState('');
   const [isSavingNotes, setIsSavingNotes] = useState(false);
   const [notesSaved, setNotesSaved] = useState(false);
+  const [isCorrectingNotes, setIsCorrectingNotes] = useState(false);
+  const notesTextareaRef = useRef<HTMLTextAreaElement>(null);
   
   // Tags state
   const [contactTags, setContactTags] = useState<string[]>([]);
@@ -688,12 +691,53 @@ export function ContactPanel({ conversation, onClose, onContactUpdated, onScroll
               )}
             </CollapsibleTrigger>
             <CollapsibleContent className="pt-3">
-              <Textarea
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                placeholder="Adicione notas sobre este contato..."
-                className="min-h-[80px] resize-none bg-[#FFFBEB] text-slate-900 placeholder:text-slate-500 border-amber-200"
-              />
+              <div className="flex gap-2">
+                <Textarea
+                  ref={notesTextareaRef}
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  placeholder="Adicione notas sobre este contato..."
+                  className="min-h-[80px] resize-none bg-[#FFFBEB] text-slate-900 placeholder:text-slate-500 border-amber-200 flex-1"
+                />
+                {notes.trim() && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={async () => {
+                      if (isCorrectingNotes) return;
+                      setIsCorrectingNotes(true);
+                      try {
+                        const { data, error } = await supabase.functions.invoke('correct-text', {
+                          body: { text: notes }
+                        });
+                        if (error) throw error;
+                        if (data?.correctedText) {
+                          setNotes(data.correctedText);
+                          setTimeout(() => notesTextareaRef.current?.focus(), 100);
+                          if (data.hasChanges) {
+                            toast({ title: 'Texto corrigido' });
+                          } else {
+                            toast({ title: 'Texto já está correto' });
+                          }
+                        }
+                      } catch (error) {
+                        toast({ title: 'Erro ao corrigir', variant: 'destructive' });
+                      } finally {
+                        setIsCorrectingNotes(false);
+                      }
+                    }}
+                    className="flex-shrink-0 h-8 w-8"
+                    disabled={isCorrectingNotes}
+                    title="Corrigir texto"
+                  >
+                    {isCorrectingNotes ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Pencil className="w-4 h-4" />
+                    )}
+                  </Button>
+                )}
+              </div>
               <p className="text-xs text-muted-foreground mt-2">
                 Notas são visíveis apenas para a equipe • Salvamento automático
               </p>
