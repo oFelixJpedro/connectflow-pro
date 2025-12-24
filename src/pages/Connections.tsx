@@ -688,9 +688,6 @@ export default function Connections() {
     setConnectionToDelete(connection);
     setPermanentDeleteDialogOpen(true);
   }
-    setConnectionToDelete(connection);
-    setPermanentDeleteDialogOpen(true);
-  }
 
   async function confirmPermanentDelete() {
     if (!connectionToDelete) return;
