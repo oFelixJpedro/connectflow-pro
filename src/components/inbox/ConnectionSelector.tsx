@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Check, ChevronDown, Wifi, WifiOff, Loader2, Layers, Archive } from 'lucide-react';
+import { Check, ChevronDown, Wifi, WifiOff, Loader2, Layers, Archive, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -7,6 +7,9 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubTrigger,
+  DropdownMenuSubContent,
 } from '@/components/ui/dropdown-menu';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
@@ -437,59 +440,83 @@ export function ConnectionSelector({
           </DropdownMenuItem>
         ))}
         
-        {/* Archived connections section */}
+        {/* Archived connections section - Using submenu */}
         {showArchivedOption && (
           <>
             <DropdownMenuSeparator />
-            <DropdownMenuItem
-              onClick={() => {
-                onConnectionChange(ARCHIVED_CONNECTIONS_ID);
-                localStorage.setItem('selectedConnectionId', ARCHIVED_CONNECTIONS_ID);
-                setIsOpen(false);
-              }}
-              className={cn(
-                'flex items-center gap-3 py-3 px-3 cursor-pointer',
-                isArchivedSelected && 'bg-muted'
-              )}
-            >
-              <Archive className="w-4 h-4 text-muted-foreground shrink-0" />
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium truncate text-muted-foreground">Desconectadas</p>
-                <p className="text-xs text-muted-foreground truncate">
-                  {archivedConnections.length} conexões arquivadas
-                </p>
-              </div>
-              {isArchivedSelected && (
-                <Check className="w-4 h-4 text-primary shrink-0" />
-              )}
-            </DropdownMenuItem>
-            {archivedConnections.map((connection) => (
-              <DropdownMenuItem
-                key={connection.id}
-                onClick={() => {
-                  onConnectionChange(connection.id);
-                  localStorage.setItem('selectedConnectionId', connection.id);
-                  setIsOpen(false);
-                }}
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger 
                 className={cn(
-                  'flex items-center gap-3 py-3 px-3 cursor-pointer ml-4',
-                  connection.id === selectedConnectionId && 'bg-muted'
+                  'flex items-center gap-3 py-3 px-3 cursor-pointer',
+                  (isArchivedSelected || selectedArchivedConnection) && 'bg-muted'
                 )}
               >
-                <div className="relative">
-                  <WifiOff className="w-4 h-4 text-muted-foreground shrink-0" />
-                </div>
+                <Archive className="w-4 h-4 text-muted-foreground shrink-0" />
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium truncate line-through text-muted-foreground">{connection.name}</p>
-                  <p className="text-xs text-muted-foreground truncate">
-                    {formatPhoneNumber(connection.phoneNumber)}
+                  <p className="text-sm font-medium truncate text-muted-foreground">
+                    Desconectadas ({archivedConnections.length})
                   </p>
                 </div>
-                {connection.id === selectedConnectionId && (
-                  <Check className="w-4 h-4 text-primary shrink-0" />
-                )}
-              </DropdownMenuItem>
-            ))}
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent 
+                className="w-[260px] max-h-[300px] overflow-y-auto bg-popover border-border"
+                sideOffset={4}
+              >
+                {/* Option to see all archived */}
+                <DropdownMenuItem
+                  onClick={() => {
+                    onConnectionChange(ARCHIVED_CONNECTIONS_ID);
+                    localStorage.setItem('selectedConnectionId', ARCHIVED_CONNECTIONS_ID);
+                    setIsOpen(false);
+                  }}
+                  className={cn(
+                    'flex items-center gap-3 py-2 px-3 cursor-pointer',
+                    isArchivedSelected && 'bg-muted'
+                  )}
+                >
+                  <Layers className="w-4 h-4 text-muted-foreground shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium truncate text-muted-foreground">
+                      Todas as desconectadas
+                    </p>
+                  </div>
+                  {isArchivedSelected && (
+                    <Check className="w-4 h-4 text-primary shrink-0" />
+                  )}
+                </DropdownMenuItem>
+                
+                <DropdownMenuSeparator />
+                
+                {/* Individual archived connections */}
+                {archivedConnections.map((connection) => (
+                  <DropdownMenuItem
+                    key={connection.id}
+                    onClick={() => {
+                      onConnectionChange(connection.id);
+                      localStorage.setItem('selectedConnectionId', connection.id);
+                      setIsOpen(false);
+                    }}
+                    className={cn(
+                      'flex items-center gap-3 py-2 px-3 cursor-pointer',
+                      connection.id === selectedConnectionId && 'bg-muted'
+                    )}
+                  >
+                    <WifiOff className="w-4 h-4 text-muted-foreground shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate line-through text-muted-foreground">
+                        {connection.name}
+                      </p>
+                      <p className="text-xs text-muted-foreground truncate">
+                        {connection.phoneNumber === 'Aguardando...' ? 'Arquivada' : formatPhoneNumber(connection.phoneNumber)}
+                      </p>
+                    </div>
+                    {connection.id === selectedConnectionId && (
+                      <Check className="w-4 h-4 text-primary shrink-0" />
+                    )}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
           </>
         )}
       </DropdownMenuContent>
