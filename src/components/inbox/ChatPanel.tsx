@@ -2001,7 +2001,7 @@ export function ChatPanel({
             </Tooltip>
 
             {/* 3. Corrigir texto com IA */}
-            {inputValue.trim() && !isInternalNoteMode && (
+            {inputValue.trim() && (
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
@@ -2009,7 +2009,7 @@ export function ChatPanel({
                     variant="ghost"
                     size="icon"
                     onClick={handleCorrectText}
-                    disabled={isCorrectingText || !canReply}
+                    disabled={isCorrectingText || (!canReply && !isInternalNoteMode)}
                     className="h-9 w-9 flex-shrink-0"
                   >
                     {isCorrectingText ? (
