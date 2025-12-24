@@ -390,6 +390,37 @@ Deno.serve(async (req) => {
           console.log('📝 [STATUS] Atualizando banco automaticamente...')
           console.log('📝 [STATUS] normalized phone:', normalizedPhone)
           
+          // ═══════════════════════════════════════════════════════════════
+          // 🧹 PRE-UPDATE: Limpar phone_number de conexões arquivadas 
+          // para evitar violação da constraint unique_company_phone
+          // ═══════════════════════════════════════════════════════════════
+          if (normalizedPhone && normalizedPhone.length >= 10 && connection.company_id) {
+            console.log('🧹 [PRE-UPDATE] Limpando phone_number de conexões arquivadas com mesmo número...')
+            
+            const { data: conflictingConnections, error: clearError } = await serviceRoleClient
+              .from('whatsapp_connections')
+              .update({ 
+                phone_number: null  // Limpar para evitar conflito - original_phone_normalized é mantido para histórico
+              })
+              .eq('company_id', connection.company_id)
+              .eq('original_phone_normalized', normalizedPhone)
+              .not('archived_at', 'is', null)
+              .neq('id', connection.id)
+              .select('id, name')
+            
+            if (clearError) {
+              console.error('❌ [PRE-UPDATE] Erro ao limpar phone_number:', clearError)
+            } else if (conflictingConnections && conflictingConnections.length > 0) {
+              console.log('✅ [PRE-UPDATE] Limpou phone_number de', conflictingConnections.length, 'conexões arquivadas')
+              conflictingConnections.forEach(c => console.log('   - ', c.name, '(', c.id, ')'))
+            } else {
+              console.log('ℹ️ [PRE-UPDATE] Nenhuma conexão arquivada conflitante encontrada')
+            }
+          }
+          
+          // ═══════════════════════════════════════════════════════════════
+          // 📝 AGORA: Atualizar a nova conexão (sem conflito de constraint)
+          // ═══════════════════════════════════════════════════════════════
           const { error: updateError } = await serviceRoleClient
             .from('whatsapp_connections')
             .update({
