@@ -397,10 +397,13 @@ Deno.serve(async (req) => {
           if (normalizedPhone && normalizedPhone.length >= 10 && connection.company_id) {
             console.log('🧹 [PRE-UPDATE] Limpando phone_number de conexões arquivadas com mesmo número...')
             
+            const archivedPhonePlaceholder = `archived:${normalizedPhone}:${connection.id}`
+
             const { data: conflictingConnections, error: clearError } = await serviceRoleClient
               .from('whatsapp_connections')
-              .update({ 
-                phone_number: null  // Limpar para evitar conflito - original_phone_normalized é mantido para histórico
+              .update({
+                // phone_number é NOT NULL, então usamos um placeholder único para evitar conflito
+                phone_number: archivedPhonePlaceholder,
               })
               .eq('company_id', connection.company_id)
               .eq('original_phone_normalized', normalizedPhone)
