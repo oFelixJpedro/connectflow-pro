@@ -903,6 +903,71 @@ export type Database = {
           },
         ]
       }
+      connection_migrations: {
+        Row: {
+          company_id: string
+          created_at: string | null
+          id: string
+          migrated_by: string | null
+          migrated_contacts_count: number | null
+          migrated_conversations_count: number | null
+          migration_type: string
+          source_connection_id: string
+          target_connection_id: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string | null
+          id?: string
+          migrated_by?: string | null
+          migrated_contacts_count?: number | null
+          migrated_conversations_count?: number | null
+          migration_type: string
+          source_connection_id: string
+          target_connection_id: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string | null
+          id?: string
+          migrated_by?: string | null
+          migrated_contacts_count?: number | null
+          migrated_conversations_count?: number | null
+          migration_type?: string
+          source_connection_id?: string
+          target_connection_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "connection_migrations_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "connection_migrations_migrated_by_fkey"
+            columns: ["migrated_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "connection_migrations_source_connection_id_fkey"
+            columns: ["source_connection_id"]
+            isOneToOne: false
+            referencedRelation: "whatsapp_connections"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "connection_migrations_target_connection_id_fkey"
+            columns: ["target_connection_id"]
+            isOneToOne: false
+            referencedRelation: "whatsapp_connections"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       connection_users: {
         Row: {
           access_level: string
@@ -3044,6 +3109,8 @@ export type Database = {
       whatsapp_connections: {
         Row: {
           active: boolean | null
+          archived_at: string | null
+          archived_reason: string | null
           company_id: string
           created_at: string | null
           error_message: string | null
@@ -3051,6 +3118,7 @@ export type Database = {
           instance_token: string | null
           last_connected_at: string | null
           name: string
+          original_phone_normalized: string | null
           phone_number: string
           qr_code: string | null
           receive_group_messages: boolean | null
@@ -3063,6 +3131,8 @@ export type Database = {
         }
         Insert: {
           active?: boolean | null
+          archived_at?: string | null
+          archived_reason?: string | null
           company_id: string
           created_at?: string | null
           error_message?: string | null
@@ -3070,6 +3140,7 @@ export type Database = {
           instance_token?: string | null
           last_connected_at?: string | null
           name: string
+          original_phone_normalized?: string | null
           phone_number: string
           qr_code?: string | null
           receive_group_messages?: boolean | null
@@ -3082,6 +3153,8 @@ export type Database = {
         }
         Update: {
           active?: boolean | null
+          archived_at?: string | null
+          archived_reason?: string | null
           company_id?: string
           created_at?: string | null
           error_message?: string | null
@@ -3089,6 +3162,7 @@ export type Database = {
           instance_token?: string | null
           last_connected_at?: string | null
           name?: string
+          original_phone_normalized?: string | null
           phone_number?: string
           qr_code?: string | null
           receive_group_messages?: boolean | null
@@ -3154,6 +3228,7 @@ export type Database = {
         Returns: undefined
       }
       is_admin_or_owner: { Args: never; Returns: boolean }
+      normalize_phone_number: { Args: { phone: string }; Returns: string }
       optimize_tables: { Args: never; Returns: undefined }
       reset_daily_dashboard_counters: { Args: never; Returns: undefined }
       room_belongs_to_user_company: {
