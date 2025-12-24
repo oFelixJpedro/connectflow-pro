@@ -77,16 +77,31 @@ Deno.serve(async (req) => {
       try {
         console.log(`[send-scheduled-messages] Processing message ${msg.id} for contact ${msg.contact_id}`)
 
-        // Get the CURRENT conversation for this contact (most recent)
+        // Get the CURRENT conversation for this contact - now unified by connection migration
+        // This will always get the most recent conversation which has the correct connection
         const { data: conversation, error: convError } = await supabaseAdmin
           .from('conversations')
-          .select('id, whatsapp_connection_id, department_id')
+          .select('id, whatsapp_connection_id, department_id, status')
           .eq('contact_id', msg.contact_id)
+          .neq('status', 'closed')
           .order('last_message_at', { ascending: false })
           .limit(1)
-          .single()
+          .maybeSingle()
 
-        if (convError || !conversation) {
+        // If no open conversation, try to get the most recent closed one
+        let finalConversation = conversation
+        if (!finalConversation) {
+          const { data: closedConv } = await supabaseAdmin
+            .from('conversations')
+            .select('id, whatsapp_connection_id, department_id, status')
+            .eq('contact_id', msg.contact_id)
+            .order('last_message_at', { ascending: false })
+            .limit(1)
+            .maybeSingle()
+          finalConversation = closedConv
+        }
+
+        if (!finalConversation) {
           console.error(`[send-scheduled-messages] No conversation found for contact ${msg.contact_id}`)
           await supabaseAdmin
             .from('scheduled_messages')
@@ -99,11 +114,13 @@ Deno.serve(async (req) => {
           continue
         }
 
+        console.log(`[send-scheduled-messages] Using conversation ${finalConversation.id} with connection ${finalConversation.whatsapp_connection_id}`)
+
         // Get connection details
         const { data: connection, error: connError } = await supabaseAdmin
           .from('whatsapp_connections')
           .select('id, instance_token, status, uazapi_base_url')
-          .eq('id', conversation.whatsapp_connection_id)
+          .eq('id', finalConversation.whatsapp_connection_id)
           .single()
 
         if (connError || !connection) {
@@ -134,7 +151,7 @@ Deno.serve(async (req) => {
 
         // Create message in database
         const messageInsert: Record<string, unknown> = {
-          conversation_id: conversation.id,
+          conversation_id: finalConversation.id,
           content: msg.content,
           message_type: msg.message_type,
           direction: 'outbound',
@@ -176,7 +193,7 @@ Deno.serve(async (req) => {
         await supabaseAdmin
           .from('conversations')
           .update({ last_message_at: new Date().toISOString() })
-          .eq('id', conversation.id)
+          .eq('id', finalConversation.id)
 
         // Send via UAZAPI
         const phoneNumber = msg.contact.phone_number.replace(/\D/g, '')

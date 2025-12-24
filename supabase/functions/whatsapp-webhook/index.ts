@@ -1741,15 +1741,15 @@ serve(async (req) => {
     }
     
     // ═══════════════════════════════════════════════════════════════════
-    // 6️⃣ PROCESS CONVERSATION
+    // 6️⃣ PROCESS CONVERSATION - WITH CONNECTION MIGRATION
     // ═══════════════════════════════════════════════════════════════════
     const isFromMe = payload.message?.fromMe === true
     const messageTimestamp = convertTimestamp(payload.message?.messageTimestamp)
     
-    // First: try to find an OPEN conversation
+    // First: try to find an OPEN conversation for this contact on THIS connection
     const { data: openConversation } = await supabase
       .from('conversations')
-      .select('id, unread_count, status')
+      .select('id, unread_count, status, whatsapp_connection_id')
       .eq('contact_id', contactId)
       .eq('whatsapp_connection_id', whatsappConnectionId)
       .neq('status', 'closed')
@@ -1760,7 +1760,7 @@ serve(async (req) => {
     let conversationId: string
     
     if (openConversation) {
-      // Use existing open conversation
+      // Use existing open conversation on same connection
       const newUnreadCount = isFromMe ? openConversation.unread_count : (openConversation.unread_count || 0) + 1
       
       await supabase
@@ -1774,102 +1774,197 @@ serve(async (req) => {
       
       conversationId = openConversation.id
     } else {
-      // No open conversation found - check for a CLOSED conversation to reopen
-      const { data: closedConversation } = await supabase
+      // No conversation on this connection - check if there's an OPEN conversation on ANOTHER connection
+      const { data: otherConnectionConversation } = await supabase
         .from('conversations')
-        .select('id, status, metadata')
+        .select('id, unread_count, status, whatsapp_connection_id, assigned_user_id, department_id, tags, priority')
         .eq('contact_id', contactId)
-        .eq('whatsapp_connection_id', whatsappConnectionId)
-        .eq('status', 'closed')
-        .order('closed_at', { ascending: false })
+        .neq('status', 'closed')
+        .neq('whatsapp_connection_id', whatsappConnectionId)
+        .order('last_message_at', { ascending: false })
         .limit(1)
         .maybeSingle()
       
-      if (closedConversation) {
-        // REOPEN the closed conversation (don't create a new one!)
-        console.log(`🔄 Reabrindo conversa fechada: ${closedConversation.id}`)
+      if (otherConnectionConversation) {
+        // MIGRATE conversation to new connection
+        const previousConnectionId = otherConnectionConversation.whatsapp_connection_id
+        console.log(`🔄 Migrando conversa ${otherConnectionConversation.id} de conexão ${previousConnectionId} para ${whatsappConnectionId}`)
         
-        const existingMetadata = (closedConversation.metadata as Record<string, unknown>) || {}
+        // Get previous connection name for history
+        const { data: prevConnection } = await supabase
+          .from('whatsapp_connections')
+          .select('name')
+          .eq('id', previousConnectionId)
+          .single()
         
+        const newUnreadCount = isFromMe ? otherConnectionConversation.unread_count : (otherConnectionConversation.unread_count || 0) + 1
+        
+        // Update conversation to new connection
         await supabase
           .from('conversations')
           .update({
-            status: 'open',
-            closed_at: null,
-            assigned_user_id: null,
-            assigned_at: null,
-            unread_count: isFromMe ? 0 : 1,
+            whatsapp_connection_id: whatsappConnectionId,
+            department_id: defaultDepartmentId, // Update to default department of new connection
             last_message_at: messageTimestamp,
-            updated_at: new Date().toISOString(),
-            metadata: {
-              ...existingMetadata,
-              autoReopened: true,
-              reopenedAt: new Date().toISOString(),
-              reopenedByClient: true
-            }
+            unread_count: newUnreadCount,
+            updated_at: new Date().toISOString()
           })
-          .eq('id', closedConversation.id)
+          .eq('id', otherConnectionConversation.id)
         
-        // Log the reopening in conversation history
+        // Log connection change in history
         await supabase
           .from('conversation_history')
           .insert({
-            conversation_id: closedConversation.id,
-            event_type: 'reopened',
+            conversation_id: otherConnectionConversation.id,
+            event_type: 'connection_changed',
             event_data: {
-              reason: 'client_message',
-              previous_status: 'closed'
+              previous_connection_id: previousConnectionId,
+              previous_connection_name: prevConnection?.name || 'Número anterior',
+              new_connection_id: whatsappConnectionId,
+              new_connection_name: connection.name || 'Novo número',
+              reason: 'client_initiated',
+              message: 'Cliente enviou mensagem por outro número'
             },
             performed_by: null,
             performed_by_name: 'Sistema',
             is_automatic: true
           })
         
-        conversationId = closedConversation.id
+        console.log(`✅ Conversa migrada com sucesso e histórico registrado`)
+        conversationId = otherConnectionConversation.id
       } else {
-      const { data: newConversation, error: createConvError } = await supabase
-        .from('conversations')
-        .insert({
-          company_id: companyId,
-          contact_id: contactId,
-          whatsapp_connection_id: whatsappConnectionId,
-          department_id: defaultDepartmentId,
-          status: 'open',
-          unread_count: isFromMe ? 0 : 1,
-          last_message_at: messageTimestamp,
-          channel: 'whatsapp',
-          is_group: isGroupMessage // ← Marcar conversas de grupo
-        })
-        .select('id')
-        .single()
+        // No open conversation on any connection - check for a CLOSED conversation to reopen
+        const { data: closedConversation } = await supabase
+          .from('conversations')
+          .select('id, status, metadata, whatsapp_connection_id')
+          .eq('contact_id', contactId)
+          .eq('status', 'closed')
+          .order('closed_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
       
-      if (createConvError) {
-        return new Response(
-          JSON.stringify({ success: false, error: 'Error creating conversation' }),
-          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        )
-      }
-      
-        conversationId = newConversation.id
-        
-        // Log conversation creation
-        await supabase
-          .from('conversation_history')
-          .insert({
-            conversation_id: conversationId,
-            event_type: 'created',
-            event_data: {
-              connection_id: whatsappConnectionId,
-              connection_name: connection.name || 'WhatsApp',
+        if (closedConversation) {
+          // REOPEN the closed conversation
+          const wasOnDifferentConnection = closedConversation.whatsapp_connection_id !== whatsappConnectionId
+          console.log(`🔄 Reabrindo conversa fechada: ${closedConversation.id}${wasOnDifferentConnection ? ' (e migrando conexão)' : ''}`)
+          
+          const existingMetadata = (closedConversation.metadata as Record<string, unknown>) || {}
+          
+          // Get previous connection name if migrating
+          let prevConnectionName = null
+          if (wasOnDifferentConnection) {
+            const { data: prevConn } = await supabase
+              .from('whatsapp_connections')
+              .select('name')
+              .eq('id', closedConversation.whatsapp_connection_id)
+              .single()
+            prevConnectionName = prevConn?.name
+          }
+          
+          await supabase
+            .from('conversations')
+            .update({
+              status: 'open',
+              closed_at: null,
+              assigned_user_id: null,
+              assigned_at: null,
+              unread_count: isFromMe ? 0 : 1,
+              last_message_at: messageTimestamp,
+              updated_at: new Date().toISOString(),
+              whatsapp_connection_id: whatsappConnectionId, // Always update to current connection
               department_id: defaultDepartmentId,
-              department_name: defaultDepartment?.name || 'Geral',
-              contact_name: contactName,
-              contact_phone: phoneNumber
-            },
-            performed_by: null,
-            performed_by_name: 'Sistema',
-            is_automatic: true
-          })
+              metadata: {
+                ...existingMetadata,
+                autoReopened: true,
+                reopenedAt: new Date().toISOString(),
+                reopenedByClient: true
+              }
+            })
+            .eq('id', closedConversation.id)
+          
+          // Log reopening
+          await supabase
+            .from('conversation_history')
+            .insert({
+              conversation_id: closedConversation.id,
+              event_type: 'reopened',
+              event_data: {
+                reason: 'client_message',
+                previous_status: 'closed'
+              },
+              performed_by: null,
+              performed_by_name: 'Sistema',
+              is_automatic: true
+            })
+          
+          // Log connection change if it happened
+          if (wasOnDifferentConnection) {
+            await supabase
+              .from('conversation_history')
+              .insert({
+                conversation_id: closedConversation.id,
+                event_type: 'connection_changed',
+                event_data: {
+                  previous_connection_id: closedConversation.whatsapp_connection_id,
+                  previous_connection_name: prevConnectionName || 'Número anterior',
+                  new_connection_id: whatsappConnectionId,
+                  new_connection_name: connection.name || 'Novo número',
+                  reason: 'client_initiated',
+                  message: 'Cliente reenviou mensagem por outro número'
+                },
+                performed_by: null,
+                performed_by_name: 'Sistema',
+                is_automatic: true
+              })
+          }
+        
+          conversationId = closedConversation.id
+        } else {
+          // No conversation exists at all - create new one
+          const { data: newConversation, error: createConvError } = await supabase
+            .from('conversations')
+            .insert({
+              company_id: companyId,
+              contact_id: contactId,
+              whatsapp_connection_id: whatsappConnectionId,
+              department_id: defaultDepartmentId,
+              status: 'open',
+              unread_count: isFromMe ? 0 : 1,
+              last_message_at: messageTimestamp,
+              channel: 'whatsapp',
+              is_group: isGroupMessage
+            })
+            .select('id')
+            .single()
+      
+          if (createConvError) {
+            return new Response(
+              JSON.stringify({ success: false, error: 'Error creating conversation' }),
+              { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+            )
+          }
+      
+          conversationId = newConversation.id
+        
+          // Log conversation creation
+          await supabase
+            .from('conversation_history')
+            .insert({
+              conversation_id: conversationId,
+              event_type: 'created',
+              event_data: {
+                connection_id: whatsappConnectionId,
+                connection_name: connection.name || 'WhatsApp',
+                department_id: defaultDepartmentId,
+                department_name: defaultDepartment?.name || 'Geral',
+                contact_name: contactName,
+                contact_phone: phoneNumber
+              },
+              performed_by: null,
+              performed_by_name: 'Sistema',
+              is_automatic: true
+            })
+        }
       }
     }
     
