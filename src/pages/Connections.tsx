@@ -489,49 +489,29 @@ export default function Connections() {
   }
 
   async function handleDisconnect(connection: WhatsAppConnection) {
-    console.log('🔍 [DISCONNECT] Starting for connection:', connection.id);
+    console.log('🔌 [DISCONNECT] Starting for connection:', connection.id);
     
     try {
-      // 1. Logout from uazapi
-      console.log('🔍 [DISCONNECT] Calling logout...');
-      await supabase.functions.invoke('whatsapp-instance', {
+      // Chamar a edge function que agora atualiza o banco também
+      console.log('🔌 [DISCONNECT] Calling logout action...');
+      const { data, error } = await supabase.functions.invoke('whatsapp-instance', {
         body: {
           action: 'logout',
           instanceName: connection.session_id
         }
       });
 
-      // 2. Update database WITH verification
-      console.log('🔍 [DISCONNECT] Updating database...');
-      const { data, error } = await supabase
-        .from('whatsapp_connections')
-        .update({ 
-          status: 'disconnected',
-          qr_code: null 
-        })
-        .eq('id', connection.id)
-        .select()
-        .single();
-
-      console.log('🔍 [DISCONNECT] Update result:', { data, error });
-
       if (error) {
-        console.error('❌ [DISCONNECT] Database error:', error);
-        toast.error('Erro ao atualizar status no banco de dados');
+        console.error('❌ [DISCONNECT] Edge function error:', error);
+        toast.error('Erro ao desconectar');
         return;
       }
 
-      if (!data) {
-        console.error('❌ [DISCONNECT] No data returned - update may have failed silently');
-        toast.error('Erro ao atualizar status - nenhum registro atualizado');
-        return;
-      }
-
-      console.log('✅ [DISCONNECT] Successfully updated. New status:', data.status);
+      console.log('✅ [DISCONNECT] Successfully disconnected:', data);
       toast.success('WhatsApp desconectado');
       loadConnections();
     } catch (error) {
-      console.error('Error disconnecting:', error);
+      console.error('❌ [DISCONNECT] Error:', error);
       toast.error('Erro ao desconectar');
     }
   }
@@ -608,74 +588,37 @@ export default function Connections() {
   async function confirmArchiveConnection() {
     if (!connectionToArchive) return;
     
-    console.log('🔍 [ARCHIVE] Starting for connection:', connectionToArchive.id);
+    console.log('📦 [ARCHIVE] Starting for connection:', connectionToArchive.id);
     
     try {
-      // 1. Logout from uazapi if connected
-      if (connectionToArchive.status === 'connected') {
-        console.log('🔍 [ARCHIVE] Calling logout...');
-        await supabase.functions.invoke('whatsapp-instance', {
-          body: {
-            action: 'logout',
-            instanceName: connectionToArchive.session_id
-          }
-        });
-      }
-
-      // 2. Delete instance from uazapi
-      console.log('🔍 [ARCHIVE] Deleting instance from uazapi...');
-      await supabase.functions.invoke('whatsapp-instance', {
+      // Chamar a edge function 'archive' que remove da UAZAPI e atualiza o banco
+      console.log('📦 [ARCHIVE] Calling archive action...');
+      const { data, error } = await supabase.functions.invoke('whatsapp-instance', {
         body: {
-          action: 'delete',
+          action: 'archive',
           instanceName: connectionToArchive.session_id
         }
       });
 
-      // 3. Archive in database (preserve history) WITH verification
-      console.log('🔍 [ARCHIVE] Updating database with archived_at...');
-      const archiveTimestamp = new Date().toISOString();
-      
-      const { data, error } = await supabase
-        .from('whatsapp_connections')
-        .update({ 
-          status: 'disconnected',
-          archived_at: archiveTimestamp,
-          archived_reason: 'user_archived',
-          qr_code: null,
-          active: false
-        })
-        .eq('id', connectionToArchive.id)
-        .select()
-        .single();
-
-      console.log('🔍 [ARCHIVE] Update result:', { data, error });
-
       if (error) {
-        console.error('❌ [ARCHIVE] Database error:', error);
-        toast.error('Erro ao arquivar no banco de dados. A instância foi removida, mas o registro não foi atualizado.');
+        console.error('❌ [ARCHIVE] Edge function error:', error);
+        toast.error('Erro ao arquivar conexão');
         return;
       }
 
-      if (!data) {
-        console.error('❌ [ARCHIVE] No data returned - update may have failed silently');
-        toast.error('Erro ao arquivar - nenhum registro atualizado');
+      if (!data?.success) {
+        console.error('❌ [ARCHIVE] Archive failed:', data);
+        toast.error(data?.error || 'Erro ao arquivar conexão');
         return;
       }
 
-      // Verify the archived_at was actually set
-      if (!data.archived_at) {
-        console.error('❌ [ARCHIVE] archived_at not set in returned data:', data);
-        toast.error('Erro: O campo archived_at não foi atualizado');
-        return;
-      }
-
-      console.log('✅ [ARCHIVE] Successfully archived. archived_at:', data.archived_at);
+      console.log('✅ [ARCHIVE] Successfully archived:', data);
       toast.success('Conexão arquivada. O histórico de conversas foi preservado.');
       setArchiveDialogOpen(false);
       setConnectionToArchive(null);
       loadConnections();
     } catch (error) {
-      console.error('Error archiving connection:', error);
+      console.error('❌ [ARCHIVE] Error:', error);
       toast.error('Erro ao arquivar conexão');
     }
   }
@@ -744,18 +687,37 @@ export default function Connections() {
   async function confirmPermanentDelete() {
     if (!connectionToDelete) return;
     
+    console.log('🗑️ [DELETE_PERMANENT] Starting for connection:', connectionToDelete.id);
+    
     try {
-      await supabase
-        .from('whatsapp_connections')
-        .delete()
-        .eq('id', connectionToDelete.id);
+      // Chamar a edge function 'delete_permanent' que remove da UAZAPI e deleta do banco
+      console.log('🗑️ [DELETE_PERMANENT] Calling delete_permanent action...');
+      const { data, error } = await supabase.functions.invoke('whatsapp-instance', {
+        body: {
+          action: 'delete_permanent',
+          instanceName: connectionToDelete.session_id
+        }
+      });
 
+      if (error) {
+        console.error('❌ [DELETE_PERMANENT] Edge function error:', error);
+        toast.error('Erro ao excluir backup');
+        return;
+      }
+
+      if (!data?.success) {
+        console.error('❌ [DELETE_PERMANENT] Delete failed:', data);
+        toast.error(data?.error || 'Erro ao excluir backup');
+        return;
+      }
+
+      console.log('✅ [DELETE_PERMANENT] Successfully deleted:', data);
       toast.success('Backup excluído permanentemente');
       setPermanentDeleteDialogOpen(false);
       setConnectionToDelete(null);
       loadConnections();
     } catch (error) {
-      console.error('Error permanently deleting connection:', error);
+      console.error('❌ [DELETE_PERMANENT] Error:', error);
       toast.error('Erro ao excluir backup');
     }
   }
