@@ -46,16 +46,64 @@ export function ImageMessage({
   const [hasError, setHasError] = useState(false);
   const [isLightboxOpen, setIsLightboxOpen] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+  const [dragStartPos, setDragStartPos] = useState<{ x: number; y: number } | null>(null);
 
-  const handleDragStart = useCallback((e: React.DragEvent<HTMLImageElement>) => {
+  const handleDragStart = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    if (isLoading || hasError) {
+      e.preventDefault();
+      return;
+    }
+    
     setIsDragging(true);
+    
+    // Extract filename from URL or generate one
+    const urlParts = src.split('/');
+    const urlFileName = urlParts[urlParts.length - 1]?.split('?')[0];
+    const fileName = urlFileName || `imagem-${Date.now()}.jpg`;
+    
+    // DownloadURL format: MIME:filename:URL (for direct download when dropping)
+    e.dataTransfer.setData('DownloadURL', `image/jpeg:${fileName}:${src}`);
+    
+    // Fallbacks for other apps
     e.dataTransfer.setData('text/uri-list', src);
+    e.dataTransfer.setData('text/plain', src);
+    
     e.dataTransfer.effectAllowed = 'copy';
-  }, [src]);
+    
+    // Set drag image preview
+    const img = e.currentTarget.querySelector('img');
+    if (img) {
+      e.dataTransfer.setDragImage(img, 50, 50);
+    }
+  }, [src, isLoading, hasError]);
 
   const handleDragEnd = useCallback(() => {
     setIsDragging(false);
   }, []);
+
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    setDragStartPos({ x: e.clientX, y: e.clientY });
+  }, []);
+
+  const handleClick = useCallback((e: React.MouseEvent) => {
+    // Only open lightbox if it wasn't a drag (moved less than 5px)
+    if (dragStartPos) {
+      const distance = Math.sqrt(
+        Math.pow(e.clientX - dragStartPos.x, 2) + 
+        Math.pow(e.clientY - dragStartPos.y, 2)
+      );
+      if (distance > 5) {
+        e.preventDefault();
+        setDragStartPos(null);
+        return;
+      }
+    }
+    setDragStartPos(null);
+    
+    if (!isLoading && !hasError) {
+      setIsLightboxOpen(true);
+    }
+  }, [dragStartPos, isLoading, hasError]);
 
   const handleLoad = useCallback(() => {
     setIsLoading(false);
@@ -103,20 +151,25 @@ export function ImageMessage({
       <Tooltip>
         <TooltipTrigger asChild>
           <div 
+            draggable={!isLoading && !hasError}
+            onDragStart={handleDragStart}
+            onDragEnd={handleDragEnd}
+            onMouseDown={handleMouseDown}
             className={cn(
-              "relative rounded-xl overflow-hidden cursor-pointer group",
+              "relative rounded-xl overflow-hidden group",
               "w-full max-w-[300px] md:max-w-[300px]",
               "transition-all duration-200 hover:scale-[1.02]",
               isOutbound 
                 ? "bg-primary/10 dark:bg-primary/20" 
                 : "bg-muted",
-              isDragging && "ring-2 ring-primary scale-105"
+              !isLoading && !hasError && "cursor-grab",
+              isDragging && "cursor-grabbing ring-2 ring-primary scale-105"
             )}
-            onClick={() => !isLoading && !hasError && setIsLightboxOpen(true)}
+            onClick={handleClick}
             onKeyDown={handleKeyDown}
             role="button"
             tabIndex={0}
-            aria-label={`${alt}. Clique para ampliar.`}
+            aria-label={`${alt}. Arraste para salvar ou clique para ampliar.`}
           >
         {/* Loading skeleton */}
         {isLoading && (
@@ -147,14 +200,12 @@ export function ImageMessage({
             src={src}
             alt={alt}
             loading="lazy"
-            draggable="true"
+            draggable={false}
             onLoad={handleLoad}
             onError={handleError}
-            onDragStart={handleDragStart}
-            onDragEnd={handleDragEnd}
             className={cn(
               "w-full h-auto object-cover max-h-[400px]",
-              "transition-opacity duration-200",
+              "transition-opacity duration-200 pointer-events-none select-none",
               isLoading ? "opacity-0" : "opacity-100"
             )}
             style={{ 
