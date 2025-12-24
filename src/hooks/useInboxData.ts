@@ -3,7 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAppStore } from '@/stores/appStore';
 import { toast } from '@/hooks/use-toast';
-import { ALL_CONNECTIONS_ID } from '@/components/inbox/ConnectionSelector';
+import { ALL_CONNECTIONS_ID, ARCHIVED_CONNECTIONS_ID } from '@/components/inbox/ConnectionSelector';
 import type { Conversation, Message, Contact, ConversationFilters, MessageReaction } from '@/types';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 
@@ -165,7 +165,8 @@ export function useInboxData() {
     }
 
     const isAllConnections = selectedConnectionId === ALL_CONNECTIONS_ID;
-    console.log('[useInboxData] Carregando conversas para conexão:', selectedConnectionId, { isAllConnections });
+    const isArchivedConnections = selectedConnectionId === ARCHIVED_CONNECTIONS_ID;
+    console.log('[useInboxData] Carregando conversas para conexão:', selectedConnectionId, { isAllConnections, isArchivedConnections });
     setIsLoadingConversations(true);
 
     try {
@@ -176,15 +177,43 @@ export function useInboxData() {
       let allowedDepartmentIds: string[] | null = null; // null means all departments
       let userConnectionIds: string[] = []; // List of connections the user has access to
 
-      if (isAllConnections) {
+      if (isArchivedConnections) {
+        // Mode "Archived Connections" - only for admins/owners
+        if (!isAdminOrOwner) {
+          setConversations([]);
+          setIsLoadingConversations(false);
+          toast({
+            title: 'Sem acesso',
+            description: 'Apenas administradores podem ver conexões arquivadas.',
+            variant: 'destructive',
+          });
+          return;
+        }
+        
+        // Get all archived connections
+        const { data: archivedConnections } = await supabase
+          .from('whatsapp_connections')
+          .select('id')
+          .eq('company_id', profile.company_id)
+          .not('archived_at', 'is', null);
+        
+        userConnectionIds = (archivedConnections || []).map(c => c.id);
+        
+        if (userConnectionIds.length === 0) {
+          setConversations([]);
+          setIsLoadingConversations(false);
+          return;
+        }
+      } else if (isAllConnections) {
         // Mode "All Connections" - get all connections user has access to
         if (isAdminOrOwner) {
-          // Admin/Owner see all connected connections
+          // Admin/Owner see all connected connections (exclude archived)
           const { data: allConnections } = await supabase
             .from('whatsapp_connections')
             .select('id')
             .eq('company_id', profile.company_id)
-            .eq('status', 'connected');
+            .eq('status', 'connected')
+            .is('archived_at', null);
           
           userConnectionIds = (allConnections || []).map(c => c.id);
         } else if (user?.id) {
@@ -306,7 +335,7 @@ export function useInboxData() {
         `);
 
       // Apply connection filter
-      if (isAllConnections) {
+      if (isArchivedConnections || isAllConnections) {
         query = query.in('whatsapp_connection_id', userConnectionIds);
       } else {
         query = query.eq('whatsapp_connection_id', selectedConnectionId);

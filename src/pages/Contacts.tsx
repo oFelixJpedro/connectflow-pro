@@ -16,7 +16,8 @@ import {
   Smartphone,
   Users,
   X,
-  History
+  History,
+  ArrowRightLeft
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -63,6 +64,7 @@ import { useContactsData, Contact } from '@/hooks/useContactsData';
 import { ContactFormModal } from '@/components/contacts/ContactFormModal';
 import { StartConversationModal } from '@/components/contacts/StartConversationModal';
 import { ContactHistoryModal } from '@/components/contacts/ContactHistoryModal';
+import { MigrateConnectionModal } from '@/components/contacts/MigrateConnectionModal';
 import { useAuth } from '@/contexts/AuthContext';
 import { getContactLogsCount } from '@/lib/contactHistory';
 
@@ -100,6 +102,7 @@ export default function Contacts() {
   const [bulkDeleteDialogOpen, setBulkDeleteDialogOpen] = useState(false);
   const [importing, setImporting] = useState(false);
   const [historyModalOpen, setHistoryModalOpen] = useState(false);
+  const [migrateModalOpen, setMigrateModalOpen] = useState(false);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -416,6 +419,14 @@ export default function Contacts() {
               </span>
               <Button 
                 variant="outline" 
+                size="sm"
+                onClick={() => setMigrateModalOpen(true)}
+              >
+                <ArrowRightLeft className="w-4 h-4 mr-1" />
+                Migrar
+              </Button>
+              <Button 
+                variant="outline" 
                 size="sm" 
                 className="text-destructive"
                 onClick={handleBulkDelete}
@@ -625,6 +636,15 @@ export default function Contacts() {
       <ContactHistoryModal 
         open={historyModalOpen} 
         onOpenChange={setHistoryModalOpen} 
+      />
+
+      {/* Migrate Connection Modal */}
+      <MigrateConnectionModal
+        open={migrateModalOpen}
+        onOpenChange={setMigrateModalOpen}
+        contactIds={selectedContacts}
+        companyId={profile?.company_id || ''}
+        onSuccess={() => setSelectedContacts([])}
       />
     </div>
   );

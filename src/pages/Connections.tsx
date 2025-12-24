@@ -11,8 +11,11 @@ import {
   Loader2,
   X,
   Users,
-  AlertTriangle
+  AlertTriangle,
+  Archive,
+  Upload
 } from 'lucide-react';
+import { ImportConversationsModal } from '@/components/connections/ImportConversationsModal';
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -25,6 +28,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -81,6 +94,14 @@ export default function Connections() {
   // Settings dialog state
   const [isSettingsDialogOpen, setIsSettingsDialogOpen] = useState(false);
   const [selectedConnectionForSettings, setSelectedConnectionForSettings] = useState<WhatsAppConnection | null>(null);
+  
+  // Import conversations modal state
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [selectedConnectionForImport, setSelectedConnectionForImport] = useState<WhatsAppConnection | null>(null);
+  
+  // Archive confirmation dialog state
+  const [archiveDialogOpen, setArchiveDialogOpen] = useState(false);
+  const [connectionToArchive, setConnectionToArchive] = useState<WhatsAppConnection | null>(null);
 
   useEffect(() => {
     if (company?.id) {
@@ -274,17 +295,83 @@ export default function Connections() {
             
             // Connected! Update database
             console.log('📡 [API] Atualizando banco de dados...');
+            const connectedPhoneNumber = statusData.phoneNumber || 'Conectado';
+            const normalizedNewPhone = connectedPhoneNumber.replace(/\D/g, '');
+            
             await supabase
               .from('whatsapp_connections')
               .update({ 
                 status: 'connected',
-                phone_number: statusData.phoneNumber || 'Conectado',
+                phone_number: connectedPhoneNumber,
                 qr_code: null,
-                last_connected_at: new Date().toISOString()
+                last_connected_at: new Date().toISOString(),
+                original_phone_normalized: normalizedNewPhone
               })
               .eq('id', connectionId);
 
             console.log('✅ [API] Banco atualizado');
+            
+            // ═══════════════════════════════════════════════════════════════
+            // 🔄 AUTO-MIGRATE: Check if same number was previously archived
+            // ═══════════════════════════════════════════════════════════════
+            if (normalizedNewPhone && normalizedNewPhone.length >= 10 && company?.id) {
+              console.log('🔍 [AUTO-MIGRATE] Verificando se há conexão arquivada com mesmo número:', normalizedNewPhone);
+              
+              const { data: archivedConnection } = await supabase
+                .from('whatsapp_connections')
+                .select('id, name')
+                .eq('company_id', company.id)
+                .eq('original_phone_normalized', normalizedNewPhone)
+                .not('archived_at', 'is', null)
+                .neq('id', connectionId)
+                .limit(1)
+                .maybeSingle();
+              
+              if (archivedConnection) {
+                console.log('🔄 [AUTO-MIGRATE] Conexão arquivada encontrada:', archivedConnection.name);
+                console.log('🔄 [AUTO-MIGRATE] Migrando todas as conversas...');
+                
+                // Count conversations to migrate
+                const { count: conversationsCount } = await supabase
+                  .from('conversations')
+                  .select('*', { count: 'exact', head: true })
+                  .eq('whatsapp_connection_id', archivedConnection.id);
+                
+                // Migrate all conversations to new connection
+                const { error: migrateError } = await supabase
+                  .from('conversations')
+                  .update({ whatsapp_connection_id: connectionId })
+                  .eq('whatsapp_connection_id', archivedConnection.id);
+                
+                if (migrateError) {
+                  console.error('❌ [AUTO-MIGRATE] Erro ao migrar conversas:', migrateError);
+                } else {
+                  console.log('✅ [AUTO-MIGRATE] Conversas migradas com sucesso!');
+                  
+                  // Record migration
+                  await supabase
+                    .from('connection_migrations')
+                    .insert({
+                      company_id: company.id,
+                      source_connection_id: archivedConnection.id,
+                      target_connection_id: connectionId,
+                      migration_type: 'auto_same_number',
+                      migrated_conversations_count: conversationsCount || 0,
+                      migrated_by: session?.user?.id
+                    });
+                  
+                  // Mark old connection as migrated
+                  await supabase
+                    .from('whatsapp_connections')
+                    .update({ archived_reason: 'migrated' })
+                    .eq('id', archivedConnection.id);
+                  
+                  toast.success(`${conversationsCount || 0} conversas migradas automaticamente da conexão anterior!`);
+                }
+              } else {
+                console.log('ℹ️ [AUTO-MIGRATE] Nenhuma conexão arquivada encontrada com mesmo número');
+              }
+            }
             
             // Create default department if connection doesn't have any
             console.log('📁 [DEPARTMENT] Verificando departamentos da conexão...');
@@ -486,30 +573,79 @@ export default function Connections() {
     }
   }
 
-  async function handleRemove(connection: WhatsAppConnection) {
-    if (!confirm('Tem certeza que deseja remover esta conexão?')) return;
+  // Archive connection instead of deleting (preserves history)
+  async function handleArchiveConnection(connection: WhatsAppConnection) {
+    setConnectionToArchive(connection);
+    setArchiveDialogOpen(true);
+  }
 
+  async function confirmArchiveConnection() {
+    if (!connectionToArchive) return;
+    
     try {
-      // Delete from uazapi
+      // 1. Logout from uazapi if connected
+      if (connectionToArchive.status === 'connected') {
+        await supabase.functions.invoke('whatsapp-instance', {
+          body: {
+            action: 'logout',
+            instanceName: connectionToArchive.session_id
+          }
+        });
+      }
+
+      // 2. Delete instance from uazapi
       await supabase.functions.invoke('whatsapp-instance', {
         body: {
           action: 'delete',
-          instanceName: connection.session_id
+          instanceName: connectionToArchive.session_id
         }
       });
 
-      // Delete from database
+      // 3. Archive in database (preserve history)
+      await supabase
+        .from('whatsapp_connections')
+        .update({ 
+          status: 'disconnected',
+          archived_at: new Date().toISOString(),
+          archived_reason: 'user_archived',
+          qr_code: null,
+          active: false
+        })
+        .eq('id', connectionToArchive.id);
+
+      toast.success('Conexão arquivada. O histórico de conversas foi preservado.');
+      setArchiveDialogOpen(false);
+      setConnectionToArchive(null);
+      loadConnections();
+    } catch (error) {
+      console.error('Error archiving connection:', error);
+      toast.error('Erro ao arquivar conexão');
+    }
+  }
+
+  // Permanently delete an archived connection
+  async function handlePermanentDelete(connection: WhatsAppConnection) {
+    if (!confirm('ATENÇÃO: Esta ação irá excluir PERMANENTEMENTE a conexão e TODO o histórico de conversas associado. Esta ação NÃO pode ser desfeita. Deseja continuar?')) return;
+
+    try {
+      // Delete from database (cascade will delete conversations)
       await supabase
         .from('whatsapp_connections')
         .delete()
         .eq('id', connection.id);
 
-      toast.success('Conexão removida');
+      toast.success('Conexão excluída permanentemente');
       loadConnections();
     } catch (error) {
-      console.error('Error removing connection:', error);
-      toast.error('Erro ao remover conexão');
+      console.error('Error deleting connection:', error);
+      toast.error('Erro ao excluir conexão');
     }
+  }
+
+  // Open import modal for a connection
+  function handleOpenImportModal(connection: WhatsAppConnection) {
+    setSelectedConnectionForImport(connection);
+    setIsImportModalOpen(true);
   }
 
   const statusConfig = {
@@ -648,26 +784,43 @@ export default function Connections() {
                             <Settings className="w-4 h-4 mr-2" />
                             Configurações
                           </DropdownMenuItem>
+                          {/* Import conversations option for active connections */}
+                          {!connection.archived_at && (
+                            <DropdownMenuItem onClick={() => handleOpenImportModal(connection)}>
+                              <Upload className="w-4 h-4 mr-2" />
+                              Importar Conversas
+                            </DropdownMenuItem>
+                          )}
                           {connection.status === 'connected' && (
                             <DropdownMenuItem onClick={() => handleDisconnect(connection)}>
                               <WifiOff className="w-4 h-4 mr-2" />
                               Desconectar
                             </DropdownMenuItem>
                           )}
-                          {(connection.status === 'disconnected' || connection.status === 'error') && (
+                          {(connection.status === 'disconnected' || connection.status === 'error') && !connection.archived_at && (
                             <DropdownMenuItem onClick={() => handleReconnect(connection)}>
                               <RefreshCw className="w-4 h-4 mr-2" />
                               Reconectar
                             </DropdownMenuItem>
                           )}
                           <DropdownMenuSeparator />
-                          <DropdownMenuItem 
-                            className="text-destructive"
-                            onClick={() => handleRemove(connection)}
-                          >
-                            <Trash2 className="w-4 h-4 mr-2" />
-                            Remover
-                          </DropdownMenuItem>
+                          {!connection.archived_at ? (
+                            <DropdownMenuItem 
+                              className="text-warning"
+                              onClick={() => handleArchiveConnection(connection)}
+                            >
+                              <Archive className="w-4 h-4 mr-2" />
+                              Arquivar
+                            </DropdownMenuItem>
+                          ) : (
+                            <DropdownMenuItem 
+                              className="text-destructive"
+                              onClick={() => handlePermanentDelete(connection)}
+                            >
+                              <Trash2 className="w-4 h-4 mr-2" />
+                              Excluir Permanentemente
+                            </DropdownMenuItem>
+                          )}
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </div>
@@ -743,26 +896,43 @@ export default function Connections() {
                               <Settings className="w-4 h-4 mr-2" />
                               Configurações
                             </DropdownMenuItem>
+                            {/* Import conversations option for active connections */}
+                            {!connection.archived_at && (
+                              <DropdownMenuItem onClick={() => handleOpenImportModal(connection)}>
+                                <Upload className="w-4 h-4 mr-2" />
+                                Importar Conversas
+                              </DropdownMenuItem>
+                            )}
                             {connection.status === 'connected' && (
                               <DropdownMenuItem onClick={() => handleDisconnect(connection)}>
                                 <WifiOff className="w-4 h-4 mr-2" />
                                 Desconectar
                               </DropdownMenuItem>
                             )}
-                            {(connection.status === 'disconnected' || connection.status === 'error') && (
+                            {(connection.status === 'disconnected' || connection.status === 'error') && !connection.archived_at && (
                               <DropdownMenuItem onClick={() => handleReconnect(connection)}>
                                 <RefreshCw className="w-4 h-4 mr-2" />
                                 Reconectar
                               </DropdownMenuItem>
                             )}
                             <DropdownMenuSeparator />
-                            <DropdownMenuItem 
-                              className="text-destructive"
-                              onClick={() => handleRemove(connection)}
-                            >
-                              <Trash2 className="w-4 h-4 mr-2" />
-                              Remover
-                            </DropdownMenuItem>
+                            {!connection.archived_at ? (
+                              <DropdownMenuItem 
+                                className="text-warning"
+                                onClick={() => handleArchiveConnection(connection)}
+                              >
+                                <Archive className="w-4 h-4 mr-2" />
+                                Arquivar
+                              </DropdownMenuItem>
+                            ) : (
+                              <DropdownMenuItem 
+                                className="text-destructive"
+                                onClick={() => handlePermanentDelete(connection)}
+                              >
+                                <Trash2 className="w-4 h-4 mr-2" />
+                                Excluir Permanentemente
+                              </DropdownMenuItem>
+                            )}
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </TableCell>
@@ -913,6 +1083,50 @@ export default function Connections() {
             c.id === updatedConnection.id ? { ...c, ...updatedConnection } : c
           ));
         }}
+      />
+
+      {/* Archive Confirmation Dialog */}
+      <AlertDialog open={archiveDialogOpen} onOpenChange={setArchiveDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <Archive className="w-5 h-5 text-warning" />
+              Arquivar Conexão
+            </AlertDialogTitle>
+            <AlertDialogDescription className="space-y-2">
+              <p>
+                Ao arquivar esta conexão, ela será desconectada do WhatsApp, mas <strong>todo o histórico de conversas será preservado</strong>.
+              </p>
+              <p className="text-muted-foreground">
+                As conversas arquivadas poderão ser visualizadas através do filtro "Desconectadas" no inbox.
+              </p>
+              <p className="text-muted-foreground">
+                Você poderá importar essas conversas para uma nova conexão a qualquer momento.
+              </p>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={confirmArchiveConnection}
+              className="bg-warning text-warning-foreground hover:bg-warning/90"
+            >
+              Arquivar Conexão
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Import Conversations Modal */}
+      <ImportConversationsModal
+        open={isImportModalOpen}
+        onOpenChange={(open) => {
+          setIsImportModalOpen(open);
+          if (!open) setSelectedConnectionForImport(null);
+        }}
+        targetConnectionId={selectedConnectionForImport?.id || ''}
+        targetConnectionName={selectedConnectionForImport?.name || ''}
+        companyId={company?.id || ''}
       />
     </div>
   );
