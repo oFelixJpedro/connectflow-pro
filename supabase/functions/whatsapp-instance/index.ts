@@ -393,17 +393,16 @@ Deno.serve(async (req) => {
           // ═══════════════════════════════════════════════════════════════
           // 🧹 PRE-UPDATE: Limpar phone_number de conexões arquivadas 
           // para evitar violação da constraint unique_company_phone
+          // Usamos 'Aguardando...' pois o índice único ignora esse valor
           // ═══════════════════════════════════════════════════════════════
           if (normalizedPhone && normalizedPhone.length >= 10 && connection.company_id) {
             console.log('🧹 [PRE-UPDATE] Limpando phone_number de conexões arquivadas com mesmo número...')
-            
-            const archivedPhonePlaceholder = `archived:${normalizedPhone}:${connection.id}`
 
             const { data: conflictingConnections, error: clearError } = await serviceRoleClient
               .from('whatsapp_connections')
               .update({
-                // phone_number é NOT NULL, então usamos um placeholder único para evitar conflito
-                phone_number: archivedPhonePlaceholder,
+                // Usar 'Aguardando...' - o índice único ignora esse valor
+                phone_number: 'Aguardando...',
               })
               .eq('company_id', connection.company_id)
               .eq('original_phone_normalized', normalizedPhone)
@@ -441,57 +440,68 @@ Deno.serve(async (req) => {
             console.log('✅ [STATUS] Banco atualizado com sucesso!')
             
             // ═══════════════════════════════════════════════════════════════
-            // 🔄 AUTO-MIGRATE: Migrar conversas de conexão arquivada
+            // 🔄 AUTO-MIGRATE: Migrar conversas de TODAS as conexões arquivadas
+            // com o mesmo número (não apenas uma)
             // ═══════════════════════════════════════════════════════════════
             if (normalizedPhone && normalizedPhone.length >= 10 && connection.company_id) {
-              console.log('🔍 [AUTO-MIGRATE] Verificando conexão arquivada com mesmo número...')
+              console.log('🔍 [AUTO-MIGRATE] Verificando TODAS as conexões arquivadas com mesmo número...')
               
-              const { data: archivedConnection } = await serviceRoleClient
+              // Buscar TODAS as conexões arquivadas com mesmo número
+              const { data: archivedConnections, error: fetchArchivedError } = await serviceRoleClient
                 .from('whatsapp_connections')
                 .select('id, name')
                 .eq('company_id', connection.company_id)
                 .eq('original_phone_normalized', normalizedPhone)
                 .not('archived_at', 'is', null)
                 .neq('id', connection.id)
-                .limit(1)
-                .maybeSingle()
               
-              if (archivedConnection) {
-                console.log('🔄 [AUTO-MIGRATE] Conexão arquivada encontrada:', archivedConnection.name)
+              if (fetchArchivedError) {
+                console.error('❌ [AUTO-MIGRATE] Erro ao buscar conexões arquivadas:', fetchArchivedError)
+              } else if (archivedConnections && archivedConnections.length > 0) {
+                console.log('🔄 [AUTO-MIGRATE] Encontradas', archivedConnections.length, 'conexões arquivadas:')
+                archivedConnections.forEach(c => console.log('   - ', c.name, '(', c.id, ')'))
                 
-                // Contar conversas
-                const { count: conversationsCount } = await serviceRoleClient
+                // Coletar IDs para migração em lote
+                const archivedIds = archivedConnections.map(c => c.id)
+                
+                // Contar TODAS as conversas que serão migradas
+                const { count: totalConversationsCount } = await serviceRoleClient
                   .from('conversations')
                   .select('*', { count: 'exact', head: true })
-                  .eq('whatsapp_connection_id', archivedConnection.id)
+                  .in('whatsapp_connection_id', archivedIds)
                 
-                // Migrar conversas
+                console.log('📊 [AUTO-MIGRATE] Total de conversas a migrar:', totalConversationsCount)
+                
+                // Migrar TODAS as conversas de uma vez
                 const { error: migrateError } = await serviceRoleClient
                   .from('conversations')
                   .update({ whatsapp_connection_id: connection.id })
-                  .eq('whatsapp_connection_id', archivedConnection.id)
+                  .in('whatsapp_connection_id', archivedIds)
                 
                 if (migrateError) {
                   console.error('❌ [AUTO-MIGRATE] Erro ao migrar:', migrateError)
                 } else {
-                  console.log('✅ [AUTO-MIGRATE] Migradas', conversationsCount, 'conversas!')
+                  console.log('✅ [AUTO-MIGRATE] Migradas', totalConversationsCount, 'conversas de', archivedConnections.length, 'conexões!')
                   
-                  // Registrar migração
+                  // Registrar migração (1 registro consolidado)
+                  // Usamos a primeira conexão arquivada como source para manter compatibilidade
                   await serviceRoleClient
                     .from('connection_migrations')
                     .insert({
                       company_id: connection.company_id,
-                      source_connection_id: archivedConnection.id,
+                      source_connection_id: archivedConnections[0].id,
                       target_connection_id: connection.id,
                       migration_type: 'auto_same_number',
-                      migrated_conversations_count: conversationsCount || 0
+                      migrated_conversations_count: totalConversationsCount || 0
                     })
                   
-                  // Marcar como migrada
+                  // Marcar TODAS como migradas
                   await serviceRoleClient
                     .from('whatsapp_connections')
                     .update({ archived_reason: 'migrated' })
-                    .eq('id', archivedConnection.id)
+                    .in('id', archivedIds)
+                  
+                  console.log('✅ [AUTO-MIGRATE] Marcadas', archivedConnections.length, 'conexões como migradas')
                 }
               } else {
                 console.log('ℹ️ [AUTO-MIGRATE] Nenhuma conexão arquivada com mesmo número')
@@ -719,6 +729,9 @@ Deno.serve(async (req) => {
             active: false,
             qr_code: null,
             instance_token: null, // Limpar token já que foi removido da UAZAPI
+            // IMPORTANTE: Liberar o phone_number para evitar conflito quando reconectar
+            // Usamos 'Aguardando...' pois o índice único ignora esse valor
+            phone_number: 'Aguardando...',
             updated_at: new Date().toISOString()
           })
           .eq('id', connection.id)
