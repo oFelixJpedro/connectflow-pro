@@ -274,11 +274,13 @@ serve(async (req) => {
     let conversationsToEvaluate: string[] = [];
 
     if (evaluate_all && company_id) {
+      // Excluir grupos da avaliação em lote (custo elevado)
       const { data: allClosed, error: closedError } = await supabase
         .from('conversations')
         .select('id')
         .eq('company_id', company_id)
-        .in('status', ['closed', 'resolved']);
+        .in('status', ['closed', 'resolved'])
+        .or('is_group.is.null,is_group.eq.false');
 
       if (closedError) {
         console.error('[evaluate-conversation] Error fetching closed conversations:', closedError);
@@ -333,12 +335,21 @@ serve(async (req) => {
       try {
         const { data: conversation, error: convError } = await supabase
           .from('conversations')
-          .select('id, company_id, contact:contacts(name, phone_number)')
+          .select('id, company_id, is_group, contact:contacts(name, phone_number)')
           .eq('id', convId)
           .single();
 
         if (convError || !conversation) {
           results.push({ conversation_id: convId, success: false, error: 'Conversa não encontrada' });
+          continue;
+        }
+
+        // ═══════════════════════════════════════════════════════════════════
+        // 🚫 BLOQUEAR AVALIAÇÃO DE GRUPOS (custo elevado)
+        // ═══════════════════════════════════════════════════════════════════
+        if ((conversation as any).is_group === true) {
+          console.log(`[evaluate-conversation] Skipping group conversation: ${convId}`);
+          results.push({ conversation_id: convId, success: false, error: 'Avaliação não disponível para grupos' });
           continue;
         }
 
