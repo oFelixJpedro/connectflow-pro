@@ -441,7 +441,7 @@ Deno.serve(async (req) => {
             
             // ═══════════════════════════════════════════════════════════════
             // 🔄 AUTO-MIGRATE: Migrar conversas de TODAS as conexões arquivadas
-            // com o mesmo número (não apenas uma)
+            // com o mesmo número (não apenas uma) + CONSOLIDAR DUPLICATAS
             // ═══════════════════════════════════════════════════════════════
             if (normalizedPhone && normalizedPhone.length >= 10 && connection.company_id) {
               console.log('🔍 [AUTO-MIGRATE] Verificando TODAS as conexões arquivadas com mesmo número...')
@@ -482,6 +482,110 @@ Deno.serve(async (req) => {
                   console.error('❌ [AUTO-MIGRATE] Erro ao migrar:', migrateError)
                 } else {
                   console.log('✅ [AUTO-MIGRATE] Migradas', totalConversationsCount, 'conversas de', archivedConnections.length, 'conexões!')
+                  
+                  // ═══════════════════════════════════════════════════════════════
+                  // 🔄 CONSOLIDAR CONVERSAS DUPLICADAS DO MESMO CONTATO
+                  // ═══════════════════════════════════════════════════════════════
+                  console.log('🔍 [CONSOLIDATE] Verificando conversas duplicadas para consolidar...')
+                  
+                  // Buscar contatos com múltiplas conversas nesta conexão
+                  const { data: duplicateContacts } = await serviceRoleClient
+                    .from('conversations')
+                    .select('contact_id')
+                    .eq('whatsapp_connection_id', connection.id)
+                  
+                  if (duplicateContacts && duplicateContacts.length > 0) {
+                    // Agrupar por contact_id para encontrar duplicatas
+                    const contactCounts: Record<string, number> = {}
+                    duplicateContacts.forEach(c => {
+                      contactCounts[c.contact_id] = (contactCounts[c.contact_id] || 0) + 1
+                    })
+                    
+                    const contactsWithDuplicates = Object.entries(contactCounts)
+                      .filter(([_, count]) => count > 1)
+                      .map(([contactId]) => contactId)
+                    
+                    console.log(`📊 [CONSOLIDATE] Encontrados ${contactsWithDuplicates.length} contatos com conversas duplicadas`)
+                    
+                    let totalMergedConversations = 0
+                    let totalMovedMessages = 0
+                    
+                    for (const contactId of contactsWithDuplicates) {
+                      // Buscar todas as conversas deste contato na conexão
+                      const { data: contactConversations } = await serviceRoleClient
+                        .from('conversations')
+                        .select('id, last_message_at, status, created_at')
+                        .eq('contact_id', contactId)
+                        .eq('whatsapp_connection_id', connection.id)
+                        .order('last_message_at', { ascending: false })
+                      
+                      if (!contactConversations || contactConversations.length <= 1) continue
+                      
+                      // A conversa principal é a mais recente
+                      const [principalConversation, ...oldConversations] = contactConversations
+                      const oldConversationIds = oldConversations.map(c => c.id)
+                      
+                      console.log(`🔀 [CONSOLIDATE] Consolidando ${oldConversations.length} conversas antigas para contato ${contactId} -> ${principalConversation.id}`)
+                      
+                      // Mover todas as mensagens das conversas antigas para a principal
+                      const { data: movedMessagesData } = await serviceRoleClient
+                        .from('messages')
+                        .update({ conversation_id: principalConversation.id })
+                        .in('conversation_id', oldConversationIds)
+                        .select('id')
+                      
+                      const movedMessages = movedMessagesData?.length || 0
+                      totalMovedMessages += movedMessages
+                      
+                      // Mover scheduled_messages
+                      await serviceRoleClient
+                        .from('scheduled_messages')
+                        .update({ conversation_id: principalConversation.id })
+                        .in('conversation_id', oldConversationIds)
+                      
+                      // Mover chat_summaries
+                      await serviceRoleClient
+                        .from('chat_summaries')
+                        .update({ conversation_id: principalConversation.id })
+                        .in('conversation_id', oldConversationIds)
+                      
+                      // Mover notas internas
+                      await serviceRoleClient
+                        .from('internal_notes')
+                        .update({ conversation_id: principalConversation.id })
+                        .in('conversation_id', oldConversationIds)
+                      
+                      // Registrar merge no histórico
+                      await serviceRoleClient
+                        .from('conversation_history')
+                        .insert({
+                          conversation_id: principalConversation.id,
+                          event_type: 'connection_changed',
+                          event_data: {
+                            action: 'conversations_merged',
+                            merged_conversation_ids: oldConversationIds,
+                            merged_count: oldConversations.length,
+                            moved_messages: movedMessages || 0,
+                            reason: 'connection_migration_consolidation'
+                          },
+                          performed_by: null,
+                          performed_by_name: 'Sistema',
+                          is_automatic: true
+                        })
+                      
+                      // Deletar conversas antigas (agora vazias)
+                      await serviceRoleClient
+                        .from('conversations')
+                        .delete()
+                        .in('id', oldConversationIds)
+                      
+                      totalMergedConversations += oldConversations.length
+                    }
+                    
+                    if (totalMergedConversations > 0) {
+                      console.log(`✅ [CONSOLIDATE] Consolidadas ${totalMergedConversations} conversas duplicadas, ${totalMovedMessages} mensagens movidas`)
+                    }
+                  }
                   
                   // Registrar migração (1 registro consolidado)
                   // Usamos a primeira conexão arquivada como source para manter compatibilidade
