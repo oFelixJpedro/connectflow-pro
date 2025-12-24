@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -24,6 +24,8 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Badge } from '@/components/ui/badge';
 import { 
   CalendarIcon, 
   Image, 
@@ -37,7 +39,10 @@ import {
   Square,
   Play,
   Pause,
-  RotateCcw
+  RotateCcw,
+  Zap,
+  Search,
+  Check
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
@@ -46,6 +51,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from '@/hooks/use-toast';
 import { useAudioRecorder } from '@/hooks/useAudioRecorder';
+import { useQuickRepliesData, QuickReply } from '@/hooks/useQuickRepliesData';
 
 interface ScheduleMessageModalProps {
   open: boolean;
@@ -57,7 +63,7 @@ interface ScheduleMessageModalProps {
   currentUserId?: string;
 }
 
-type MessageType = 'text' | 'image' | 'video' | 'audio' | 'document';
+type MessageType = 'text' | 'image' | 'video' | 'audio' | 'document' | 'quick-reply';
 
 const MESSAGE_TYPES = [
   { type: 'text' as const, label: 'Texto', icon: FileText },
@@ -65,6 +71,7 @@ const MESSAGE_TYPES = [
   { type: 'video' as const, label: 'Vídeo', icon: Video },
   { type: 'audio' as const, label: 'Áudio', icon: Mic },
   { type: 'document' as const, label: 'Documento', icon: Paperclip },
+  { type: 'quick-reply' as const, label: 'Rápida', icon: Zap },
 ];
 
 function formatRecordingTime(seconds: number): string {
@@ -99,6 +106,22 @@ export function ScheduleMessageModal({
   const audioPreviewRef = useRef<HTMLAudioElement | null>(null);
   const [audioPreviewPlaying, setAudioPreviewPlaying] = useState(false);
 
+  // Quick reply state
+  const { quickReplies, loading: loadingQuickReplies, incrementUseCount } = useQuickRepliesData();
+  const [quickReplySearch, setQuickReplySearch] = useState('');
+  const [selectedQuickReply, setSelectedQuickReply] = useState<QuickReply | null>(null);
+
+  // Filter quick replies based on search
+  const filteredQuickReplies = useMemo(() => {
+    if (!quickReplySearch.trim()) return quickReplies;
+    const search = quickReplySearch.toLowerCase();
+    return quickReplies.filter(qr =>
+      qr.title.toLowerCase().includes(search) ||
+      qr.shortcut.toLowerCase().includes(search) ||
+      qr.message.toLowerCase().includes(search)
+    );
+  }, [quickReplies, quickReplySearch]);
+
   // Reset state when modal opens/closes
   useEffect(() => {
     if (open) {
@@ -111,8 +134,31 @@ export function ScheduleMessageModal({
       setIsRecordingAudio(false);
       setShowAudioChoice(false);
       audioRecorder.cancelRecording();
+      setQuickReplySearch('');
+      setSelectedQuickReply(null);
     }
   }, [open]);
+
+  // Handle quick reply selection
+  const handleSelectQuickReply = async (qr: QuickReply) => {
+    setSelectedQuickReply(qr);
+    setContent(qr.message);
+
+    // If quick reply has media, download and set the file
+    if (qr.media_url && qr.media_type && qr.media_type !== 'text') {
+      try {
+        const response = await fetch(qr.media_url);
+        const blob = await response.blob();
+        const fileName = qr.media_url.split('/').pop() || `media.${qr.media_type}`;
+        const file = new File([blob], fileName, { type: blob.type });
+        setMediaFile(file);
+      } catch (error) {
+        console.error('[ScheduleMessageModal] Error downloading quick reply media:', error);
+      }
+    } else {
+      setMediaFile(null);
+    }
+  };
 
   const handleFileSelect = (type: MessageType) => {
     if (type === 'audio') {
@@ -199,6 +245,15 @@ export function ScheduleMessageModal({
       return;
     }
 
+    if (messageType === 'quick-reply' && !selectedQuickReply) {
+      toast({
+        title: 'Resposta rápida obrigatória',
+        description: 'Selecione uma resposta rápida para agendar.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     if (messageType === 'text' && !content.trim()) {
       toast({
         title: 'Mensagem obrigatória',
@@ -208,7 +263,7 @@ export function ScheduleMessageModal({
       return;
     }
 
-    if (messageType !== 'text' && !mediaFile) {
+    if (messageType !== 'text' && messageType !== 'quick-reply' && !mediaFile) {
       toast({
         title: 'Arquivo obrigatório',
         description: 'Selecione um arquivo para enviar.',
@@ -260,6 +315,15 @@ export function ScheduleMessageModal({
         mediaFileName = mediaFile.name;
       }
 
+      // Determine actual message type for quick replies
+      let actualMessageType: string = messageType;
+      if (messageType === 'quick-reply' && selectedQuickReply) {
+        // Use the media type of the quick reply, or 'text' if no media
+        actualMessageType = selectedQuickReply.media_type && selectedQuickReply.media_type !== 'text' 
+          ? selectedQuickReply.media_type 
+          : 'text';
+      }
+
       // Create scheduled message
       const { error } = await supabase
         .from('scheduled_messages')
@@ -267,7 +331,7 @@ export function ScheduleMessageModal({
           company_id: profile.company_id,
           contact_id: contactId,
           conversation_id: conversationId || null,
-          message_type: messageType,
+          message_type: actualMessageType,
           content: content.trim() || null,
           media_url: mediaUrl,
           media_mime_type: mediaMimeType,
@@ -277,6 +341,11 @@ export function ScheduleMessageModal({
         });
 
       if (error) throw error;
+
+      // Increment use count for quick reply
+      if (messageType === 'quick-reply' && selectedQuickReply) {
+        await incrementUseCount(selectedQuickReply.id);
+      }
 
       toast({
         title: 'Mensagem agendada',
@@ -316,12 +385,16 @@ export function ScheduleMessageModal({
             setMediaFile(null);
             setIsRecordingAudio(false);
             audioRecorder.cancelRecording();
+            if (v !== 'quick-reply') {
+              setSelectedQuickReply(null);
+              setContent('');
+            }
           }}>
-            <TabsList className="w-full grid grid-cols-5">
+            <TabsList className="w-full grid grid-cols-6">
               {MESSAGE_TYPES.map(({ type, label, icon: Icon }) => (
-                <TabsTrigger key={type} value={type} className="text-xs min-w-0 px-2">
+                <TabsTrigger key={type} value={type} className="text-xs min-w-0 px-1.5">
                   <Icon className="w-4 h-4 mr-1 flex-shrink-0" />
-                  <span className="truncate">{label}</span>
+                  <span className="truncate hidden sm:inline">{label}</span>
                 </TabsTrigger>
               ))}
             </TabsList>
@@ -556,6 +629,109 @@ export function ScheduleMessageModal({
                   className="min-h-[60px]"
                 />
               </div>
+            </TabsContent>
+
+            {/* Quick Reply */}
+            <TabsContent value="quick-reply" className="mt-4 space-y-4">
+              {selectedQuickReply ? (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Check className="w-4 h-4 text-green-500" />
+                      <span className="text-sm font-medium">Resposta selecionada</span>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setSelectedQuickReply(null);
+                        setContent('');
+                        setMediaFile(null);
+                      }}
+                    >
+                      Trocar
+                    </Button>
+                  </div>
+                  <div className="p-3 bg-muted rounded-lg space-y-2">
+                    <div className="flex items-center gap-2">
+                      <Badge variant="secondary" className="font-mono text-xs">
+                        {selectedQuickReply.shortcut}
+                      </Badge>
+                      <span className="font-medium text-sm">{selectedQuickReply.title}</span>
+                      {selectedQuickReply.media_type && selectedQuickReply.media_type !== 'text' && (
+                        <Badge variant="outline" className="text-xs capitalize">
+                          {selectedQuickReply.media_type}
+                        </Badge>
+                      )}
+                    </div>
+                    <p className="text-sm text-muted-foreground line-clamp-3">
+                      {selectedQuickReply.message}
+                    </p>
+                    {selectedQuickReply.media_url && selectedQuickReply.media_type === 'image' && (
+                      <img
+                        src={selectedQuickReply.media_url}
+                        alt="Preview"
+                        className="w-full h-32 object-cover rounded-md mt-2"
+                      />
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                    <Input
+                      value={quickReplySearch}
+                      onChange={(e) => setQuickReplySearch(e.target.value)}
+                      placeholder="Buscar resposta rápida..."
+                      className="pl-9"
+                    />
+                  </div>
+                  <ScrollArea className="h-[200px]">
+                    {loadingQuickReplies ? (
+                      <div className="flex items-center justify-center h-full">
+                        <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+                      </div>
+                    ) : filteredQuickReplies.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
+                        <Zap className="w-8 h-8 mb-2 opacity-50" />
+                        <p className="text-sm">
+                          {quickReplySearch ? 'Nenhuma resposta encontrada' : 'Nenhuma resposta rápida disponível'}
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="space-y-1">
+                        {filteredQuickReplies.map((qr) => (
+                          <button
+                            key={qr.id}
+                            className="w-full p-3 text-left rounded-lg hover:bg-muted transition-colors border border-transparent hover:border-border"
+                            onClick={() => handleSelectQuickReply(qr)}
+                          >
+                            <div className="flex items-center gap-2 mb-1">
+                              <Badge variant="secondary" className="font-mono text-xs">
+                                {qr.shortcut}
+                              </Badge>
+                              <span className="font-medium text-sm truncate">{qr.title}</span>
+                              {qr.media_type && qr.media_type !== 'text' && (
+                                <Badge variant="outline" className="text-xs capitalize ml-auto">
+                                  {qr.media_type === 'image' && <Image className="w-3 h-3 mr-1" />}
+                                  {qr.media_type === 'video' && <Video className="w-3 h-3 mr-1" />}
+                                  {qr.media_type === 'audio' && <Mic className="w-3 h-3 mr-1" />}
+                                  {qr.media_type === 'document' && <FileText className="w-3 h-3 mr-1" />}
+                                  {qr.media_type}
+                                </Badge>
+                              )}
+                            </div>
+                            <p className="text-sm text-muted-foreground line-clamp-2">
+                              {qr.message}
+                            </p>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </ScrollArea>
+                </div>
+              )}
             </TabsContent>
           </Tabs>
 
