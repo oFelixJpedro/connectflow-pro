@@ -489,8 +489,11 @@ export default function Connections() {
   }
 
   async function handleDisconnect(connection: WhatsAppConnection) {
+    console.log('🔍 [DISCONNECT] Starting for connection:', connection.id);
+    
     try {
       // 1. Logout from uazapi
+      console.log('🔍 [DISCONNECT] Calling logout...');
       await supabase.functions.invoke('whatsapp-instance', {
         body: {
           action: 'logout',
@@ -498,15 +501,33 @@ export default function Connections() {
         }
       });
 
-      // 2. Update database
-      await supabase
+      // 2. Update database WITH verification
+      console.log('🔍 [DISCONNECT] Updating database...');
+      const { data, error } = await supabase
         .from('whatsapp_connections')
         .update({ 
           status: 'disconnected',
           qr_code: null 
         })
-        .eq('id', connection.id);
+        .eq('id', connection.id)
+        .select()
+        .single();
 
+      console.log('🔍 [DISCONNECT] Update result:', { data, error });
+
+      if (error) {
+        console.error('❌ [DISCONNECT] Database error:', error);
+        toast.error('Erro ao atualizar status no banco de dados');
+        return;
+      }
+
+      if (!data) {
+        console.error('❌ [DISCONNECT] No data returned - update may have failed silently');
+        toast.error('Erro ao atualizar status - nenhum registro atualizado');
+        return;
+      }
+
+      console.log('✅ [DISCONNECT] Successfully updated. New status:', data.status);
       toast.success('WhatsApp desconectado');
       loadConnections();
     } catch (error) {
@@ -587,9 +608,12 @@ export default function Connections() {
   async function confirmArchiveConnection() {
     if (!connectionToArchive) return;
     
+    console.log('🔍 [ARCHIVE] Starting for connection:', connectionToArchive.id);
+    
     try {
       // 1. Logout from uazapi if connected
       if (connectionToArchive.status === 'connected') {
+        console.log('🔍 [ARCHIVE] Calling logout...');
         await supabase.functions.invoke('whatsapp-instance', {
           body: {
             action: 'logout',
@@ -599,6 +623,7 @@ export default function Connections() {
       }
 
       // 2. Delete instance from uazapi
+      console.log('🔍 [ARCHIVE] Deleting instance from uazapi...');
       await supabase.functions.invoke('whatsapp-instance', {
         body: {
           action: 'delete',
@@ -606,18 +631,45 @@ export default function Connections() {
         }
       });
 
-      // 3. Archive in database (preserve history)
-      await supabase
+      // 3. Archive in database (preserve history) WITH verification
+      console.log('🔍 [ARCHIVE] Updating database with archived_at...');
+      const archiveTimestamp = new Date().toISOString();
+      
+      const { data, error } = await supabase
         .from('whatsapp_connections')
         .update({ 
           status: 'disconnected',
-          archived_at: new Date().toISOString(),
+          archived_at: archiveTimestamp,
           archived_reason: 'user_archived',
           qr_code: null,
           active: false
         })
-        .eq('id', connectionToArchive.id);
+        .eq('id', connectionToArchive.id)
+        .select()
+        .single();
 
+      console.log('🔍 [ARCHIVE] Update result:', { data, error });
+
+      if (error) {
+        console.error('❌ [ARCHIVE] Database error:', error);
+        toast.error('Erro ao arquivar no banco de dados. A instância foi removida, mas o registro não foi atualizado.');
+        return;
+      }
+
+      if (!data) {
+        console.error('❌ [ARCHIVE] No data returned - update may have failed silently');
+        toast.error('Erro ao arquivar - nenhum registro atualizado');
+        return;
+      }
+
+      // Verify the archived_at was actually set
+      if (!data.archived_at) {
+        console.error('❌ [ARCHIVE] archived_at not set in returned data:', data);
+        toast.error('Erro: O campo archived_at não foi atualizado');
+        return;
+      }
+
+      console.log('✅ [ARCHIVE] Successfully archived. archived_at:', data.archived_at);
       toast.success('Conexão arquivada. O histórico de conversas foi preservado.');
       setArchiveDialogOpen(false);
       setConnectionToArchive(null);
