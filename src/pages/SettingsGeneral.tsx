@@ -59,9 +59,9 @@ interface AIOptimizationSettings {
 }
 
 const defaultAISettings: AIOptimizationSettings = {
-  commercial_pixel_enabled: true,
-  behavior_analysis_enabled: true,
-  evaluation_frequency: 'on_close',
+  commercial_pixel_enabled: false,
+  behavior_analysis_enabled: false,
+  evaluation_frequency: 'disabled',
 };
 
 const defaultBusinessHours: BusinessHours = {
@@ -120,11 +120,20 @@ export default function SettingsGeneral() {
       
       // Load AI settings
       const aiOptSettings = (company as any).ai_optimization_settings as AIOptimizationSettings | null;
-      if (aiOptSettings) {
+      const commercialManagerEnabled = (company as any).commercial_manager_enabled;
+      
+      // If commercial manager is not enabled, force settings to disabled
+      if (commercialManagerEnabled === false) {
         setAISettings({
-          commercial_pixel_enabled: aiOptSettings.commercial_pixel_enabled ?? true,
-          behavior_analysis_enabled: aiOptSettings.behavior_analysis_enabled ?? true,
-          evaluation_frequency: aiOptSettings.evaluation_frequency ?? 'on_close',
+          commercial_pixel_enabled: false,
+          behavior_analysis_enabled: false,
+          evaluation_frequency: 'disabled',
+        });
+      } else if (aiOptSettings) {
+        setAISettings({
+          commercial_pixel_enabled: aiOptSettings.commercial_pixel_enabled ?? false,
+          behavior_analysis_enabled: aiOptSettings.behavior_analysis_enabled ?? false,
+          evaluation_frequency: aiOptSettings.evaluation_frequency ?? 'disabled',
         });
       }
     }

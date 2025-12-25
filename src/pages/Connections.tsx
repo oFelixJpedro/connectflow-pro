@@ -10,7 +10,7 @@ import {
   MoreHorizontal,
   Loader2,
   X,
-  Users,
+  Users,  // Keep for internal use
   AlertTriangle,
   Upload
 } from 'lucide-react';
@@ -1280,6 +1280,7 @@ export default function Connections() {
 }
 
 // Connection Settings Dialog Component
+// NOTE: Group messages toggle removed - groups are no longer supported
 function ConnectionSettingsDialog({ 
   connection, 
   isOpen, 
@@ -1291,46 +1292,6 @@ function ConnectionSettingsDialog({
   onClose: () => void;
   onUpdate: (connection: Partial<WhatsAppConnection>) => void;
 }) {
-  const [receiveGroupMessages, setReceiveGroupMessages] = useState(false);
-  const [isUpdating, setIsUpdating] = useState(false);
-
-  // Load initial state when connection changes
-  useEffect(() => {
-    if (connection) {
-      setReceiveGroupMessages(connection.receive_group_messages ?? false);
-    }
-  }, [connection]);
-
-  const handleToggleGroupMessages = async (checked: boolean) => {
-    if (!connection) return;
-    
-    setIsUpdating(true);
-    try {
-      const { data, error } = await supabase.functions.invoke('whatsapp-instance', {
-        body: {
-          action: 'update_webhook',
-          connectionId: connection.id,
-          receiveGroupMessages: checked
-        }
-      });
-
-      if (error) throw error;
-      if (data?.error) throw new Error(data.error);
-
-      setReceiveGroupMessages(checked);
-      onUpdate({ id: connection.id, receive_group_messages: checked });
-      toast.success(checked 
-        ? 'Mensagens de grupos ativadas' 
-        : 'Mensagens de grupos desativadas'
-      );
-    } catch (error) {
-      console.error('Error updating group messages setting:', error);
-      toast.error('Erro ao atualizar configuração');
-    } finally {
-      setIsUpdating(false);
-    }
-  };
-
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="sm:max-w-lg">
@@ -1344,27 +1305,9 @@ function ConnectionSettingsDialog({
         </DialogHeader>
         
         <div className="space-y-6 py-4">
-          {/* Group Messages Toggle */}
-          <div className="flex items-center justify-between p-4 border rounded-lg">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center">
-                <Users className="w-5 h-5 text-primary" />
-              </div>
-              <div>
-                <Label htmlFor="group-messages" className="font-medium">
-                  Receber mensagens de grupos
-                </Label>
-                <p className="text-sm text-muted-foreground">
-                  Permite processar mensagens enviadas em grupos do WhatsApp
-                </p>
-              </div>
-            </div>
-            <Switch
-              id="group-messages"
-              checked={receiveGroupMessages}
-              onCheckedChange={handleToggleGroupMessages}
-              disabled={isUpdating}
-            />
+          {/* Empty state - no configurable settings at the moment */}
+          <div className="text-center py-8 text-muted-foreground">
+            <p>Nenhuma configuração disponível no momento.</p>
           </div>
         </div>
       </DialogContent>

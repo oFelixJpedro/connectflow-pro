@@ -451,7 +451,8 @@ IMPORTANTE:
         usage.inputTokens,
         usage.outputTokens,
         0,
-        { batchIndex, conversationCount: batch.length }
+        { batchIndex, conversationCount: batch.length },
+        false // Text analysis, no direct audio
       );
     }
     
@@ -666,7 +667,8 @@ IMPORTANTE:
         usage.inputTokens,
         usage.outputTokens,
         0,
-        { batchCount: batchResults.length, totalEvaluations: overallMetrics.totalEvaluations }
+        { batchCount: batchResults.length, totalEvaluations: overallMetrics.totalEvaluations },
+        false // Text consolidation, no audio
       );
     }
     
@@ -931,7 +933,8 @@ IMPORTANTE: Seja conciso. Cada item deve ter no máximo 100 caracteres. Responda
         usage.inputTokens,
         usage.outputTokens,
         0,
-        { evaluationCount: totalEvaluations }
+        { evaluationCount: totalEvaluations },
+        false // Legacy path, text only
       );
     }
 

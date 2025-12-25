@@ -53,7 +53,7 @@ serve(async (req) => {
       companyId
     );
     
-    // Log AI usage
+    // Log AI usage - always isAudioInput=true for transcription
     if (supabase && companyId && transcription) {
       await logAIUsage(
         supabase, companyId, 'transcribe-audio',
@@ -61,7 +61,8 @@ serve(async (req) => {
         Math.ceil(1000), // Approximate input tokens for audio
         Math.ceil((transcription?.length || 0) / 4),
         Date.now() - startTime,
-        { audio_url: audioUrl.substring(0, 100) }
+        { audio_url: audioUrl.substring(0, 100) },
+        true // isAudioInput - audio transcription always uses audio pricing
       );
     }
     
