@@ -1,9 +1,11 @@
-import { Navigate, useLocation } from 'react-router-dom';
+import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Loader2 } from 'lucide-react';
 import { ForcePasswordChangeModal } from '@/components/auth/ForcePasswordChangeModal';
 import { TrialExpiredModal } from '@/components/subscription/TrialExpiredModal';
 import { SubscriptionBlockedModal } from '@/components/subscription/SubscriptionBlockedModal';
+import { SessionEndedModal } from '@/components/session/SessionEndedModal';
+import { useSessionGuard } from '@/hooks/useSessionGuard';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -12,6 +14,10 @@ interface ProtectedRouteProps {
 export function ProtectedRoute({ children }: ProtectedRouteProps) {
   const { user, loading, needsPasswordChange, clearPasswordChangeFlag, profile, company, subscription, checkSubscription, refreshCompany } = useAuth();
   const location = useLocation();
+  const navigate = useNavigate();
+  
+  // Session guard - monitors for session invalidation
+  const { sessionEnded, invalidationInfo, handleLogin } = useSessionGuard(user?.id);
 
   if (loading) {
     return (
@@ -111,6 +117,20 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
         </>
       );
     }
+  }
+
+  // Show session ended modal if session was invalidated
+  if (sessionEnded) {
+    return (
+      <>
+        {children}
+        <SessionEndedModal
+          open={true}
+          deviceInfo={invalidationInfo}
+          onLogin={handleLogin}
+        />
+      </>
+    );
   }
 
   // Show forced password change modal if needed
