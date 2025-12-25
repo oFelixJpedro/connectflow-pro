@@ -201,11 +201,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     );
 
     // THEN check for existing session
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
       setSession(session);
       setUser(session?.user ?? null);
       if (session?.user) {
         loadUserData(session.user.id);
+        
+        // Verificar se já existe session_token - se não, criar nova sessão
+        const existingToken = SessionManager.getToken();
+        if (!existingToken) {
+          console.log('[AuthContext] No session token found on restore - creating new session');
+          const deviceInfo = {
+            userAgent: navigator.userAgent,
+            platform: navigator.platform,
+            language: navigator.language,
+            timestamp: new Date().toISOString()
+          };
+          const result = await SessionManager.createSession(deviceInfo);
+          if (!result.success) {
+            console.warn('[AuthContext] Failed to create session on restore:', result.error);
+          }
+        }
       } else {
         setLoading(false);
       }

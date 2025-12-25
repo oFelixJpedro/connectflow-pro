@@ -59,8 +59,16 @@ export function useSessionGuard(userId: string | undefined) {
   // Validate session on mount
   const validateSession = useCallback(async () => {
     const sessionToken = getSessionToken();
+    
+    // Se não há token mas há userId, forçar re-login
     if (!sessionToken) {
-      console.log('[SessionGuard] No session token found');
+      console.log('[SessionGuard] No session token found - forcing re-login');
+      setState({
+        sessionEnded: true,
+        invalidationInfo: {
+          timestamp: new Date().toISOString()
+        }
+      });
       return;
     }
 
@@ -140,16 +148,20 @@ export function useSessionGuard(userId: string | undefined) {
   useEffect(() => {
     if (!userId) return;
 
-    // Validate session on mount
-    validateSession();
+    // Pequeno delay para permitir que AuthContext crie o token primeiro
+    const initTimeout = setTimeout(() => {
+      // Validate session on mount
+      validateSession();
 
-    // Start heartbeat
-    heartbeatInterval.current = setInterval(sendHeartbeat, HEARTBEAT_INTERVAL);
+      // Start heartbeat
+      heartbeatInterval.current = setInterval(sendHeartbeat, HEARTBEAT_INTERVAL);
 
-    // Subscribe to realtime changes
-    subscribeToSessionChanges();
+      // Subscribe to realtime changes
+      subscribeToSessionChanges();
+    }, 500);
 
     return () => {
+      clearTimeout(initTimeout);
       if (heartbeatInterval.current) {
         clearInterval(heartbeatInterval.current);
       }
