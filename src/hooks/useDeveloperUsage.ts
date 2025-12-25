@@ -24,6 +24,47 @@ interface DailyUsage {
   total_cost: number;
 }
 
+interface TableStats {
+  table_name: string;
+  row_count: number;
+  total_size_bytes: number;
+}
+
+interface StorageBucketStats {
+  bucket_name: string;
+  file_count: number;
+  total_size_bytes: number;
+}
+
+interface CompanyDbStats {
+  company_id: string;
+  company_name: string;
+  messages_count: number;
+  conversations_count: number;
+  contacts_count: number;
+  ai_agents_count: number;
+  estimated_db_size_bytes: number;
+}
+
+interface SupabaseStats {
+  database: {
+    total_size_bytes: number;
+    tables: TableStats[];
+  };
+  storage: {
+    total_size_bytes: number;
+    buckets: StorageBucketStats[];
+  };
+  companies: CompanyDbStats[];
+  usage_logs: {
+    database_reads: number;
+    database_writes: number;
+    storage_uploads: number;
+    storage_downloads: number;
+    edge_function_invocations: number;
+  };
+}
+
 interface UsageStats {
   totalAICalls: number;
   totalInputTokens: number;
@@ -36,6 +77,7 @@ interface UsageStats {
   usageByFunction: AIUsageByFunction[];
   usageByCompany: AIUsageByCompany[];
   dailyUsage: DailyUsage[];
+  supabaseStats: SupabaseStats | null;
 }
 
 export function useDeveloperUsage() {
@@ -149,6 +191,33 @@ export function useDeveloperUsage() {
         .from('contacts')
         .select('*', { count: 'exact', head: true });
 
+      // Fetch Supabase stats via edge function
+      let supabaseStats: SupabaseStats | null = null;
+      try {
+        const developerToken = localStorage.getItem('developer_session');
+        if (developerToken) {
+          const parsed = JSON.parse(developerToken);
+          const response = await fetch(
+            'https://stjtkvanmlidurmwpdpc.supabase.co/functions/v1/supabase-stats',
+            {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'x-developer-token': parsed.developer_id
+              },
+              body: JSON.stringify({ startDate, endDate })
+            }
+          );
+          
+          if (response.ok) {
+            supabaseStats = await response.json();
+            console.log('[useDeveloperUsage] Supabase stats fetched:', supabaseStats);
+          }
+        }
+      } catch (e) {
+        console.warn('[useDeveloperUsage] Failed to fetch Supabase stats:', e);
+      }
+
       // Sort results
       const usageByFunction = Array.from(functionMap.values())
         .sort((a, b) => b.total_cost - a.total_cost);
@@ -168,10 +237,11 @@ export function useDeveloperUsage() {
         totalMessages: messagesCount || 0,
         totalConversations: conversationsCount || 0,
         totalContacts: contactsCount || 0,
-        totalStorageFiles: 0, // Would need storage API
+        totalStorageFiles: supabaseStats?.storage.buckets.reduce((sum, b) => sum + b.file_count, 0) || 0,
         usageByFunction,
         usageByCompany,
-        dailyUsage
+        dailyUsage,
+        supabaseStats
       });
 
     } catch (e) {
