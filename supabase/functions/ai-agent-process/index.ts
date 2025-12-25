@@ -26,7 +26,8 @@ import {
 import {
   logAIUsage,
   extractGeminiUsage,
-  GEMINI_PRICING
+  GEMINI_PRICING,
+  isAudioContent
 } from "../_shared/usage-tracker.ts";
 
 const corsHeaders = {
@@ -1618,7 +1619,8 @@ Gere a resposta do atendente. Se precisar executar ações (mover no CRM, adicio
           agentId: agent.id,
           conversationId,
           hasTools: dynamicTools.length > 0
-        }
+        },
+        false // Text-based agent processing, audio is transcribed separately
       ).catch(err => console.error('[UsageTracker] Error:', err));
       
       const candidate = aiData.candidates?.[0];
@@ -1666,7 +1668,8 @@ Gere a resposta do atendente. Se precisar executar ações (mover no CRM, adicio
           logAIUsage(
             supabase, companyId, 'ai-agent-process', 'gemini-3-flash-preview',
             retryUsage.inputTokens, retryUsage.outputTokens, 0,
-            { agentId: agent.id, conversationId, isRetry: true }
+            { agentId: agent.id, conversationId, isRetry: true },
+            false
           ).catch(err => console.error('[UsageTracker] Retry Error:', err));
         }
       }

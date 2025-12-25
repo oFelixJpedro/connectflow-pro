@@ -304,7 +304,8 @@ Gere o resumo estruturado conforme as instruções.`;
     const processingTime = Date.now() - startTime;
     console.log('[summarize-chat] Resumo gerado com sucesso');
 
-    // Log AI usage
+    // Log AI usage - check if any audio was analyzed
+    const hasAudioAnalyzed = audiosAnalyzed > 0;
     if (companyId) {
       const usage = extractGeminiUsage(data);
       await logAIUsage(
@@ -315,7 +316,8 @@ Gere o resumo estruturado conforme as instruções.`;
         usage.inputTokens,
         usage.outputTokens,
         processingTime,
-        { messageCount: messages.length }
+        { messageCount: messages.length, audiosAnalyzed },
+        hasAudioAnalyzed
       );
     }
 

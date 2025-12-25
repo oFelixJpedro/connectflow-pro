@@ -536,7 +536,7 @@ serve(async (req) => {
         const geminiData = await geminiResponse.json();
         const responseText = geminiData.candidates?.[0]?.content?.parts?.[0]?.text;
 
-        // Log AI usage
+        // Log AI usage - media is already analyzed/transcribed, this is text processing
         const usage = extractGeminiUsage(geminiData);
         logAIUsage(
           supabase,
@@ -549,7 +549,8 @@ serve(async (req) => {
           { 
             conversationId: convId,
             hasMedia: urlsToCache.length > 0
-          }
+          },
+          false // Text-based evaluation, media descriptions already included
         ).catch(err => console.error('[UsageTracker] Error:', err));
 
         if (!responseText) {
