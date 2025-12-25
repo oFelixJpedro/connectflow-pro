@@ -518,9 +518,9 @@ serve(async (req) => {
           console.log('❌ Erro ao atualizar contato:', contactError.message)
         }
         
-        // Update conversation status and remove assignment
+        // Update conversation status to blocked
         updateData = {
-          status: 'closed',
+          status: 'blocked',
           closed_at: new Date().toISOString(),
           assigned_user_id: null,
           assigned_at: null,
