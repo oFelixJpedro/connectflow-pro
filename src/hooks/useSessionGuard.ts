@@ -137,12 +137,13 @@ export function useSessionGuard(userId: string | undefined) {
     channelRef.current = channel;
   }, [userId, getSessionToken]);
 
-  // Handle login redirect
+  // Handle login redirect - usa window.location para forçar refresh completo
+  // e evitar ciclo de restauração automática de sessão
   const handleLogin = useCallback(async () => {
     clearSession();
     await supabase.auth.signOut();
-    navigate('/auth', { replace: true });
-  }, [clearSession, navigate]);
+    window.location.href = '/auth';
+  }, [clearSession]);
 
   // Setup effect
   useEffect(() => {
