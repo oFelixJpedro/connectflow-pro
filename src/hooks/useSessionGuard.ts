@@ -60,15 +60,11 @@ export function useSessionGuard(userId: string | undefined) {
   const validateSession = useCallback(async () => {
     const sessionToken = getSessionToken();
     
-    // Se não há token mas há userId, forçar re-login
+    // Se não há token, pode ser que o login ainda esteja em progresso
+    // Não forçar re-login, apenas retornar silenciosamente
+    // O realtime subscription vai detectar invalidações quando o token existir
     if (!sessionToken) {
-      console.log('[SessionGuard] No session token found - forcing re-login');
-      setState({
-        sessionEnded: true,
-        invalidationInfo: {
-          timestamp: new Date().toISOString()
-        }
-      });
+      console.log('[SessionGuard] No session token found - waiting for session creation');
       return;
     }
 
