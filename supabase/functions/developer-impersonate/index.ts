@@ -88,11 +88,104 @@ serve(async (req) => {
 
     const developerId = auth.developerId;
 
-    // Receber redirect_url do frontend
     const { action, target_user_id, redirect_url } = await req.json();
     const clientIP = req.headers.get('x-forwarded-for') || 'unknown';
     const userAgent = req.headers.get('user-agent') || 'unknown';
 
+    // Direct impersonate - no permission required, direct access for developer support
+    if (action === 'direct_impersonate') {
+      console.log('[direct_impersonate] Request for user:', target_user_id);
+      console.log('[direct_impersonate] Redirect URL:', redirect_url);
+
+      // Get user profile
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('id, email, full_name, company_id, avatar_url, active')
+        .eq('id', target_user_id)
+        .single();
+
+      if (profileError || !profile) {
+        console.error('[direct_impersonate] User profile not found:', profileError);
+        return new Response(
+          JSON.stringify({ error: 'Usuário não encontrado' }),
+          { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      // Get user role
+      const { data: roleData } = await supabase
+        .from('user_roles')
+        .select('role')
+        .eq('user_id', target_user_id)
+        .single();
+
+      const userRole = roleData?.role || 'agent';
+
+      console.log('[direct_impersonate] User found:', profile.email, 'Role:', userRole);
+
+      // Build redirect URL with support flag
+      const fallbackUrl = 'https://chatgo.ia.br/dashboard';
+      let finalRedirectUrl = redirect_url || fallbackUrl;
+      
+      // Add is_support=true parameter to identify support session
+      const urlObj = new URL(finalRedirectUrl);
+      urlObj.searchParams.set('is_support', 'true');
+      finalRedirectUrl = urlObj.toString();
+      
+      console.log('[direct_impersonate] Generating magic link, redirect:', finalRedirectUrl);
+
+      const { data: linkData, error: linkError } = await supabase.auth.admin.generateLink({
+        type: 'magiclink',
+        email: profile.email,
+        options: {
+          redirectTo: finalRedirectUrl
+        }
+      });
+
+      if (linkError || !linkData) {
+        console.error('[direct_impersonate] Error generating magic link:', linkError);
+        return new Response(
+          JSON.stringify({ error: 'Erro ao gerar link de acesso: ' + (linkError?.message || 'Erro desconhecido') }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      // Log the action for audit
+      await supabase.from('developer_audit_logs').insert({
+        developer_id: developerId,
+        action_type: 'access_user',
+        target_company_id: profile.company_id,
+        target_user_id: target_user_id,
+        details: { 
+          email: profile.email, 
+          full_name: profile.full_name,
+          redirect_url: finalRedirectUrl,
+          role: userRole,
+          access_type: 'direct_support' // Mark as direct support access
+        },
+        ip_address: clientIP,
+        user_agent: userAgent
+      });
+
+      console.log('[direct_impersonate] Magic link generated successfully');
+
+      return new Response(
+        JSON.stringify({ 
+          success: true, 
+          magic_link: linkData.properties?.action_link,
+          user: {
+            id: profile.id,
+            email: profile.email,
+            full_name: profile.full_name,
+            company_id: profile.company_id,
+            role: userRole
+          }
+        }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Legacy impersonate with permission check (kept for backwards compatibility)
     if (action === 'impersonate') {
       console.log('Impersonation request for user:', target_user_id);
       console.log('Redirect URL from frontend:', redirect_url);
@@ -120,7 +213,7 @@ serve(async (req) => {
 
       console.log('Permission found:', permissionRequest.id);
 
-      // Get user profile (WITHOUT join to user_roles - no direct FK)
+      // Get user profile
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
         .select('id, email, full_name, company_id, avatar_url, active')
@@ -135,7 +228,7 @@ serve(async (req) => {
         );
       }
 
-      // Get user role separately (no FK relationship with profiles)
+      // Get user role
       const { data: roleData } = await supabase
         .from('user_roles')
         .select('role')
@@ -152,9 +245,14 @@ serve(async (req) => {
         .update({ status: 'used' })
         .eq('id', permissionRequest.id);
 
-      // Usar URL dinâmica do frontend (com fallback)
+      // Build redirect URL with support flag
       const fallbackUrl = 'https://chatgo.ia.br/dashboard';
-      const finalRedirectUrl = redirect_url || fallbackUrl;
+      let finalRedirectUrl = redirect_url || fallbackUrl;
+      
+      // Add is_support=true parameter
+      const urlObj = new URL(finalRedirectUrl);
+      urlObj.searchParams.set('is_support', 'true');
+      finalRedirectUrl = urlObj.toString();
       
       console.log('Generating magic link for:', profile.email, 'redirect:', finalRedirectUrl);
 

@@ -210,16 +210,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // Verificar se já existe session_token - se não, criar nova sessão
         const existingToken = SessionManager.getToken();
         if (!existingToken) {
-          console.log('[AuthContext] No session token found on restore - creating new session');
+          // Check if this is a developer support session (via magic link with is_support param)
+          const isSupportSession = SessionManager.isSupportSession();
+          console.log('[AuthContext] No session token found on restore - creating new session, isSupportSession:', isSupportSession);
+          
           const deviceInfo = {
             userAgent: navigator.userAgent,
             platform: navigator.platform,
             language: navigator.language,
-            timestamp: new Date().toISOString()
+            timestamp: new Date().toISOString(),
+            is_support: isSupportSession
           };
-          const result = await SessionManager.createSession(deviceInfo);
+          
+          const result = await SessionManager.createSession(deviceInfo, isSupportSession);
           if (!result.success) {
             console.warn('[AuthContext] Failed to create session on restore:', result.error);
+          } else if (isSupportSession) {
+            console.log('[AuthContext] Support session created - user sessions preserved');
+            // Clean up the URL parameter after processing
+            const url = new URL(window.location.href);
+            url.searchParams.delete('is_support');
+            window.history.replaceState({}, '', url.toString());
           }
         }
       } else {
@@ -354,7 +365,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       password
     });
     
-    // If login successful, create session
+    // If login successful, create session (normal login, not support session)
     if (!error) {
       const deviceInfo = {
         userAgent: navigator.userAgent,
@@ -363,7 +374,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         timestamp: new Date().toISOString()
       };
       
-      const sessionResult = await SessionManager.createSession(deviceInfo);
+      // Normal login always creates a regular session (will invalidate other sessions)
+      const sessionResult = await SessionManager.createSession(deviceInfo, false);
       if (!sessionResult.success) {
         console.warn('[AuthContext] Failed to create session:', sessionResult.error);
       } else {

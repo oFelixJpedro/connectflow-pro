@@ -36,10 +36,8 @@ import EditCompanyModal from './components/EditCompanyModal';
 import EditUserModal from './components/EditUserModal';
 import DeleteConfirmModal from './components/DeleteConfirmModal';
 import ResetPasswordModal from './components/ResetPasswordModal';
-import PermissionWaitingModal from './components/PermissionWaitingModal';
 import AgentTemplatesModal from './components/AgentTemplatesModal';
-import { useDeveloperPermissions } from '@/hooks/useDeveloperPermissions';
-import { developerData, developerActions } from '@/lib/developerApi';
+import { developerData, developerActions, developerImpersonate } from '@/lib/developerApi';
 
 interface Company {
   id: string;
@@ -88,7 +86,6 @@ function DeveloperThemeToggle() {
 export default function DeveloperDashboard() {
   const navigate = useNavigate();
   const { developer, isAuthenticated, isLoading: authLoading, logout } = useDeveloperAuth();
-  const { requestPermission, isRequesting } = useDeveloperPermissions();
   const [companies, setCompanies] = useState<Company[]>([]);
   const [expandedCompanies, setExpandedCompanies] = useState<Set<string>>(new Set());
   const [companyUsers, setCompanyUsers] = useState<Record<string, User[]>>({});
@@ -108,13 +105,6 @@ export default function DeveloperDashboard() {
   const [resetPasswordUser, setResetPasswordUser] = useState<User | null>(null);
   const [editCompany, setEditCompany] = useState<Company | null>(null);
   const [editUser, setEditUser] = useState<{ user: User; company: Company } | null>(null);
-  const [permissionRequest, setPermissionRequest] = useState<{
-    requestId: string;
-    type: 'edit_company' | 'edit_user' | 'access_user' | 'delete_company' | 'delete_user';
-    targetName: string;
-    targetUserId?: string;
-    onApproved: () => void;
-  } | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
 
   useEffect(() => {
@@ -399,19 +389,38 @@ export default function DeveloperDashboard() {
   };
 
   const handleAccessAsUser = async (user: User, company: Company) => {
-    const result = await requestPermission('access_user', company.id, user.id, user.id);
-    if (!result) return;
-
-    setPermissionRequest({
-      requestId: result.requestId,
-      type: 'access_user',
-      targetName: user.full_name,
-      targetUserId: user.id,
-      onApproved: () => {
-        // O modal cuida de tudo para access_user
-        setPermissionRequest(null);
+    setActionLoading(true);
+    
+    try {
+      // Build redirect URL for the current origin
+      const redirectUrl = `${window.location.origin}/dashboard`;
+      
+      // Call direct_impersonate - no permission required
+      const { data, error } = await developerImpersonate({
+        action: 'direct_impersonate',
+        target_user_id: user.id,
+        redirect_url: redirectUrl
+      });
+      
+      if (error) {
+        toast.error(error);
+        return;
       }
-    });
+      
+      if (data?.magic_link) {
+        console.log('[DeveloperDashboard] Opening magic link for user:', user.full_name);
+        toast.success(`Acessando como ${user.full_name}...`);
+        // Open magic link in new tab
+        window.open(data.magic_link, '_blank');
+      } else {
+        toast.error('Erro: Magic link não gerado');
+      }
+    } catch (err) {
+      console.error('Access as user error:', err);
+      toast.error('Erro ao acessar como usuário');
+    } finally {
+      setActionLoading(false);
+    }
   };
 
   const getPlanBadge = (plan: string) => {
@@ -867,19 +876,6 @@ export default function DeveloperDashboard() {
         />
       )}
 
-      {/* Permission Waiting Modal */}
-      {permissionRequest && (
-        <PermissionWaitingModal
-          requestId={permissionRequest.requestId}
-          requestType={permissionRequest.type}
-          targetName={permissionRequest.targetName}
-          targetUserId={permissionRequest.targetUserId}
-          onApproved={permissionRequest.onApproved}
-          onDenied={() => setPermissionRequest(null)}
-          onCancel={() => setPermissionRequest(null)}
-          onClose={() => setPermissionRequest(null)}
-        />
-      )}
 
       {/* Agent Templates Modal */}
       <AgentTemplatesModal
