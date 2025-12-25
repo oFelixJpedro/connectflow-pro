@@ -1327,8 +1327,18 @@ serve(async (req) => {
       )
     }
     
-    // Store group message flag - will be checked after fetching connection config
+    // ═══════════════════════════════════════════════════════════════════
+    // 🚫 IMMEDIATELY BLOCK ALL GROUP MESSAGES
+    // Groups are no longer supported - reject before any processing
+    // ═══════════════════════════════════════════════════════════════════
     const isGroupMessage = payload.message?.isGroup === true
+    if (isGroupMessage) {
+      console.log(`🚫 [BLOCKED] Mensagem de grupo rejeitada - grupos não suportados`)
+      return new Response(
+        JSON.stringify({ success: true, message: 'Group messages not supported' }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
     
     // ═══════════════════════════════════════════════════════════════════
     // 2️⃣ DETECT MESSAGE TYPE
@@ -1568,7 +1578,7 @@ serve(async (req) => {
     
     const { data: connection, error: connectionError } = await supabase
       .from('whatsapp_connections')
-      .select('id, company_id, instance_token, name, receive_group_messages')
+      .select('id, company_id, instance_token, name')
       .eq('session_id', instanceName)
       .maybeSingle()
     
@@ -1586,19 +1596,8 @@ serve(async (req) => {
     const payloadToken = payload.token || payload.instanceToken || ''
     const instanceToken = dbInstanceToken || payloadToken
     
-    // ═══════════════════════════════════════════════════════════════════
-    // 4.1️⃣ CHECK GROUP MESSAGE CONFIGURATION
-    // ═══════════════════════════════════════════════════════════════════
-    if (isGroupMessage) {
-      if (!connection.receive_group_messages) {
-        console.log(`📱 Mensagem de grupo ignorada (configuração desativada para ${connection.name})`)
-        return new Response(
-          JSON.stringify({ success: true, message: 'Group message ignored by configuration' }),
-          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        )
-      }
-      console.log(`📱 Processando mensagem de grupo (habilitado para ${connection.name}) - IA automática DESATIVADA para grupos`)
-    }
+    // NOTE: Group messages are blocked at the top of this function
+    // The receive_group_messages check has been removed as groups are no longer supported
     
     // Update instance_token if missing in DB
     if (!dbInstanceToken && payloadToken) {
