@@ -29,7 +29,7 @@ export function SessionEndedModal({ open, deviceInfo, onLogin }: SessionEndedMod
           <AlertDialogTitle className="text-xl">Sessão Encerrada</AlertDialogTitle>
           <AlertDialogDescription className="space-y-3">
             <p>
-              Sua conta foi acessada em outro dispositivo. Por segurança, apenas uma sessão ativa é permitida por vez.
+              Sua conta foi acessada em outro dispositivo. Apenas uma sessão ativa é permitida por vez.
             </p>
             
             {deviceInfo && (
@@ -47,7 +47,7 @@ export function SessionEndedModal({ open, deviceInfo, onLogin }: SessionEndedMod
             )}
             
             <p className="text-muted-foreground text-sm">
-              Seus dados estão seguros. Faça login novamente para continuar.
+              Faça login novamente para continuar.
             </p>
           </AlertDialogDescription>
         </AlertDialogHeader>
