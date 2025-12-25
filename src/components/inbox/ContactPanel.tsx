@@ -16,7 +16,9 @@ import {
   StickyNote,
   History,
   Sparkles,
-  Pencil
+  Pencil,
+  ShieldOff,
+  ShieldCheck
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -35,6 +37,16 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { cn } from '@/lib/utils';
 import type { Conversation } from '@/types';
 import { format } from 'date-fns';
@@ -94,6 +106,10 @@ export function ContactPanel({ conversation, onClose, onContactUpdated, onScroll
 
   // Edit modal state
   const [editModalOpen, setEditModalOpen] = useState(false);
+  
+  // Block confirmation modal state
+  const [blockConfirmOpen, setBlockConfirmOpen] = useState(false);
+  const [isBlocking, setIsBlocking] = useState(false);
   
   // Chat notes modal state
   const [chatNotesModalOpen, setChatNotesModalOpen] = useState(false);
@@ -410,6 +426,44 @@ export function ContactPanel({ conversation, onClose, onContactUpdated, onScroll
     }
   };
 
+  const handleBlockContact = async () => {
+    if (!conversation) return;
+    
+    setIsBlocking(true);
+    const isCurrentlyBlocked = conversation.status === 'blocked';
+    
+    try {
+      const { data, error } = await supabase.functions.invoke('conversation-management', {
+        body: {
+          action: isCurrentlyBlocked ? 'unblock' : 'block',
+          conversationId: conversation.id,
+          connectionSessionId: (conversation as any).whatsappConnection?.sessionId
+        }
+      });
+      
+      if (error) throw error;
+      
+      toast({
+        title: isCurrentlyBlocked ? 'Contato desbloqueado' : 'Contato bloqueado',
+        description: isCurrentlyBlocked 
+          ? 'O contato foi desbloqueado e a conversa foi reaberta.'
+          : 'O contato foi bloqueado e não poderá mais enviar mensagens.',
+      });
+      
+      onContactUpdated?.();
+      setBlockConfirmOpen(false);
+    } catch (error) {
+      console.error('[ContactPanel] Erro ao bloquear/desbloquear:', error);
+      toast({
+        title: 'Erro',
+        description: `Não foi possível ${isCurrentlyBlocked ? 'desbloquear' : 'bloquear'} o contato.`,
+        variant: 'destructive',
+      });
+    } finally {
+      setIsBlocking(false);
+    }
+  };
+
   if (!conversation) {
     return null;
   }
@@ -486,9 +540,30 @@ export function ContactPanel({ conversation, onClose, onContactUpdated, onScroll
               {contact?.phoneNumber}
             </p>
             <div className="flex items-center gap-2 mt-3">
-              <Button variant="outline" size="sm" onClick={() => setEditModalOpen(true)}>
-                <Edit2 className="w-4 h-4 mr-2" />
-                Editar
+              <Button 
+                variant="outline" 
+                size="icon"
+                className="h-8 w-8"
+                onClick={() => setEditModalOpen(true)}
+              >
+                <Edit2 className="w-4 h-4" />
+              </Button>
+              <Button 
+                variant="outline" 
+                size="icon"
+                className={cn(
+                  "h-8 w-8",
+                  conversation.status === 'blocked' 
+                    ? "text-green-500 hover:text-green-600 hover:border-green-500" 
+                    : "text-destructive hover:text-destructive hover:border-destructive"
+                )}
+                onClick={() => setBlockConfirmOpen(true)}
+              >
+                {conversation.status === 'blocked' ? (
+                  <ShieldCheck className="w-4 h-4" />
+                ) : (
+                  <ShieldOff className="w-4 h-4" />
+                )}
               </Button>
             </div>
           </div>
@@ -830,6 +905,33 @@ export function ContactPanel({ conversation, onClose, onContactUpdated, onScroll
           contactName={contact?.name}
         />
       )}
+
+      {/* Block Confirmation Modal */}
+      <AlertDialog open={blockConfirmOpen} onOpenChange={setBlockConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {conversation?.status === 'blocked' ? 'Desbloquear contato?' : 'Bloquear contato?'}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {conversation?.status === 'blocked' 
+                ? 'O contato será desbloqueado e a conversa será reaberta e atribuída a você.'
+                : 'O contato será bloqueado e não poderá mais enviar mensagens. A conversa será fechada.'}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isBlocking}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={handleBlockContact}
+              disabled={isBlocking}
+              className={conversation?.status === 'blocked' ? "" : "bg-destructive text-destructive-foreground hover:bg-destructive/90"}
+            >
+              {isBlocking && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
+              {conversation?.status === 'blocked' ? 'Desbloquear' : 'Bloquear'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
