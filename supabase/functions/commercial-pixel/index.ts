@@ -298,10 +298,14 @@ serve(async (req) => {
       evaluation_frequency?: string;
     } | null;
     
-    // Skip if commercial pixel is disabled for this company
-    if (aiSettings?.commercial_pixel_enabled === false) {
-      console.log('⏭️ [PIXEL] Commercial pixel disabled for this company');
-      return new Response(JSON.stringify({ skipped: true, reason: 'disabled' }), {
+    // Skip if commercial manager is not enabled OR pixel is explicitly disabled
+    // This ensures companies without the commercial manager module don't incur Gemini costs
+    if (companyData?.commercial_manager_enabled === false || aiSettings?.commercial_pixel_enabled === false) {
+      const reason = companyData?.commercial_manager_enabled === false 
+        ? 'commercial_manager_not_enabled' 
+        : 'pixel_disabled';
+      console.log(`⏭️ [PIXEL] Skipping processing - ${reason}`);
+      return new Response(JSON.stringify({ skipped: true, reason }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }

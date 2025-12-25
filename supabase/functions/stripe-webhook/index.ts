@@ -264,6 +264,12 @@ async function handleSubscriptionDeleted(
       max_users: 1,
       max_ai_agents: 0,
       commercial_manager_enabled: false,
+      // Sync AI settings to disable pixel when subscription is cancelled
+      ai_optimization_settings: {
+        commercial_pixel_enabled: false,
+        behavior_analysis_enabled: false,
+        evaluation_frequency: 'disabled'
+      },
       // Invalidate cache
       subscription_cache: null,
       subscription_cache_updated_at: null,
@@ -401,6 +407,19 @@ function buildCompanyUpdateData(subscription: Stripe.Subscription): Record<strin
       subscriptionStatus = subscription.status;
   }
 
+  // Sync AI optimization settings based on commercial manager status
+  const aiOptimizationSettings = commercialManagerEnabled 
+    ? {
+        commercial_pixel_enabled: true,
+        behavior_analysis_enabled: true,
+        evaluation_frequency: 'on_close'
+      }
+    : {
+        commercial_pixel_enabled: false,
+        behavior_analysis_enabled: false,
+        evaluation_frequency: 'disabled'
+      };
+
   return {
     plan: basePlan,
     subscription_status: subscriptionStatus,
@@ -408,6 +427,7 @@ function buildCompanyUpdateData(subscription: Stripe.Subscription): Record<strin
     max_users: maxUsers,
     max_ai_agents: maxAgents,
     commercial_manager_enabled: commercialManagerEnabled,
+    ai_optimization_settings: aiOptimizationSettings,
     trial_ends_at: subscription.trial_end 
       ? new Date(subscription.trial_end * 1000).toISOString() 
       : null,
