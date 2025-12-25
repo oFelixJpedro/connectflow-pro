@@ -206,15 +206,34 @@ export const SessionManager = {
   
   clearToken: () => localStorage.removeItem(SESSION_TOKEN_KEY),
   
-  async createSession(deviceInfo?: Record<string, unknown>) {
+  /**
+   * Check if current URL indicates a support session (developer impersonation)
+   */
+  isSupportSession: () => {
+    const urlParams = new URLSearchParams(window.location.search);
+    return urlParams.get('is_support') === 'true';
+  },
+  
+  /**
+   * Create a new session. Support sessions do not invalidate user's existing sessions.
+   */
+  async createSession(deviceInfo?: Record<string, unknown>, isSupportSession?: boolean) {
     try {
       const response = await supabase.functions.invoke('session-manager', {
-        body: { action: 'create', device_info: deviceInfo }
+        body: { 
+          action: 'create', 
+          device_info: deviceInfo,
+          is_support_session: isSupportSession || false
+        }
       });
       
       if (response.data?.session_token) {
         this.setToken(response.data.session_token);
-        return { success: true, session_token: response.data.session_token };
+        return { 
+          success: true, 
+          session_token: response.data.session_token,
+          is_support_session: response.data.is_support_session || false
+        };
       }
       
       return { success: false, error: response.data?.error || 'Failed to create session' };

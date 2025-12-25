@@ -10,6 +10,7 @@ interface SessionRequest {
   action: 'create' | 'validate' | 'heartbeat' | 'invalidate' | 'list';
   session_token?: string;
   device_info?: Record<string, unknown>;
+  is_support_session?: boolean; // New: flag for developer support sessions
 }
 
 serve(async (req) => {
@@ -49,7 +50,7 @@ serve(async (req) => {
     }
 
     const body: SessionRequest = await req.json();
-    const { action, session_token, device_info } = body;
+    const { action, session_token, device_info, is_support_session } = body;
 
     // Get user's company_id from profile
     const { data: profile, error: profileError } = await supabaseAdmin
@@ -70,41 +71,46 @@ serve(async (req) => {
 
     switch (action) {
       case 'create': {
-        console.log(`[session-manager] Creating session for user ${user.id}`);
+        console.log(`[session-manager] Creating session for user ${user.id}, is_support_session: ${is_support_session}`);
         
-        // 1. Get all active sessions for user (to broadcast invalidation)
-        const { data: activeSessions } = await supabaseAdmin
-          .from('user_sessions')
-          .select('id, session_token')
-          .eq('user_id', user.id)
-          .eq('is_active', true);
-
-        // 2. Invalidate all existing active sessions
-        if (activeSessions && activeSessions.length > 0) {
-          console.log(`[session-manager] Invalidating ${activeSessions.length} existing sessions`);
-          
-          await supabaseAdmin
+        // Support sessions do NOT invalidate other sessions
+        if (!is_support_session) {
+          // 1. Get all active non-support sessions for user (to broadcast invalidation)
+          const { data: activeSessions } = await supabaseAdmin
             .from('user_sessions')
-            .update({
-              is_active: false,
-              invalidated_at: new Date().toISOString(),
-              invalidated_reason: 'new_login'
-            })
+            .select('id, session_token')
             .eq('user_id', user.id)
-            .eq('is_active', true);
+            .eq('is_active', true)
+            .eq('is_support_session', false); // Only get non-support sessions
 
-          // 3. Broadcast invalidation event via Realtime (insert a record that triggers the subscription)
-          // We'll use a direct channel broadcast approach
-          for (const session of activeSessions) {
-            // Create a notification for each invalidated session
-            console.log(`[session-manager] Broadcasting invalidation for session ${session.id}`);
+          // 2. Invalidate all existing active non-support sessions
+          if (activeSessions && activeSessions.length > 0) {
+            console.log(`[session-manager] Invalidating ${activeSessions.length} existing non-support sessions`);
+            
+            await supabaseAdmin
+              .from('user_sessions')
+              .update({
+                is_active: false,
+                invalidated_at: new Date().toISOString(),
+                invalidated_reason: 'new_login'
+              })
+              .eq('user_id', user.id)
+              .eq('is_active', true)
+              .eq('is_support_session', false); // Only invalidate non-support sessions
+
+            // 3. Broadcast invalidation event via Realtime
+            for (const session of activeSessions) {
+              console.log(`[session-manager] Broadcasting invalidation for session ${session.id}`);
+            }
           }
+        } else {
+          console.log(`[session-manager] Support session - NOT invalidating user sessions`);
         }
 
         // 4. Generate new session token
         const newSessionToken = crypto.randomUUID();
 
-        // 5. Insert new session
+        // 5. Insert new session with is_support_session flag
         const { data: newSession, error: insertError } = await supabaseAdmin
           .from('user_sessions')
           .insert({
@@ -114,7 +120,8 @@ serve(async (req) => {
             device_info: device_info || {},
             ip_address,
             user_agent,
-            is_active: true
+            is_active: true,
+            is_support_session: is_support_session || false
           })
           .select()
           .single();
@@ -127,14 +134,21 @@ serve(async (req) => {
           );
         }
 
-        console.log(`[session-manager] Session created: ${newSession.id}`);
+        console.log(`[session-manager] Session created: ${newSession.id}, is_support: ${is_support_session || false}`);
 
         return new Response(
           JSON.stringify({
             success: true,
             session_token: newSessionToken,
             session_id: newSession.id,
-            invalidated_sessions: activeSessions?.length || 0
+            is_support_session: is_support_session || false,
+            invalidated_sessions: is_support_session ? 0 : (await supabaseAdmin
+              .from('user_sessions')
+              .select('id')
+              .eq('user_id', user.id)
+              .eq('is_active', false)
+              .eq('invalidated_reason', 'new_login')
+            ).data?.length || 0
           }),
           { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );

@@ -3135,6 +3135,7 @@ export type Database = {
           invalidated_reason: string | null
           ip_address: string | null
           is_active: boolean | null
+          is_support_session: boolean
           last_active_at: string | null
           session_token: string
           user_agent: string | null
@@ -3149,6 +3150,7 @@ export type Database = {
           invalidated_reason?: string | null
           ip_address?: string | null
           is_active?: boolean | null
+          is_support_session?: boolean
           last_active_at?: string | null
           session_token: string
           user_agent?: string | null
@@ -3163,6 +3165,7 @@ export type Database = {
           invalidated_reason?: string | null
           ip_address?: string | null
           is_active?: boolean | null
+          is_support_session?: boolean
           last_active_at?: string | null
           session_token?: string
           user_agent?: string | null
