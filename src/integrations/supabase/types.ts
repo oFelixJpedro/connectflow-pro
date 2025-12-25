@@ -3281,6 +3281,7 @@ export type Database = {
         | "waiting"
         | "resolved"
         | "closed"
+        | "blocked"
       developer_audit_action:
         | "login"
         | "view_company"
@@ -3474,6 +3475,7 @@ export const Constants = {
         "waiting",
         "resolved",
         "closed",
+        "blocked",
       ],
       developer_audit_action: [
         "login",
