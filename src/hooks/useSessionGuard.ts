@@ -137,11 +137,30 @@ export function useSessionGuard(userId: string | undefined) {
     channelRef.current = channel;
   }, [userId, getSessionToken]);
 
-  // Handle login redirect - usa window.location para forçar refresh completo
-  // e evitar ciclo de restauração automática de sessão
+  // Handle login redirect - limpa completamente todos os dados de autenticação
+  // antes de redirecionar para evitar ciclo de restauração automática
   const handleLogin = useCallback(async () => {
+    // 1. Limpar nosso token de sessão customizado
     clearSession();
-    await supabase.auth.signOut();
+    
+    // 2. Tentar signOut (pode falhar se sessão já expirou)
+    try {
+      await supabase.auth.signOut({ scope: 'local' });
+    } catch (e) {
+      console.log('[SessionGuard] SignOut error (expected if session expired):', e);
+    }
+    
+    // 3. Limpar manualmente todos os dados de auth do Supabase do localStorage
+    const keysToRemove: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && (key.startsWith('sb-') || key.startsWith('supabase'))) {
+        keysToRemove.push(key);
+      }
+    }
+    keysToRemove.forEach(key => localStorage.removeItem(key));
+    
+    // 4. Forçar refresh completo da página
     window.location.href = '/auth';
   }, [clearSession]);
 
