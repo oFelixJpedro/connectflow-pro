@@ -214,6 +214,11 @@
     background-color: inherit;
   }
   
+  /* Fix Radix ScrollArea table display breaking truncate in conversation list */
+  .conversation-list-scroll [data-radix-scroll-area-viewport] > div {
+    display: block !important;
+  }
+
   /* Conversation item hover */
   .conversation-item {
     @apply transition-all duration-200 ease-in-out cursor-pointer;

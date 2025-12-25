@@ -215,7 +215,7 @@ export function ConversationList({
       />
 
       {/* Conversation List */}
-      <ScrollArea className="flex-1">
+      <ScrollArea className="flex-1 conversation-list-scroll">
         <div className="p-2 space-y-1">
           {isLoading ? (
             <div className="p-8 text-center">
