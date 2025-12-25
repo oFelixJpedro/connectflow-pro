@@ -22,7 +22,10 @@ import {
   Moon,
   Sun,
   LogOut,
-  Building2
+  Building2,
+  Server,
+  FolderArchive,
+  MessageSquare
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { format } from 'date-fns';
@@ -36,7 +39,10 @@ import {
   Tooltip, 
   ResponsiveContainer,
   BarChart,
-  Bar
+  Bar,
+  PieChart,
+  Pie,
+  Cell
 } from 'recharts';
 
 // Supabase Pro limits
@@ -48,6 +54,8 @@ const SUPABASE_LIMITS = {
   edgeFunctionInvocations: 2_000_000,
   mau: 100_000
 };
+
+const COLORS = ['hsl(var(--primary))', 'hsl(var(--chart-2))', 'hsl(var(--chart-3))', 'hsl(var(--chart-4))', 'hsl(var(--chart-5))'];
 
 function DeveloperThemeToggle() {
   const { theme, setTheme } = useTheme();
@@ -92,7 +100,10 @@ function formatBytes(bytes: number): string {
   if (bytes >= 1024 * 1024) {
     return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
   }
-  return `${(bytes / 1024).toFixed(2)} KB`;
+  if (bytes >= 1024) {
+    return `${(bytes / 1024).toFixed(2)} KB`;
+  }
+  return `${bytes} B`;
 }
 
 export default function DeveloperUsage() {
@@ -123,10 +134,20 @@ export default function DeveloperUsage() {
     return null;
   }
 
-  // Estimate database size (rough approximation based on row counts)
-  const estimatedDbSize = stats 
-    ? (stats.totalMessages * 500) + (stats.totalConversations * 200) + (stats.totalContacts * 300)
-    : 0;
+  // Get real database size from Supabase stats or estimate
+  const dbSizeBytes = stats?.supabaseStats?.database.total_size_bytes || 
+    ((stats?.totalMessages || 0) * 500) + ((stats?.totalConversations || 0) * 200) + ((stats?.totalContacts || 0) * 300);
+  
+  const storageSizeBytes = stats?.supabaseStats?.storage.total_size_bytes || 0;
+
+  // Prepare data for storage pie chart
+  const storagePieData = stats?.supabaseStats?.storage.buckets
+    .filter(b => b.total_size_bytes > 0)
+    .map(b => ({
+      name: b.bucket_name,
+      value: b.total_size_bytes,
+      files: b.file_count
+    })) || [];
 
   return (
     <div className="min-h-screen bg-background">
@@ -238,14 +259,14 @@ export default function DeveloperUsage() {
                 <Skeleton className="h-8 w-24" />
               ) : (
                 <>
-                  <p className="text-2xl font-bold">{formatBytes(estimatedDbSize)}</p>
+                  <p className="text-2xl font-bold">{formatBytes(dbSizeBytes)}</p>
                   <div className="mt-2">
                     <Progress 
-                      value={(estimatedDbSize / SUPABASE_LIMITS.database) * 100} 
+                      value={(dbSizeBytes / SUPABASE_LIMITS.database) * 100} 
                       className="h-1.5"
                     />
                     <p className="text-xs text-muted-foreground mt-1">
-                      {((estimatedDbSize / SUPABASE_LIMITS.database) * 100).toFixed(2)}% de 8 GB
+                      {((dbSizeBytes / SUPABASE_LIMITS.database) * 100).toFixed(2)}% de 8 GB
                     </p>
                   </div>
                 </>
@@ -253,12 +274,12 @@ export default function DeveloperUsage() {
             </CardContent>
           </Card>
 
-          {/* Activity */}
+          {/* Storage */}
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium flex items-center gap-2">
-                <Activity className="h-4 w-4 text-green-500" />
-                Atividade Total
+                <FolderArchive className="h-4 w-4 text-green-500" />
+                Storage
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -266,10 +287,16 @@ export default function DeveloperUsage() {
                 <Skeleton className="h-8 w-24" />
               ) : (
                 <>
-                  <p className="text-2xl font-bold">{formatNumber(stats?.totalMessages || 0)}</p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    mensagens | {formatNumber(stats?.totalConversations || 0)} conversas
-                  </p>
+                  <p className="text-2xl font-bold">{formatBytes(storageSizeBytes)}</p>
+                  <div className="mt-2">
+                    <Progress 
+                      value={(storageSizeBytes / SUPABASE_LIMITS.storage) * 100} 
+                      className="h-1.5"
+                    />
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {formatNumber(stats?.totalStorageFiles || 0)} arquivos
+                    </p>
+                  </div>
                 </>
               )}
             </CardContent>
@@ -357,6 +384,121 @@ export default function DeveloperUsage() {
           </Card>
         </div>
 
+        {/* Supabase Stats Section */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Storage by Bucket */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <HardDrive className="h-5 w-5" />
+                Storage por Bucket
+              </CardTitle>
+              <CardDescription>Distribuição de arquivos</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {isLoading ? (
+                <Skeleton className="h-[300px] w-full" />
+              ) : storagePieData.length > 0 ? (
+                <div className="flex items-center gap-4">
+                  <ResponsiveContainer width="50%" height={250}>
+                    <PieChart>
+                      <Pie
+                        data={storagePieData}
+                        dataKey="value"
+                        nameKey="name"
+                        cx="50%"
+                        cy="50%"
+                        outerRadius={80}
+                        label={({ name }) => name.substring(0, 8)}
+                      >
+                        {storagePieData.map((_, index) => (
+                          <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                        ))}
+                      </Pie>
+                      <Tooltip formatter={(value: number) => formatBytes(value)} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                  <div className="space-y-2 text-sm flex-1">
+                    {stats?.supabaseStats?.storage.buckets.map((bucket, index) => (
+                      <div key={bucket.bucket_name} className="flex justify-between items-center">
+                        <div className="flex items-center gap-2">
+                          <div 
+                            className="w-3 h-3 rounded-full" 
+                            style={{ backgroundColor: COLORS[index % COLORS.length] }}
+                          />
+                          <span className="truncate max-w-[120px]">{bucket.bucket_name}</span>
+                        </div>
+                        <div className="text-right text-muted-foreground">
+                          <span>{formatBytes(bucket.total_size_bytes)}</span>
+                          <span className="text-xs ml-1">({bucket.file_count})</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="h-[250px] flex items-center justify-center text-muted-foreground">
+                  Nenhum dado de storage disponível
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Top Companies by DB Size */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Building2 className="h-5 w-5" />
+                Top Empresas por Uso DB
+              </CardTitle>
+              <CardDescription>Consumo estimado de banco</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {isLoading ? (
+                <div className="space-y-2">
+                  {[1, 2, 3, 4, 5].map(i => <Skeleton key={i} className="h-10 w-full" />)}
+                </div>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Empresa</TableHead>
+                      <TableHead className="text-right">Msgs</TableHead>
+                      <TableHead className="text-right">Contatos</TableHead>
+                      <TableHead className="text-right">Tamanho</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {stats?.supabaseStats?.companies.slice(0, 8).map(comp => (
+                      <TableRow key={comp.company_id}>
+                        <TableCell className="font-medium truncate max-w-[150px]">
+                          {comp.company_name}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {formatNumber(comp.messages_count)}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {formatNumber(comp.contacts_count)}
+                        </TableCell>
+                        <TableCell className="text-right font-medium">
+                          {formatBytes(comp.estimated_db_size_bytes)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                    {(!stats?.supabaseStats?.companies || stats.supabaseStats.companies.length === 0) && (
+                      <TableRow>
+                        <TableCell colSpan={4} className="text-center text-muted-foreground">
+                          Nenhum dado disponível
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
         {/* Tables Row */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Usage by Function Table */}
@@ -364,7 +506,7 @@ export default function DeveloperUsage() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Zap className="h-5 w-5" />
-                Detalhamento por Função
+                Detalhamento por Função IA
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -416,8 +558,8 @@ export default function DeveloperUsage() {
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <Building2 className="h-5 w-5" />
-                Top 10 Empresas por Uso
+                <Brain className="h-5 w-5" />
+                Top 10 Empresas por Custo IA
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -466,6 +608,36 @@ export default function DeveloperUsage() {
           </Card>
         </div>
 
+        {/* Database Tables Stats */}
+        {stats?.supabaseStats?.database.tables && stats.supabaseStats.database.tables.length > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Server className="h-5 w-5" />
+                Tabelas do Banco de Dados
+              </CardTitle>
+              <CardDescription>
+                Estatísticas de uso por tabela
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                {stats.supabaseStats.database.tables.map(table => (
+                  <div key={table.table_name} className="p-3 bg-muted/50 rounded-lg">
+                    <p className="font-mono text-xs truncate" title={table.table_name}>
+                      {table.table_name}
+                    </p>
+                    <p className="text-lg font-bold mt-1">{formatNumber(table.row_count)}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {formatBytes(table.total_size_bytes)}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         {/* Cost Projection */}
         <Card>
           <CardHeader>
@@ -481,10 +653,10 @@ export default function DeveloperUsage() {
             {isLoading ? (
               <Skeleton className="h-24 w-full" />
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
                 <div className="p-4 bg-muted/50 rounded-lg">
                   <p className="text-sm font-medium mb-1">Empresas Ativas</p>
-                  <p className="text-2xl font-bold">{stats?.usageByCompany.length || 0}</p>
+                  <p className="text-2xl font-bold">{stats?.supabaseStats?.companies.length || stats?.usageByCompany.length || 0}</p>
                 </div>
                 <div className="p-4 bg-muted/50 rounded-lg">
                   <p className="text-sm font-medium mb-1">Custo Médio/Empresa (30d)</p>
@@ -503,6 +675,14 @@ export default function DeveloperUsage() {
                   <p className="text-xs text-muted-foreground mt-1">
                     (IA + Supabase Pro $25)
                   </p>
+                </div>
+                <div className="p-4 bg-muted/50 rounded-lg">
+                  <p className="text-sm font-medium mb-1">Operações Supabase</p>
+                  <div className="text-sm space-y-1">
+                    <p>DB Reads: {formatNumber(stats?.supabaseStats?.usage_logs.database_reads || 0)}</p>
+                    <p>DB Writes: {formatNumber(stats?.supabaseStats?.usage_logs.database_writes || 0)}</p>
+                    <p>Edge Funcs: {formatNumber(stats?.supabaseStats?.usage_logs.edge_function_invocations || 0)}</p>
+                  </div>
                 </div>
               </div>
             )}
@@ -525,16 +705,16 @@ export default function DeveloperUsage() {
               <div className="space-y-2">
                 <div className="flex justify-between text-sm">
                   <span>Database</span>
-                  <span>{formatBytes(estimatedDbSize)} / 8 GB</span>
+                  <span>{formatBytes(dbSizeBytes)} / 8 GB</span>
                 </div>
-                <Progress value={(estimatedDbSize / SUPABASE_LIMITS.database) * 100} className="h-2" />
+                <Progress value={(dbSizeBytes / SUPABASE_LIMITS.database) * 100} className="h-2" />
               </div>
               <div className="space-y-2">
                 <div className="flex justify-between text-sm">
                   <span>Storage</span>
-                  <span>~{formatBytes(stats?.totalStorageFiles || 0)} / 100 GB</span>
+                  <span>{formatBytes(storageSizeBytes)} / 100 GB</span>
                 </div>
-                <Progress value={0.5} className="h-2" />
+                <Progress value={(storageSizeBytes / SUPABASE_LIMITS.storage) * 100} className="h-2" />
               </div>
               <div className="space-y-2">
                 <div className="flex justify-between text-sm">
