@@ -207,30 +207,50 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (session?.user) {
         loadUserData(session.user.id);
         
-        // Verificar se já existe session_token - se não, criar nova sessão
-        const existingToken = SessionManager.getToken();
-        if (!existingToken) {
-          // Check if this is a developer support session (via magic link with is_support param)
-          const isSupportSession = SessionManager.isSupportSession();
-          console.log('[AuthContext] No session token found on restore - creating new session, isSupportSession:', isSupportSession);
+        // PRIMEIRO verificar se é sessão de suporte via URL (antes de verificar token existente)
+        const isSupportSession = SessionManager.isSupportSession();
+        
+        if (isSupportSession) {
+          // É acesso de developer - SEMPRE criar nova sessão de suporte
+          // (não importa se existe token anterior no localStorage)
+          console.log('[AuthContext] Developer support session detected via URL - creating support session');
           
           const deviceInfo = {
             userAgent: navigator.userAgent,
             platform: navigator.platform,
             language: navigator.language,
             timestamp: new Date().toISOString(),
-            is_support: isSupportSession
+            is_support: true
           };
           
-          const result = await SessionManager.createSession(deviceInfo, isSupportSession);
+          const result = await SessionManager.createSession(deviceInfo, true);
           if (!result.success) {
-            console.warn('[AuthContext] Failed to create session on restore:', result.error);
-          } else if (isSupportSession) {
+            console.warn('[AuthContext] Failed to create support session:', result.error);
+          } else {
             console.log('[AuthContext] Support session created - user sessions preserved');
             // Clean up the URL parameter after processing
             const url = new URL(window.location.href);
             url.searchParams.delete('is_support');
             window.history.replaceState({}, '', url.toString());
+          }
+        } else {
+          // Login normal - verificar se precisa criar sessão
+          const existingToken = SessionManager.getToken();
+          if (!existingToken) {
+            console.log('[AuthContext] No session token found on restore - creating new session');
+            
+            const deviceInfo = {
+              userAgent: navigator.userAgent,
+              platform: navigator.platform,
+              language: navigator.language,
+              timestamp: new Date().toISOString(),
+              is_support: false
+            };
+            
+            const result = await SessionManager.createSession(deviceInfo, false);
+            if (!result.success) {
+              console.warn('[AuthContext] Failed to create session on restore:', result.error);
+            }
           }
         }
       } else {
