@@ -3125,6 +3125,59 @@ export type Database = {
         }
         Relationships: []
       }
+      user_sessions: {
+        Row: {
+          company_id: string
+          created_at: string | null
+          device_info: Json | null
+          id: string
+          invalidated_at: string | null
+          invalidated_reason: string | null
+          ip_address: string | null
+          is_active: boolean | null
+          last_active_at: string | null
+          session_token: string
+          user_agent: string | null
+          user_id: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string | null
+          device_info?: Json | null
+          id?: string
+          invalidated_at?: string | null
+          invalidated_reason?: string | null
+          ip_address?: string | null
+          is_active?: boolean | null
+          last_active_at?: string | null
+          session_token: string
+          user_agent?: string | null
+          user_id: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string | null
+          device_info?: Json | null
+          id?: string
+          invalidated_at?: string | null
+          invalidated_reason?: string | null
+          ip_address?: string | null
+          is_active?: boolean | null
+          last_active_at?: string | null
+          session_token?: string
+          user_agent?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_sessions_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       whatsapp_connections: {
         Row: {
           active: boolean | null
@@ -3214,6 +3267,7 @@ export type Database = {
       cleanup_expired_insights_jobs: { Args: never; Returns: number }
       cleanup_expired_media_cache: { Args: never; Returns: number }
       cleanup_old_conversation_events: { Args: never; Returns: number }
+      cleanup_old_sessions: { Args: never; Returns: number }
       create_internal_chat_room: {
         Args: { p_description?: string; p_name?: string; p_type: string }
         Returns: string

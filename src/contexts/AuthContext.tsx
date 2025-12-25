@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState, ReactNode, useCallback,
 import { User, Session, RealtimeChannel } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import type { Tables } from '@/integrations/supabase/types';
+import { SessionManager } from '@/hooks/useSessionGuard';
 
 type Profile = Tables<'profiles'>;
 type Company = Tables<'companies'>;
@@ -336,6 +337,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       email,
       password
     });
+    
+    // If login successful, create session
+    if (!error) {
+      const deviceInfo = {
+        userAgent: navigator.userAgent,
+        platform: navigator.platform,
+        language: navigator.language,
+        timestamp: new Date().toISOString()
+      };
+      
+      const sessionResult = await SessionManager.createSession(deviceInfo);
+      if (!sessionResult.success) {
+        console.warn('[AuthContext] Failed to create session:', sessionResult.error);
+      } else {
+        console.log('[AuthContext] Session created successfully');
+      }
+    }
+    
     return { error: error as Error | null };
   }
 
@@ -347,6 +366,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         .update({ last_seen_at: new Date().toISOString() })
         .eq('id', user.id);
     }
+    
+    // Invalidate session
+    await SessionManager.invalidateSession();
     
     await supabase.auth.signOut();
     setUser(null);
