@@ -282,14 +282,14 @@ export function ConversationList({
 
                     {/* Content */}
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-1.5 min-w-0">
+                      <div className="flex items-center justify-between gap-2 overflow-hidden">
+                        <div className="flex items-center gap-1.5 flex-1 min-w-0 overflow-hidden">
                           {/* Star indicator for followed conversations */}
                           {isAdminOrOwner && isFollowed(conversation.id) && (
                             <Star className="w-3.5 h-3.5 text-violet-500 fill-violet-500 flex-shrink-0" />
                           )}
                           <p className={cn(
-                            "text-sm text-foreground truncate",
+                            "text-sm text-foreground truncate min-w-0",
                             isUnread ? "font-bold" : "font-medium"
                           )}>
                             {conversation.contact?.name || conversation.contact?.phoneNumber}
