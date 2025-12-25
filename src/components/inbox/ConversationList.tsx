@@ -253,7 +253,7 @@ export function ConversationList({
                       : 'hover:bg-[#F7F9FA] dark:hover:bg-muted/50 bg-transparent'
                   )}
                 >
-                  <div className="flex gap-3">
+                  <div className="flex gap-3 min-w-0 overflow-hidden">
                     {/* Avatar with unread badge */}
                     <div className="relative flex-shrink-0">
                       <ContactAvatar
@@ -281,7 +281,7 @@ export function ConversationList({
                     </div>
 
                     {/* Content */}
-                    <div className="flex-1 min-w-0">
+                    <div className="flex-1 min-w-0 overflow-hidden">
                       <div className="flex items-center justify-between gap-2 overflow-hidden">
                         <div className="flex items-center gap-1.5 flex-1 min-w-0 overflow-hidden">
                           {/* Star indicator for followed conversations */}
@@ -304,15 +304,14 @@ export function ConversationList({
                       <TooltipProvider delayDuration={300}>
                         <Tooltip>
                           <TooltipTrigger asChild>
-                            <button
-                              type="button"
+                            <p
                               className={cn(
-                                "mt-0.5 w-full min-w-0 whitespace-nowrap overflow-hidden text-left text-xs bg-transparent p-0",
+                                "mt-0.5 w-full truncate text-left text-xs cursor-default",
                                 isUnread ? "text-foreground font-semibold" : "text-muted-foreground"
                               )}
                             >
                               {getMessagePreview(conversation) || conversation.contact?.phoneNumber}
-                            </button>
+                            </p>
                           </TooltipTrigger>
                           {getMessagePreview(conversation) && (
                             <TooltipContent
