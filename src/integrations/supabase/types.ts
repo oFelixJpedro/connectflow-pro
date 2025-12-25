@@ -1073,11 +1073,14 @@ export type Database = {
       contacts: {
         Row: {
           avatar_url: string | null
+          blocked_at: string | null
+          blocked_by: string | null
           company_id: string
           created_at: string | null
           custom_fields: Json | null
           email: string | null
           id: string
+          is_blocked: boolean | null
           last_interaction_at: string | null
           name: string | null
           name_manually_edited: boolean | null
@@ -1088,11 +1091,14 @@ export type Database = {
         }
         Insert: {
           avatar_url?: string | null
+          blocked_at?: string | null
+          blocked_by?: string | null
           company_id: string
           created_at?: string | null
           custom_fields?: Json | null
           email?: string | null
           id?: string
+          is_blocked?: boolean | null
           last_interaction_at?: string | null
           name?: string | null
           name_manually_edited?: boolean | null
@@ -1103,11 +1109,14 @@ export type Database = {
         }
         Update: {
           avatar_url?: string | null
+          blocked_at?: string | null
+          blocked_by?: string | null
           company_id?: string
           created_at?: string | null
           custom_fields?: Json | null
           email?: string | null
           id?: string
+          is_blocked?: boolean | null
           last_interaction_at?: string | null
           name?: string | null
           name_manually_edited?: boolean | null
@@ -1117,6 +1126,13 @@ export type Database = {
           updated_at?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "contacts_blocked_by_fkey"
+            columns: ["blocked_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "contacts_company_id_fkey"
             columns: ["company_id"]
