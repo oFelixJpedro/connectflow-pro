@@ -6,7 +6,7 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-type ActionType = 'assign' | 'transfer' | 'release' | 'close' | 'reopen' | 'move_department' | 'mark_unread' | 'clear_unread_mark' | 'ai_start' | 'ai_pause' | 'ai_stop' | 'ai_restart'
+type ActionType = 'assign' | 'transfer' | 'release' | 'close' | 'reopen' | 'move_department' | 'mark_unread' | 'clear_unread_mark' | 'ai_start' | 'ai_pause' | 'ai_stop' | 'ai_restart' | 'block' | 'unblock'
 
 interface RequestBody {
   action: ActionType
@@ -14,6 +14,7 @@ interface RequestBody {
   userId?: string
   departmentId?: string
   pauseDurationMinutes?: number
+  connectionSessionId?: string // For block/unblock actions
 }
 
 serve(async (req) => {
@@ -107,7 +108,7 @@ serve(async (req) => {
     console.log('└─────────────────────────────────────────────────────────────────┘')
     
     const body: RequestBody = await req.json()
-    const { action, conversationId, userId: targetUserId, departmentId, pauseDurationMinutes } = body
+    const { action, conversationId, userId: targetUserId, departmentId, pauseDurationMinutes, connectionSessionId } = body
     
     console.log('📋 Request:')
     console.log('   - action:', action)
@@ -115,9 +116,10 @@ serve(async (req) => {
     console.log('   - targetUserId:', targetUserId || '(não informado)')
     console.log('   - departmentId:', departmentId || '(não informado)')
     console.log('   - pauseDurationMinutes:', pauseDurationMinutes || '(não informado)')
+    console.log('   - connectionSessionId:', connectionSessionId || '(não informado)')
     
     // Validar action
-    const validActions: ActionType[] = ['assign', 'transfer', 'release', 'close', 'reopen', 'move_department', 'mark_unread', 'clear_unread_mark', 'ai_start', 'ai_pause', 'ai_stop', 'ai_restart']
+    const validActions: ActionType[] = ['assign', 'transfer', 'release', 'close', 'reopen', 'move_department', 'mark_unread', 'clear_unread_mark', 'ai_start', 'ai_pause', 'ai_stop', 'ai_restart', 'block', 'unblock']
     if (!validActions.includes(action)) {
       console.log('❌ Ação inválida:', action)
       return new Response(
@@ -145,8 +147,8 @@ serve(async (req) => {
       .from('conversations')
       .select(`
         *,
-        contacts!inner(id, name, phone_number),
-        whatsapp_connections(id, name, company_id),
+        contacts!inner(id, name, phone_number, is_blocked, blocked_at, blocked_by),
+        whatsapp_connections(id, name, company_id, session_id),
         profiles:assigned_user_id(id, full_name),
         departments(id, name)
       `)
@@ -447,6 +449,173 @@ serve(async (req) => {
         }
         
         console.log('📝 Removendo marcação de não lida')
+        break
+      }
+      
+      // ───────────────────────────────────────────────────────────────────
+      // ACTION: BLOCK
+      // ───────────────────────────────────────────────────────────────────
+      case 'block': {
+        console.log('🚫 Bloqueando contato:', conversation.contacts?.phone_number)
+        
+        const contactPhone = conversation.contacts?.phone_number
+        const sessionId = connectionSessionId || conversation.whatsapp_connections?.session_id
+        
+        if (!contactPhone) {
+          console.log('❌ Telefone do contato não encontrado')
+          return new Response(
+            JSON.stringify({ success: false, error: 'Telefone do contato não encontrado', code: 'MISSING_PHONE' }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
+        }
+        
+        if (!sessionId) {
+          console.log('❌ Session ID da conexão não encontrado')
+          return new Response(
+            JSON.stringify({ success: false, error: 'Session ID não encontrado', code: 'MISSING_SESSION_ID' }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
+        }
+        
+        // Call whatsapp-instance to block contact on UAZAPI
+        const blockUrl = `${supabaseUrl}/functions/v1/whatsapp-instance`
+        const blockResponse = await fetch(blockUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            action: 'block_contact',
+            instanceName: sessionId,
+            phoneNumber: contactPhone,
+            block: true
+          })
+        })
+        
+        const blockResult = await blockResponse.json()
+        console.log('🚫 [BLOCK] UAZAPI result:', blockResult)
+        
+        if (!blockResponse.ok) {
+          console.log('❌ Erro ao bloquear na UAZAPI:', blockResult.error)
+          return new Response(
+            JSON.stringify({ success: false, error: blockResult.error || 'Erro ao bloquear contato', code: 'BLOCK_ERROR' }),
+            { status: blockResponse.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
+        }
+        
+        // Update contact as blocked
+        const { error: contactError } = await supabase
+          .from('contacts')
+          .update({
+            is_blocked: true,
+            blocked_at: new Date().toISOString(),
+            blocked_by: userId
+          })
+          .eq('id', conversation.contacts?.id)
+        
+        if (contactError) {
+          console.log('❌ Erro ao atualizar contato:', contactError.message)
+        }
+        
+        // Update conversation status and remove assignment
+        updateData = {
+          status: 'closed',
+          closed_at: new Date().toISOString(),
+          assigned_user_id: null,
+          assigned_at: null,
+          metadata: {
+            ...((conversation.metadata as Record<string, unknown>) || {}),
+            blocked: true,
+            blockedAt: new Date().toISOString(),
+            blockedBy: userId
+          }
+        }
+        
+        console.log('📝 Bloqueando contato e fechando conversa')
+        break
+      }
+      
+      // ───────────────────────────────────────────────────────────────────
+      // ACTION: UNBLOCK
+      // ───────────────────────────────────────────────────────────────────
+      case 'unblock': {
+        console.log('✅ Desbloqueando contato:', conversation.contacts?.phone_number)
+        
+        const contactPhone = conversation.contacts?.phone_number
+        const sessionId = connectionSessionId || conversation.whatsapp_connections?.session_id
+        
+        if (!contactPhone) {
+          console.log('❌ Telefone do contato não encontrado')
+          return new Response(
+            JSON.stringify({ success: false, error: 'Telefone do contato não encontrado', code: 'MISSING_PHONE' }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
+        }
+        
+        if (!sessionId) {
+          console.log('❌ Session ID da conexão não encontrado')
+          return new Response(
+            JSON.stringify({ success: false, error: 'Session ID não encontrado', code: 'MISSING_SESSION_ID' }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
+        }
+        
+        // Call whatsapp-instance to unblock contact on UAZAPI
+        const unblockUrl = `${supabaseUrl}/functions/v1/whatsapp-instance`
+        const unblockResponse = await fetch(unblockUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            action: 'block_contact',
+            instanceName: sessionId,
+            phoneNumber: contactPhone,
+            block: false
+          })
+        })
+        
+        const unblockResult = await unblockResponse.json()
+        console.log('✅ [UNBLOCK] UAZAPI result:', unblockResult)
+        
+        if (!unblockResponse.ok) {
+          console.log('❌ Erro ao desbloquear na UAZAPI:', unblockResult.error)
+          return new Response(
+            JSON.stringify({ success: false, error: unblockResult.error || 'Erro ao desbloquear contato', code: 'UNBLOCK_ERROR' }),
+            { status: unblockResponse.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
+        }
+        
+        // Update contact as unblocked
+        const { error: contactError } = await supabase
+          .from('contacts')
+          .update({
+            is_blocked: false,
+            blocked_at: null,
+            blocked_by: null
+          })
+          .eq('id', conversation.contacts?.id)
+        
+        if (contactError) {
+          console.log('❌ Erro ao atualizar contato:', contactError.message)
+        }
+        
+        // Get existing metadata and remove blocked fields
+        const existingMetadata = (conversation.metadata as Record<string, unknown>) || {}
+        const { blocked, blockedAt, blockedBy, ...restMetadata } = existingMetadata
+        
+        // Update conversation status and assign to current user
+        updateData = {
+          status: 'in_progress',
+          closed_at: null,
+          assigned_user_id: userId,
+          assigned_at: new Date().toISOString(),
+          metadata: restMetadata
+        }
+        
+        console.log('📝 Desbloqueando contato e reabrindo conversa')
         break
       }
       
@@ -755,6 +924,26 @@ serve(async (req) => {
       case 'mark_unread': {
         historyEventType = 'marked_as_unread'
         historyEventData = {}
+        break
+      }
+      
+      case 'block': {
+        historyEventType = 'contact_blocked'
+        historyEventData = {
+          contact_id: conversation.contacts?.id,
+          contact_name: conversation.contacts?.name || conversation.contacts?.phone_number
+        }
+        break
+      }
+      
+      case 'unblock': {
+        historyEventType = 'contact_unblocked'
+        historyEventData = {
+          contact_id: conversation.contacts?.id,
+          contact_name: conversation.contacts?.name || conversation.contacts?.phone_number,
+          assigned_to_user_id: userId,
+          assigned_to_user_name: profile.full_name
+        }
         break
       }
       

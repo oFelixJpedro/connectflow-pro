@@ -31,6 +31,7 @@ const STATUS_OPTIONS = [
   { value: 'pending', label: 'Pendentes' },
   { value: 'waiting', label: 'Aguardando' },
   { value: 'closed', label: 'Fechadas' },
+  { value: 'blocked', label: 'Bloqueados' },
 ] as const;
 
 export function ConversationFiltersComponent({

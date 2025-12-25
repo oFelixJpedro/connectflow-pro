@@ -79,7 +79,7 @@ export interface Contact {
 }
 
 // Conversation types
-export type ConversationStatus = 'open' | 'pending' | 'in_progress' | 'waiting' | 'resolved' | 'closed';
+export type ConversationStatus = 'open' | 'pending' | 'in_progress' | 'waiting' | 'resolved' | 'closed' | 'blocked';
 export type ConversationPriority = 'low' | 'normal' | 'high' | 'urgent';
 
 export interface Conversation {

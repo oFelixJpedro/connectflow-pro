@@ -929,14 +929,81 @@ Deno.serve(async (req) => {
     // NOTE: update_webhook action removed - groups are no longer supported
     // All webhooks now always exclude group messages (isGroupYes)
 
+    // ========== ACTION: BLOCK_CONTACT ==========
+    if (action === 'block_contact') {
+      const { phoneNumber, block } = requestBody;
+      
+      console.log(`🚫 [BLOCK_CONTACT] ${block ? 'Blocking' : 'Unblocking'} contact: ${phoneNumber}`);
+      
+      if (!phoneNumber) {
+        return new Response(
+          JSON.stringify({ error: 'phoneNumber é obrigatório' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+      
+      // Get instance token from database
+      const { data: connection } = await supabaseClient
+        .from('whatsapp_connections')
+        .select('instance_token')
+        .eq('session_id', instanceName)
+        .maybeSingle();
+      
+      if (!connection?.instance_token) {
+        console.error('❌ [BLOCK_CONTACT] Instance token not found');
+        return new Response(
+          JSON.stringify({ error: 'Token de instância não encontrado' }),
+          { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+      
+      // Call UAZAPI to block/unblock
+      const blockResponse = await fetch(`${UAZAPI_BASE_URL}/chat/block`, {
+        method: 'POST',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+          'token': connection.instance_token
+        },
+        body: JSON.stringify({
+          number: phoneNumber,
+          block: block
+        })
+      });
+      
+      const blockText = await blockResponse.text();
+      console.log(`🚫 [BLOCK_CONTACT] UAZAPI response: ${blockResponse.status} - ${blockText}`);
+      
+      if (!blockResponse.ok) {
+        console.error('❌ [BLOCK_CONTACT] Failed to block/unblock:', blockText);
+        return new Response(
+          JSON.stringify({ 
+            error: `Falha ao ${block ? 'bloquear' : 'desbloquear'} contato`,
+            details: blockText
+          }),
+          { status: blockResponse.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+      
+      console.log(`✅ [BLOCK_CONTACT] Contact ${block ? 'blocked' : 'unblocked'} successfully`);
+      
+      return new Response(
+        JSON.stringify({ 
+          success: true,
+          message: `Contato ${block ? 'bloqueado' : 'desbloqueado'} com sucesso`
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     console.error('Invalid action received:', action)
-    console.error('Valid actions are: init, status, logout, archive, delete_permanent')
+    console.error('Valid actions are: init, status, logout, archive, delete_permanent, block_contact')
 
     return new Response(
       JSON.stringify({ 
         error: 'Invalid action',
         received: action,
-        valid: ['init', 'status', 'logout', 'archive', 'delete_permanent']
+        valid: ['init', 'status', 'logout', 'archive', 'delete_permanent', 'block_contact']
       }),
       { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )

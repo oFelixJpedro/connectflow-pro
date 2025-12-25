@@ -1837,82 +1837,111 @@ serve(async (req) => {
         .maybeSingle()
       
       if (closedConversation) {
-        // REOPEN the closed conversation
-        const wasOnDifferentConnection = closedConversation.whatsapp_connection_id !== whatsappConnectionId
-        console.log(`🔄 Reabrindo conversa fechada: ${closedConversation.id}${wasOnDifferentConnection ? ' (e migrando conexão)' : ''}`)
+        // Check if contact is blocked - if so, don't reopen
+        const { data: contactData } = await supabase
+          .from('contacts')
+          .select('is_blocked')
+          .eq('id', contactId)
+          .single()
         
-        const existingMetadata = (closedConversation.metadata as Record<string, unknown>) || {}
-        
-        // Get previous connection name if migrating
-        let prevConnectionName = null
-        if (wasOnDifferentConnection) {
-          const { data: prevConn } = await supabase
-            .from('whatsapp_connections')
-            .select('name')
-            .eq('id', closedConversation.whatsapp_connection_id)
-            .maybeSingle()
-          prevConnectionName = prevConn?.name
-        }
-        
-        await supabase
-          .from('conversations')
-          .update({
-            status: 'open',
-            closed_at: null,
-            assigned_user_id: null,
-            assigned_at: null,
-            unread_count: isFromMe ? 0 : 1,
-            last_message_at: messageTimestamp,
-            updated_at: new Date().toISOString(),
-            whatsapp_connection_id: whatsappConnectionId,
-            department_id: defaultDepartmentId,
-            metadata: {
-              ...existingMetadata,
-              autoReopened: true,
-              reopenedAt: new Date().toISOString(),
-              reopenedByClient: true
-            }
-          })
-          .eq('id', closedConversation.id)
-        
-        // Log reopening
-        await supabase
-          .from('conversation_history')
-          .insert({
-            conversation_id: closedConversation.id,
-            event_type: 'reopened',
-            event_data: {
-              reason: 'client_message',
-              previous_status: 'closed'
-            },
-            performed_by: null,
-            performed_by_name: 'Sistema',
-            is_automatic: true
-          })
-        
-        // Log connection change if it happened
-        if (wasOnDifferentConnection) {
+        if (contactData?.is_blocked) {
+          console.log(`🚫 [BLOCKED] Contato bloqueado - não reabrindo conversa ${closedConversation.id}`)
+          // Still save the message but don't reopen
+          conversationId = closedConversation.id
+        } else {
+          // REOPEN the closed conversation
+          const wasOnDifferentConnection = closedConversation.whatsapp_connection_id !== whatsappConnectionId
+          console.log(`🔄 Reabrindo conversa fechada: ${closedConversation.id}${wasOnDifferentConnection ? ' (e migrando conexão)' : ''}`)
+          
+          const existingMetadata = (closedConversation.metadata as Record<string, unknown>) || {}
+          
+          // Get previous connection name if migrating
+          let prevConnectionName = null
+          if (wasOnDifferentConnection) {
+            const { data: prevConn } = await supabase
+              .from('whatsapp_connections')
+              .select('name')
+              .eq('id', closedConversation.whatsapp_connection_id)
+              .maybeSingle()
+            prevConnectionName = prevConn?.name
+          }
+          
+          await supabase
+            .from('conversations')
+            .update({
+              status: 'open',
+              closed_at: null,
+              assigned_user_id: null,
+              assigned_at: null,
+              unread_count: isFromMe ? 0 : 1,
+              last_message_at: messageTimestamp,
+              updated_at: new Date().toISOString(),
+              whatsapp_connection_id: whatsappConnectionId,
+              department_id: defaultDepartmentId,
+              metadata: {
+                ...existingMetadata,
+                autoReopened: true,
+                reopenedAt: new Date().toISOString(),
+                reopenedByClient: true
+              }
+            })
+            .eq('id', closedConversation.id)
+          
+          // Log reopening
           await supabase
             .from('conversation_history')
             .insert({
               conversation_id: closedConversation.id,
-              event_type: 'connection_changed',
+              event_type: 'reopened',
               event_data: {
-                previous_connection_id: closedConversation.whatsapp_connection_id,
-                previous_connection_name: prevConnectionName || 'Número anterior',
-                new_connection_id: whatsappConnectionId,
-                new_connection_name: connection.name || 'Novo número',
-                reason: 'client_initiated',
-                message: 'Cliente reenviou mensagem por outro número'
+                reason: 'client_message',
+                previous_status: 'closed'
               },
               performed_by: null,
               performed_by_name: 'Sistema',
               is_automatic: true
             })
+          
+          // Log connection change if it happened
+          if (wasOnDifferentConnection) {
+            await supabase
+              .from('conversation_history')
+              .insert({
+                conversation_id: closedConversation.id,
+                event_type: 'connection_changed',
+                event_data: {
+                  previous_connection_id: closedConversation.whatsapp_connection_id,
+                  previous_connection_name: prevConnectionName || 'Número anterior',
+                  new_connection_id: whatsappConnectionId,
+                  new_connection_name: connection.name || 'Novo número',
+                  reason: 'client_initiated',
+                  message: 'Cliente reenviou mensagem por outro número'
+                },
+                performed_by: null,
+                performed_by_name: 'Sistema',
+                is_automatic: true
+              })
+          }
+          
+          conversationId = closedConversation.id
+        }
+      } else {
+        // Check if contact is blocked before creating new conversation
+        const { data: contactData } = await supabase
+          .from('contacts')
+          .select('is_blocked')
+          .eq('id', contactId)
+          .single()
+        
+        if (contactData?.is_blocked) {
+          console.log(`🚫 [BLOCKED] Contato bloqueado - não criando nova conversa`)
+          // Return success but don't create conversation
+          return new Response(
+            JSON.stringify({ success: true, message: 'Contact is blocked - message ignored' }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
         }
         
-        conversationId = closedConversation.id
-      } else {
         // No conversation exists at all - create new one
         const { data: newConversation, error: createConvError } = await supabase
           .from('conversations')

@@ -1,4 +1,4 @@
-import { AlertTriangle, Lock, CheckCircle } from 'lucide-react';
+import { AlertTriangle, Lock, CheckCircle, ShieldOff } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { Conversation, User } from '@/types';
 
@@ -24,6 +24,16 @@ export function useMessageBlocker(
       message: 'Selecione uma conversa',
       icon: <Lock className="w-4 h-4" />,
       variant: 'info',
+    };
+  }
+
+  // Contato bloqueado
+  if (conversation.status === 'blocked') {
+    return {
+      blocked: true,
+      message: 'Este contato está bloqueado',
+      icon: <ShieldOff className="w-4 h-4" />,
+      variant: 'error',
     };
   }
 

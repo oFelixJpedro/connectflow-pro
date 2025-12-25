@@ -373,11 +373,11 @@ export function useInboxData() {
       const statusFilters = conversationFilters.status || [];
       
       if (statusFilters.length > 0) {
-        // User selected specific statuses - cast to the expected type
-        query = query.in('status', statusFilters as ('open' | 'pending' | 'in_progress' | 'waiting' | 'resolved' | 'closed')[]);
+        // User selected specific statuses - use any[] cast since DB types may not include 'blocked' yet
+        query = query.in('status', statusFilters as any[]);
       } else {
-        // No status filter - hide closed by default
-        query = query.neq('status', 'closed');
+        // No status filter - hide closed AND blocked by default
+        query = query.not('status', 'in', '("closed","blocked")');
       }
 
         // Column-based assignment filter
