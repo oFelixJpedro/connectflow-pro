@@ -305,7 +305,7 @@ export function ConversationList({
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <p className={cn(
-                              "text-xs truncate mt-0.5 cursor-default",
+                              "text-xs mt-0.5 cursor-default overflow-hidden text-ellipsis whitespace-nowrap block",
                               isUnread ? "text-foreground font-semibold" : "text-muted-foreground"
                             )}>
                               {getMessagePreview(conversation) || conversation.contact?.phoneNumber}
