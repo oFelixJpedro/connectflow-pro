@@ -540,6 +540,7 @@ export type Database = {
           function_name: string
           id: string
           input_tokens: number | null
+          is_audio_input: boolean | null
           metadata: Json | null
           model: string
           output_tokens: number | null
@@ -552,6 +553,7 @@ export type Database = {
           function_name: string
           id?: string
           input_tokens?: number | null
+          is_audio_input?: boolean | null
           metadata?: Json | null
           model: string
           output_tokens?: number | null
@@ -564,6 +566,7 @@ export type Database = {
           function_name?: string
           id?: string
           input_tokens?: number | null
+          is_audio_input?: boolean | null
           metadata?: Json | null
           model?: string
           output_tokens?: number | null
