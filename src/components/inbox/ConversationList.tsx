@@ -303,17 +303,21 @@ export function ConversationList({
                       {/* Last message preview with tooltip */}
                       <TooltipProvider delayDuration={300}>
                         <Tooltip>
-                          <TooltipTrigger asChild>
-                            <p className={cn(
-                              "text-xs mt-0.5 cursor-default overflow-hidden text-ellipsis whitespace-nowrap block w-full max-w-full",
-                              isUnread ? "text-foreground font-semibold" : "text-muted-foreground"
-                            )}>
-                              {getMessagePreview(conversation) || conversation.contact?.phoneNumber}
-                            </p>
-                          </TooltipTrigger>
+                          <div className="min-w-0 w-full overflow-hidden">
+                            <TooltipTrigger asChild>
+                              <p
+                                className={cn(
+                                  "text-xs mt-0.5 cursor-default truncate w-full",
+                                  isUnread ? "text-foreground font-semibold" : "text-muted-foreground"
+                                )}
+                              >
+                                {getMessagePreview(conversation) || conversation.contact?.phoneNumber}
+                              </p>
+                            </TooltipTrigger>
+                          </div>
                           {getMessagePreview(conversation) && (
-                            <TooltipContent 
-                              side="bottom" 
+                            <TooltipContent
+                              side="bottom"
                               align="start"
                               className="max-w-[300px] break-words z-[9999] bg-popover border border-border shadow-lg"
                             >
