@@ -218,6 +218,11 @@ ${mediaAnalyses.length > 0
 - Informações pessoais relevantes identificadas
 - Preferências ou características notadas
 
+### 🎯 TOM DE VOZ E COMUNICAÇÃO
+- **Tom do cliente:** (Como o cliente se expressa - exemplos: formal, informal, objetivo, detalhista, técnico, leigo, paciente, ansioso, impaciente, amigável, neutro, hostil, brincalhão, sério, direto, prolixo, educado, ríspido, etc.)
+- **Estilo recomendado para o atendente:** (Qual abordagem de comunicação seria mais eficaz para este cliente - mais formal, descontraído, técnico, didático, direto ao ponto, acolhedor, empático, objetivo, etc.)
+- **Dicas de comunicação:** (2-3 sugestões práticas e específicas para se conectar melhor com este perfil de cliente)
+
 ### 📌 ASSUNTOS DISCUTIDOS
 (Lista numerada de TODOS os tópicos abordados na conversa)
 
@@ -245,7 +250,8 @@ ${mediaAnalyses.length > 0
 - Seja objetivo mas completo
 - Não invente informações - apenas extraia o que está na conversa
 - Use formatação Markdown rica (negrito, listas, etc.)
-- Se uma seção não tiver informação relevante, escreva "Não identificado" ou "Não aplicável"`;
+- Se uma seção não tiver informação relevante, escreva "Não identificado" ou "Não aplicável"
+- A análise de Tom de Voz é OBRIGATÓRIA - observe padrões de linguagem, uso de emojis, formalidade, velocidade e extensão das mensagens para inferir o perfil de comunicação do cliente`;
 
     const userPrompt = `Analise a seguinte conversa com ${messages.length} mensagens e gere o resumo completo:
 

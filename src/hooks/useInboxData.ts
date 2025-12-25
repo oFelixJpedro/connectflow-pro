@@ -916,10 +916,6 @@ export function useInboxData() {
       }
 
       console.log('[useInboxData] Mensagem enviada com sucesso via WhatsApp');
-      toast({
-        title: 'Mensagem enviada!',
-        description: 'A mensagem foi entregue ao WhatsApp.',
-      });
 
       return true;
     } catch (err) {
@@ -985,11 +981,6 @@ export function useInboxData() {
         });
         return false;
       }
-
-      toast({
-        title: 'Mensagem reenviada!',
-        description: 'A mensagem foi entregue ao WhatsApp.',
-      });
 
       return true;
     } catch (err) {
