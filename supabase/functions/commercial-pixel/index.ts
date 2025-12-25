@@ -6,7 +6,7 @@ import {
   analyzeDocumentWithFileAPI,
   transcribeAudioWithFileAPI 
 } from '../_shared/gemini-file-api.ts';
-import { logAIUsage, calculateCost, GEMINI_PRICING } from '../_shared/usage-tracker.ts';
+import { logAIUsage, calculateCost, GEMINI_PRICING, isAudioContent } from '../_shared/usage-tracker.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -499,13 +499,15 @@ ${hasMedia ? `IMPORTANTE: Esta mensagem contém mídia (${message_type}). Analis
       const analysisResult = await callGemini(fullPrompt, geminiApiKey);
       aiAnalysis = analysisResult.parsed;
       
-      // Log AI usage
+      // Log AI usage - detect if audio for accurate pricing
+      const isAudio = isAudioContent(message_type);
       await logAIUsage(
         supabase, company_id, 'commercial-pixel-analysis',
         'gemini-3-flash-preview',
         analysisResult.usage.input, analysisResult.usage.output,
         Date.now() - startTime,
-        { conversation_id, direction, message_type, has_media: hasMedia }
+        { conversation_id, direction, message_type, has_media: hasMedia },
+        isAudio
       );
       
       if (aiAnalysis) {
@@ -774,13 +776,15 @@ ${hasMedia ? `NOTA: O vendedor enviou uma mídia (${message_type}). Considere se
           const behaviorResponse = await callGemini(behaviorPrompt + mediaDescription, geminiApiKey);
           const behaviorParsed = behaviorResponse.parsed;
           
-          // Log AI usage for behavior analysis
+          // Log AI usage for behavior analysis - detect if audio
+          const behaviorIsAudio = isAudioContent(message_type);
           await logAIUsage(
             supabase, company_id, 'commercial-pixel-behavior',
             'gemini-3-flash-preview',
             behaviorResponse.usage.input, behaviorResponse.usage.output,
             Date.now() - behaviorStartTime,
-            { conversation_id, has_media: hasMedia }
+            { conversation_id, has_media: hasMedia },
+            behaviorIsAudio
           );
           
           behaviorResult = behaviorParsed;
@@ -789,13 +793,14 @@ ${hasMedia ? `NOTA: O vendedor enviou uma mídia (${message_type}). Considere se
           const behaviorResponse = await callGemini(behaviorPrompt, geminiApiKey);
           const behaviorParsed = behaviorResponse.parsed;
           
-          // Log AI usage for behavior analysis
+          // Log AI usage for behavior analysis (no media = no audio)
           await logAIUsage(
             supabase, company_id, 'commercial-pixel-behavior',
             'gemini-3-flash-preview',
             behaviorResponse.usage.input, behaviorResponse.usage.output,
             Date.now() - behaviorStartTime,
-            { conversation_id }
+            { conversation_id },
+            false
           );
           
           behaviorResult = behaviorParsed;
@@ -1043,13 +1048,14 @@ ${conversationText}
         const evalResponse = await callGemini(textPrompt, geminiApiKey);
         const evalResult = evalResponse.parsed;
         
-        // Log AI usage for evaluation
+        // Log AI usage for evaluation (text analysis, no direct audio input)
         await logAIUsage(
           supabase, company_id, 'commercial-pixel-evaluation',
           'gemini-3-flash-preview',
           evalResponse.usage.input, evalResponse.usage.output,
           Date.now() - evalStartTime,
-          { conversation_id, message_count: allMessages.length, media_count: mediaAnalyses.length }
+          { conversation_id, message_count: allMessages.length, media_count: mediaAnalyses.length },
+          false
         );
         
         if (evalResult) {
@@ -1290,13 +1296,14 @@ Dados das avaliações de qualidade:
       const insightsResponse = await callGemini(insightsPrompt, geminiApiKey);
       const insightsParsed = insightsResponse.parsed;
       
-      // Log AI usage for insights
+      // Log AI usage for insights (text aggregation, no audio)
       await logAIUsage(
         supabase, company_id, 'commercial-pixel-insights',
         'gemini-3-flash-preview',
         insightsResponse.usage.input, insightsResponse.usage.output,
         Date.now() - insightsStartTime,
-        { total_conversations: aggregatedData.total_conversations, total_evaluations: evalAggregated.total_evaluations }
+        { total_conversations: aggregatedData.total_conversations, total_evaluations: evalAggregated.total_evaluations },
+        false
       );
       
       if (insightsParsed) {

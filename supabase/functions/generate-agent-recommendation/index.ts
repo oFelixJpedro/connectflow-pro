@@ -256,7 +256,8 @@ Se não houver problemas, retorne array vazio em "problematicas".`;
         'gemini-3-flash-preview',
         usage.input, usage.output,
         Date.now() - startTime,
-        { batch_index: batchIndex, conversations_count: conversations.length, total_media: totalMedia }
+        { batch_index: batchIndex, conversations_count: conversations.length, total_media: totalMedia },
+        false // Media descriptions are text, audio is transcribed separately
       );
     }
     
@@ -478,7 +479,8 @@ ${totalMedias > 0 ? '6. **Inclua observações sobre as mídias** - padrões pos
       'gemini-3-flash-preview',
       usage.input, usage.output,
       Date.now() - startTime,
-      { agent_name: agentData.agentName, total_batches: batchResults.length, total_medias: totalMedias }
+      { agent_name: agentData.agentName, total_batches: batchResults.length, total_medias: totalMedias },
+      false // Text consolidation
     );
   }
 

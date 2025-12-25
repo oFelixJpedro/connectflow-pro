@@ -7,7 +7,7 @@ import {
   analyzeVideoWithFileAPI,
   analyzeDocumentWithFileAPI
 } from '../_shared/gemini-file-api.ts';
-import { logAIUsage, extractGeminiUsage } from '../_shared/usage-tracker.ts';
+import { logAIUsage, extractGeminiUsage, isAudioContent } from '../_shared/usage-tracker.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -318,8 +318,9 @@ serve(async (req) => {
     const data = await response.json();
     console.log('📦 Gemini response received');
     
-    // Log AI usage
+    // Log AI usage - check if any audio was analyzed
     const usage = extractGeminiUsage(data);
+    const hasAudioAnalyzed = audiosAnalyzed > 0;
     if (companyId) {
       logAIUsage(
         supabase,
@@ -332,7 +333,8 @@ serve(async (req) => {
         { 
           messageCount: recentMessages.length,
           mediaAnalyzed: { images: imagesAnalyzed, videos: videosAnalyzed, documents: documentsAnalyzed, audios: audiosAnalyzed }
-        }
+        },
+        hasAudioAnalyzed
       ).catch(err => console.error('[UsageTracker] Error:', err));
     }
     
