@@ -105,7 +105,7 @@ export function ScheduledMessagesList({ contactId }: ScheduledMessagesListProps)
 
   if (messages.length === 0) {
     return (
-      <p className="text-sm text-muted-foreground text-center py-2">
+      <p className="text-sm text-muted-foreground py-2">
         Nenhuma mensagem agendada
       </p>
     );
