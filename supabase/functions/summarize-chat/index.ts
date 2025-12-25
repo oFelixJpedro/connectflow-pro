@@ -35,33 +35,17 @@ serve(async (req) => {
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-    // Buscar company_id e is_group da conversa
+    // Buscar company_id da conversa
+    // NOTE: Groups are no longer supported - is_group check removed
     let companyId: string | null = null;
-    let isGroup: boolean = false;
     
     if (conversationId) {
       const { data: convData } = await supabase
         .from('conversations')
-        .select('company_id, is_group')
+        .select('company_id')
         .eq('id', conversationId)
         .single();
       companyId = convData?.company_id;
-      isGroup = convData?.is_group === true;
-      
-      // ═══════════════════════════════════════════════════════════════════
-      // 🚫 BLOQUEAR RESUMO PARA GRUPOS (custo elevado)
-      // ═══════════════════════════════════════════════════════════════════
-      if (isGroup) {
-        console.log('[summarize-chat] Skipping group conversation - cost control');
-        return new Response(
-          JSON.stringify({ 
-            summary: 'Resumo não disponível para conversas de grupo.', 
-            blocked: true,
-            reason: 'group_conversation'
-          }),
-          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
     } else if (contactId) {
       const { data: contactData } = await supabase
         .from('contacts')
