@@ -17,9 +17,15 @@ import {
   History,
   Sparkles,
   Pencil,
-  ShieldOff,
+  Ban,
   ShieldCheck
 } from 'lucide-react';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -539,33 +545,50 @@ export function ContactPanel({ conversation, onClose, onContactUpdated, onScroll
             <p className="text-sm text-muted-foreground">
               {contact?.phoneNumber}
             </p>
-            <div className="flex items-center gap-2 mt-3">
-              <Button 
-                variant="outline" 
-                size="icon"
-                className="h-8 w-8"
-                onClick={() => setEditModalOpen(true)}
-              >
-                <Edit2 className="w-4 h-4" />
-              </Button>
-              <Button 
-                variant="outline" 
-                size="icon"
-                className={cn(
-                  "h-8 w-8",
-                  conversation.status === 'blocked' 
-                    ? "text-green-500 hover:text-green-600 hover:border-green-500" 
-                    : "text-destructive hover:text-destructive hover:border-destructive"
-                )}
-                onClick={() => setBlockConfirmOpen(true)}
-              >
-                {conversation.status === 'blocked' ? (
-                  <ShieldCheck className="w-4 h-4" />
-                ) : (
-                  <ShieldOff className="w-4 h-4" />
-                )}
-              </Button>
-            </div>
+            <TooltipProvider>
+              <div className="flex items-center gap-2 mt-3">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button 
+                      variant="outline" 
+                      size="icon"
+                      className="h-8 w-8"
+                      onClick={() => setEditModalOpen(true)}
+                    >
+                      <Edit2 className="w-4 h-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>Editar contato</p>
+                  </TooltipContent>
+                </Tooltip>
+
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button 
+                      variant="outline" 
+                      size="icon"
+                      className={cn(
+                        "h-8 w-8",
+                        conversation.status === 'blocked' 
+                          ? "text-green-500 hover:text-green-600 hover:border-green-500" 
+                          : "text-destructive hover:text-destructive hover:border-destructive"
+                      )}
+                      onClick={() => setBlockConfirmOpen(true)}
+                    >
+                      {conversation.status === 'blocked' ? (
+                        <ShieldCheck className="w-4 h-4" />
+                      ) : (
+                        <Ban className="w-4 h-4" />
+                      )}
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>{conversation.status === 'blocked' ? 'Desbloquear contato' : 'Bloquear contato'}</p>
+                  </TooltipContent>
+                </Tooltip>
+              </div>
+            </TooltipProvider>
           </div>
 
           <Separator />
