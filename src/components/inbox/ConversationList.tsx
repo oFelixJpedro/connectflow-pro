@@ -307,7 +307,7 @@ export function ConversationList({
                             <button
                               type="button"
                               className={cn(
-                                "mt-0.5 w-full min-w-0 truncate text-left text-xs bg-transparent p-0",
+                                "mt-0.5 w-full min-w-0 whitespace-nowrap overflow-hidden text-left text-xs bg-transparent p-0",
                                 isUnread ? "text-foreground font-semibold" : "text-muted-foreground"
                               )}
                             >
