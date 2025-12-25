@@ -53,15 +53,29 @@ serve(async (req) => {
       companyId
     );
     
-    // Log AI usage - always isAudioInput=true for transcription
+    // Log AI usage - estimate tokens based on transcription result
+    // Audio tokens: ~25 tokens per second of audio, but we estimate from transcription length
+    // Typical audio: 150 words/minute = 2.5 words/second = ~3.5 tokens/second
+    // Output: transcription text, ~1 token per 4 chars
     if (supabase && companyId && transcription) {
+      // Estimate input tokens: audio content is typically ~25 tokens/second
+      // We estimate audio duration from transcription (150 words/min speaking rate)
+      const wordCount = transcription.split(/\s+/).length;
+      const estimatedDurationSeconds = (wordCount / 150) * 60; // 150 words per minute
+      const estimatedAudioTokens = Math.ceil(estimatedDurationSeconds * 25); // ~25 tokens/second for audio
+      const outputTokens = Math.ceil((transcription?.length || 0) / 4);
+      
       await logAIUsage(
         supabase, companyId, 'transcribe-audio',
-        'gemini-3-flash-preview',
-        Math.ceil(1000), // Approximate input tokens for audio
-        Math.ceil((transcription?.length || 0) / 4),
+        'gemini-2.0-flash', // Actually uses flash for transcription
+        estimatedAudioTokens,
+        outputTokens,
         Date.now() - startTime,
-        { audio_url: audioUrl.substring(0, 100) },
+        { 
+          audio_url: audioUrl.substring(0, 100),
+          word_count: wordCount,
+          estimated_duration_seconds: Math.round(estimatedDurationSeconds)
+        },
         true // isAudioInput - audio transcription always uses audio pricing
       );
     }

@@ -2994,6 +2994,59 @@ export type Database = {
           },
         ]
       }
+      supabase_usage_log: {
+        Row: {
+          bucket_name: string | null
+          bytes_processed: number | null
+          company_id: string | null
+          created_at: string
+          duration_ms: number | null
+          function_name: string | null
+          id: string
+          metadata: Json | null
+          operation_type: string
+          resource_type: string
+          row_count: number | null
+          table_name: string | null
+        }
+        Insert: {
+          bucket_name?: string | null
+          bytes_processed?: number | null
+          company_id?: string | null
+          created_at?: string
+          duration_ms?: number | null
+          function_name?: string | null
+          id?: string
+          metadata?: Json | null
+          operation_type: string
+          resource_type: string
+          row_count?: number | null
+          table_name?: string | null
+        }
+        Update: {
+          bucket_name?: string | null
+          bytes_processed?: number | null
+          company_id?: string | null
+          created_at?: string
+          duration_ms?: number | null
+          function_name?: string | null
+          id?: string
+          metadata?: Json | null
+          operation_type?: string
+          resource_type?: string
+          row_count?: number | null
+          table_name?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "supabase_usage_log_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       tags: {
         Row: {
           color: string | null
@@ -3271,6 +3324,7 @@ export type Database = {
       cleanup_expired_media_cache: { Args: never; Returns: number }
       cleanup_old_conversation_events: { Args: never; Returns: number }
       cleanup_old_sessions: { Args: never; Returns: number }
+      cleanup_old_usage_logs: { Args: never; Returns: number }
       create_internal_chat_room: {
         Args: { p_description?: string; p_name?: string; p_type: string }
         Returns: string
