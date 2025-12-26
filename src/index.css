@@ -18,8 +18,8 @@
     --popover: 0 0% 100%;
     --popover-foreground: 222 47% 11%;
     
-    /* Primary - Blue */
-    --primary: 217 91% 60%;
+    /* Primary - Blue (ChatGo brand #3B6BE8) */
+    --primary: 222 78% 57%;
     --primary-foreground: 0 0% 100%;
     
     /* Secondary - Light gray */
@@ -53,19 +53,19 @@
     /* Border and input */
     --border: 214 32% 91%;
     --input: 214 32% 91%;
-    --ring: 217 91% 60%;
+    --ring: 222 78% 57%;
     
     --radius: 0.5rem;
     
     /* Sidebar */
     --sidebar-background: 222 47% 11%;
     --sidebar-foreground: 210 40% 96%;
-    --sidebar-primary: 217 91% 60%;
+    --sidebar-primary: 222 78% 57%;
     --sidebar-primary-foreground: 0 0% 100%;
     --sidebar-accent: 217 33% 17%;
     --sidebar-accent-foreground: 210 40% 96%;
     --sidebar-border: 217 33% 17%;
-    --sidebar-ring: 217 91% 60%;
+    --sidebar-ring: 222 78% 57%;
     
     /* Chat specific */
     --chat-bubble-outgoing: 213 80% 88%;
@@ -82,18 +82,25 @@
     /* Conversation status */
     --conv-open: 160 84% 39%;
     --conv-pending: 38 92% 50%;
-    --conv-in-progress: 217 91% 60%;
+    --conv-in-progress: 222 78% 57%;
     --conv-closed: 215 16% 47%;
 
     /* Conversation list backgrounds (pastel) */
-    --conv-unread-bg: 198 93% 93%; /* ~#E0F2FE */
-    --conv-selected-bg: 142 69% 89%; /* ~#D9F9E5 */
+    --conv-unread-bg: 198 93% 93%;
+    --conv-selected-bg: 142 69% 89%;
 
     /* Priority */
     --priority-urgent: 0 84% 60%;
     --priority-high: 38 92% 50%;
-    --priority-normal: 217 91% 60%;
+    --priority-normal: 222 78% 57%;
     --priority-low: 215 16% 47%;
+    
+    /* Landing page specific */
+    --landing-blue: 222 78% 57%;
+    --landing-blue-dark: 222 62% 47%;
+    --landing-blue-light: 222 100% 96%;
+    --landing-whatsapp: 142 70% 49%;
+    --landing-dark: 222 47% 11%;
   }
 
   .dark {
@@ -106,7 +113,7 @@
     --popover: 222 47% 9%;
     --popover-foreground: 210 40% 98%;
     
-    --primary: 217 91% 60%;
+    --primary: 222 78% 57%;
     --primary-foreground: 0 0% 100%;
     
     --secondary: 217 33% 17%;
@@ -132,16 +139,16 @@
     
     --border: 217 33% 17%;
     --input: 217 33% 17%;
-    --ring: 217 91% 60%;
+    --ring: 222 78% 57%;
     
     --sidebar-background: 222 47% 6%;
     --sidebar-foreground: 210 40% 98%;
-    --sidebar-primary: 217 91% 60%;
+    --sidebar-primary: 222 78% 57%;
     --sidebar-primary-foreground: 0 0% 100%;
     --sidebar-accent: 217 33% 17%;
     --sidebar-accent-foreground: 210 40% 98%;
     --sidebar-border: 217 33% 17%;
-    --sidebar-ring: 217 91% 60%;
+    --sidebar-ring: 222 78% 57%;
     
     --chat-bubble-outgoing: 213 60% 35%;
     --chat-bubble-outgoing-foreground: 213 80% 92%;
@@ -151,6 +158,13 @@
     /* Conversation list backgrounds (pastel) */
     --conv-unread-bg: 217 60% 18%;
     --conv-selected-bg: 160 45% 18%;
+    
+    /* Landing page dark mode */
+    --landing-blue: 222 78% 57%;
+    --landing-blue-dark: 222 62% 47%;
+    --landing-blue-light: 222 40% 20%;
+    --landing-whatsapp: 142 70% 49%;
+    --landing-dark: 222 47% 6%;
   }
 }
 
@@ -255,6 +269,14 @@
     @apply bg-gradient-to-r from-primary to-info bg-clip-text text-transparent;
   }
   
+  /* Landing page gradient text */
+  .gradient-text-landing {
+    background: linear-gradient(135deg, hsl(222, 78%, 57%) 0%, hsl(222, 62%, 47%) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  
   /* Card hover effect */
   .card-hover {
     @apply transition-all duration-300 ease-out;
@@ -309,6 +331,80 @@
 
   .internal-chat-send-button {
     @apply bg-emerald-600 hover:bg-emerald-700 text-white;
+  }
+  
+  /* ========================= */
+  /* Landing Page Specific Styles */
+  /* ========================= */
+  
+  /* Glassmorphism effect */
+  .glass-card {
+    @apply bg-white/70 dark:bg-card/70 backdrop-blur-xl border border-white/30 dark:border-white/10;
+  }
+  
+  .glass-badge {
+    @apply bg-white/20 backdrop-blur-md border border-white/30 text-white;
+  }
+  
+  /* Landing hero gradient */
+  .hero-gradient {
+    background: linear-gradient(180deg, hsl(222, 47%, 20%) 0%, hsl(222, 78%, 57%) 100%);
+  }
+  
+  /* Landing section gradient */
+  .section-gradient-light {
+    background: linear-gradient(135deg, hsl(222, 100%, 96%) 0%, hsl(0, 0%, 100%) 50%, hsl(210, 100%, 98%) 100%);
+  }
+  
+  /* Landing card shadow */
+  .landing-card {
+    @apply bg-card rounded-2xl border border-border;
+    box-shadow: 0 4px 24px rgba(59, 107, 232, 0.08);
+    transition: all 0.3s ease;
+  }
+  
+  .landing-card:hover {
+    box-shadow: 0 8px 32px rgba(59, 107, 232, 0.15);
+    transform: translateY(-2px);
+  }
+  
+  /* Landing button primary */
+  .landing-btn-primary {
+    @apply bg-gradient-to-r from-primary to-[hsl(222,62%,47%)] text-white rounded-xl shadow-lg;
+    transition: all 0.2s ease;
+  }
+  
+  .landing-btn-primary:hover {
+    @apply shadow-xl;
+    transform: scale(1.02);
+  }
+  
+  /* Landing button secondary */
+  .landing-btn-secondary {
+    @apply bg-white text-primary border border-primary rounded-xl;
+    transition: all 0.2s ease;
+  }
+  
+  .landing-btn-secondary:hover {
+    @apply bg-[hsl(222,100%,96%)];
+  }
+  
+  /* Step number gradient */
+  .step-number {
+    background: linear-gradient(135deg, hsl(222, 78%, 57%) 0%, hsl(222, 62%, 47%) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  
+  /* Floating animation */
+  .animate-float {
+    animation: float 3s ease-in-out infinite;
+  }
+  
+  @keyframes float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-10px); }
   }
 }
 
@@ -458,3 +554,11 @@
   stroke-width: 1;
   filter: brightness(0.95);
 }
+
+/* Landing page scroll reveal animation delays */
+.reveal-delay-1 { animation-delay: 0.1s; }
+.reveal-delay-2 { animation-delay: 0.2s; }
+.reveal-delay-3 { animation-delay: 0.3s; }
+.reveal-delay-4 { animation-delay: 0.4s; }
+.reveal-delay-5 { animation-delay: 0.5s; }
+.reveal-delay-6 { animation-delay: 0.6s; }
