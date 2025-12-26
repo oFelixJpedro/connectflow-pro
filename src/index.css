@@ -337,51 +337,98 @@
   /* Landing Page Specific Styles */
   /* ========================= */
   
-  /* Glassmorphism effect */
+  /* Glassmorphism effect - Premium fintech style */
   .glass-card {
-    @apply bg-white/70 dark:bg-card/70 backdrop-blur-xl border border-white/30 dark:border-white/10;
+    background: rgba(255, 255, 255, 0.7);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    box-shadow: 0 8px 32px rgba(59, 107, 232, 0.08);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  
+  .glass-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 16px 48px rgba(59, 107, 232, 0.15);
+  }
+  
+  .dark .glass-card {
+    @apply bg-card/70 border-white/10;
   }
   
   .glass-badge {
-    @apply bg-white/20 backdrop-blur-md border border-white/30 text-white;
+    background: rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    @apply text-white;
   }
   
-  /* Landing hero gradient */
+  /* Landing hero gradient - Premium dark fintech */
   .hero-gradient {
-    background: linear-gradient(180deg, hsl(222, 47%, 20%) 0%, hsl(222, 78%, 57%) 100%);
+    background: linear-gradient(180deg, hsl(222, 47%, 8%) 0%, hsl(222, 47%, 20%) 40%, hsl(222, 78%, 57%) 100%);
+  }
+  
+  /* Landing final CTA gradient - matches hero */
+  .cta-gradient {
+    background: linear-gradient(180deg, hsl(222, 78%, 50%) 0%, hsl(222, 47%, 15%) 100%);
+    position: relative;
+  }
+  
+  .cta-gradient::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image: radial-gradient(circle at 20% 50%, rgba(96, 165, 250, 0.1) 0%, transparent 50%),
+                      radial-gradient(circle at 80% 30%, rgba(59, 107, 232, 0.1) 0%, transparent 50%);
+  }
+  
+  /* Decorative pattern overlay */
+  .pattern-dots {
+    background-image: radial-gradient(circle, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+    background-size: 24px 24px;
   }
   
   /* Landing section gradient */
   .section-gradient-light {
-    background: linear-gradient(135deg, hsl(222, 100%, 96%) 0%, hsl(0, 0%, 100%) 50%, hsl(210, 100%, 98%) 100%);
+    background: linear-gradient(135deg, hsl(222, 100%, 98%) 0%, hsl(0, 0%, 100%) 50%, hsl(210, 100%, 99%) 100%);
   }
   
-  /* Landing card shadow */
+  /* Landing card shadow - Premium with glassmorphism */
   .landing-card {
-    @apply bg-card rounded-2xl border border-border;
+    background: rgba(255, 255, 255, 0.7);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    border-radius: 20px;
     box-shadow: 0 4px 24px rgba(59, 107, 232, 0.08);
-    transition: all 0.3s ease;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   }
   
   .landing-card:hover {
-    box-shadow: 0 8px 32px rgba(59, 107, 232, 0.15);
-    transform: translateY(-2px);
+    box-shadow: 0 12px 40px rgba(59, 107, 232, 0.15);
+    transform: translateY(-4px);
+  }
+  
+  .dark .landing-card {
+    @apply bg-card/80 border-border;
   }
   
   /* Landing button primary */
   .landing-btn-primary {
-    @apply bg-gradient-to-r from-primary to-[hsl(222,62%,47%)] text-white rounded-xl shadow-lg;
+    @apply bg-gradient-to-r from-[hsl(222,78%,57%)] to-[hsl(222,62%,47%)] text-white rounded-xl;
+    box-shadow: 0 8px 24px rgba(59, 107, 232, 0.35);
     transition: all 0.2s ease;
   }
   
   .landing-btn-primary:hover {
-    @apply shadow-xl;
+    box-shadow: 0 12px 32px rgba(59, 107, 232, 0.45);
     transform: scale(1.02);
   }
   
   /* Landing button secondary */
   .landing-btn-secondary {
-    @apply bg-white text-primary border border-primary rounded-xl;
+    @apply bg-white text-[hsl(222,78%,57%)] border border-[hsl(222,78%,57%)] rounded-xl;
     transition: all 0.2s ease;
   }
   
@@ -389,12 +436,74 @@
     @apply bg-[hsl(222,100%,96%)];
   }
   
-  /* Step number gradient */
+  /* Step number gradient - Premium text gradient */
   .step-number {
-    background: linear-gradient(135deg, hsl(222, 78%, 57%) 0%, hsl(222, 62%, 47%) 100%);
+    background: linear-gradient(135deg, hsl(222, 78%, 57%) 0%, hsl(222, 47%, 20%) 100%);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
+    font-weight: 800;
+  }
+  
+  /* Pricing card highlighted - Gradient border */
+  .pricing-card-popular {
+    position: relative;
+    background: white;
+    border-radius: 20px;
+  }
+  
+  .pricing-card-popular::before {
+    content: '';
+    position: absolute;
+    inset: -2px;
+    background: linear-gradient(135deg, hsl(222, 78%, 57%) 0%, hsl(210, 100%, 70%) 100%);
+    border-radius: 22px;
+    z-index: -1;
+  }
+  
+  /* Orb decorative element */
+  .orb {
+    position: absolute;
+    border-radius: 50%;
+    filter: blur(80px);
+    pointer-events: none;
+  }
+  
+  .orb-blue {
+    background: hsl(222, 78%, 57%);
+    opacity: 0.15;
+  }
+  
+  .orb-light-blue {
+    background: hsl(210, 100%, 70%);
+    opacity: 0.2;
+  }
+  
+  /* Feature mockup placeholder */
+  .feature-mockup {
+    @apply bg-[hsl(210,40%,97%)] rounded-2xl border border-[hsl(214,32%,91%)] overflow-hidden;
+    aspect-ratio: 16/10;
+  }
+  
+  /* Step connector line */
+  .step-connector {
+    @apply hidden md:block absolute top-8 left-[calc(50%+40px)] w-[calc(100%-80px)] h-[2px];
+    background: repeating-linear-gradient(
+      90deg,
+      hsl(214, 32%, 85%) 0px,
+      hsl(214, 32%, 85%) 8px,
+      transparent 8px,
+      transparent 16px
+    );
+  }
+  
+  /* Icon container for use cases */
+  .icon-container {
+    @apply w-12 h-12 rounded-xl bg-[hsl(222,100%,96%)] flex items-center justify-center flex-shrink-0;
+  }
+  
+  .icon-container svg {
+    @apply w-6 h-6 text-[hsl(222,78%,57%)];
   }
   
   /* Floating animation */
