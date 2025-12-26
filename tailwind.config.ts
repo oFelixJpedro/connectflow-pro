@@ -15,6 +15,7 @@ export default {
     extend: {
       fontFamily: {
         sans: ['Inter', 'system-ui', 'sans-serif'],
+        inter: ['Inter', 'system-ui', 'sans-serif'],
       },
       colors: {
         border: "hsl(var(--border))",
@@ -95,6 +96,14 @@ export default {
           normal: "hsl(var(--priority-normal))",
           low: "hsl(var(--priority-low))",
         },
+        // Landing page specific colors
+        landing: {
+          blue: "hsl(var(--landing-blue))",
+          "blue-dark": "hsl(var(--landing-blue-dark))",
+          "blue-light": "hsl(var(--landing-blue-light))",
+          whatsapp: "hsl(var(--landing-whatsapp))",
+          dark: "hsl(var(--landing-dark))",
+        },
       },
       borderRadius: {
         lg: "var(--radius)",
@@ -118,16 +127,49 @@ export default {
           "0%, 100%": { transform: "translateY(0)" },
           "50%": { transform: "translateY(-5px)" },
         },
+        "float": {
+          "0%, 100%": { transform: "translateY(0)" },
+          "50%": { transform: "translateY(-10px)" },
+        },
+        "fade-up": {
+          "0%": { opacity: "0", transform: "translateY(20px)" },
+          "100%": { opacity: "1", transform: "translateY(0)" },
+        },
+        "fade-in": {
+          "0%": { opacity: "0" },
+          "100%": { opacity: "1" },
+        },
+        "scale-in": {
+          "0%": { opacity: "0", transform: "scale(0.95)" },
+          "100%": { opacity: "1", transform: "scale(1)" },
+        },
+        "slide-up": {
+          "0%": { opacity: "0", transform: "translateY(10px)" },
+          "100%": { opacity: "1", transform: "translateY(0)" },
+        },
+        "count-up": {
+          "0%": { opacity: "0", transform: "translateY(10px)" },
+          "100%": { opacity: "1", transform: "translateY(0)" },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
         "pulse-soft": "pulse-soft 2s cubic-bezier(0.4, 0, 0.6, 1) infinite",
         "bounce-soft": "bounce-soft 1s ease-in-out infinite",
+        "float": "float 3s ease-in-out infinite",
+        "fade-up": "fade-up 0.6s ease-out forwards",
+        "fade-in": "fade-in 0.4s ease-out forwards",
+        "scale-in": "scale-in 0.3s ease-out forwards",
+        "slide-up": "slide-up 0.4s ease-out forwards",
+        "count-up": "count-up 0.5s ease-out forwards",
       },
       boxShadow: {
         'glow': '0 0 20px rgba(59, 130, 246, 0.3)',
         'glow-success': '0 0 20px rgba(16, 185, 129, 0.3)',
+        'landing': '0 4px 24px rgba(59, 107, 232, 0.08)',
+        'landing-hover': '0 8px 32px rgba(59, 107, 232, 0.15)',
+        'landing-card': '0 4px 24px rgba(59, 107, 232, 0.08)',
       },
     },
   },
