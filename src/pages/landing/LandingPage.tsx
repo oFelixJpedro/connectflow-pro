@@ -22,7 +22,10 @@ import {
   Bot,
   Smartphone,
   Globe,
-  Image as ImageIcon
+  Image as ImageIcon,
+  Send,
+  CreditCard,
+  Zap
 } from "lucide-react";
 
 const LandingPage = () => {
@@ -102,291 +105,438 @@ const LandingPage = () => {
   ];
 
   return (
-    <div className="min-h-screen font-sans overflow-x-hidden">
+    <div className="main-container overflow-hidden">
       {/* ========================= */}
-      {/* NAVIGATION */}
+      {/* FOLD 1 - HERO SECTION (PAYROT STRUCTURE) */}
       {/* ========================= */}
-      <nav className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
-        scrolled ? 'bg-white/90 backdrop-blur-lg shadow-sm' : 'bg-transparent'
-      }`}>
-        <div className="max-w-7xl mx-auto px-6 py-4">
-          <div className="flex items-center justify-between">
-            {/* Logo */}
-            <Link to="/" className="flex items-center gap-2">
-              <div className="w-10 h-10 rounded-xl bg-[#3B6BE8] flex items-center justify-center">
-                <MessageSquare className="w-5 h-5 text-white" />
+      <div className="relative w-full min-h-screen bg-[rgba(0,0,0,0)] overflow-hidden">
+        
+        {/* Background gradient image placeholder */}
+        <div 
+          className="absolute top-0 left-0 right-0 h-[35%] bg-gradient-to-b from-[#e8f4fc] via-[#f0f7fc] to-transparent z-[1]"
+        />
+        
+        {/* Bottom background gradient */}
+        <div 
+          className="absolute bottom-0 left-0 right-0 h-[70%] bg-gradient-to-t from-[#d4e9f7] via-[#e5f1fa] to-transparent z-[2]"
+        />
+
+        {/* ========================= */}
+        {/* NAVBAR - Top section */}
+        {/* ========================= */}
+        <div className={`fixed top-0 left-0 right-0 z-[100] transition-all duration-300 ${
+          scrolled ? 'bg-white/90 backdrop-blur-lg shadow-sm' : 'bg-transparent'
+        }`}>
+          <div className="max-w-7xl mx-auto px-4 md:px-6 py-4">
+            <div className="flex items-center justify-between">
+              {/* Logo */}
+              <div className="flex items-center gap-2">
+                <div className="w-[9px] h-[10px] md:w-[12px] md:h-[14px] bg-gradient-to-br from-[#3B6BE8] to-[#1E3A8A] rounded-sm" />
+                <span className="font-['Inter'] text-[12px] md:text-[14px] font-light text-[#7b8fa2]">
+                  CHATGO
+                </span>
               </div>
-              <span className="text-xl font-bold text-[#1E3A8A]">ChatGo</span>
-            </Link>
 
-            {/* Desktop Navigation - Underline style */}
-            <div className="hidden md:flex items-center gap-8">
-              <button 
-                onClick={() => scrollToSection('features')} 
-                className="text-[#64748B] hover:text-[#1E3A8A] transition-colors font-medium relative group"
+              {/* Desktop Nav Links */}
+              <div className="hidden md:flex items-center gap-6">
+                <span 
+                  onClick={() => scrollToSection('features')}
+                  className="font-['Inter'] text-[11px] font-normal text-[#9bb6cc] cursor-pointer hover:text-[#3B6BE8] transition-colors"
+                >
+                  Recursos
+                </span>
+                <span 
+                  onClick={() => scrollToSection('how-it-works')}
+                  className="font-['Inter'] text-[11px] font-normal text-[#9bb7ce] cursor-pointer hover:text-[#3B6BE8] transition-colors"
+                >
+                  Empresas
+                </span>
+                <span 
+                  onClick={() => scrollToSection('pricing')}
+                  className="font-['Inter'] text-[11px] font-light text-[#93b1c9] cursor-pointer hover:text-[#3B6BE8] transition-colors"
+                >
+                  Marketplace
+                </span>
+                <span 
+                  onClick={() => scrollToSection('faq')}
+                  className="font-['Inter'] text-[11px] font-light text-[#8dabc4] cursor-pointer hover:text-[#3B6BE8] transition-colors"
+                >
+                  FAQ
+                </span>
+              </div>
+
+              {/* CTA Button */}
+              <div className="hidden md:block">
+                <button 
+                  onClick={() => navigate('/auth')}
+                  className="bg-[#1e80f1] rounded-[9px] border border-[#2d85ed] px-4 py-2 flex items-center gap-2"
+                >
+                  <span className="font-['Inter'] text-[10px] font-light text-[#75b7ea]">
+                    Contato
+                  </span>
+                  <div className="w-[11px] h-[4px] bg-white/60 rounded-sm" />
+                </button>
+              </div>
+
+              {/* Mobile Menu Button */}
+              <button
+                onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+                className="md:hidden p-2 text-[#1E3A8A]"
               >
-                Funcionalidades
-                <span className="absolute -bottom-1 left-0 w-0 h-0.5 bg-[#3B6BE8] transition-all group-hover:w-full"></span>
-              </button>
-              <button 
-                onClick={() => scrollToSection('how-it-works')} 
-                className="text-[#64748B] hover:text-[#1E3A8A] transition-colors font-medium relative group"
-              >
-                Como Funciona
-                <span className="absolute -bottom-1 left-0 w-0 h-0.5 bg-[#3B6BE8] transition-all group-hover:w-full"></span>
-              </button>
-              <button 
-                onClick={() => scrollToSection('pricing')} 
-                className="text-[#64748B] hover:text-[#1E3A8A] transition-colors font-medium relative group"
-              >
-                Planos
-                <span className="absolute -bottom-1 left-0 w-0 h-0.5 bg-[#3B6BE8] transition-all group-hover:w-full"></span>
-              </button>
-              <button 
-                onClick={() => scrollToSection('faq')} 
-                className="text-[#64748B] hover:text-[#1E3A8A] transition-colors font-medium relative group"
-              >
-                FAQ
-                <span className="absolute -bottom-1 left-0 w-0 h-0.5 bg-[#3B6BE8] transition-all group-hover:w-full"></span>
+                {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
               </button>
             </div>
-
-            {/* CTA Button */}
-            <div className="hidden md:flex items-center gap-4">
-              <Button
-                onClick={() => navigate('/pricing')}
-                className="bg-[#3B6BE8] hover:bg-[#2851B8] text-white px-6 py-2.5 rounded-full font-medium flex items-center gap-2 shadow-lg shadow-[#3B6BE8]/20 transition-all hover:shadow-xl hover:shadow-[#3B6BE8]/30"
-              >
-                Começar Agora
-                <ArrowRight className="w-4 h-4" />
-              </Button>
-            </div>
-
-            {/* Mobile Menu Button */}
-            <button
-              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="md:hidden p-2 text-[#1E3A8A]"
-            >
-              {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
-            </button>
           </div>
+
+          {/* Mobile Menu */}
+          {mobileMenuOpen && (
+            <div className="md:hidden absolute top-full left-0 right-0 bg-white/95 backdrop-blur-lg border-t border-[#E2E8F0] shadow-lg z-[101]">
+              <div className="px-6 py-4 space-y-4">
+                <button onClick={() => scrollToSection('features')} className="block w-full text-left text-[#64748B] hover:text-[#1E3A8A] py-2">
+                  Recursos
+                </button>
+                <button onClick={() => scrollToSection('how-it-works')} className="block w-full text-left text-[#64748B] hover:text-[#1E3A8A] py-2">
+                  Empresas
+                </button>
+                <button onClick={() => scrollToSection('pricing')} className="block w-full text-left text-[#64748B] hover:text-[#1E3A8A] py-2">
+                  Marketplace
+                </button>
+                <button onClick={() => scrollToSection('faq')} className="block w-full text-left text-[#64748B] hover:text-[#1E3A8A] py-2">
+                  FAQ
+                </button>
+                <Button
+                  onClick={() => navigate('/auth')}
+                  className="w-full bg-[#1e80f1] hover:bg-[#1670d1] text-white rounded-full"
+                >
+                  Contato
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
 
-        {/* Mobile Menu */}
-        {mobileMenuOpen && (
-          <div className="md:hidden absolute top-full left-0 right-0 bg-white/95 backdrop-blur-lg border-t border-[#E2E8F0] shadow-lg">
-            <div className="px-6 py-4 space-y-4">
-              <button onClick={() => scrollToSection('features')} className="block w-full text-left text-[#64748B] hover:text-[#1E3A8A] py-2">
-                Funcionalidades
-              </button>
-              <button onClick={() => scrollToSection('how-it-works')} className="block w-full text-left text-[#64748B] hover:text-[#1E3A8A] py-2">
-                Como Funciona
-              </button>
-              <button onClick={() => scrollToSection('pricing')} className="block w-full text-left text-[#64748B] hover:text-[#1E3A8A] py-2">
-                Planos
-              </button>
-              <button onClick={() => scrollToSection('faq')} className="block w-full text-left text-[#64748B] hover:text-[#1E3A8A] py-2">
-                FAQ
-              </button>
-              <Button
-                onClick={() => navigate('/pricing')}
-                className="w-full bg-[#3B6BE8] hover:bg-[#2851B8] text-white rounded-full"
-              >
-                Começar Agora
-              </Button>
-            </div>
-          </div>
-        )}
-      </nav>
-
-      {/* ========================= */}
-      {/* HERO SECTION - PAYROT STYLE */}
-      {/* ========================= */}
-      <section className="relative min-h-screen hero-bg-payrot overflow-hidden">
-        {/* Giant Watermark "CHATGO" */}
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none overflow-hidden">
-          <span className="hero-watermark whitespace-nowrap">
+        {/* ========================= */}
+        {/* GIANT WATERMARK "CHATGO" */}
+        {/* ========================= */}
+        <div className="absolute top-[80px] left-0 right-0 flex justify-center z-[3] pointer-events-none">
+          <span className="font-['Inter'] text-[60px] md:text-[92px] lg:text-[120px] font-light leading-[1] text-[#e4edf5] tracking-[0.2em] whitespace-nowrap">
             CHATGO
           </span>
         </div>
 
-        {/* Decorative circle */}
-        <div className="absolute bottom-[20%] left-1/2 -translate-x-1/2 w-[300px] h-[300px] circle-decorator opacity-30 hidden lg:block"></div>
-
-        {/* Main Hero Content Container */}
-        <div className="relative z-10 pt-32 pb-40">
-          {/* Central Image Placeholder with Glow */}
-          <div className="relative max-w-7xl mx-auto px-6 flex justify-center">
-            <div className="relative">
-              {/* Glow effect */}
-              <div className="hero-glow"></div>
-              
-              {/* Main Image Placeholder */}
-              <div className="placeholder-image w-[350px] h-[450px] md:w-[420px] md:h-[520px] lg:w-[480px] lg:h-[580px]">
-                <div className="text-center">
-                  <ImageIcon className="w-16 h-16 text-[#94A3B8] mb-4" />
-                  <p className="text-[#64748B] font-medium">Imagem Principal</p>
-                  <p className="text-[#94A3B8] text-sm mt-1">480 x 580px</p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* ========================= */}
-          {/* LEFT GLASSMORPHISM CARD */}
-          {/* ========================= */}
-          <div className="hidden lg:block absolute left-[5%] xl:left-[10%] top-[35%] -translate-y-1/2 z-20">
-            <div className="glass-card-payrot p-6 w-[280px] animate-float">
-              {/* Card image placeholder */}
-              <div className="placeholder-image w-full h-[140px] mb-4">
-                <div className="text-center">
-                  <ImageIcon className="w-8 h-8 text-[#94A3B8] mb-2" />
-                  <p className="text-[#94A3B8] text-xs">Imagem Preview</p>
-                </div>
-              </div>
-              
-              {/* Card content */}
-              <h3 className="text-[#1E3A8A] font-bold text-lg mb-2">Título Principal</h3>
-              <p className="text-[#64748B] text-sm mb-3">Subtítulo descritivo aqui com mais informações</p>
-              
-              {/* Decorative line */}
-              <div className="w-16 h-0.5 bg-[#E2E8F0]"></div>
-            </div>
-          </div>
-
-          {/* ========================= */}
-          {/* RIGHT STACKED CARDS */}
-          {/* ========================= */}
-          <div className="hidden lg:block absolute right-[5%] xl:right-[10%] top-[30%] z-20">
-            {/* Decorative lines */}
-            <div className="absolute -top-8 right-0 w-[100px] h-0.5 bg-gradient-to-r from-transparent via-white/60 to-transparent"></div>
-            <div className="absolute -top-4 right-8 w-[60px] h-0.5 bg-gradient-to-r from-transparent via-white/40 to-transparent"></div>
+        {/* ========================= */}
+        {/* MAIN HERO CONTENT */}
+        {/* ========================= */}
+        <div className="relative z-[10] pt-[160px] md:pt-[180px] lg:pt-[200px] px-4 md:px-8">
+          <div className="max-w-7xl mx-auto">
             
-            {/* Stacked cards container */}
-            <div className="stacked-cards w-[260px] h-[160px] animate-float-delayed">
-              {/* Card 1 - Back */}
-              <div className="stacked-card stacked-card-1 w-[260px] h-[160px]"></div>
+            {/* Hero content row */}
+            <div className="relative flex flex-col lg:flex-row items-center justify-between gap-8 lg:gap-4">
               
-              {/* Card 2 - Middle */}
-              <div className="stacked-card stacked-card-2 w-[260px] h-[160px]"></div>
-              
-              {/* Card 3 - Front */}
-              <div className="stacked-card stacked-card-3 w-[260px] h-[160px] p-5">
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center">
-                    <MessageSquare className="w-4 h-4 text-white" />
+              {/* ========================= */}
+              {/* LEFT CARD - Glassmorphism (like Payrot left card) */}
+              {/* ========================= */}
+              <div className="relative w-full lg:w-[280px] order-2 lg:order-1">
+                {/* Small icons above */}
+                <div className="hidden lg:flex items-center gap-2 mb-4">
+                  <div className="w-[62px] h-[61px] rounded-full bg-gradient-to-br from-[#3B6BE8] to-[#60A5FA] flex items-center justify-center">
+                    <MessageSquare className="w-6 h-6 text-white" />
                   </div>
-                  <span className="text-white/90 text-sm font-medium">Cartão Preview</span>
                 </div>
-                
-                {/* Placeholder lines */}
-                <div className="space-y-2 mt-4">
-                  <div className="h-2 w-full bg-white/30 rounded"></div>
-                  <div className="h-2 w-3/4 bg-white/20 rounded"></div>
-                  <div className="h-2 w-1/2 bg-white/10 rounded"></div>
-                </div>
-                
-                {/* Card number placeholder */}
-                <div className="absolute bottom-4 left-5 right-5 flex justify-between items-center">
-                  <div className="flex gap-1">
-                    <div className="w-6 h-3 bg-white/30 rounded"></div>
-                    <div className="w-6 h-3 bg-white/20 rounded"></div>
-                    <div className="w-6 h-3 bg-white/20 rounded"></div>
-                    <div className="w-6 h-3 bg-white/20 rounded"></div>
-                  </div>
-                  <div className="w-8 h-6 bg-white/20 rounded"></div>
-                </div>
-              </div>
-            </div>
-          </div>
 
-          {/* ========================= */}
-          {/* FLOATING USERS BADGE */}
-          {/* ========================= */}
-          <div className="hidden lg:flex absolute left-[45%] top-[25%] z-30">
-            <div className="floating-badge px-4 py-2 flex items-center gap-3">
-              {/* Stacked avatars */}
-              <div className="flex -space-x-2">
-                {[1, 2, 3].map((i) => (
-                  <div
-                    key={i}
-                    className="w-8 h-8 rounded-full bg-gradient-to-br from-[#3B6BE8] to-[#60A5FA] border-2 border-white flex items-center justify-center"
-                  >
-                    <Users className="w-3 h-3 text-white" />
+                {/* Main glass card */}
+                <div className="bg-white/80 backdrop-blur-xl rounded-[20px] border border-white/50 shadow-[0_20px_50px_rgba(59,107,232,0.12)] p-5 relative">
+                  {/* Card image placeholder */}
+                  <div className="w-full h-[100px] bg-gradient-to-br from-[#e8f4fc] to-[#d4e9f7] rounded-[12px] flex items-center justify-center mb-4">
+                    <ImageIcon className="w-8 h-8 text-[#94A3B8]" />
                   </div>
-                ))}
-              </div>
-              <div className="flex items-baseline gap-1">
-                <span className="text-xl font-bold text-[#1E3A8A]">500+</span>
-                <span className="text-xs text-[#64748B] uppercase tracking-wider">Users</span>
-              </div>
-            </div>
-          </div>
-        </div>
+                  
+                  {/* Card text */}
+                  <span className="block font-['Inter'] text-[12px] font-light leading-[14px] text-[#748695] mb-1">
+                    Envie e Receba
+                  </span>
+                  <span className="block font-['Inter'] text-[14px] font-light leading-[16px] text-[#bfc8ce]">
+                    Mensagens Globalmente
+                    <br />
+                    Rápido, Seguro e
+                    <br />
+                    Sem Complicação
+                  </span>
+                </div>
 
-        {/* ========================= */}
-        {/* BOTTOM SECTION (Wave Area) */}
-        {/* ========================= */}
-        <div className="absolute bottom-0 left-0 right-0 hero-bottom-section py-12 lg:py-16">
-          <div className="max-w-7xl mx-auto px-6">
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 lg:gap-12 items-center">
-              
-              {/* Left Column */}
-              <div className="text-center lg:text-left">
-                <div className="flex items-center justify-center lg:justify-start gap-3 mb-3">
-                  <div className="w-10 h-10 rounded-full bg-[#EBF0FF] flex items-center justify-center">
-                    <Globe className="w-5 h-5 text-[#3B6BE8]" />
-                  </div>
-                  <div className="w-10 h-10 rounded-full bg-[#EBF0FF] flex items-center justify-center">
-                    <MessageSquare className="w-5 h-5 text-[#3B6BE8]" />
+                {/* Floating badge - Users count */}
+                <div className="absolute -top-4 -right-4 lg:top-auto lg:-right-8 lg:bottom-[60%] z-[20]">
+                  <div className="bg-[#eff5fa] rounded-[9px] border border-[#d4e1f1] px-3 py-2 flex items-center gap-2">
+                    <div className="flex -space-x-2">
+                      <div className="w-[14px] h-[14px] rounded-full bg-gradient-to-br from-[#3B6BE8] to-[#1E3A8A]" />
+                      <div className="w-[14px] h-[14px] rounded-full bg-gradient-to-br from-[#60A5FA] to-[#3B6BE8]" />
+                      <div className="w-[14px] h-[14px] rounded-full bg-gradient-to-br from-[#93C5FD] to-[#60A5FA]" />
+                    </div>
+                    <span className="font-['Inter'] text-[10px] font-light text-[#8da1b2]">
+                      7M+
+                    </span>
                   </div>
                 </div>
-                <p className="text-[#64748B] text-sm mb-2">
-                  Descrição curta placeholder sobre nossos serviços
-                </p>
-                <button className="text-[#1E3A8A] text-sm font-semibold uppercase tracking-wider hover:underline inline-flex items-center gap-1">
-                  Nossos Serviços
-                  <ArrowRight className="w-3 h-3" />
-                </button>
               </div>
-              
-              {/* Center Column - Main Headline */}
-              <div className="text-center">
-                <Button
-                  onClick={() => navigate('/pricing')}
-                  variant="outline"
-                  className="btn-outline-payrot px-6 py-2 mb-6 text-sm font-semibold"
-                >
-                  Começar Agora
-                  <ArrowRight className="w-4 h-4 ml-2" />
-                </Button>
-                
-                <h1 className="text-4xl md:text-5xl lg:text-6xl font-extrabold leading-tight">
-                  <span className="gradient-headline-payrot">ATENDIMENTO</span>
+
+              {/* ========================= */}
+              {/* CENTER - Main headline area with central image */}
+              {/* ========================= */}
+              <div className="flex-1 text-center order-1 lg:order-2 max-w-[500px]">
+                {/* Central image placeholder */}
+                <div className="relative mx-auto mb-6">
+                  <div className="w-[200px] h-[200px] md:w-[280px] md:h-[280px] lg:w-[320px] lg:h-[320px] mx-auto bg-gradient-to-br from-[#c5d8e8] to-[#dce9f4] rounded-[24px] flex items-center justify-center relative overflow-hidden">
+                    {/* Glow effect */}
+                    <div className="absolute inset-0 bg-gradient-radial from-[#3B6BE8]/10 to-transparent opacity-50" />
+                    <div className="text-center">
+                      <ImageIcon className="w-12 h-12 md:w-16 md:h-16 text-[#94A3B8] mx-auto mb-2" />
+                      <span className="font-['Inter'] text-[10px] md:text-[12px] font-light text-[#8797a3]">
+                        Imagem Principal
+                      </span>
+                    </div>
+                  </div>
+                  
+                  {/* Circle decorator behind */}
+                  <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[250px] h-[250px] md:w-[350px] md:h-[350px] rounded-full border border-[#cbd5e1]/30 -z-10" />
+                </div>
+
+                {/* Headline text below image */}
+                <div className="mb-4">
+                  <span className="font-['Inter'] text-[10px] md:text-[12px] font-light text-[#8797a3] uppercase tracking-wider">
+                    CHATGO
+                  </span>
+                </div>
+                <h1 className="font-['Inter'] text-[18px] md:text-[24px] lg:text-[28px] font-black leading-[1.2] text-[#5d7386] mb-4">
+                  ATENDA E VENDA GLOBALMENTE
                   <br />
-                  <span className="gradient-headline-payrot">INTELIGENTE</span>
+                  COM CHATGO
                 </h1>
-              </div>
-              
-              {/* Right Column */}
-              <div className="text-center lg:text-right">
-                <div className="inline-block px-4 py-1.5 border border-[#1E3A8A] rounded-full text-xs font-semibold text-[#1E3A8A] uppercase tracking-wider mb-3">
-                  Total de Atendimentos
-                </div>
-                <p className="text-5xl lg:text-6xl font-extrabold text-[#1E3A8A] mb-2">10M+</p>
-                <p className="text-[#64748B] text-sm mb-2">
-                  Mensagens processadas com ChatGo
+                <p className="font-['Inter'] text-[10px] md:text-[12px] font-light leading-[1.6] text-[#aec0cd] mb-6 max-w-[400px] mx-auto">
+                  ChatGo Workforce Ajuda Você a Conectar e Atender Clientes em Mais de 150 Países de Forma Rápida, Segura e Sem Fronteiras
                 </p>
-                <button className="text-[#1E3A8A] text-sm font-semibold uppercase tracking-wider hover:underline inline-flex items-center gap-1 justify-center lg:justify-end">
-                  Ver Estatísticas
-                  <ArrowRight className="w-3 h-3" />
+                <button 
+                  onClick={() => scrollToSection('features')}
+                  className="font-['Inter'] text-[10px] md:text-[12px] font-normal text-[#9bc5e5] hover:text-[#3B6BE8] transition-colors"
+                >
+                  EXPLORAR FERRAMENTAS →
                 </button>
               </div>
-              
+
+              {/* ========================= */}
+              {/* RIGHT SIDE - Stacked cards (like Payrot credit cards) */}
+              {/* ========================= */}
+              <div className="relative w-full lg:w-[280px] order-3">
+                {/* Top decorative lines */}
+                <div className="hidden lg:block absolute -top-8 right-0 w-[80px] h-[9px]">
+                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-[#d4e1ed] to-transparent rounded-full" />
+                </div>
+                <div className="hidden lg:block absolute -top-4 right-8 w-[40px] h-[7px]">
+                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-[#cbd5e1] to-transparent rounded-full" />
+                </div>
+
+                {/* Main card stack */}
+                <div className="relative h-[180px] md:h-[200px]">
+                  {/* Card 1 - Back */}
+                  <div className="absolute top-4 right-8 w-[200px] md:w-[240px] h-[120px] md:h-[140px] bg-gradient-to-br from-[#3B6BE8] to-[#1E3A8A] rounded-[16px] shadow-[0_20px_40px_rgba(0,0,0,0.15)] transform rotate-[-6deg] opacity-60" />
+                  
+                  {/* Card 2 - Middle */}
+                  <div className="absolute top-2 right-4 w-[200px] md:w-[240px] h-[120px] md:h-[140px] bg-gradient-to-br from-[#60A5FA] to-[#3B6BE8] rounded-[16px] shadow-[0_15px_35px_rgba(0,0,0,0.12)] transform rotate-[-3deg] opacity-80" />
+                  
+                  {/* Card 3 - Front */}
+                  <div className="absolute top-0 right-0 w-[200px] md:w-[240px] h-[120px] md:h-[140px] bg-gradient-to-br from-[#3B6BE8] to-[#1E3A8A] rounded-[16px] shadow-[0_25px_50px_rgba(59,107,232,0.25)] p-4">
+                    {/* Card header */}
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        <div className="w-[16px] h-[12px] bg-white/30 rounded-sm" />
+                        <span className="font-['Inter'] text-[8px] md:text-[10px] font-light text-[#76b4e9]">
+                          CHATGO
+                        </span>
+                      </div>
+                      <MessageSquare className="w-4 h-4 text-white/50" />
+                    </div>
+                    
+                    {/* Card number placeholder */}
+                    <span className="block font-['Inter'] text-[12px] md:text-[14px] font-light text-[#9ac6e9] tracking-wider mb-2">
+                      5467 3867 0099 3441
+                    </span>
+                    
+                    {/* Card footer */}
+                    <div className="flex items-center justify-between mt-auto">
+                      <span className="font-['Inter'] text-[8px] md:text-[9px] font-light text-[#7ab4e5]">
+                        MARIA SILVA
+                      </span>
+                      <span className="font-['Inter'] text-[8px] md:text-[9px] font-light text-[#92c2e8]">
+                        12/26
+                      </span>
+                      <span className="font-['Inter'] text-[12px] md:text-[14px] font-normal text-[#b3d5ee]">
+                        VISA
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Right bottom card - Payment info */}
+                <div className="hidden lg:block absolute bottom-0 right-0 w-[120px]">
+                  <div className="bg-[#f2f5f7] rounded-[8px] border border-[#e0e6eb] p-3">
+                    <div className="flex items-center gap-2 mb-2">
+                      <CreditCard className="w-4 h-4 text-[#8d9da8]" />
+                      <span className="font-['Inter'] text-[10px] font-light text-[#8d9da8]">
+                        Pagamento
+                      </span>
+                    </div>
+                    <span className="font-['Inter'] text-[10px] font-light text-[#b9c8d3]">
+                      Seguro
+                    </span>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
-      </section>
+
+        {/* ========================= */}
+        {/* FOLD 2 - BOTTOM SECTION (FAST SEND / FAST RECEIVE) */}
+        {/* ========================= */}
+        <div className="relative z-[15] mt-8 md:mt-12 px-4 md:px-8">
+          <div className="max-w-7xl mx-auto">
+            <div className="flex flex-col md:flex-row items-center justify-between gap-6 md:gap-8 py-6 md:py-8 border-t border-[#e0e8f0]">
+              
+              {/* Left - Icons and text */}
+              <div className="flex items-center gap-4 order-2 md:order-1">
+                <div className="flex items-center gap-2">
+                  <div className="w-[28px] h-[28px] rounded-full bg-gradient-to-br from-[#3B6BE8] to-[#60A5FA] flex items-center justify-center">
+                    <Globe className="w-3 h-3 text-white" />
+                  </div>
+                  <div className="w-[28px] h-[28px] rounded-full bg-gradient-to-br from-[#60A5FA] to-[#93C5FD] flex items-center justify-center">
+                    <MessageSquare className="w-3 h-3 text-white" />
+                  </div>
+                </div>
+                <div>
+                  <p className="font-['Inter'] text-[12px] md:text-[14px] font-normal leading-[1.4] text-[#b0c4d1]">
+                    ChatGo capacita usuários a enviar e
+                    <br />
+                    receber mensagens globalmente.
+                  </p>
+                </div>
+                <button 
+                  onClick={() => scrollToSection('features')}
+                  className="font-['Inter'] text-[10px] font-light text-[#98a6b1] hover:text-[#3B6BE8] transition-colors whitespace-nowrap"
+                >
+                  NOSSOS SERVIÇOS
+                </button>
+              </div>
+
+              {/* Center - Main headline */}
+              <div className="text-center order-1 md:order-2">
+                <h2 className="font-['Inter'] text-[24px] md:text-[32px] lg:text-[40px] font-black leading-[1.1] text-[#e9f0f8]">
+                  ENVIO RÁPIDO,
+                  <br />
+                  RESPOSTA RÁPIDA
+                </h2>
+              </div>
+
+              {/* Right - Stats */}
+              <div className="flex items-center gap-4 order-3">
+                <div className="text-right">
+                  <div className="inline-block px-3 py-1 bg-[#fbfbfd] rounded-[6px] border border-[#a8b0bb] mb-2">
+                    <span className="font-['Inter'] text-[8px] font-light text-[#aab5bd]">
+                      TOTAL ATENDIMENTOS
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-end gap-1">
+                    <span className="font-['Inter'] text-[32px] md:text-[40px] font-normal text-[#76b0e9]">
+                      90M
+                    </span>
+                    <span className="font-['Inter'] text-[28px] md:text-[36px] font-light text-[#80b5ea]">
+                      +
+                    </span>
+                  </div>
+                  <span className="font-['Inter'] text-[14px] md:text-[18px] font-light text-[#aabecc]">
+                    Mensagens
+                  </span>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <div className="w-[80px] h-[5px] bg-gradient-to-r from-[#3B6BE8] to-[#60A5FA] rounded-full" />
+                  <div className="w-[60px] h-[3px] bg-gradient-to-r from-[#60A5FA] to-[#93C5FD] rounded-full" />
+                </div>
+                <button className="font-['Inter'] text-[12px] font-light text-[#a0adb6] hover:text-[#3B6BE8] transition-colors">
+                  VER STATS
+                  <div className="w-[45px] h-[3px] bg-white mt-1" />
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* ========================= */}
+        {/* FOLD 3 - GROW BEYOND BORDERS SECTION */}
+        {/* ========================= */}
+        <div className="relative z-[20] mt-4 md:mt-8 px-4 md:px-8">
+          <div className="max-w-7xl mx-auto">
+            {/* Globe/Map image placeholder with button */}
+            <div className="relative w-full max-w-[900px] mx-auto">
+              {/* World map background placeholder */}
+              <div className="w-full h-[280px] md:h-[400px] lg:h-[500px] bg-gradient-to-b from-[#e5f0f8] via-[#d8e8f4] to-[#c8dced] rounded-[24px] flex items-center justify-center relative overflow-hidden">
+                {/* Decorative circles representing globe */}
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <div className="w-[180px] h-[180px] md:w-[280px] md:h-[280px] rounded-full border-2 border-dashed border-[#b0c8dc]/40" />
+                  <div className="absolute w-[140px] h-[140px] md:w-[220px] md:h-[220px] rounded-full border border-[#a0bcd0]/30" />
+                  <div className="absolute w-[100px] h-[100px] md:w-[160px] md:h-[160px] rounded-full bg-gradient-to-br from-[#d4e6f4] to-[#e8f2fa]" />
+                </div>
+                
+                {/* Placeholder text */}
+                <div className="absolute top-4 md:top-8 left-4 md:left-8">
+                  <ImageIcon className="w-8 h-8 md:w-10 md:h-10 text-[#94A3B8]" />
+                  <span className="block font-['Inter'] text-[10px] md:text-[12px] font-light text-[#8797a3] mt-1">
+                    Mapa Global
+                  </span>
+                </div>
+
+                {/* CTA Button in center-bottom */}
+                <div className="absolute bottom-8 md:bottom-12 left-1/2 -translate-x-1/2">
+                  <button 
+                    onClick={() => navigate('/auth')}
+                    className="bg-[#f3f6fc] rounded-[9px] border border-[#c8d5ed] px-4 md:px-6 py-2 md:py-3 flex items-center gap-2 hover:bg-[#e8f0fc] transition-colors"
+                  >
+                    <span className="font-['Inter'] text-[10px] md:text-[12px] font-normal text-[#a1aeb9]">
+                      Abrir Conta
+                    </span>
+                    <div className="w-[11px] h-[3px] bg-[#3B6BE8] rounded-full" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Text overlay below map */}
+              <div className="text-center mt-6 md:mt-10">
+                <h3 className="font-['Inter'] text-[24px] md:text-[36px] lg:text-[48px] font-medium leading-[1.1] text-[#c2ccd3] mb-4">
+                  CRESÇA ALÉM DAS
+                  <br />
+                  FRONTEIRAS COM CHATGO
+                </h3>
+                <p className="font-['Inter'] text-[10px] md:text-[12px] lg:text-[14px] font-light leading-[1.6] text-[#446987] max-w-[500px] mx-auto mb-6">
+                  Se você está atendendo um freelancer ou uma equipe completa no exterior, ChatGo torna tudo Simples, Rápido, Seguro, e Sem Taxas Extras
+                </p>
+                <button 
+                  onClick={() => scrollToSection('features')}
+                  className="bg-[#0e3251] rounded-[9px] border border-[#7493a8] px-4 md:px-6 py-2 md:py-3 flex items-center gap-2 mx-auto hover:bg-[#1a4265] transition-colors"
+                >
+                  <span className="font-['Inter'] text-[10px] md:text-[12px] font-light text-[#71889a]">
+                    Explorar Mais
+                  </span>
+                  <ArrowRight className="w-3 h-3 text-[#71889a]" />
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Vertical decorative lines on sides */}
+        <div className="hidden lg:block absolute top-0 bottom-0 left-0 w-[2px] bg-gradient-to-b from-transparent via-[#e0e8f0] to-transparent z-[50]" />
+        <div className="hidden lg:block absolute top-0 bottom-0 right-0 w-[2px] bg-gradient-to-b from-transparent via-[#e0e8f0] to-transparent z-[50]" />
+
+        {/* Horizontal decorative line top */}
+        <div className="absolute top-[78px] left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-[#e0e8f0] to-transparent z-[40]" />
+      </div>
 
       {/* ========================= */}
       {/* REST OF THE PAGE (Problems, Features, etc.) */}
