@@ -1,317 +1,373 @@
-import React from "react";
-import { MessageCircle, Globe, ArrowRight, Users, Send, Check, Zap, ChevronRight } from "lucide-react";
+import { MessageCircle, Globe, CreditCard, Check, ArrowRight, Zap, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
 
-const LandingPage = (): JSX.Element => {
+const LandingPage = () => {
   return (
-    <div className="min-h-screen bg-background overflow-hidden">
-      {/* ========== HERO SECTION ========== */}
-      <section className="relative min-h-screen hero-gradient">
-        {/* Decorative orbs */}
-        <div className="orb orb-blue w-[600px] h-[600px] -top-40 -left-40" />
-        <div className="orb orb-light-blue w-[400px] h-[400px] top-1/3 right-0" />
-        <div className="pattern-dots absolute inset-0" />
-        
-        {/* Navigation */}
-        <nav className="relative z-10 flex items-center justify-between px-6 md:px-12 lg:px-20 py-6">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[hsl(var(--landing-whatsapp))] to-emerald-600 flex items-center justify-center shadow-lg">
+    <div className="min-h-screen bg-[#f0f4f8] overflow-x-hidden">
+      {/* Navbar */}
+      <nav className="fixed top-0 left-0 right-0 z-50 px-6 py-4">
+        <div className="max-w-7xl mx-auto flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 bg-[#1a56db] rounded-lg flex items-center justify-center">
               <MessageCircle className="w-5 h-5 text-white" />
             </div>
-            <span className="text-xl font-bold text-white">CHATGO</span>
+            <span className="text-xl font-bold text-[#1e3a5f]">ChatGo</span>
           </div>
           
           <div className="hidden md:flex items-center gap-8">
-            <a href="#recursos" className="text-white/70 hover:text-white transition-colors text-sm font-medium">Recursos</a>
-            <a href="#empresas" className="text-white/70 hover:text-white transition-colors text-sm font-medium">Empresas</a>
-            <a href="#marketplace" className="text-white/70 hover:text-white transition-colors text-sm font-medium">Marketplace</a>
-            <a href="#precos" className="text-white/70 hover:text-white transition-colors text-sm font-medium">Preços</a>
+            <a href="#services" className="text-[#1e3a5f]/70 hover:text-[#1e3a5f] transition-colors text-sm font-medium">
+              Nossos Serviços
+            </a>
+            <a href="#about" className="text-[#1e3a5f]/70 hover:text-[#1e3a5f] transition-colors text-sm font-medium">
+              Sobre
+            </a>
+            <a href="#tools" className="text-[#1e3a5f]/70 hover:text-[#1e3a5f] transition-colors text-sm font-medium">
+              Ferramentas
+            </a>
           </div>
-          
-          <div className="flex items-center gap-4">
-            <Link to="/auth">
-              <Button variant="ghost" className="text-white/80 hover:text-white hover:bg-white/10">
-                Entrar
-              </Button>
-            </Link>
-            <Link to="/auth">
-              <Button className="landing-btn-primary px-6 py-2.5">
-                Começar Grátis
-              </Button>
-            </Link>
-          </div>
-        </nav>
-        
-        {/* Hero Content */}
-        <div className="relative z-10 flex flex-col lg:flex-row items-center justify-between px-6 md:px-12 lg:px-20 pt-12 lg:pt-20 pb-20 gap-12 lg:gap-20">
-          {/* Left side - Text */}
-          <div className="flex-1 text-center lg:text-left max-w-2xl">
-            {/* Badge */}
-            <div className="inline-flex items-center gap-2 glass-badge rounded-full px-4 py-2 mb-8">
-              <Users className="w-4 h-4" />
-              <span className="text-sm font-medium">+7 milhões de usuários ativos</span>
-            </div>
-            
-            {/* Watermark */}
-            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-[12rem] md:text-[18rem] lg:text-[22rem] font-light text-white/[0.03] tracking-[0.2em] pointer-events-none select-none whitespace-nowrap">
-              CHATGO
-            </div>
-            
-            <h1 className="text-4xl md:text-5xl lg:text-6xl xl:text-7xl font-bold text-white leading-tight mb-6">
-              Mensagens Globais,{" "}
-              <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-300 to-cyan-300">
-                Conexões Reais
-              </span>
-            </h1>
-            
-            <p className="text-lg md:text-xl text-white/70 mb-10 max-w-xl mx-auto lg:mx-0">
-              Envie e receba mensagens em todo o mundo de forma rápida, segura e sem complicações. ChatGo simplifica sua comunicação global.
-            </p>
-            
-            <div className="flex flex-col sm:flex-row items-center gap-4 justify-center lg:justify-start">
-              <Link to="/auth">
-                <Button size="lg" className="landing-btn-primary px-8 py-6 text-lg font-semibold">
-                  Começar Agora
-                  <ArrowRight className="ml-2 w-5 h-5" />
-                </Button>
-              </Link>
-              <Button size="lg" variant="outline" className="border-white/30 text-white hover:bg-white/10 px-8 py-6 text-lg">
-                Ver Demonstração
-              </Button>
-            </div>
-          </div>
-          
-          {/* Right side - Cards Stack */}
-          <div className="flex-1 relative max-w-lg w-full">
-            {/* Main WhatsApp Card */}
-            <div className="relative z-20 bg-gradient-to-br from-[hsl(var(--landing-whatsapp))] to-emerald-600 rounded-3xl p-6 shadow-2xl transform hover:scale-[1.02] transition-transform duration-300">
-              <div className="flex items-center gap-4 mb-6">
-                <div className="w-14 h-14 rounded-full bg-white/20 flex items-center justify-center">
-                  <MessageCircle className="w-7 h-7 text-white" />
-                </div>
-                <div>
-                  <p className="text-white/70 text-sm">WhatsApp Business</p>
-                  <p className="text-white font-bold text-lg">CHATGO PRO</p>
-                </div>
-              </div>
-              
-              <div className="bg-white/10 rounded-2xl p-4 mb-4">
-                <p className="text-white/60 text-xs mb-1">Número conectado</p>
-                <p className="text-white font-mono text-xl tracking-wider">+55 11 9999-9999</p>
-              </div>
-              
-              <div className="flex items-center justify-between">
-                <span className="text-white/70 text-sm">Business API</span>
-                <div className="flex items-center gap-1">
-                  <Check className="w-4 h-4 text-white" />
-                  <span className="text-white text-sm font-medium">Verificado</span>
-                </div>
-              </div>
-            </div>
-            
-            {/* Floating Stats Card */}
-            <div className="absolute -left-8 top-1/2 -translate-y-1/2 z-30 glass-card rounded-2xl p-4 shadow-xl">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-primary to-blue-600 flex items-center justify-center">
-                  <Send className="w-6 h-6 text-white" />
-                </div>
-                <div>
-                  <p className="text-muted-foreground text-xs">Mensagens hoje</p>
-                  <p className="text-foreground font-bold text-xl">90M+</p>
-                </div>
-              </div>
-            </div>
-            
-            {/* Floating Feature Card */}
-            <div className="absolute -right-4 bottom-0 z-30 glass-card rounded-2xl p-4 shadow-xl">
-              <div className="flex items-center gap-2 mb-2">
-                <Zap className="w-5 h-5 text-primary" />
-                <span className="text-sm font-semibold text-foreground">Envio Rápido</span>
-              </div>
-              <p className="text-muted-foreground text-xs">Entrega instantânea garantida</p>
-            </div>
-            
-            {/* Background Globe */}
-            <div className="absolute -bottom-20 -right-20 w-64 h-64 bg-gradient-to-br from-primary/20 to-blue-500/10 rounded-full blur-3xl" />
-          </div>
-        </div>
-      </section>
 
-      {/* ========== SERVICES SECTION ========== */}
-      <section id="recursos" className="relative py-24 lg:py-32 section-gradient-light overflow-hidden">
-        {/* Decorative */}
-        <div className="orb orb-blue w-[300px] h-[300px] top-0 right-1/4 opacity-10" />
-        
-        <div className="relative z-10 max-w-7xl mx-auto px-6 md:px-12 lg:px-20">
-          {/* Section Header */}
-          <div className="text-center mb-16">
-            <span className="text-sm font-semibold text-primary uppercase tracking-wider">Nossos Serviços</span>
-            <h2 className="text-3xl md:text-4xl lg:text-5xl font-bold text-foreground mt-4 mb-6">
-              Envio Rápido,{" "}
-              <span className="gradient-text-landing">Resposta Rápida</span>
-            </h2>
-            <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-              ChatGo capacita usuários a enviar e receber mensagens globalmente com velocidade e segurança.
-            </p>
-          </div>
-          
-          {/* Stats Row */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-16">
-            {[
-              { value: "90M+", label: "Mensagens/dia", icon: Send },
-              { value: "150+", label: "Países", icon: Globe },
-              { value: "7M+", label: "Usuários", icon: Users },
-              { value: "99.9%", label: "Uptime", icon: Check },
-            ].map((stat, i) => (
-              <div key={i} className="landing-card p-6 text-center">
-                <stat.icon className="w-8 h-8 text-primary mx-auto mb-3" />
-                <p className="text-3xl font-bold text-foreground">{stat.value}</p>
-                <p className="text-muted-foreground text-sm">{stat.label}</p>
-              </div>
-            ))}
-          </div>
-          
-          {/* Features Grid */}
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
-            {[
-              {
-                icon: MessageCircle,
-                title: "Multi-atendimento",
-                description: "Gerencie múltiplas conversas simultaneamente com eficiência máxima."
-              },
-              {
-                icon: Zap,
-                title: "Respostas Automáticas",
-                description: "Configure chatbots inteligentes para atendimento 24/7."
-              },
-              {
-                icon: Users,
-                title: "Equipe Integrada",
-                description: "Colabore com sua equipe em tempo real com chat interno."
-              },
-              {
-                icon: Globe,
-                title: "Alcance Global",
-                description: "Conecte-se com clientes em mais de 150 países."
-              },
-              {
-                icon: Send,
-                title: "Envio em Massa",
-                description: "Campanhas de marketing com segmentação avançada."
-              },
-              {
-                icon: Check,
-                title: "CRM Integrado",
-                description: "Gerencie leads e funil de vendas em um só lugar."
-              },
-            ].map((feature, i) => (
-              <div key={i} className="landing-card p-8 group">
-                <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-primary/10 to-blue-500/10 flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
-                  <feature.icon className="w-7 h-7 text-primary" />
-                </div>
-                <h3 className="text-xl font-semibold text-foreground mb-3">{feature.title}</h3>
-                <p className="text-muted-foreground">{feature.description}</p>
-              </div>
-            ))}
-          </div>
-          
-          {/* CTA */}
-          <div className="text-center mt-12">
-            <Link to="/auth">
-              <Button className="landing-btn-primary px-8 py-6 text-lg font-semibold">
-                Abrir Conta Grátis
-                <ChevronRight className="ml-2 w-5 h-5" />
-              </Button>
-            </Link>
-          </div>
+          <Link to="/auth">
+            <Button className="bg-[#1a56db] hover:bg-[#1a56db]/90 text-white rounded-full px-6">
+              Entrar
+            </Button>
+          </Link>
         </div>
-      </section>
+      </nav>
 
-      {/* ========== TESTIMONIALS / HIRE SECTION ========== */}
-      <section className="relative py-24 lg:py-32 bg-muted/30 overflow-hidden">
-        <div className="orb orb-light-blue w-[400px] h-[400px] -bottom-40 left-1/4" />
-        
-        <div className="relative z-10 max-w-7xl mx-auto px-6 md:px-12 lg:px-20">
-          <div className="grid lg:grid-cols-2 gap-16 items-center">
-            {/* Left - Content */}
-            <div>
-              <div className="flex items-center gap-2 mb-6">
-                <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[hsl(var(--landing-whatsapp))] to-emerald-600 flex items-center justify-center">
-                  <MessageCircle className="w-4 h-4 text-white" />
-                </div>
-                <span className="text-sm font-medium text-muted-foreground">CHATGO WORKFORCE</span>
-              </div>
-              
-              <h2 className="text-3xl md:text-4xl lg:text-5xl font-bold text-foreground mb-6">
-                Contrate e Atenda{" "}
-                <span className="gradient-text-landing">Globalmente</span>
-              </h2>
-              
-              <p className="text-lg text-muted-foreground mb-8">
-                ChatGo Workforce ajuda você a gerenciar e atender clientes em mais de 150 países de forma rápida, segura e sem fronteiras.
-              </p>
-              
-              <ul className="space-y-4 mb-8">
-                {[
-                  "Onboarding automatizado de clientes",
-                  "Atendimento multicanal integrado",
-                  "Relatórios e métricas em tempo real",
-                  "Conformidade com LGPD e GDPR",
-                ].map((item, i) => (
-                  <li key={i} className="flex items-center gap-3">
-                    <div className="w-6 h-6 rounded-full bg-[hsl(var(--landing-whatsapp))]/10 flex items-center justify-center">
-                      <Check className="w-4 h-4 text-[hsl(var(--landing-whatsapp))]" />
-                    </div>
-                    <span className="text-foreground">{item}</span>
-                  </li>
-                ))}
-              </ul>
-              
-              <Button variant="link" className="text-primary p-0 font-semibold">
-                Explorar Ferramentas de Atendimento
-                <ArrowRight className="ml-2 w-4 h-4" />
-              </Button>
-            </div>
+      {/* Hero Section */}
+      <section className="relative min-h-screen pt-24 pb-16 overflow-hidden">
+        {/* Giant Watermark */}
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none select-none overflow-hidden">
+          <h1 className="text-[180px] md:text-[280px] lg:text-[380px] font-black text-[#d8e4ef] tracking-[0.15em] blur-[2px] whitespace-nowrap">
+            CHATGO
+          </h1>
+        </div>
+
+        {/* Content Container */}
+        <div className="relative z-10 max-w-7xl mx-auto px-6 h-full">
+          <div className="flex flex-col lg:flex-row items-center justify-center gap-8 lg:gap-4 min-h-[80vh]">
             
-            {/* Right - Visual */}
-            <div className="relative">
-              <div className="landing-card p-8 lg:p-12">
-                {/* Mock Dashboard */}
-                <div className="bg-gradient-to-br from-slate-100 to-slate-50 dark:from-slate-800 dark:to-slate-900 rounded-2xl p-6 mb-6">
-                  <div className="flex items-center gap-4 mb-6">
-                    <div className="w-12 h-12 rounded-full bg-gradient-to-br from-primary to-blue-600 flex items-center justify-center">
-                      <Users className="w-6 h-6 text-white" />
-                    </div>
-                    <div>
-                      <p className="font-semibold text-foreground">Atendimento Inteligente</p>
-                      <p className="text-sm text-muted-foreground">Dashboard em tempo real</p>
-                    </div>
+            {/* Left Card - Globe Card */}
+            <div className="relative lg:absolute lg:left-[5%] lg:top-1/2 lg:-translate-y-1/2 z-20">
+              <div className="bg-white/80 backdrop-blur-xl rounded-3xl p-6 shadow-2xl shadow-[#1a56db]/10 w-[280px] md:w-[320px]">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-12 h-12 rounded-full bg-gradient-to-br from-[#1a56db] to-[#60a5fa] flex items-center justify-center">
+                    <Globe className="w-6 h-6 text-white" />
                   </div>
-                  
-                  {/* Mock Stats */}
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="bg-white dark:bg-slate-800 rounded-xl p-4 shadow-sm">
-                      <p className="text-2xl font-bold text-primary">847</p>
-                      <p className="text-xs text-muted-foreground">Conversas ativas</p>
-                    </div>
-                    <div className="bg-white dark:bg-slate-800 rounded-xl p-4 shadow-sm">
-                      <p className="text-2xl font-bold text-[hsl(var(--landing-whatsapp))]">98%</p>
-                      <p className="text-xs text-muted-foreground">Satisfação</p>
-                    </div>
+                  <div>
+                    <p className="text-xs text-[#1e3a5f]/60 uppercase tracking-wider">Alcance Global</p>
+                    <p className="text-lg font-bold text-[#1e3a5f]">Envie e Receba</p>
                   </div>
                 </div>
                 
-                {/* Floating notification */}
-                <div className="absolute -right-4 top-1/3 glass-card rounded-xl p-3 shadow-lg animate-pulse">
-                  <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 rounded-full bg-[hsl(var(--landing-whatsapp))] flex items-center justify-center">
-                      <Check className="w-4 h-4 text-white" />
+                {/* Mini Globe Placeholder */}
+                <div className="relative h-40 rounded-2xl bg-gradient-to-br from-[#1a56db]/20 to-[#60a5fa]/20 overflow-hidden mb-4">
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <div className="w-28 h-28 rounded-full bg-gradient-to-br from-[#1a56db] to-[#0d47a1] opacity-80">
+                      <div className="absolute inset-4 rounded-full border border-white/30"></div>
+                      <div className="absolute inset-0 flex items-center">
+                        <div className="w-full h-[1px] bg-white/20"></div>
+                      </div>
+                      <div className="absolute inset-0 flex justify-center">
+                        <div className="w-[1px] h-full bg-white/20"></div>
+                      </div>
                     </div>
+                  </div>
+                  {/* Connection dots */}
+                  <div className="absolute top-4 right-4 w-2 h-2 rounded-full bg-green-400 animate-pulse"></div>
+                  <div className="absolute bottom-6 left-6 w-2 h-2 rounded-full bg-[#1a56db] animate-pulse"></div>
+                  <div className="absolute top-1/2 right-8 w-1.5 h-1.5 rounded-full bg-yellow-400 animate-pulse"></div>
+                </div>
+
+                <p className="text-sm text-[#1e3a5f]/70">
+                  Conecte-se com clientes em <span className="font-semibold text-[#1a56db]">190+ países</span>
+                </p>
+              </div>
+            </div>
+
+            {/* Center - Main Image Placeholder */}
+            <div className="relative z-10 order-first lg:order-none">
+              {/* Users Badge - Floating */}
+              <div className="absolute -top-4 left-1/2 -translate-x-1/2 lg:top-8 lg:left-auto lg:right-0 lg:translate-x-1/2 z-30">
+                <div className="bg-white rounded-full px-4 py-2 shadow-lg flex items-center gap-2">
+                  <div className="flex -space-x-2">
+                    <div className="w-6 h-6 rounded-full bg-gradient-to-br from-purple-400 to-pink-400 border-2 border-white"></div>
+                    <div className="w-6 h-6 rounded-full bg-gradient-to-br from-blue-400 to-cyan-400 border-2 border-white"></div>
+                    <div className="w-6 h-6 rounded-full bg-gradient-to-br from-green-400 to-emerald-400 border-2 border-white"></div>
+                  </div>
+                  <span className="text-sm font-bold text-[#1e3a5f]">7M+ usuários</span>
+                </div>
+              </div>
+
+              {/* Main Visual - Bird/Mascot Placeholder */}
+              <div className="relative w-[300px] h-[400px] md:w-[400px] md:h-[500px] lg:w-[450px] lg:h-[550px]">
+                <div className="absolute inset-0 bg-gradient-to-b from-[#ffd700]/30 via-[#ff6b35]/30 to-[#1a56db]/30 rounded-[40px] blur-3xl"></div>
+                <div className="relative h-full rounded-[40px] bg-gradient-to-b from-[#ffecd2] via-[#fcb69f] to-[#1a56db]/20 flex items-center justify-center overflow-hidden">
+                  {/* Decorative Elements */}
+                  <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-32 h-32 rounded-full bg-gradient-to-br from-[#ff6b35] to-[#ffd700] opacity-60 blur-xl"></div>
+                  <div className="absolute bottom-1/3 left-1/2 -translate-x-1/2 w-40 h-40 rounded-full bg-gradient-to-br from-[#1a56db] to-[#60a5fa] opacity-40 blur-2xl"></div>
+                  
+                  {/* Placeholder Icon */}
+                  <div className="relative z-10 flex flex-col items-center gap-4">
+                    <div className="w-24 h-24 rounded-full bg-gradient-to-br from-[#ff6b35] to-[#ffd700] flex items-center justify-center shadow-2xl">
+                      <MessageCircle className="w-12 h-12 text-white" />
+                    </div>
+                    <p className="text-white/80 font-medium text-center px-8">
+                      Sua imagem de destaque aqui
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Right Card - VISA Style Card */}
+            <div className="relative lg:absolute lg:right-[5%] lg:top-1/2 lg:-translate-y-1/2 z-20">
+              <div className="w-[300px] md:w-[340px]">
+                {/* Credit Card */}
+                <div className="bg-gradient-to-br from-[#1a56db] via-[#2563eb] to-[#1e40af] rounded-2xl p-6 shadow-2xl shadow-[#1a56db]/30 aspect-[1.6/1] relative overflow-hidden">
+                  {/* Card Pattern */}
+                  <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -translate-y-1/2 translate-x-1/2"></div>
+                  <div className="absolute bottom-0 left-0 w-24 h-24 bg-white/5 rounded-full translate-y-1/2 -translate-x-1/2"></div>
+                  
+                  {/* Chip */}
+                  <div className="w-10 h-7 bg-gradient-to-br from-yellow-300 to-yellow-500 rounded-md mb-6">
+                    <div className="w-full h-full grid grid-cols-3 gap-[1px] p-1">
+                      <div className="bg-yellow-600/30 rounded-sm"></div>
+                      <div className="bg-yellow-600/30 rounded-sm"></div>
+                      <div className="bg-yellow-600/30 rounded-sm"></div>
+                    </div>
+                  </div>
+                  
+                  {/* Card Number */}
+                  <p className="text-white/90 font-mono text-lg tracking-[0.2em] mb-4">
+                    •••• •••• •••• 4582
+                  </p>
+                  
+                  {/* Card Footer */}
+                  <div className="flex justify-between items-end">
                     <div>
-                      <p className="text-xs font-medium text-foreground">Mensagem enviada</p>
-                      <p className="text-[10px] text-muted-foreground">Entrega instantânea</p>
+                      <p className="text-white/50 text-[10px] uppercase tracking-wider mb-1">Titular</p>
+                      <p className="text-white font-medium text-sm">CHATGO USER</p>
                     </div>
+                    <div className="text-right">
+                      <p className="text-white font-bold text-xl italic tracking-wider">VISA</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Transaction Card Below */}
+                <div className="mt-4 bg-white rounded-2xl p-4 shadow-lg">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center">
+                        <Check className="w-5 h-5 text-green-600" />
+                      </div>
+                      <div>
+                        <p className="font-semibold text-[#1e3a5f] text-sm">Pagamento Recebido</p>
+                        <p className="text-xs text-[#1e3a5f]/60">Há 2 minutos</p>
+                      </div>
+                    </div>
+                    <p className="font-bold text-green-600">+R$ 1.500</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Scroll Indicator */}
+        <div className="absolute bottom-8 left-1/2 -translate-x-1/2 z-20">
+          <div className="flex flex-col items-center gap-2 animate-bounce">
+            <span className="text-xs text-[#1e3a5f]/60 uppercase tracking-wider">Scroll</span>
+            <ChevronRight className="w-4 h-4 text-[#1e3a5f]/60 rotate-90" />
+          </div>
+        </div>
+      </section>
+
+      {/* Services Section */}
+      <section id="services" className="relative py-24 bg-white">
+        <div className="max-w-7xl mx-auto px-6">
+          {/* Top Row */}
+          <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-8 mb-16">
+            <div className="flex-1">
+              <p className="text-xs text-[#1a56db] uppercase tracking-[0.3em] mb-2 flex items-center gap-2">
+                <Zap className="w-3 h-3" />
+                NOSSOS SERVIÇOS
+              </p>
+              <h2 className="text-4xl md:text-5xl lg:text-6xl font-black text-[#1e3a5f] leading-tight">
+                ENVIO RÁPIDO,<br />
+                RESPOSTA RÁPIDA
+              </h2>
+            </div>
+
+            {/* Big Metric */}
+            <div className="text-right">
+              <p className="text-6xl md:text-7xl lg:text-8xl font-black text-[#1a56db]">90M+</p>
+              <p className="text-sm text-[#1e3a5f]/60 uppercase tracking-wider">Mensagens Enviadas</p>
+            </div>
+          </div>
+
+          {/* Decorative Line */}
+          <div className="h-[2px] bg-gradient-to-r from-[#1a56db] via-[#60a5fa] to-transparent mb-16"></div>
+
+          {/* Services Grid */}
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
+            {/* Service Card 1 */}
+            <div className="group bg-[#f8fafc] rounded-3xl p-8 hover:bg-[#1a56db] transition-all duration-300">
+              <div className="w-14 h-14 rounded-2xl bg-[#1a56db]/10 group-hover:bg-white/20 flex items-center justify-center mb-6 transition-colors">
+                <MessageCircle className="w-7 h-7 text-[#1a56db] group-hover:text-white transition-colors" />
+              </div>
+              <h3 className="text-xl font-bold text-[#1e3a5f] group-hover:text-white mb-3 transition-colors">
+                Mensagens Automáticas
+              </h3>
+              <p className="text-[#1e3a5f]/70 group-hover:text-white/80 transition-colors">
+                Automatize suas respostas e nunca perca uma oportunidade de venda.
+              </p>
+            </div>
+
+            {/* Service Card 2 */}
+            <div className="group bg-[#f8fafc] rounded-3xl p-8 hover:bg-[#1a56db] transition-all duration-300">
+              <div className="w-14 h-14 rounded-2xl bg-[#1a56db]/10 group-hover:bg-white/20 flex items-center justify-center mb-6 transition-colors">
+                <Globe className="w-7 h-7 text-[#1a56db] group-hover:text-white transition-colors" />
+              </div>
+              <h3 className="text-xl font-bold text-[#1e3a5f] group-hover:text-white mb-3 transition-colors">
+                Alcance Global
+              </h3>
+              <p className="text-[#1e3a5f]/70 group-hover:text-white/80 transition-colors">
+                Conecte-se com clientes em qualquer lugar do mundo, 24/7.
+              </p>
+            </div>
+
+            {/* Service Card 3 */}
+            <div className="group bg-[#f8fafc] rounded-3xl p-8 hover:bg-[#1a56db] transition-all duration-300">
+              <div className="w-14 h-14 rounded-2xl bg-[#1a56db]/10 group-hover:bg-white/20 flex items-center justify-center mb-6 transition-colors">
+                <CreditCard className="w-7 h-7 text-[#1a56db] group-hover:text-white transition-colors" />
+              </div>
+              <h3 className="text-xl font-bold text-[#1e3a5f] group-hover:text-white mb-3 transition-colors">
+                Pagamentos Integrados
+              </h3>
+              <p className="text-[#1e3a5f]/70 group-hover:text-white/80 transition-colors">
+                Receba pagamentos diretamente nas suas conversas.
+              </p>
+            </div>
+          </div>
+
+          {/* Bottom Row */}
+          <div className="flex flex-col md:flex-row items-center justify-between mt-16 gap-6">
+            <div className="flex items-center gap-4">
+              <span className="px-4 py-2 bg-[#1e3a5f] text-white text-sm font-medium rounded-full">
+                TOTAL MENSAGENS
+              </span>
+              <span className="px-4 py-2 bg-white border border-[#1e3a5f]/20 text-[#1e3a5f] text-sm font-medium rounded-full">
+                VER STATS
+              </span>
+            </div>
+
+            <Link to="/trial">
+              <Button className="bg-[#1a56db] hover:bg-[#1a56db]/90 text-white rounded-full px-8 py-6 text-lg">
+                Abrir Conta Grátis
+                <ArrowRight className="w-5 h-5 ml-2" />
+              </Button>
+            </Link>
+          </div>
+        </div>
+      </section>
+
+      {/* Testimonials / Hire Section */}
+      <section id="about" className="relative py-24 bg-[#f0f4f8] overflow-hidden">
+        <div className="max-w-7xl mx-auto px-6">
+          <div className="flex flex-col lg:flex-row items-center gap-16">
+            {/* Left Content */}
+            <div className="flex-1 relative z-10">
+              <div className="flex items-center gap-2 mb-4">
+                <div className="w-6 h-6 bg-[#1a56db] rounded-lg flex items-center justify-center">
+                  <MessageCircle className="w-4 h-4 text-white" />
+                </div>
+                <span className="text-sm font-bold text-[#1e3a5f]">CHATGO</span>
+              </div>
+
+              <h2 className="text-4xl md:text-5xl font-black text-[#1e3a5f] leading-tight mb-6">
+                CONTRATE E ATENDA<br />
+                <span className="text-[#1a56db]">GLOBALMENTE</span>
+              </h2>
+
+              <p className="text-lg text-[#1e3a5f]/70 mb-8 max-w-md">
+                A ChatGo proporciona contratação global de funcionários e meios de pagamento em mais de 150 países, sendo utilizada por mais de 35.000 empresas para processar pagamentos internacionais.
+              </p>
+
+              <a href="#tools" className="inline-flex items-center gap-2 text-[#1a56db] font-semibold hover:gap-3 transition-all">
+                EXPLORAR FERRAMENTAS
+                <ArrowRight className="w-4 h-4" />
+              </a>
+
+              {/* Feature List */}
+              <div className="mt-12 space-y-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-6 h-6 rounded-full bg-green-100 flex items-center justify-center">
+                    <Check className="w-4 h-4 text-green-600" />
+                  </div>
+                  <span className="text-[#1e3a5f]">Atendimento 24 horas, 7 dias por semana</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="w-6 h-6 rounded-full bg-green-100 flex items-center justify-center">
+                    <Check className="w-4 h-4 text-green-600" />
+                  </div>
+                  <span className="text-[#1e3a5f]">IA treinada para seu negócio</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="w-6 h-6 rounded-full bg-green-100 flex items-center justify-center">
+                    <Check className="w-4 h-4 text-green-600" />
+                  </div>
+                  <span className="text-[#1e3a5f]">Integração com múltiplos canais</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Right - Image with Floating Cards */}
+            <div className="flex-1 relative">
+              {/* Main Image Placeholder */}
+              <div className="relative w-full max-w-[500px] aspect-square mx-auto">
+                <div className="absolute inset-0 bg-gradient-to-br from-[#1a56db]/20 to-[#60a5fa]/20 rounded-[40px] blur-3xl"></div>
+                <div className="relative h-full rounded-[40px] bg-gradient-to-br from-[#e0e7ef] to-[#f8fafc] flex items-center justify-center overflow-hidden border border-white/50">
+                  {/* Placeholder for person image */}
+                  <div className="text-center p-8">
+                    <div className="w-32 h-32 mx-auto mb-4 rounded-full bg-gradient-to-br from-[#1a56db]/30 to-[#60a5fa]/30 flex items-center justify-center">
+                      <svg className="w-16 h-16 text-[#1a56db]/50" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
+                      </svg>
+                    </div>
+                    <p className="text-[#1e3a5f]/50 text-sm">Sua imagem aqui</p>
+                  </div>
+                </div>
+
+                {/* Floating Payment Card - Top Right */}
+                <div className="absolute -top-4 -right-4 md:top-8 md:-right-8 bg-white rounded-2xl p-4 shadow-xl z-20 w-48">
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className="w-8 h-8 rounded-full bg-[#1a56db] flex items-center justify-center">
+                      <CreditCard className="w-4 h-4 text-white" />
+                    </div>
+                    <span className="text-xs text-[#1e3a5f]/60">Pagamento</span>
+                  </div>
+                  <p className="text-2xl font-bold text-[#1e3a5f]">R$ 2.500</p>
+                  <p className="text-xs text-green-600 mt-1">Recebido com sucesso</p>
+                </div>
+
+                {/* Floating Message Card - Bottom Left */}
+                <div className="absolute -bottom-4 -left-4 md:bottom-8 md:-left-8 bg-white rounded-2xl p-4 shadow-xl z-20 w-56">
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className="w-6 h-6 rounded-full bg-green-500 flex items-center justify-center">
+                      <MessageCircle className="w-3 h-3 text-white" />
+                    </div>
+                    <span className="text-sm font-medium text-[#1e3a5f]">Nova mensagem</span>
+                  </div>
+                  <p className="text-xs text-[#1e3a5f]/70">"Olá! Gostaria de saber mais sobre..."</p>
+                </div>
+
+                {/* Success Badge - Center Right */}
+                <div className="absolute top-1/2 -right-2 md:-right-6 -translate-y-1/2 z-20">
+                  <div className="w-12 h-12 rounded-full bg-green-500 flex items-center justify-center shadow-lg shadow-green-500/30">
+                    <Check className="w-6 h-6 text-white" />
                   </div>
                 </div>
               </div>
@@ -320,65 +376,90 @@ const LandingPage = (): JSX.Element => {
         </div>
       </section>
 
-      {/* ========== CTA / CONTACT SECTION ========== */}
-      <section className="relative py-24 lg:py-32 cta-gradient overflow-hidden">
-        <div className="pattern-dots absolute inset-0" />
+      {/* Globe / Contact Section */}
+      <section id="tools" className="relative py-32 bg-[#0a1929] overflow-hidden">
+        {/* Background Glow */}
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-[#1a56db]/20 rounded-full blur-[150px]"></div>
         
-        <div className="relative z-10 max-w-4xl mx-auto px-6 md:px-12 lg:px-20 text-center">
-          {/* Globe Icon */}
-          <div className="w-24 h-24 rounded-full bg-gradient-to-br from-white/20 to-white/5 flex items-center justify-center mx-auto mb-8 border border-white/20">
-            <Globe className="w-12 h-12 text-white" />
+        <div className="relative z-10 max-w-7xl mx-auto px-6">
+          {/* Giant Globe Placeholder */}
+          <div className="relative w-full max-w-[600px] mx-auto aspect-square mb-16">
+            <div className="absolute inset-0 rounded-full bg-gradient-to-br from-[#1a56db] to-[#0d47a1] opacity-80">
+              {/* Globe Lines */}
+              <div className="absolute inset-8 rounded-full border border-white/10"></div>
+              <div className="absolute inset-16 rounded-full border border-white/10"></div>
+              <div className="absolute inset-24 rounded-full border border-white/10"></div>
+              
+              {/* Horizontal Lines */}
+              <div className="absolute top-1/4 left-0 right-0 h-[1px] bg-white/10"></div>
+              <div className="absolute top-1/2 left-0 right-0 h-[1px] bg-white/10"></div>
+              <div className="absolute top-3/4 left-0 right-0 h-[1px] bg-white/10"></div>
+              
+              {/* Vertical Center Line */}
+              <div className="absolute top-0 bottom-0 left-1/2 w-[1px] bg-white/10"></div>
+              
+              {/* Connection Points */}
+              <div className="absolute top-[20%] left-[30%] w-3 h-3 rounded-full bg-green-400 animate-pulse shadow-lg shadow-green-400/50"></div>
+              <div className="absolute top-[40%] right-[25%] w-3 h-3 rounded-full bg-yellow-400 animate-pulse shadow-lg shadow-yellow-400/50"></div>
+              <div className="absolute bottom-[30%] left-[40%] w-3 h-3 rounded-full bg-[#60a5fa] animate-pulse shadow-lg shadow-[#60a5fa]/50"></div>
+              <div className="absolute top-[60%] right-[40%] w-2 h-2 rounded-full bg-white animate-pulse"></div>
+              <div className="absolute bottom-[40%] right-[30%] w-2 h-2 rounded-full bg-purple-400 animate-pulse"></div>
+            </div>
+            
+            {/* Globe Icon in Center */}
+            <div className="absolute inset-0 flex items-center justify-center">
+              <Globe className="w-24 h-24 text-white/20" />
+            </div>
           </div>
-          
-          <h2 className="text-3xl md:text-4xl lg:text-5xl font-bold text-white mb-6">
-            Cresça Além das{" "}
-            <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-200 to-cyan-200">
-              Fronteiras
-            </span>
-          </h2>
-          
-          <p className="text-lg md:text-xl text-white/70 mb-10 max-w-2xl mx-auto">
-            Seja atendendo clientes locais ou internacionais, ChatGo torna tudo simples, rápido, seguro e sem complicações.
-          </p>
-          
-          <div className="flex flex-col sm:flex-row items-center gap-4 justify-center">
-            <Link to="/auth">
-              <Button size="lg" className="bg-white text-primary hover:bg-white/90 px-8 py-6 text-lg font-semibold shadow-xl">
-                Começar Gratuitamente
-                <ArrowRight className="ml-2 w-5 h-5" />
-              </Button>
-            </Link>
-            <Button size="lg" variant="outline" className="border-white/30 text-white hover:bg-white/10 px-8 py-6 text-lg">
-              Falar com Especialista
-            </Button>
+
+          {/* Content Below Globe */}
+          <div className="text-center">
+            <h2 className="text-4xl md:text-5xl lg:text-6xl font-black text-white leading-tight mb-6">
+              CRESÇA ALÉM DAS<br />
+              <span className="text-[#60a5fa]">FRONTEIRAS</span> COM CHATGO
+            </h2>
+
+            <p className="text-lg text-white/60 max-w-2xl mx-auto mb-10">
+              Transforme suas conversas em oportunidades de negócio. Com a ChatGo, você atende clientes, processa pagamentos e escala seu negócio globalmente.
+            </p>
+
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+              <Link to="/trial">
+                <Button className="bg-white text-[#0a1929] hover:bg-white/90 rounded-full px-8 py-6 text-lg font-bold">
+                  Começar Grátis
+                  <ArrowRight className="w-5 h-5 ml-2" />
+                </Button>
+              </Link>
+              <Link to="/pricing">
+                <Button variant="outline" className="border-white/30 text-white hover:bg-white/10 rounded-full px-8 py-6 text-lg">
+                  Ver Planos
+                </Button>
+              </Link>
+            </div>
           </div>
-          
-          <p className="text-white/50 text-sm mt-8">
-            Sem cartão de crédito • Configuração em 2 minutos • Suporte 24/7
-          </p>
         </div>
       </section>
 
-      {/* ========== FOOTER ========== */}
-      <footer className="bg-[hsl(var(--landing-dark))] py-12">
-        <div className="max-w-7xl mx-auto px-6 md:px-12 lg:px-20">
+      {/* Footer */}
+      <footer className="bg-[#0a1929] border-t border-white/10 py-12">
+        <div className="max-w-7xl mx-auto px-6">
           <div className="flex flex-col md:flex-row items-center justify-between gap-6">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[hsl(var(--landing-whatsapp))] to-emerald-600 flex items-center justify-center">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 bg-[#1a56db] rounded-lg flex items-center justify-center">
                 <MessageCircle className="w-5 h-5 text-white" />
               </div>
-              <span className="text-xl font-bold text-white">CHATGO</span>
+              <span className="text-xl font-bold text-white">ChatGo</span>
             </div>
-            
-            <p className="text-white/50 text-sm">
+
+            <div className="flex items-center gap-8">
+              <a href="#" className="text-white/60 hover:text-white text-sm transition-colors">Termos</a>
+              <a href="#" className="text-white/60 hover:text-white text-sm transition-colors">Privacidade</a>
+              <a href="#" className="text-white/60 hover:text-white text-sm transition-colors">Contato</a>
+            </div>
+
+            <p className="text-white/40 text-sm">
               © 2024 ChatGo. Todos os direitos reservados.
             </p>
-            
-            <div className="flex items-center gap-6">
-              <a href="#" className="text-white/50 hover:text-white text-sm transition-colors">Termos</a>
-              <a href="#" className="text-white/50 hover:text-white text-sm transition-colors">Privacidade</a>
-              <a href="#" className="text-white/50 hover:text-white text-sm transition-colors">Contato</a>
-            </div>
           </div>
         </div>
       </footer>
