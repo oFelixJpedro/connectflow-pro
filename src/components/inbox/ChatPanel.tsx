@@ -33,6 +33,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { AssignButton } from './AssignButton';
+import { BlurredChatOverlay } from './BlurredChatOverlay';
 import { ConversationActions } from './ConversationActions';
 import { MessageInputBlocker, useMessageBlocker } from './MessageInputBlocker';
 import { AudioPlayer } from './AudioPlayer';
@@ -90,6 +91,9 @@ interface ChatPanelProps {
   isLoadingMessages?: boolean;
   isSendingMessage?: boolean;
   isRestricted?: boolean;
+  showBlurOverlay?: boolean;
+  onTakeOverConversation?: () => void;
+  isTakingOver?: boolean;
 }
 
 const statusIcons: Record<string, React.ReactNode> = {
@@ -124,6 +128,9 @@ export function ChatPanel({
   isLoadingMessages = false,
   isSendingMessage = false,
   isRestricted = false,
+  showBlurOverlay = false,
+  onTakeOverConversation,
+  isTakingOver = false,
 }: ChatPanelProps) {
   const { user, userRole, profile } = useAuth();
   const [inputValue, setInputValue] = useState('');
@@ -1410,10 +1417,22 @@ export function ChatPanel({
         className="flex-1 flex flex-col overflow-hidden"
       >
       <div className="flex-1 relative overflow-hidden">
+        {/* Blur overlay for non-assigned conversations */}
+        {showBlurOverlay && onTakeOverConversation && (
+          <BlurredChatOverlay
+            conversation={conversation}
+            onTakeOver={onTakeOverConversation}
+            isLoading={isTakingOver}
+          />
+        )}
+        
         <div 
           ref={scrollContainerRef}
           onScroll={checkScrollPosition}
-          className="h-full overflow-y-auto px-4"
+          className={cn(
+            "h-full overflow-y-auto px-4",
+            showBlurOverlay && "filter blur-md pointer-events-none select-none"
+          )}
         >
           {isLoadingMessages ? (
             <div className="flex items-center justify-center h-full">
