@@ -268,7 +268,7 @@ export default function CommercialManager() {
           onClose={() => navigate('/dashboard')}
           featureName="Gerente Comercial"
           featureDescription="O Gerente Comercial é um recurso premium que oferece análises avançadas de performance da sua equipe de vendas, insights de IA, relatórios detalhados e muito mais."
-          price="R$ 197,00"
+          price="R$ 247,00"
           benefits={[
             "Dashboard em tempo real com métricas de vendas",
             "Análise de qualidade de atendimento por IA",

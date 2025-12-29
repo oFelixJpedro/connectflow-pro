@@ -97,8 +97,8 @@ export default function PricingPage() {
   
   const calculateTotal = () => {
     let total = currentPlan.price;
-    total += extraConnections * 97;
-    if (includeCommercialManager) total += 197;
+    total += extraConnections * 227;
+    if (includeCommercialManager) total += 247;
     return total;
   };
 
@@ -252,7 +252,7 @@ export default function PricingPage() {
                   </div>
                   <div>
                     <h3 className="font-semibold text-foreground">Conexões WhatsApp Adicionais</h3>
-                    <p className="text-sm text-muted-foreground">R$97/mês por conexão</p>
+                    <p className="text-sm text-muted-foreground">R$227/mês por conexão</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
@@ -285,7 +285,7 @@ export default function PricingPage() {
                   </div>
                   <div>
                     <h3 className="font-semibold text-foreground">Gerente Comercial</h3>
-                    <p className="text-sm text-muted-foreground">Relatórios avançados e análise de IA • R$197/mês</p>
+                    <p className="text-sm text-muted-foreground">Relatórios avançados e análise de IA • R$247/mês</p>
                   </div>
                 </div>
                 <Switch 
@@ -311,14 +311,14 @@ export default function PricingPage() {
               {extraConnections > 0 && (
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">{extraConnections}x Conexão adicional</span>
-                  <span className="text-foreground">R${(extraConnections * 97)}/mês</span>
+                  <span className="text-foreground">R${(extraConnections * 227)}/mês</span>
                 </div>
               )}
               
               {includeCommercialManager && (
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Gerente Comercial</span>
-                  <span className="text-foreground">R$197/mês</span>
+                  <span className="text-foreground">R$247/mês</span>
                 </div>
               )}
               
