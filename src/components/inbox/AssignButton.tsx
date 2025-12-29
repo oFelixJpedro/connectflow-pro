@@ -77,8 +77,8 @@ export function AssignButton({
   };
 
   const handleClick = () => {
-    // Se é admin/owner e está atribuída a outro, mostrar confirmação
-    if (isAdminOrOwner && isAssigned && !isAssignedToMe) {
+    // Se está atribuída a outro, mostrar confirmação (para qualquer usuário agora)
+    if (isAssigned && !isAssignedToMe) {
       setShowConfirmDialog(true);
     } else {
       handleAssign();
@@ -131,66 +131,49 @@ export function AssignButton({
     );
   }
 
-  // Está atribuída a outro - só admin/owner podem assumir
-  if (isAdminOrOwner) {
-    return (
-      <>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button 
-              size="sm" 
-              variant="secondary" 
-              onClick={handleClick} 
-              disabled={isLoading} 
-              className="gap-2"
-            >
-              {isLoading ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <UserCheck className="w-4 h-4" />
-              )}
-              {isLoading ? 'Assumindo...' : 'Assumir conversa'}
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>
-            <p>Assumir esta conversa de {assignedUserName}</p>
-          </TooltipContent>
-        </Tooltip>
-
-        <AlertDialog open={showConfirmDialog} onOpenChange={setShowConfirmDialog}>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Assumir conversa atribuída?</AlertDialogTitle>
-              <AlertDialogDescription>
-                Esta conversa está atualmente atribuída a <strong>{assignedUserName}</strong>. 
-                Ao assumir, você se tornará o responsável pelo atendimento e o agente anterior 
-                será notificado.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel disabled={isLoading}>Cancelar</AlertDialogCancel>
-              <AlertDialogAction onClick={handleAssign} disabled={isLoading}>
-                {isLoading ? 'Assumindo...' : 'Assumir conversa'}
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-      </>
-    );
-  }
-
-  // Agente comum - não pode assumir conversa de outro
+  // Está atribuída a outro - qualquer usuário pode assumir agora
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <Button size="sm" variant="outline" disabled className="gap-2">
-          <Lock className="w-4 h-4" />
-          Atribuída
-        </Button>
-      </TooltipTrigger>
-      <TooltipContent>
-        <p>Esta conversa está sendo atendida por {assignedUserName}</p>
-      </TooltipContent>
-    </Tooltip>
+    <>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button 
+            size="sm" 
+            variant="secondary" 
+            onClick={handleClick} 
+            disabled={isLoading} 
+            className="gap-2"
+          >
+            {isLoading ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <UserCheck className="w-4 h-4" />
+            )}
+            {isLoading ? 'Assumindo...' : 'Assumir conversa'}
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>
+          <p>Assumir esta conversa de {assignedUserName}</p>
+        </TooltipContent>
+      </Tooltip>
+
+      <AlertDialog open={showConfirmDialog} onOpenChange={setShowConfirmDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Assumir conversa atribuída?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Esta conversa está atualmente atribuída a <strong>{assignedUserName}</strong>. 
+              Ao assumir, você se tornará o responsável pelo atendimento e o agente anterior 
+              será notificado.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isLoading}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={handleAssign} disabled={isLoading}>
+              {isLoading ? 'Assumindo...' : 'Assumir conversa'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }

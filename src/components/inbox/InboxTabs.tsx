@@ -41,8 +41,9 @@ export function InboxTabs({
       tabs.push({ id: 'fila', label: 'Fila' });
     }
 
-    // Show "Todas" only for owner and admin
-    if (role === 'owner' || role === 'admin') {
+    // Show "Todas" for everyone except viewer
+    // Agents will see conversations with blur if not assigned to them
+    if (role !== 'viewer') {
       tabs.push({ id: 'todas', label: 'Todas' });
     }
 

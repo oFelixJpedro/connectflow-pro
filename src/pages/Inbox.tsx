@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { ConversationList } from '@/components/inbox/ConversationList';
 import { ChatPanel } from '@/components/inbox/ChatPanel';
@@ -19,7 +19,7 @@ import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent } from '@/components/ui/sheet';
 
 export default function Inbox() {
-  const { user } = useAuth();
+  const { user, userRole } = useAuth();
   const isMobile = useIsMobile();
   const [searchParams, setSearchParams] = useSearchParams();
   const { 
@@ -37,9 +37,12 @@ export default function Inbox() {
 
   const [hasNoConnections, setHasNoConnections] = useState(false);
   const [mobileView, setMobileView] = useState<'list' | 'chat' | 'contact'>('list');
+  const [isTakingOver, setIsTakingOver] = useState(false);
   const scrollToMessageRef = useRef<((messageId: string) => void) | null>(null);
   const { tags } = useTagsData();
   const hasProcessedUrlConversation = useRef(false);
+  
+  const isAdminOrOwner = userRole?.role === 'owner' || userRole?.role === 'admin';
 
   const handleRegisterScrollToMessage = useCallback((fn: (messageId: string) => void) => {
     scrollToMessageRef.current = fn;
@@ -48,6 +51,7 @@ export default function Inbox() {
   const handleScrollToMessage = useCallback((messageId: string) => {
     scrollToMessageRef.current?.(messageId);
   }, []);
+  
   const {
     conversations,
     selectedConversation,
@@ -65,6 +69,20 @@ export default function Inbox() {
     loadConversations,
     sendReaction,
   } = useInboxData();
+
+  // Calculate if blur should be shown for the selected conversation
+  const shouldShowBlur = useMemo(() => {
+    if (!selectedConversation) return false;
+    if (isAdminOrOwner) return false; // Admin/owner never see blur
+    
+    // Only show blur in "Todas" tab for conversations not assigned to current user
+    if (inboxColumn === 'todas') {
+      const isAssignedToMe = selectedConversation.assignedUserId === user?.id;
+      return !isAssignedToMe;
+    }
+    
+    return false;
+  }, [selectedConversation, isAdminOrOwner, inboxColumn, user?.id]);
 
   // Handle mobile view changes when conversation is selected
   useEffect(() => {
@@ -161,6 +179,42 @@ export default function Inbox() {
     }
   };
 
+  // Handle taking over a conversation (when blur overlay button is clicked)
+  const handleTakeOverConversation = useCallback(async () => {
+    if (!selectedConversation) return;
+    
+    setIsTakingOver(true);
+    try {
+      const response = await supabase.functions.invoke('conversation-management', {
+        body: {
+          action: 'assign',
+          conversationId: selectedConversation.id,
+        },
+      });
+
+      if (response.error) {
+        throw new Error(response.data?.error || 'Erro ao assumir conversa');
+      }
+
+      toast({
+        title: 'Conversa assumida',
+        description: 'Agora você é o responsável por esta conversa.',
+      });
+
+      // Reload conversations to update UI (blur will be removed automatically)
+      loadConversations();
+    } catch (error: any) {
+      console.error('Erro ao assumir conversa:', error);
+      toast({
+        title: 'Erro ao assumir conversa',
+        description: error.message || 'Ocorreu um erro inesperado',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsTakingOver(false);
+    }
+  }, [selectedConversation, loadConversations]);
+
   const handleFilterChange = (filters: ConversationFilters) => {
     setConversationFilters(filters);
   };
@@ -255,6 +309,9 @@ export default function Inbox() {
                 isLoadingMessages={isLoadingMessages}
                 isSendingMessage={isSendingMessage}
                 isRestricted={isRestricted}
+                showBlurOverlay={shouldShowBlur}
+                onTakeOverConversation={handleTakeOverConversation}
+                isTakingOver={isTakingOver}
               />
             </div>
           </div>
@@ -341,6 +398,9 @@ export default function Inbox() {
           isLoadingMessages={isLoadingMessages}
           isSendingMessage={isSendingMessage}
           isRestricted={isRestricted}
+          showBlurOverlay={shouldShowBlur}
+          onTakeOverConversation={handleTakeOverConversation}
+          isTakingOver={isTakingOver}
         />
       ) : (
         <div className="flex-1 flex items-center justify-center bg-muted/30">
