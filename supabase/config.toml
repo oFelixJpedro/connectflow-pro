@@ -134,3 +134,6 @@ verify_jwt = false
 
 [functions.supabase-stats]
 verify_jwt = false
+
+[functions.commercial-daily-processor]
+verify_jwt = false
