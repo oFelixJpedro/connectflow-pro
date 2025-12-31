@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Loader2, Shield, ShieldCheck, UserCheck, Eye, Info, ChevronDown, ChevronUp, PenLine } from 'lucide-react';
+import { Loader2, Shield, ShieldCheck, UserCheck, Eye, Info, ChevronDown, ChevronUp, PenLine, TrendingUp } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
@@ -141,6 +141,10 @@ export function UserConfigDrawer({ open, onClose, member, onSaveSuccess, isOwner
   const [originalSignature, setOriginalSignature] = useState<string>('');
   const [originalSignatureEnabled, setOriginalSignatureEnabled] = useState<boolean>(false);
 
+  // Commercial analysis state
+  const [commercialAnalysisEnabled, setCommercialAnalysisEnabled] = useState<boolean>(false);
+  const [originalCommercialAnalysisEnabled, setOriginalCommercialAnalysisEnabled] = useState<boolean>(false);
+
   // Original state for comparison
   const [originalRole, setOriginalRole] = useState<string>('agent');
   const [originalAccess, setOriginalAccess] = useState<ConnectionAccess[]>([]);
@@ -156,8 +160,9 @@ export function UserConfigDrawer({ open, onClose, member, onSaveSuccess, isOwner
     const roleChanged = selectedRole !== originalRole;
     const accessChanged = serializeAccess(connectionAccess) !== serializeAccess(originalAccess);
     const signatureChanged = signature !== originalSignature || signatureEnabled !== originalSignatureEnabled;
-    setHasChanges(roleChanged || accessChanged || signatureChanged);
-  }, [selectedRole, connectionAccess, originalRole, originalAccess, signature, originalSignature, signatureEnabled, originalSignatureEnabled]);
+    const commercialChanged = commercialAnalysisEnabled !== originalCommercialAnalysisEnabled;
+    setHasChanges(roleChanged || accessChanged || signatureChanged || commercialChanged);
+  }, [selectedRole, connectionAccess, originalRole, originalAccess, signature, originalSignature, signatureEnabled, originalSignatureEnabled, commercialAnalysisEnabled, originalCommercialAnalysisEnabled]);
 
   const loadData = async () => {
     if (!member || !profile?.company_id) return;
@@ -207,16 +212,19 @@ export function UserConfigDrawer({ open, onClose, member, onSaveSuccess, isOwner
       // Load signature data from profiles table
       const { data: profileData } = await supabase
         .from('profiles')
-        .select('signature, signature_enabled')
+        .select('signature, signature_enabled, commercial_analysis_enabled')
         .eq('id', member.id)
         .single();
 
       const currentSignature = profileData?.signature || '';
       const currentSignatureEnabled = profileData?.signature_enabled || false;
+      const currentCommercialAnalysisEnabled = (profileData as any)?.commercial_analysis_enabled || false;
       setSignature(currentSignature);
       setSignatureEnabled(currentSignatureEnabled);
       setOriginalSignature(currentSignature);
       setOriginalSignatureEnabled(currentSignatureEnabled);
+      setCommercialAnalysisEnabled(currentCommercialAnalysisEnabled);
+      setOriginalCommercialAnalysisEnabled(currentCommercialAnalysisEnabled);
       setOriginalRole(currentRole);
 
       // Load user's connection assignments
@@ -367,16 +375,17 @@ export function UserConfigDrawer({ open, onClose, member, onSaveSuccess, isOwner
       }
 
       // Update signature settings if changed
-      if (signature !== originalSignature || signatureEnabled !== originalSignatureEnabled) {
-        const { error: signatureError } = await supabase
+      if (signature !== originalSignature || signatureEnabled !== originalSignatureEnabled || commercialAnalysisEnabled !== originalCommercialAnalysisEnabled) {
+        const { error: profileUpdateError } = await supabase
           .from('profiles')
           .update({
             signature: signature.trim() || null,
-            signature_enabled: signatureEnabled
+            signature_enabled: signatureEnabled,
+            commercial_analysis_enabled: commercialAnalysisEnabled
           })
           .eq('id', member.id);
 
-        if (signatureError) throw signatureError;
+        if (profileUpdateError) throw profileUpdateError;
       }
 
       // 2. Update connection access
@@ -699,6 +708,40 @@ export function UserConfigDrawer({ open, onClose, member, onSaveSuccess, isOwner
                     })
                   )}
                 </div>
+              )}
+            </div>
+
+            <Separator />
+
+            {/* Commercial Manager Analysis Toggle */}
+            <div className="space-y-4">
+              <div className="flex items-center gap-2">
+                <TrendingUp className="w-4 h-4 text-muted-foreground" />
+                <Label className="text-sm font-medium">Gerente Comercial</Label>
+              </div>
+              
+              <div className="flex items-center justify-between p-4 bg-muted/50 rounded-lg">
+                <div className="flex-1 space-y-1">
+                  <Label className="font-medium">Incluir nas Análises</Label>
+                  <p className="text-sm text-muted-foreground">
+                    Quando ativado, as conversas deste atendente serão incluídas 
+                    nas análises e métricas do gerente comercial.
+                  </p>
+                  <p className="text-xs text-muted-foreground/70">
+                    Desativado = Zero custo de IA para este usuário
+                  </p>
+                </div>
+                <Switch
+                  checked={commercialAnalysisEnabled}
+                  onCheckedChange={setCommercialAnalysisEnabled}
+                />
+              </div>
+              
+              {!commercialAnalysisEnabled && (
+                <p className="text-xs text-muted-foreground bg-background p-2 rounded border">
+                  ℹ️ Este usuário está excluído das análises do Gerente Comercial.
+                  Suas conversas não aparecerão no dashboard nem consumirão recursos de IA.
+                </p>
               )}
             </div>
 

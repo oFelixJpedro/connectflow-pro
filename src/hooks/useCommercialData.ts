@@ -1063,11 +1063,12 @@ export function useCommercialData(filter?: CommercialFilter) {
           }
         }
 
-        // Fetch agents
+        // Fetch agents - ONLY those with commercial_analysis_enabled = true
         const { data: agents, error: agentsError } = await supabase
           .from('profiles')
-          .select('id, full_name, avatar_url')
-          .eq('company_id', profile.company_id);
+          .select('id, full_name, avatar_url, commercial_analysis_enabled')
+          .eq('company_id', profile.company_id)
+          .eq('commercial_analysis_enabled', true);
 
         if (agentsError) throw agentsError;
 
