@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { TrendingUp, LayoutDashboard, Loader2, Radio, Library, Globe, Wifi, Users, Calendar, ChevronDown, Search, X, Check, RefreshCw } from 'lucide-react';
+import { TrendingUp, LayoutDashboard, Loader2, Radio, Library, Globe, Wifi, Users, Calendar, ChevronDown, Search, X, Check } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -55,7 +55,7 @@ export default function CommercialManager() {
   const [customStartDate, setCustomStartDate] = useState<Date | undefined>();
   const [customEndDate, setCustomEndDate] = useState<Date | undefined>();
   const [datePickerOpen, setDatePickerOpen] = useState(false);
-  const { loading, data, liveMetrics, isAdmin, insightsLoading, refreshData, lastUpdated, lastInsightsUpdate } = useCommercialData(filter);
+  const { loading, data, liveMetrics, isAdmin, insightsLoading, lastUpdated, lastInsightsUpdate } = useCommercialData(filter);
   const [viewMode, setViewMode] = useState<'commercial' | 'dashboard'>('commercial');
   const [reportsModalOpen, setReportsModalOpen] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -315,16 +315,6 @@ export default function CommercialManager() {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={refreshData}
-              disabled={loading || insightsLoading}
-              className="flex items-center gap-2"
-            >
-              <RefreshCw className={cn("w-4 h-4", (loading || insightsLoading) && "animate-spin")} />
-              <span className="hidden sm:inline">Atualizar</span>
-            </Button>
             <Button
               variant="outline"
               size="sm"
