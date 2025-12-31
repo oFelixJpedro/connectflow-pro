@@ -74,6 +74,7 @@ import { MentionPicker, MentionText } from '@/components/mentions';
 import { useMentions, parseMentionsFromText } from '@/hooks/useMentions';
 import { LinkifyText } from '@/components/ui/linkify-text';
 import { useContactCRM } from '@/hooks/useContactCRM';
+import { uploadMediaToStorage, createPendingMessage, dbMessageToFrontend } from '@/lib/mediaUpload';
 
 interface ChatPanelProps {
   conversation: Conversation | null;
@@ -526,57 +527,64 @@ export function ChatPanel({
 
   // Send image handler
   const handleSendImage = async (file: File, caption: string) => {
-    if (!conversation) return;
+    if (!conversation || !profile?.company_id || !user?.id) return;
 
     setIsSendingImage(true);
     try {
-      // Convert file to base64
-      const reader = new FileReader();
-      const base64Promise = new Promise<string>((resolve, reject) => {
-        reader.onload = () => resolve(reader.result as string);
-        reader.onerror = reject;
-      });
-      reader.readAsDataURL(file);
-      const base64Data = await base64Promise;
-
-      console.log('📤 Enviando imagem para Edge Function...');
-
-      // Get contact phone from conversation
-      const contactPhone = conversation.contact?.phoneNumber || '';
-
-      const { data, error } = await supabase.functions.invoke('send-whatsapp-image', {
-        body: {
-          imageData: base64Data,
-          fileName: file.name,
-          mimeType: file.type,
-          conversationId: conversation.id,
-          connectionId: conversation.whatsappConnectionId,
-          contactPhoneNumber: contactPhone,
-          caption: caption || undefined,
-          quotedMessageId: replyingTo?.id,
-        }
-      });
-
-      if (error) throw error;
-
-      if (!data?.success) {
-        throw new Error(data?.error || 'Erro ao enviar imagem');
+      console.log('📤 [Optimistic] Uploading image to Storage...');
+      
+      // 1. Upload directly to Storage (fast)
+      const uploadResult = await uploadMediaToStorage(file, profile.company_id, conversation.id);
+      if (!uploadResult.success || !uploadResult.url) {
+        throw new Error(uploadResult.error || 'Upload failed');
       }
 
-      console.log('✅ Imagem enviada com sucesso!');
-      toast({
-        title: 'Imagem enviada',
-        description: 'A imagem foi enviada com sucesso.',
+      // 2. Create pending message in DB
+      const dbMessage = await createPendingMessage({
+        conversationId: conversation.id,
+        connectionId: conversation.whatsappConnectionId,
+        contactId: conversation.contactId,
+        messageType: 'image',
+        mediaUrl: uploadResult.url,
+        content: caption || '',
+        metadata: {
+          fileName: file.name,
+          fileSize: file.size,
+          mimeType: file.type,
+          storagePath: uploadResult.storagePath,
+        },
+        quotedMessageId: replyingTo?.id,
+        userId: user.id,
       });
 
+      // 3. Add to UI immediately (optimistic update)
+      const frontendMessage = dbMessageToFrontend(dbMessage);
+      if (onMessagesUpdate) {
+        onMessagesUpdate([...messages, frontendMessage]);
+      }
+
+      console.log('✅ Image visible in chat, sending to WhatsApp in background...');
+
+      // 4. Close modal and clear state BEFORE sending to WhatsApp
       setImageFile(null);
       setIsImagePreviewOpen(false);
       setReplyingTo(null);
-      onRefresh?.();
+
+      // 5. Send to WhatsApp in background (don't await)
+      supabase.functions.invoke('send-whatsapp-image-v2', {
+        body: {
+          messageId: dbMessage.id,
+          mediaUrl: uploadResult.url,
+          contactPhoneNumber: conversation.contact?.phoneNumber || '',
+          caption: caption || undefined,
+        }
+      }).then(({ error }) => {
+        if (error) console.error('❌ WhatsApp send failed:', error);
+      });
 
     } catch (error: any) {
       console.error('❌ Erro ao enviar imagem:', error);
-      throw error; // Re-throw to be handled by ImagePreviewModal
+      throw error;
     } finally {
       setIsSendingImage(false);
     }

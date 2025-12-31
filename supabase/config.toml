@@ -57,6 +57,18 @@ verify_jwt = true
 [functions.send-whatsapp-document]
 verify_jwt = true
 
+[functions.send-whatsapp-audio-v2]
+verify_jwt = true
+
+[functions.send-whatsapp-image-v2]
+verify_jwt = true
+
+[functions.send-whatsapp-video-v2]
+verify_jwt = true
+
+[functions.send-whatsapp-document-v2]
+verify_jwt = true
+
 [functions.send-whatsapp-reaction]
 verify_jwt = true
 
