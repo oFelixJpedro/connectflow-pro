@@ -28,6 +28,7 @@ import {
   MapPin,
   Briefcase
 } from 'lucide-react';
+import { LinkifyText } from '@/components/ui/linkify-text';
 import {
   Tooltip,
   TooltipContent,
@@ -814,9 +815,16 @@ export function ContactPanel({ conversation, onClose, onContactUpdated, onScroll
                         </div>
                       ) : (
                         <div className="flex items-center gap-1">
-                          <p className="text-foreground truncate">
-                            {value || <span className="text-muted-foreground italic">Não definido</span>}
-                          </p>
+                          {value ? (
+                            <div className="overflow-x-auto max-w-[200px] scrollbar-thin scrollbar-thumb-muted scrollbar-track-transparent">
+                              <LinkifyText 
+                                text={value} 
+                                className="text-foreground whitespace-nowrap"
+                              />
+                            </div>
+                          ) : (
+                            <span className="text-muted-foreground italic">Não definido</span>
+                          )}
                           <Button
                             variant="ghost"
                             size="icon"
