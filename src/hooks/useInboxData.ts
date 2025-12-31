@@ -1609,6 +1609,7 @@ export function useInboxData() {
           const newTags = (updatedContact.tags as string[]) || [];
           const newName = updatedContact.name as string | null;
           const newAvatarUrl = updatedContact.avatar_url as string | null;
+          const newCustomFields = (updatedContact.custom_fields as Record<string, unknown>) || {};
           
           // Atualizar o contato na lista de conversas
           setConversations((prev) => 
@@ -1625,6 +1626,7 @@ export function useInboxData() {
                   avatarUrl: updatedContact.avatar_url !== undefined 
                     ? (newAvatarUrl || undefined) 
                     : c.contact.avatarUrl,
+                  customFields: newCustomFields,
                 },
               };
             })
@@ -1644,6 +1646,7 @@ export function useInboxData() {
                 avatarUrl: updatedContact.avatar_url !== undefined 
                   ? (newAvatarUrl || undefined) 
                   : prev.contact.avatarUrl,
+                customFields: newCustomFields,
               } : prev.contact,
             };
           });

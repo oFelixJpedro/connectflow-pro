@@ -164,13 +164,19 @@ export function ContactPanel({ conversation, onClose, onContactUpdated, onScroll
       setNotes(contact.notes || '');
       setContactTags(contact.tags || []);
       setLastInteraction(contact.lastInteractionAt || null);
-      setCustomFieldValues((contact.customFields as Record<string, string>) || {});
       loadAvailableTags();
       loadConversationHistory();
       loadChatNotesCount();
       loadCustomFieldDefinitions();
     }
   }, [contact?.id]);
+
+  // Sync custom fields when they change (real-time updates)
+  useEffect(() => {
+    if (contact) {
+      setCustomFieldValues((contact.customFields as Record<string, string>) || {});
+    }
+  }, [contact?.id, contact?.customFields]);
 
   // Check if user is admin or owner
   useEffect(() => {
