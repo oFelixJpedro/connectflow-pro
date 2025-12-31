@@ -1742,6 +1742,56 @@ export type Database = {
           },
         ]
       }
+      custom_field_definitions: {
+        Row: {
+          active: boolean | null
+          company_id: string
+          created_at: string | null
+          field_key: string
+          field_type: string
+          icon: string | null
+          id: string
+          is_required: boolean | null
+          name: string
+          position: number | null
+          updated_at: string | null
+        }
+        Insert: {
+          active?: boolean | null
+          company_id: string
+          created_at?: string | null
+          field_key: string
+          field_type?: string
+          icon?: string | null
+          id?: string
+          is_required?: boolean | null
+          name: string
+          position?: number | null
+          updated_at?: string | null
+        }
+        Update: {
+          active?: boolean | null
+          company_id?: string
+          created_at?: string | null
+          field_key?: string
+          field_type?: string
+          icon?: string | null
+          id?: string
+          is_required?: boolean | null
+          name?: string
+          position?: number | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "custom_field_definitions_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       department_users: {
         Row: {
           created_at: string | null

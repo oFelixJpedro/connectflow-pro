@@ -18,7 +18,15 @@ import {
   Sparkles,
   Pencil,
   Ban,
-  ShieldCheck
+  ShieldCheck,
+  Settings,
+  FileText,
+  Hash,
+  Link,
+  Building,
+  User,
+  MapPin,
+  Briefcase
 } from 'lucide-react';
 import {
   Tooltip,
@@ -69,6 +77,7 @@ import { logConversationEvent } from '@/lib/conversationHistory';
 import { useAuth } from '@/contexts/AuthContext';
 import { AIAgentActions } from './AIAgentActions';
 import { ChatSummary } from './ChatSummary';
+import { ManageCustomFieldsModal } from './ManageCustomFieldsModal';
 interface ContactPanelProps {
   conversation: Conversation | null;
   onClose: () => void;
@@ -87,6 +96,15 @@ interface ConversationHistory {
   status: string;
   createdAt: string;
   messageCount: number;
+}
+
+interface CustomFieldDefinition {
+  id: string;
+  name: string;
+  field_key: string;
+  field_type: string;
+  icon: string;
+  position: number;
 }
 
 export function ContactPanel({ conversation, onClose, onContactUpdated, onScrollToMessage }: ContactPanelProps) {
@@ -127,6 +145,14 @@ export function ContactPanel({ conversation, onClose, onContactUpdated, onScroll
   // Last interaction state - for real-time updates
   const [lastInteraction, setLastInteraction] = useState<string | null>(null);
 
+  // Custom fields state
+  const [customFieldDefs, setCustomFieldDefs] = useState<CustomFieldDefinition[]>([]);
+  const [customFieldValues, setCustomFieldValues] = useState<Record<string, string>>({});
+  const [editingFieldKey, setEditingFieldKey] = useState<string | null>(null);
+  const [editingFieldValue, setEditingFieldValue] = useState('');
+  const [manageFieldsModalOpen, setManageFieldsModalOpen] = useState(false);
+  const [isAdminOrOwner, setIsAdminOrOwner] = useState(false);
+
   const contact = conversation?.contact;
   
   // Scheduled messages count
@@ -138,11 +164,28 @@ export function ContactPanel({ conversation, onClose, onContactUpdated, onScroll
       setNotes(contact.notes || '');
       setContactTags(contact.tags || []);
       setLastInteraction(contact.lastInteractionAt || null);
+      setCustomFieldValues((contact.customFields as Record<string, string>) || {});
       loadAvailableTags();
       loadConversationHistory();
       loadChatNotesCount();
+      loadCustomFieldDefinitions();
     }
   }, [contact?.id]);
+
+  // Check if user is admin or owner
+  useEffect(() => {
+    const checkRole = async () => {
+      if (!profile?.id) return;
+      const { data } = await supabase
+        .from('user_roles')
+        .select('role')
+        .eq('user_id', profile.id)
+        .maybeSingle();
+      
+      setIsAdminOrOwner(data?.role === 'owner' || data?.role === 'admin');
+    };
+    checkRole();
+  }, [profile?.id]);
 
   // Realtime subscription for chat notes count AND last interaction
   useEffect(() => {
@@ -221,6 +264,66 @@ export function ContactPanel({ conversation, onClose, onContactUpdated, onScroll
     } finally {
       setIsLoadingTags(false);
     }
+  };
+
+  const loadCustomFieldDefinitions = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('custom_field_definitions')
+        .select('id, name, field_key, field_type, icon, position')
+        .eq('active', true)
+        .order('position', { ascending: true });
+
+      if (error) throw error;
+      setCustomFieldDefs(data || []);
+    } catch (error) {
+      console.error('[ContactPanel] Erro ao carregar campos personalizados:', error);
+    }
+  };
+
+  const saveCustomFieldValue = async (fieldKey: string, value: string) => {
+    if (!contact?.id) return;
+
+    const newValues = { ...customFieldValues, [fieldKey]: value };
+    setCustomFieldValues(newValues);
+    setEditingFieldKey(null);
+
+    try {
+      const { error } = await supabase
+        .from('contacts')
+        .update({ custom_fields: newValues })
+        .eq('id', contact.id);
+
+      if (error) throw error;
+      
+      toast({
+        title: 'Campo atualizado',
+        description: 'O valor foi salvo com sucesso.',
+      });
+    } catch (error) {
+      console.error('[ContactPanel] Erro ao salvar campo:', error);
+      toast({
+        title: 'Erro ao salvar',
+        description: 'Não foi possível salvar o campo.',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const getFieldIcon = (iconName: string) => {
+    const icons: Record<string, React.ReactNode> = {
+      FileText: <FileText className="w-4 h-4 text-muted-foreground" />,
+      Mail: <Mail className="w-4 h-4 text-muted-foreground" />,
+      Phone: <Phone className="w-4 h-4 text-muted-foreground" />,
+      Calendar: <Calendar className="w-4 h-4 text-muted-foreground" />,
+      Hash: <Hash className="w-4 h-4 text-muted-foreground" />,
+      Link: <Link className="w-4 h-4 text-muted-foreground" />,
+      Building: <Building className="w-4 h-4 text-muted-foreground" />,
+      User: <User className="w-4 h-4 text-muted-foreground" />,
+      MapPin: <MapPin className="w-4 h-4 text-muted-foreground" />,
+      Briefcase: <Briefcase className="w-4 h-4 text-muted-foreground" />,
+    };
+    return icons[iconName] || <FileText className="w-4 h-4 text-muted-foreground" />;
   };
 
   const loadConversationHistory = async () => {
@@ -600,7 +703,20 @@ export function ContactPanel({ conversation, onClose, onContactUpdated, onScroll
 
           {/* Contact Details */}
           <div className="space-y-3">
-            <h5 className="text-sm font-medium text-foreground">Informações</h5>
+            <div className="flex items-center justify-between">
+              <h5 className="text-sm font-medium text-foreground">Informações</h5>
+              {isAdminOrOwner && (
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  className="h-7 px-2"
+                  onClick={() => setManageFieldsModalOpen(true)}
+                >
+                  <Settings className="w-3 h-3 mr-1" />
+                  Campos
+                </Button>
+              )}
+            </div>
             
             <div className="space-y-3">
               <div className="flex items-center gap-3 text-sm">
@@ -644,6 +760,74 @@ export function ContactPanel({ conversation, onClose, onContactUpdated, onScroll
                   <p className="text-foreground">{formatDate(lastInteraction || contact?.lastInteractionAt)}</p>
                 </div>
               </div>
+
+              {/* Custom Fields */}
+              {customFieldDefs.map((field) => {
+                const value = customFieldValues[field.field_key] || '';
+                const isEditing = editingFieldKey === field.field_key;
+                
+                return (
+                  <div key={field.id} className="flex items-center gap-3 text-sm group">
+                    <div className="w-8 h-8 bg-muted rounded-lg flex items-center justify-center">
+                      {getFieldIcon(field.icon)}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs text-muted-foreground">{field.name}</p>
+                      {isEditing ? (
+                        <div className="flex items-center gap-1 mt-1">
+                          <input
+                            type={field.field_type === 'email' ? 'email' : field.field_type === 'number' ? 'number' : 'text'}
+                            className="flex-1 bg-background border border-input rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                            value={editingFieldValue}
+                            onChange={(e) => setEditingFieldValue(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                saveCustomFieldValue(field.field_key, editingFieldValue);
+                              } else if (e.key === 'Escape') {
+                                setEditingFieldKey(null);
+                              }
+                            }}
+                            autoFocus
+                          />
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6"
+                            onClick={() => saveCustomFieldValue(field.field_key, editingFieldValue)}
+                          >
+                            <Check className="w-3 h-3" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6"
+                            onClick={() => setEditingFieldKey(null)}
+                          >
+                            <X className="w-3 h-3" />
+                          </Button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-1">
+                          <p className="text-foreground truncate">
+                            {value || <span className="text-muted-foreground italic">Não definido</span>}
+                          </p>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-5 w-5 opacity-0 group-hover:opacity-100 transition-opacity"
+                            onClick={() => {
+                              setEditingFieldKey(field.field_key);
+                              setEditingFieldValue(value);
+                            }}
+                          >
+                            <Pencil className="w-3 h-3" />
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
 
@@ -955,6 +1139,13 @@ export function ContactPanel({ conversation, onClose, onContactUpdated, onScroll
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Manage Custom Fields Modal */}
+      <ManageCustomFieldsModal
+        open={manageFieldsModalOpen}
+        onOpenChange={setManageFieldsModalOpen}
+        onFieldsChanged={loadCustomFieldDefinitions}
+      />
     </div>
   );
 }
