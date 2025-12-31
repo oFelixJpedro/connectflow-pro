@@ -55,7 +55,7 @@ export default function CommercialManager() {
   const [customStartDate, setCustomStartDate] = useState<Date | undefined>();
   const [customEndDate, setCustomEndDate] = useState<Date | undefined>();
   const [datePickerOpen, setDatePickerOpen] = useState(false);
-  const { loading, data, liveMetrics, isAdmin, insightsLoading, lastUpdated, lastInsightsUpdate } = useCommercialData(filter);
+  const { loading, data, liveMetrics, isAdmin, insightsLoading, lastUpdated } = useCommercialData(filter);
   const [viewMode, setViewMode] = useState<'commercial' | 'dashboard'>('commercial');
   const [reportsModalOpen, setReportsModalOpen] = useState(false);
   const [showLockedModal, setShowLockedModal] = useState(false);
@@ -591,27 +591,17 @@ export default function CommercialManager() {
       />
 
       {/* Insights */}
-      <div className="space-y-2">
-        {lastInsightsUpdate && (
-          <div className="flex items-center gap-2">
-            <Badge variant="secondary" className="text-xs flex items-center gap-1.5">
-              <TrendingUp className="w-3 h-3" />
-              Última atualização dos insights: {format(new Date(lastInsightsUpdate), "HH:mm", { locale: ptBR })}
-            </Badge>
-          </div>
-        )}
-        <InsightsCard
-          loading={loading}
-          insightsLoading={insightsLoading}
-          strengths={data?.strengths || []}
-          weaknesses={data?.weaknesses || []}
-          positivePatterns={data?.positivePatterns || []}
-          negativePatterns={data?.negativePatterns || []}
-          insights={data?.insights || []}
-          criticalIssues={data?.criticalIssues || []}
-          finalRecommendation={data?.finalRecommendation || ''}
-        />
-      </div>
+      <InsightsCard
+        loading={loading}
+        insightsLoading={insightsLoading}
+        strengths={data?.strengths || []}
+        weaknesses={data?.weaknesses || []}
+        positivePatterns={data?.positivePatterns || []}
+        negativePatterns={data?.negativePatterns || []}
+        insights={data?.insights || []}
+        criticalIssues={data?.criticalIssues || []}
+        finalRecommendation={data?.finalRecommendation || ''}
+      />
 
       {/* Reports Modal */}
       <ReportsModal
