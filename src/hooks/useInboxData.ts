@@ -1214,6 +1214,30 @@ export function useInboxData() {
   }, [selectedConnectionId]);
 
   // ============================================================
+  // VISIBILIDADE: Recarregar dados quando app volta ao foco
+  // ============================================================
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        console.log('[useInboxData] Tab voltou ao foco, sincronizando dados...');
+        
+        // Recarregar conversas e contagens
+        loadConversations();
+        loadUnreadCounts();
+        
+        // Se há uma conversa selecionada, recarregar mensagens
+        const currentConversation = selectedConversationRef.current;
+        if (currentConversation?.id) {
+          loadMessages(currentConversation.id);
+        }
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [loadConversations, loadUnreadCounts, loadMessages]);
+
+  // ============================================================
   // REALTIME OTIMIZADO: MENSAGENS (filtrado por conversa selecionada)
   // ============================================================
   useEffect(() => {
@@ -1276,6 +1300,7 @@ export function useInboxData() {
           }
           
           setMessages((prev) => {
+            // Verificar se mensagem já existe (evitar duplicatas)
             const existingIndex = prev.findIndex((m) => m.id === newMessage.id);
             
             if (existingIndex !== -1) {
@@ -1289,7 +1314,11 @@ export function useInboxData() {
               return prev;
             }
             
-            return [...prev, newMessage];
+            // Adicionar nova mensagem e ordenar por created_at para garantir ordem correta
+            const newList = [...prev, newMessage];
+            return newList.sort((a, b) => 
+              new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+            );
           });
         }
       )

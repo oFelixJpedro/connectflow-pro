@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Play, Pause, StopCircle, RotateCcw, Bot, Loader2 } from 'lucide-react';
+import { Play, Pause, StopCircle, Bot, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Tooltip,
@@ -20,11 +20,11 @@ interface AIAgentActionsProps {
   whatsappConnectionId: string | undefined;
 }
 
-type ConfirmModalType = 'stop' | 'restart' | null;
+type ConfirmModalType = 'stop' | null;
 
 export function AIAgentActions({ conversationId, whatsappConnectionId }: AIAgentActionsProps) {
   const { toast } = useToast();
-  const { state, isLoading, isActionLoading, hasAgent, agentName, startAI, pauseAI, stopAI, restartAI } = useAIConversationState({
+  const { state, isLoading, isActionLoading, hasAgent, agentName, startAI, pauseAI, stopAI } = useAIConversationState({
     conversationId,
     whatsappConnectionId,
   });
@@ -90,7 +90,6 @@ export function AIAgentActions({ conversationId, whatsappConnectionId }: AIAgent
     start: currentStatus !== 'active',
     pause: currentStatus === 'active',
     stop: currentStatus === 'active' || currentStatus === 'paused',
-    restart: currentStatus !== 'inactive',
   }), [currentStatus]);
 
   // Action handlers
@@ -121,15 +120,6 @@ export function AIAgentActions({ conversationId, whatsappConnectionId }: AIAgent
       toast({ title: 'IA Parada', description: 'A IA foi desativada nesta conversa.' });
     } else {
       toast({ title: 'Erro', description: 'Não foi possível parar a IA.', variant: 'destructive' });
-    }
-  };
-
-  const handleRestart = async () => {
-    const success = await restartAI();
-    if (success) {
-      toast({ title: 'IA Reiniciada', description: 'O contexto da IA foi limpo.' });
-    } else {
-      toast({ title: 'Erro', description: 'Não foi possível reiniciar a IA.', variant: 'destructive' });
     }
   };
 
@@ -241,27 +231,6 @@ export function AIAgentActions({ conversationId, whatsappConnectionId }: AIAgent
               <p>Desativa a IA permanentemente (pode ser reativada)</p>
             </TooltipContent>
           </Tooltip>
-
-          {/* Restart button */}
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={!buttonStates.restart || isActionLoading}
-                onClick={() => setConfirmModalType('restart')}
-                className={cn(
-                  'flex-1 h-9',
-                  buttonStates.restart && 'border-blue-500/50 text-blue-600 hover:bg-blue-500/10 hover:text-blue-600'
-                )}
-              >
-                <RotateCcw className="w-4 h-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">
-              <p>Reseta a memória da IA para esta conversa</p>
-            </TooltipContent>
-          </Tooltip>
         </div>
       </div>
 
@@ -273,14 +242,14 @@ export function AIAgentActions({ conversationId, whatsappConnectionId }: AIAgent
         isLoading={isActionLoading}
       />
 
-      {/* Confirm Modal (Stop/Restart) */}
+      {/* Confirm Modal (Stop) */}
       {confirmModalType && (
         <AIAgentConfirmModal
           open={true}
           onOpenChange={(open) => !open && setConfirmModalType(null)}
-          onConfirm={confirmModalType === 'stop' ? handleStop : handleRestart}
+          onConfirm={handleStop}
           isLoading={isActionLoading}
-          type={confirmModalType}
+          type="stop"
         />
       )}
     </TooltipProvider>
