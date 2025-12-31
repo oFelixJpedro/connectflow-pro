@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from 'react';
-import { X, Download, ImageOff, Loader2, ZoomIn, GripVertical, Save } from 'lucide-react';
+import { X, Download, ImageOff, Loader2, ZoomIn, GripVertical, Save, Clock, CheckCheck, AlertCircle, RotateCcw } from 'lucide-react';
 import {
   Tooltip,
   TooltipContent,
@@ -13,6 +13,57 @@ import {
   DialogClose,
 } from '@/components/ui/dialog';
 import { LinkifyText } from '@/components/ui/linkify-text';
+
+// Status indicator component for media messages
+function MediaStatusIndicator({ status, isOutbound }: { status?: string; isOutbound?: boolean }) {
+  if (!isOutbound || !status) return null;
+  
+  const statusConfig: Record<string, { icon: React.ReactNode; label: string; className: string }> = {
+    pending: {
+      icon: <Clock className="w-3 h-3 animate-pulse" />,
+      label: 'Enviando...',
+      className: 'text-amber-500',
+    },
+    sent: {
+      icon: <CheckCheck className="w-3 h-3" />,
+      label: 'Enviada',
+      className: 'text-muted-foreground',
+    },
+    delivered: {
+      icon: <CheckCheck className="w-3 h-3" />,
+      label: 'Entregue',
+      className: 'text-muted-foreground',
+    },
+    read: {
+      icon: <CheckCheck className="w-3 h-3" />,
+      label: 'Lida',
+      className: 'text-blue-500',
+    },
+    failed: {
+      icon: <AlertCircle className="w-3 h-3" />,
+      label: 'Falha no envio',
+      className: 'text-destructive',
+    },
+  };
+
+  const config = statusConfig[status];
+  if (!config) return null;
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <div className={cn("absolute bottom-2 right-2 z-10 flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-black/50 backdrop-blur-sm", config.className)}>
+          {config.icon}
+          {status === 'pending' && <span className="text-[10px] font-medium text-white">Enviando</span>}
+          {status === 'failed' && <span className="text-[10px] font-medium text-white">Falhou</span>}
+        </div>
+      </TooltipTrigger>
+      <TooltipContent side="top">
+        <p>{config.label}</p>
+      </TooltipContent>
+    </Tooltip>
+  );
+}
 
 interface ImageMessageProps {
   src: string;
@@ -344,7 +395,8 @@ export function ImageMessage({
           </Button>
         )}
 
-          {/* Caption */}
+        {/* Status indicator for pending/sent/failed */}
+        <MediaStatusIndicator status={status} isOutbound={isOutbound} />
           {caption && (
             <div 
               className={cn(

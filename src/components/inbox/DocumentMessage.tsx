@@ -8,10 +8,71 @@ import {
   Archive,
   FileX,
   AlertCircle,
-  FileCode
+  FileCode,
+  Clock,
+  CheckCheck
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { LinkifyText } from '@/components/ui/linkify-text';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
+
+// Status indicator for document messages
+function DocumentStatusIndicator({ status, isOutbound }: { status?: string; isOutbound?: boolean }) {
+  if (!isOutbound || !status) return null;
+  
+  const statusConfig: Record<string, { icon: React.ReactNode; label: string; className: string }> = {
+    pending: {
+      icon: <Clock className="w-3 h-3 animate-pulse" />,
+      label: 'Enviando...',
+      className: 'text-amber-500',
+    },
+    sent: {
+      icon: <CheckCheck className="w-3 h-3" />,
+      label: 'Enviado',
+      className: 'text-muted-foreground',
+    },
+    delivered: {
+      icon: <CheckCheck className="w-3 h-3" />,
+      label: 'Entregue',
+      className: 'text-muted-foreground',
+    },
+    read: {
+      icon: <CheckCheck className="w-3 h-3" />,
+      label: 'Lido',
+      className: 'text-blue-500',
+    },
+    failed: {
+      icon: <AlertCircle className="w-3 h-3" />,
+      label: 'Falha no envio',
+      className: 'text-destructive',
+    },
+  };
+
+  const config = statusConfig[status];
+  if (!config) return null;
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <div className={cn("flex items-center gap-1", config.className)}>
+          {config.icon}
+          {(status === 'pending' || status === 'failed') && (
+            <span className="text-[10px] font-medium">
+              {status === 'pending' ? 'Enviando...' : 'Falhou'}
+            </span>
+          )}
+        </div>
+      </TooltipTrigger>
+      <TooltipContent side="top">
+        <p>{config.label}</p>
+      </TooltipContent>
+    </Tooltip>
+  );
+}
 
 interface DocumentMessageProps {
   src: string;
@@ -219,12 +280,15 @@ export function DocumentMessage({
                   >
                     {truncatedName}
                   </p>
-                  <p className={cn(
-                    "text-xs mt-0.5",
-                    isOutbound ? "text-muted-foreground" : "text-muted-foreground"
-                  )}>
-                    {metaString || 'Documento'}
-                  </p>
+                  <div className="flex items-center gap-2">
+                    <p className={cn(
+                      "text-xs",
+                      isOutbound ? "text-muted-foreground" : "text-muted-foreground"
+                    )}>
+                      {metaString || 'Documento'}
+                    </p>
+                    <DocumentStatusIndicator status={status} isOutbound={isOutbound} />
+                  </div>
                 </div>
                 
                 {/* Download button */}

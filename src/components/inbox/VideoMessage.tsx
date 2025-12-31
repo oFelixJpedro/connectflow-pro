@@ -1,8 +1,64 @@
 import { useState, useRef } from 'react';
 import { cn } from '@/lib/utils';
-import { Download, VideoOff, AlertCircle } from 'lucide-react';
+import { Download, VideoOff, AlertCircle, Clock, CheckCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { LinkifyText } from '@/components/ui/linkify-text';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
+
+// Status indicator component for video messages
+function VideoStatusIndicator({ status, isOutbound }: { status?: string; isOutbound?: boolean }) {
+  if (!isOutbound || !status) return null;
+  
+  const statusConfig: Record<string, { icon: React.ReactNode; label: string; className: string }> = {
+    pending: {
+      icon: <Clock className="w-3 h-3 animate-pulse" />,
+      label: 'Enviando...',
+      className: 'text-amber-500',
+    },
+    sent: {
+      icon: <CheckCheck className="w-3 h-3" />,
+      label: 'Enviado',
+      className: 'text-muted-foreground',
+    },
+    delivered: {
+      icon: <CheckCheck className="w-3 h-3" />,
+      label: 'Entregue',
+      className: 'text-muted-foreground',
+    },
+    read: {
+      icon: <CheckCheck className="w-3 h-3" />,
+      label: 'Lido',
+      className: 'text-blue-500',
+    },
+    failed: {
+      icon: <AlertCircle className="w-3 h-3" />,
+      label: 'Falha no envio',
+      className: 'text-destructive',
+    },
+  };
+
+  const config = statusConfig[status];
+  if (!config) return null;
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <div className={cn("absolute bottom-14 right-2 z-10 flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-black/50 backdrop-blur-sm", config.className)}>
+          {config.icon}
+          {status === 'pending' && <span className="text-[10px] font-medium text-white">Enviando</span>}
+          {status === 'failed' && <span className="text-[10px] font-medium text-white">Falhou</span>}
+        </div>
+      </TooltipTrigger>
+      <TooltipContent side="top">
+        <p>{config.label}</p>
+      </TooltipContent>
+    </Tooltip>
+  );
+}
 
 interface VideoMessageProps {
   src: string;
@@ -153,6 +209,9 @@ export function VideoMessage({
             <Download className="w-3.5 h-3.5" />
           </Button>
         )}
+
+        {/* Status indicator */}
+        <VideoStatusIndicator status={status} isOutbound={isOutbound} />
 
         {/* Caption */}
         {caption && (
