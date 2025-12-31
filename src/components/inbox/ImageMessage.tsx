@@ -14,7 +14,7 @@ import {
 } from '@/components/ui/dialog';
 import { LinkifyText } from '@/components/ui/linkify-text';
 
-// Status indicator component for media messages
+// Status indicator component for media messages (outbound)
 function MediaStatusIndicator({ status, isOutbound }: { status?: string; isOutbound?: boolean }) {
   if (!isOutbound || !status) return null;
   
@@ -62,6 +62,24 @@ function MediaStatusIndicator({ status, isOutbound }: { status?: string; isOutbo
         <p>{config.label}</p>
       </TooltipContent>
     </Tooltip>
+  );
+}
+
+// Loading indicator for inbound media (processing)
+function InboundMediaLoading() {
+  return (
+    <div 
+      className="flex flex-col items-center justify-center gap-3 p-8 rounded-xl bg-muted/60 animate-pulse"
+      style={{ aspectRatio: '4/3', minWidth: '200px', maxWidth: '300px' }}
+    >
+      <div className="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center">
+        <Loader2 className="w-6 h-6 text-primary animate-spin" />
+      </div>
+      <div className="text-center">
+        <p className="text-xs text-muted-foreground font-medium">Carregando imagem...</p>
+        <p className="text-[10px] text-muted-foreground/70 mt-0.5">Aguarde um momento</p>
+      </div>
+    </div>
   );
 }
 
@@ -237,6 +255,12 @@ export function ImageMessage({
       setIsLightboxOpen(true);
     }
   }, []);
+
+  // Inbound media loading state (waiting for media processing)
+  const isInboundLoading = !isOutbound && !src && status !== 'failed';
+  if (isInboundLoading) {
+    return <InboundMediaLoading />;
+  }
 
   // Failed state
   if (status === 'failed' || (!src && !isLoading)) {
