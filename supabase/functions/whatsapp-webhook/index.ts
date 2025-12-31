@@ -331,28 +331,45 @@ async function processMediaInBackground(params: {
 }) {
   const { messageId, messageDbId, mediaType, companyId, whatsappConnectionId, instanceToken, mediaMetadata, contentData } = params;
   
-  console.log(`🔄 [BACKGROUND] Iniciando processamento de ${mediaType} para mensagem ${messageDbId}`);
+  const startTime = Date.now();
+  console.log(`🚀 [BACKGROUND] Iniciando processamento IMEDIATO de ${mediaType} para mensagem ${messageDbId}`);
   
   const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
   const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
   const supabase = createClient(supabaseUrl, supabaseServiceKey);
   
-  try {
-    const downloadResult = await downloadMediaFromUazapi(messageId, UAZAPI_BASE_URL, instanceToken);
+  // Retry interno: 2 tentativas de download
+  let downloadResult = null;
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    console.log(`📥 [BACKGROUND] Download attempt ${attempt}/2 for ${mediaType}`);
+    downloadResult = await downloadMediaFromUazapi(messageId, UAZAPI_BASE_URL, instanceToken);
     
-    if (!downloadResult) {
-      console.log(`❌ [BACKGROUND] Falha no download de ${mediaType}`);
-      await supabase
-        .from('messages')
-        .update({
-          status: 'failed',
-          error_message: 'Download failed from UAZAPI',
-          metadata: { ...mediaMetadata, error: 'Download failed', processedAt: new Date().toISOString() }
-        })
-        .eq('id', messageDbId);
-      return;
+    if (downloadResult) {
+      console.log(`✅ [BACKGROUND] Download succeeded on attempt ${attempt} (${Date.now() - startTime}ms)`);
+      break;
     }
     
+    if (attempt < 2) {
+      console.log(`⚠️ [BACKGROUND] Attempt ${attempt} failed, retrying in 2s...`);
+      await new Promise(r => setTimeout(r, 2000));
+    }
+  }
+  
+  if (!downloadResult) {
+    console.log(`❌ [BACKGROUND] Falha no download de ${mediaType} após 2 tentativas (${Date.now() - startTime}ms)`);
+    await supabase
+      .from('messages')
+      .update({
+        status: 'failed',
+        error_message: 'Download failed from UAZAPI after 2 attempts',
+        metadata: { ...mediaMetadata, error: 'Download failed', processedAt: new Date().toISOString() }
+      })
+      .eq('id', messageDbId);
+    // Re-throw to trigger Redis fallback
+    throw new Error('Download failed from UAZAPI after 2 attempts');
+  }
+  
+  try {
     const { buffer, mimeType: downloadedMimeType, fileSize: downloadedSize } = downloadResult;
     
     // Determine extension and storage path
@@ -406,14 +423,15 @@ async function processMediaInBackground(params: {
       .from('whatsapp-media')
       .getPublicUrl(uploadData.path);
     
-    console.log(`✅ [BACKGROUND] Upload complete: ${publicUrl}`);
+    const totalTime = Date.now() - startTime;
+    console.log(`✅ [BACKGROUND] Upload complete: ${publicUrl} (${totalTime}ms total)`);
     
     // Update message with media URL
     const displayMimeType = mediaType === 'document' 
       ? getDisplayMimeType(contentData?.fileName, contentData?.mimetype || 'application/octet-stream')
       : actualMimeType;
     
-    await supabase
+    const { error: updateError } = await supabase
       .from('messages')
       .update({
         media_url: publicUrl,
@@ -426,15 +444,22 @@ async function processMediaInBackground(params: {
           storagePath,
           fileSize: downloadedSize,
           downloadedAt: new Date().toISOString(),
-          processedAsync: true
+          processedAsync: true,
+          processingTimeMs: totalTime
         }
       })
       .eq('id', messageDbId);
     
-    console.log(`🎉 [BACKGROUND] ${mediaType} processado com sucesso!`);
+    if (updateError) {
+      console.error(`⚠️ [BACKGROUND] Erro ao atualizar mensagem (mídia processada):`, updateError);
+    } else {
+      console.log(`🎉 [BACKGROUND] ${mediaType} processado com sucesso em ${totalTime}ms!`);
+    }
     
   } catch (error) {
     console.error(`❌ [BACKGROUND] Erro ao processar ${mediaType}:`, error);
+    // Re-throw to trigger Redis fallback in the caller
+    throw error;
   }
 }
 
@@ -2160,46 +2185,38 @@ serve(async (req) => {
         contentData
       }
       
-      // Use Redis queue if available, otherwise fallback to EdgeRuntime.waitUntil
-      if (redis) {
-        console.log(`📤 [QUEUE] Enqueuing ${detectedMediaType} to Redis queue`)
-        try {
-          await redis.rpush('queue:media', JSON.stringify({
-            data: mediaQueueData,
-            attempts: 0,
-            enqueuedAt: new Date().toISOString()
-          }))
-          console.log(`✅ [QUEUE] Media enqueued successfully`)
-        } catch (queueError) {
-          console.log(`⚠️ [QUEUE] Redis error, falling back to waitUntil:`, queueError)
-          EdgeRuntime.waitUntil(
-            processMediaInBackground({
-              messageId,
-              messageDbId: savedMessage.id,
-              mediaType: detectedMediaType,
-              companyId,
-              whatsappConnectionId,
-              instanceToken,
-              mediaMetadata,
-              contentData
-            })
-          )
-        }
-      } else {
-        console.log(`🚀 Scheduling background processing for ${detectedMediaType} (no Redis)`)
-        EdgeRuntime.waitUntil(
-          processMediaInBackground({
-            messageId,
-            messageDbId: savedMessage.id,
-            mediaType: detectedMediaType,
-            companyId,
-            whatsappConnectionId,
-            instanceToken,
-            mediaMetadata,
-            contentData
-          })
-        )
-      }
+      // SEMPRE processar imediatamente via EdgeRuntime.waitUntil para melhor UX
+      // Redis é usado apenas como fallback para retry em caso de falha
+      console.log(`🚀 [IMMEDIATE] Processing ${detectedMediaType} immediately via waitUntil`)
+      EdgeRuntime.waitUntil(
+        processMediaInBackground({
+          messageId,
+          messageDbId: savedMessage.id,
+          mediaType: detectedMediaType,
+          companyId,
+          whatsappConnectionId,
+          instanceToken,
+          mediaMetadata,
+          contentData
+        }).catch(async (error) => {
+          console.error(`❌ [IMMEDIATE] Background processing failed for ${detectedMediaType}:`, error)
+          // Fallback: enqueue to Redis for retry if available
+          if (redis) {
+            try {
+              console.log(`📤 [FALLBACK] Enqueueing ${detectedMediaType} to Redis for retry`)
+              await redis.rpush('queue:media', JSON.stringify({
+                data: mediaQueueData,
+                attempts: 1, // Already attempted once
+                enqueuedAt: new Date().toISOString(),
+                error: error?.message || 'Unknown error'
+              }))
+              console.log(`✅ [FALLBACK] Media enqueued for retry`)
+            } catch (queueError) {
+              console.error(`❌ [FALLBACK] Redis enqueue also failed:`, queueError)
+            }
+          }
+        })
+      )
     }
     
     // ═══════════════════════════════════════════════════════════════════

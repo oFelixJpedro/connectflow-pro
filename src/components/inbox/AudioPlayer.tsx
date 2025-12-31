@@ -66,6 +66,9 @@ export function AudioPlayer({
 
   const progress = isValidDuration(duration) ? (currentTime / duration) * 100 : 0;
   const showError = status === 'failed' || hasError;
+  
+  // Inbound media loading state (waiting for media processing)
+  const isInboundLoading = !isOutbound && !src && status !== 'failed';
 
   const togglePlayback = useCallback(() => {
     const audio = audioRef.current;
@@ -341,8 +344,27 @@ export function AudioPlayer({
         </div>
       )}
 
-      {/* Loading skeleton UI */}
-      {!showError && isLoading && (
+      {/* Inbound loading state (waiting for media processing) */}
+      {!showError && isInboundLoading && (
+        <div className={cn(
+          "flex items-center gap-3 py-3 px-4 rounded-xl w-[336px] max-w-full shadow-sm animate-pulse",
+          isAmber ? "bg-amber-50" : "bg-slate-100"
+        )}>
+          <div className={cn(
+            "flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center",
+            isAmber ? "bg-amber-500/20" : "bg-blue-500/20"
+          )}>
+            <Loader2 className={cn("w-4 h-4 animate-spin", isAmber ? "text-amber-500" : "text-blue-500")} />
+          </div>
+          <div className="flex-1 flex flex-col gap-1">
+            <div className="h-2 bg-gray-300/50 rounded-full w-3/4" />
+            <p className="text-[10px] text-muted-foreground">Carregando áudio...</p>
+          </div>
+        </div>
+      )}
+
+      {/* Loading skeleton UI (has src but loading metadata) */}
+      {!showError && !isInboundLoading && isLoading && (
         <div className={cn(
           "flex items-center gap-3 py-3 px-4 rounded-xl w-[336px] max-w-full shadow-sm",
           isAmber
@@ -369,7 +391,7 @@ export function AudioPlayer({
       )}
 
       {/* Normal player UI */}
-      {!showError && !isLoading && (
+      {!showError && !isInboundLoading && !isLoading && (
         <>
           <div
             className={cn(

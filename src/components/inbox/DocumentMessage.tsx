@@ -10,7 +10,8 @@ import {
   AlertCircle,
   FileCode,
   Clock,
-  CheckCheck
+  CheckCheck,
+  Loader2
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { LinkifyText } from '@/components/ui/linkify-text';
@@ -19,6 +20,24 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+
+// Loading indicator for inbound document (processing)
+function InboundDocumentLoading() {
+  return (
+    <div className="max-w-[350px] rounded-xl bg-muted/60 p-4 animate-pulse">
+      <div className="flex items-start gap-3">
+        <div className="w-10 h-10 rounded-lg bg-primary/20 flex items-center justify-center">
+          <Loader2 className="w-5 h-5 text-primary animate-spin" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="h-4 bg-muted-foreground/20 rounded w-3/4 mb-2" />
+          <div className="h-3 bg-muted-foreground/20 rounded w-1/2" />
+        </div>
+      </div>
+      <p className="text-[10px] text-muted-foreground/70 mt-2 text-center">Carregando documento...</p>
+    </div>
+  );
+}
 
 // Status indicator for document messages
 function DocumentStatusIndicator({ status, isOutbound }: { status?: string; isOutbound?: boolean }) {
@@ -214,6 +233,12 @@ export function DocumentMessage({
   if (fileExt) metaParts.push(fileExt);
   if (pageCount) metaParts.push(`${pageCount} págs`);
   const metaString = metaParts.join(' • ');
+
+  // Inbound media loading state (waiting for media processing)
+  const isInboundLoading = !isOutbound && !src && status !== 'failed';
+  if (isInboundLoading) {
+    return <InboundDocumentLoading />;
+  }
 
   return (
     <div className="relative">

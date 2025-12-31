@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react';
 import { cn } from '@/lib/utils';
-import { Download, VideoOff, AlertCircle, Clock, CheckCheck } from 'lucide-react';
+import { Download, VideoOff, AlertCircle, Clock, CheckCheck, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { LinkifyText } from '@/components/ui/linkify-text';
 import {
@@ -9,7 +9,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 
-// Status indicator component for video messages
+// Status indicator component for video messages (outbound)
 function VideoStatusIndicator({ status, isOutbound }: { status?: string; isOutbound?: boolean }) {
   if (!isOutbound || !status) return null;
   
@@ -57,6 +57,24 @@ function VideoStatusIndicator({ status, isOutbound }: { status?: string; isOutbo
         <p>{config.label}</p>
       </TooltipContent>
     </Tooltip>
+  );
+}
+
+// Loading indicator for inbound video (processing)
+function InboundVideoLoading() {
+  return (
+    <div 
+      className="flex flex-col items-center justify-center gap-3 p-8 rounded-xl bg-muted/60 animate-pulse"
+      style={{ aspectRatio: '16/9', minWidth: '200px', maxWidth: '400px' }}
+    >
+      <div className="w-14 h-14 rounded-full bg-primary/20 flex items-center justify-center">
+        <Loader2 className="w-7 h-7 text-primary animate-spin" />
+      </div>
+      <div className="text-center">
+        <p className="text-xs text-muted-foreground font-medium">Carregando vídeo...</p>
+        <p className="text-[10px] text-muted-foreground/70 mt-0.5">Aguarde um momento</p>
+      </div>
+    </div>
   );
 }
 
@@ -114,6 +132,12 @@ export function VideoMessage({
   };
 
   const isFailed = status === 'failed';
+
+  // Inbound media loading state (waiting for media processing)
+  const isInboundLoading = !isOutbound && !src && status !== 'failed';
+  if (isInboundLoading) {
+    return <InboundVideoLoading />;
+  }
 
   return (
     <div className="relative group">
