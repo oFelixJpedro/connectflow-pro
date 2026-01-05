@@ -64,6 +64,7 @@ export interface AIAgent {
   rules_content: string | null;
   script_content: string | null;
   faq_content: string | null;
+  knowledge_base_content: string | null;
   
   // Informações da empresa
   company_info: AIAgentCompanyInfo;
@@ -222,6 +223,7 @@ export interface UpdateAIAgentData {
   rules_content?: string;
   script_content?: string;
   faq_content?: string;
+  knowledge_base_content?: string;
   company_info?: AIAgentCompanyInfo;
   contract_link?: string;
   activation_triggers?: string[];
@@ -247,7 +249,8 @@ export const AI_AGENT_CHAR_LIMITS = {
   rules: 5000,
   script: 7000,
   faq: 3000,
-  total: 15000,
+  knowledge: 5000,
+  total: 20000,
 } as const;
 
 // Batching options (debounce time for message grouping)

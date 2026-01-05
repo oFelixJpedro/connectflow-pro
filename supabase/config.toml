@@ -96,6 +96,9 @@ verify_jwt = true
 [functions.ai-agent-process]
 verify_jwt = false
 
+[functions.ai-agent-knowledge-process]
+verify_jwt = true
+
 [functions.queue-processor]
 verify_jwt = false
 
