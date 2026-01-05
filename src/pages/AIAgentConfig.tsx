@@ -8,7 +8,8 @@ import {
   HelpCircle,
   Info,
   Users,
-  Target
+  Target,
+  BookOpen
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -27,6 +28,7 @@ import { useAgentMedia } from '@/hooks/useAgentMedia';
 import { AgentRulesTab } from '@/components/ai-agents/config/AgentRulesTab';
 import { AgentScriptTab } from '@/components/ai-agents/config/AgentScriptTab';
 import { AgentFAQTab } from '@/components/ai-agents/config/AgentFAQTab';
+import { AgentKnowledgeBaseTab } from '@/components/ai-agents/config/AgentKnowledgeBaseTab';
 import { AgentSubAgentsTab } from '@/components/ai-agents/config/AgentSubAgentsTab';
 import { AgentSpecialtyTab } from '@/components/ai-agents/config/AgentSpecialtyTab';
 import { AgentSidebar, SidebarPendingChanges } from '@/components/ai-agents/config/AgentSidebar';
@@ -49,6 +51,7 @@ export default function AIAgentConfig() {
   const [rulesContent, setRulesContent] = useState('');
   const [scriptContent, setScriptContent] = useState('');
   const [faqContent, setFaqContent] = useState('');
+  const [knowledgeContent, setKnowledgeContent] = useState('');
   const [companyInfo, setCompanyInfo] = useState<Record<string, string>>({});
   const [contractLink, setContractLink] = useState('');
   
@@ -72,6 +75,7 @@ export default function AIAgentConfig() {
         setRulesContent(found.rules_content || '');
         setScriptContent(found.script_content || '');
         setFaqContent(found.faq_content || '');
+        setKnowledgeContent(found.knowledge_base_content || '');
         setCompanyInfo(found.company_info || {});
         setContractLink(found.contract_link || '');
         // Load specialty metadata
@@ -92,7 +96,7 @@ export default function AIAgentConfig() {
   }, [agentId, loadMedias]);
 
   // Calcular total de caracteres
-  const totalChars = rulesContent.length + scriptContent.length + faqContent.length;
+  const totalChars = rulesContent.length + scriptContent.length + faqContent.length + knowledgeContent.length;
 
   const handleSave = async () => {
     if (!agent || !canManage) return;
@@ -103,6 +107,7 @@ export default function AIAgentConfig() {
         rules_content: rulesContent,
         script_content: scriptContent,
         faq_content: faqContent,
+        knowledge_base_content: knowledgeContent,
         company_info: companyInfo,
         contract_link: contractLink,
         specialty_keywords: specialtyKeywords,
@@ -129,7 +134,7 @@ export default function AIAgentConfig() {
     loadAgents();
   };
 
-  const handleContentChange = (type: 'rules' | 'script' | 'faq', content: string) => {
+  const handleContentChange = (type: 'rules' | 'script' | 'faq' | 'knowledge', content: string) => {
     setHasChanges(true);
     switch (type) {
       case 'rules':
@@ -140,6 +145,9 @@ export default function AIAgentConfig() {
         break;
       case 'faq':
         setFaqContent(content);
+        break;
+      case 'knowledge':
+        setKnowledgeContent(content);
         break;
     }
   };
@@ -289,6 +297,14 @@ export default function AIAgentConfig() {
                   <HelpCircle className="w-4 h-4 mr-2" />
                   Perguntas Frequentes
                 </TabsTrigger>
+                {/* Aba Base de Conhecimento - RAG híbrido */}
+                <TabsTrigger 
+                  value="knowledge"
+                  className="flex-none data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none pb-3 justify-center px-4"
+                >
+                  <BookOpen className="w-4 h-4 mr-2" />
+                  Base de Conhecimento
+                </TabsTrigger>
                 {/* Aba Especialidade - para configurar redirecionamento inteligente entre agentes */}
                 <TabsTrigger 
                   value="specialty"
@@ -337,6 +353,13 @@ export default function AIAgentConfig() {
                     onCompanyInfoChange={handleCompanyInfoChange}
                     contractLink={contractLink}
                     onContractLinkChange={handleContractLinkChange}
+                  />
+                </TabsContent>
+                <TabsContent value="knowledge" className="m-0">
+                  <AgentKnowledgeBaseTab
+                    agentId={agent.id}
+                    content={knowledgeContent}
+                    onChange={(content) => handleContentChange('knowledge', content)}
                   />
                 </TabsContent>
                 <TabsContent value="specialty" className="m-0">

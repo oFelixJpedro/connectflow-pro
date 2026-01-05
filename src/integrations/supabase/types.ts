@@ -156,6 +156,111 @@ export type Database = {
           },
         ]
       }
+      ai_agent_knowledge_chunks: {
+        Row: {
+          agent_id: string
+          chunk_index: number
+          content: string
+          created_at: string | null
+          document_id: string
+          embedding: string | null
+          id: string
+        }
+        Insert: {
+          agent_id: string
+          chunk_index: number
+          content: string
+          created_at?: string | null
+          document_id: string
+          embedding?: string | null
+          id?: string
+        }
+        Update: {
+          agent_id?: string
+          chunk_index?: number
+          content?: string
+          created_at?: string | null
+          document_id?: string
+          embedding?: string | null
+          id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_agent_knowledge_chunks_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "ai_agents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_agent_knowledge_chunks_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "ai_agent_knowledge_documents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ai_agent_knowledge_documents: {
+        Row: {
+          agent_id: string
+          company_id: string
+          created_at: string | null
+          error_message: string | null
+          extracted_text: string | null
+          file_name: string
+          file_size: number
+          file_type: string
+          id: string
+          status: string | null
+          storage_path: string
+          updated_at: string | null
+        }
+        Insert: {
+          agent_id: string
+          company_id: string
+          created_at?: string | null
+          error_message?: string | null
+          extracted_text?: string | null
+          file_name: string
+          file_size: number
+          file_type: string
+          id?: string
+          status?: string | null
+          storage_path: string
+          updated_at?: string | null
+        }
+        Update: {
+          agent_id?: string
+          company_id?: string
+          created_at?: string | null
+          error_message?: string | null
+          extracted_text?: string | null
+          file_name?: string
+          file_size?: number
+          file_type?: string
+          id?: string
+          status?: string | null
+          storage_path?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_agent_knowledge_documents_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "ai_agents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_agent_knowledge_documents_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ai_agent_logs: {
         Row: {
           action_type: string
@@ -341,6 +446,7 @@ export type Database = {
           faq_content: string | null
           id: string
           is_primary: boolean | null
+          knowledge_base_content: string | null
           language_code: string | null
           message_batch_seconds: number | null
           name: string
@@ -379,6 +485,7 @@ export type Database = {
           faq_content?: string | null
           id?: string
           is_primary?: boolean | null
+          knowledge_base_content?: string | null
           language_code?: string | null
           message_batch_seconds?: number | null
           name: string
@@ -417,6 +524,7 @@ export type Database = {
           faq_content?: string | null
           id?: string
           is_primary?: boolean | null
+          knowledge_base_content?: string | null
           language_code?: string | null
           message_batch_seconds?: number | null
           name?: string
@@ -3578,6 +3686,20 @@ export type Database = {
       room_belongs_to_user_company: {
         Args: { room_id: string }
         Returns: boolean
+      }
+      search_agent_knowledge: {
+        Args: {
+          p_agent_id: string
+          p_limit?: number
+          p_min_similarity?: number
+          p_query_embedding: string
+        }
+        Returns: {
+          chunk_id: string
+          content: string
+          document_id: string
+          similarity: number
+        }[]
       }
     }
     Enums: {
