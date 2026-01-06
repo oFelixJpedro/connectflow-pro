@@ -383,18 +383,11 @@ export function AgentKnowledgeBaseTab({
                   <>
                     <Upload className="w-8 h-8 mx-auto text-muted-foreground mb-2" />
                     <p className="text-sm text-muted-foreground mb-2">
-                      Arraste um arquivo aqui ou clique para selecionar
+                      Arraste um arquivo aqui ou clique no botão para selecionar
                     </p>
                     <p className="text-xs text-muted-foreground/70">
                       PDF, DOCX, TXT ou MD • Máximo 20MB
                     </p>
-                    <input
-                      type="file"
-                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                      accept={Object.keys(ACCEPTED_FILE_TYPES).join(',')}
-                      onChange={(e) => handleFileSelect(e.target.files)}
-                      style={{ position: 'absolute', inset: 0 }}
-                    />
                     <Button variant="outline" size="sm" className="mt-3 relative">
                       Selecionar Arquivo
                       <input
