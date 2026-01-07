@@ -1,26 +1,11 @@
-import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.1';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-interface NotificationPayload {
-  notification_id: string;
-  event_data?: {
-    cliente_nome?: string;
-    cliente_telefone?: string;
-    valor?: string;
-    data_hora?: string;
-    agente?: string;
-    empresa?: string;
-    [key: string]: string | undefined;
-  };
-}
-
-serve(async (req: Request) => {
-  // Handle CORS preflight
+Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
@@ -32,7 +17,7 @@ serve(async (req: Request) => {
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    const { notification_id, event_data = {} } = await req.json() as NotificationPayload;
+    const { notification_id, event_data = {} } = await req.json();
 
     if (!notification_id) {
       return new Response(
@@ -91,7 +76,7 @@ serve(async (req: Request) => {
 
     // Replace placeholders in message template
     let message = notification.message_template;
-    const placeholders = {
+    const placeholders: Record<string, string> = {
       '{{cliente_nome}}': event_data.cliente_nome || 'N/A',
       '{{cliente_telefone}}': event_data.cliente_telefone || 'N/A',
       '{{valor}}': event_data.valor || 'N/A',
@@ -101,7 +86,7 @@ serve(async (req: Request) => {
     };
 
     for (const [placeholder, value] of Object.entries(placeholders)) {
-      message = message.replace(new RegExp(placeholder, 'g'), value);
+      message = message.replace(new RegExp(placeholder.replace(/[{}]/g, '\\$&'), 'g'), value);
     }
 
     console.log(`[send-notification] Sending to ${recipients.length} recipients`);
@@ -114,7 +99,7 @@ serve(async (req: Request) => {
       
       try {
         // Log the attempt
-        const { data: logEntry, error: logError } = await supabase
+        const { data: logEntry } = await supabase
           .from('whatsapp_notification_logs')
           .insert({
             notification_id: notification.id,
@@ -128,10 +113,6 @@ serve(async (req: Request) => {
           .select('id')
           .single();
 
-        if (logError) {
-          console.error('[send-notification] Failed to create log:', logError);
-        }
-
         // Send via UAZAPI
         const sendResponse = await fetch(`${uazapiBaseUrl}/send/text`, {
           method: 'POST',
@@ -139,24 +120,17 @@ serve(async (req: Request) => {
             'Content-Type': 'application/json',
             'token': connection.instance_token
           },
-          body: JSON.stringify({
-            phone,
-            message
-          })
+          body: JSON.stringify({ phone, message })
         });
 
         if (!sendResponse.ok) {
           const errorText = await sendResponse.text();
           console.error(`[send-notification] UAZAPI error for ${phone}:`, errorText);
           
-          // Update log with error
           if (logEntry?.id) {
             await supabase
               .from('whatsapp_notification_logs')
-              .update({
-                status: 'failed',
-                error_message: errorText
-              })
+              .update({ status: 'failed', error_message: errorText })
               .eq('id', logEntry.id);
           }
 
@@ -164,21 +138,17 @@ serve(async (req: Request) => {
           continue;
         }
 
-        // Update log as sent
         if (logEntry?.id) {
           await supabase
             .from('whatsapp_notification_logs')
-            .update({
-              status: 'sent',
-              sent_at: new Date().toISOString()
-            })
+            .update({ status: 'sent', sent_at: new Date().toISOString() })
             .eq('id', logEntry.id);
         }
 
         console.log(`[send-notification] Successfully sent to ${phone}`);
         results.push({ phone, success: true });
 
-        // Small delay between messages to avoid rate limiting
+        // Small delay between messages
         await new Promise(resolve => setTimeout(resolve, 500));
       } catch (error) {
         console.error(`[send-notification] Error sending to ${phone}:`, error);
@@ -192,12 +162,7 @@ serve(async (req: Request) => {
     console.log(`[send-notification] Complete. Success: ${successCount}, Failed: ${failCount}`);
 
     return new Response(
-      JSON.stringify({
-        success: true,
-        sent: successCount,
-        failed: failCount,
-        results
-      }),
+      JSON.stringify({ success: true, sent: successCount, failed: failCount, results }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
 
