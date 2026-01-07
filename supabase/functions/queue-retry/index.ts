@@ -1,4 +1,3 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { Redis } from "https://esm.sh/@upstash/redis@1.28.0"
 
 const corsHeaders = {
@@ -15,7 +14,7 @@ const redis = new Redis({
 // ═══════════════════════════════════════════════════════════════════
 // QUEUE RETRY - Reprocess failed items from DLQ
 // ═══════════════════════════════════════════════════════════════════
-serve(async (req) => {
+Deno.serve(async (req: Request) => {
   console.log(`🔄 [QUEUE-RETRY] Starting retry processing...`)
   
   if (req.method === 'OPTIONS') {

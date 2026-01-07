@@ -1,6 +1,5 @@
-import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import Stripe from "https://esm.sh/stripe@18.5.0";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.2";
+import { createClient } from "npm:@supabase/supabase-js@2";
 
 const logStep = (step: string, details?: Record<string, unknown>) => {
   const detailsStr = details ? ` - ${JSON.stringify(details)}` : '';
@@ -20,7 +19,7 @@ const COMMERCIAL_MANAGER_PRICE = 'price_1Sh24PHOTrHw8gZfVI7mSliT';
 // deno-lint-ignore no-explicit-any
 type SupabaseClient = any;
 
-serve(async (req) => {
+Deno.serve(async (req: Request) => {
   const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY") || "", {
     apiVersion: "2025-08-27.basil",
   });
