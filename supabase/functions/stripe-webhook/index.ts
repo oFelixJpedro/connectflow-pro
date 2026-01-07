@@ -60,7 +60,13 @@ serve(async (req) => {
     switch (event.type) {
       case "checkout.session.completed": {
         const session = event.data.object as Stripe.Checkout.Session;
-        await handleCheckoutCompleted(stripe, supabaseAdmin, session);
+        
+        // Check if this is an AI credits purchase
+        if (session.metadata?.purchase_type === 'ai_credits') {
+          await handleAICreditsPurchase(supabaseAdmin, session);
+        } else {
+          await handleCheckoutCompleted(stripe, supabaseAdmin, session);
+        }
         break;
       }
 
@@ -105,6 +111,54 @@ serve(async (req) => {
     });
   }
 });
+
+// Handle AI credits purchase
+async function handleAICreditsPurchase(
+  supabase: SupabaseClient,
+  session: Stripe.Checkout.Session
+) {
+  logStep("Processing AI credits purchase", { sessionId: session.id });
+
+  const creditType = session.metadata?.credit_type;
+  const tokensStr = session.metadata?.tokens;
+  const companyId = session.metadata?.company_id;
+
+  if (!creditType || !tokensStr || !companyId) {
+    logStep("Missing metadata for AI credits purchase", { 
+      creditType, 
+      tokens: tokensStr, 
+      companyId 
+    });
+    return;
+  }
+
+  const tokens = parseInt(tokensStr, 10);
+  const amountPaidCents = session.amount_total || 0;
+
+  // Add credits using the database function
+  const { data: result, error } = await supabase.rpc('add_ai_credits', {
+    p_company_id: companyId,
+    p_credit_type: creditType,
+    p_tokens: tokens,
+    p_transaction_type: 'purchase',
+    p_stripe_checkout_session_id: session.id,
+    p_stripe_payment_intent_id: session.payment_intent as string,
+    p_amount_paid_cents: amountPaidCents,
+    p_metadata: { customer_email: session.customer_email }
+  });
+
+  if (error) {
+    logStep("Error adding AI credits", { error: error.message });
+    return;
+  }
+
+  logStep("AI credits added successfully", { 
+    companyId, 
+    creditType, 
+    tokens, 
+    result 
+  });
+}
 
 async function handleCheckoutCompleted(
   stripe: Stripe,

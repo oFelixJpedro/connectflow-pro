@@ -85,6 +85,10 @@ export interface AIAgent {
   audio_temperature: number;
   language_code: string;
   
+  // Seleção de modelo de IA
+  ai_model_type: 'standard' | 'advanced';
+  audio_model_type: 'standard' | 'advanced';
+  
   // Configurações de resposta (batching e humanização)
   message_batch_seconds: number;
   split_response_enabled: boolean;
@@ -242,6 +246,8 @@ export interface UpdateAIAgentData {
   specialty_keywords?: string[];
   qualification_summary?: string;
   disqualification_signs?: string;
+  ai_model_type?: 'standard' | 'advanced';
+  audio_model_type?: 'standard' | 'advanced';
 }
 
 // Limite de caracteres
