@@ -51,7 +51,6 @@ export interface CreditTypeConfig {
   price: string;
   priceValue: number;
   tokens: number;
-  model: string;
   category: 'text' | 'audio';
   features: string[];
 }
@@ -65,7 +64,6 @@ export const AI_CREDIT_TYPES: Record<CreditType, CreditTypeConfig> = {
     price: 'R$ 10,00',
     priceValue: 1000,
     tokens: 1_000_000,
-    model: 'gemini-2.5-flash-lite',
     category: 'text',
     features: [
       'Correção de texto e gramática',
@@ -83,7 +81,6 @@ export const AI_CREDIT_TYPES: Record<CreditType, CreditTypeConfig> = {
     price: 'R$ 30,00',
     priceValue: 3000,
     tokens: 1_000_000,
-    model: 'gemini-3-flash-preview',
     category: 'text',
     features: [
       'Melhor desempenho em conversas complexas',
@@ -100,7 +97,6 @@ export const AI_CREDIT_TYPES: Record<CreditType, CreditTypeConfig> = {
     price: 'R$ 60,00',
     priceValue: 6000,
     tokens: 1_000_000,
-    model: 'gemini-2.5-flash-preview-tts',
     category: 'audio',
     features: [
       'Geração de áudio em tempo real',
@@ -116,7 +112,6 @@ export const AI_CREDIT_TYPES: Record<CreditType, CreditTypeConfig> = {
     price: 'R$ 120,00',
     priceValue: 12000,
     tokens: 1_000_000,
-    model: 'gemini-2.5-pro-preview-tts',
     category: 'audio',
     features: [
       'Qualidade superior de áudio',
