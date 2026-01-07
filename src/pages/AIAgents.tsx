@@ -1,6 +1,6 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Bot, Plus, BookTemplate, RotateCcw, Search } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Bot, Plus, BookTemplate, RotateCcw, Search, CreditCard } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
@@ -23,12 +23,15 @@ import { useAuth } from '@/contexts/AuthContext';
 import { CreateAgentTypeModal } from '@/components/ai-agents/CreateAgentTypeModal';
 import { CreateAgentNameModal } from '@/components/ai-agents/CreateAgentNameModal';
 import { AgentTemplatesModal } from '@/components/ai-agents/AgentTemplatesModal';
+import { AICreditsTab } from '@/components/ai-credits';
+import { toast } from 'sonner';
 import type { AIAgentType, AIAgent } from '@/types/ai-agents';
 
-type SubMenuTab = 'agents' | 'followup';
+type SubMenuTab = 'agents' | 'followup' | 'credits';
 
 export default function AIAgents() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { profile, userRole } = useAuth();
   const { primaryAgents, secondaryAgents, isLoading, setAgentStatus, deleteAgent } = useAIAgents();
   
@@ -41,6 +44,21 @@ export default function AIAgents() {
   const [primaryExpanded, setPrimaryExpanded] = useState(true);
   const [secondaryExpanded, setSecondaryExpanded] = useState(true);
   const [agentToDelete, setAgentToDelete] = useState<AIAgent | null>(null);
+
+  // Handle credit purchase success/cancel from URL params
+  useEffect(() => {
+    const creditsParam = searchParams.get('credits');
+    if (creditsParam === 'success') {
+      toast.success('Recarga de créditos realizada com sucesso!');
+      setActiveTab('credits');
+      // Clear URL params
+      navigate('/ai-agents', { replace: true });
+    } else if (creditsParam === 'cancelled') {
+      toast.info('Compra de créditos cancelada');
+      setActiveTab('credits');
+      navigate('/ai-agents', { replace: true });
+    }
+  }, [searchParams, navigate]);
 
   // Verificar permissão (owner/admin)
   const canManage = userRole?.role === 'owner' || userRole?.role === 'admin';
@@ -122,6 +140,18 @@ export default function AIAgents() {
         >
           <RotateCcw className="w-5 h-5" />
           <span className="font-medium">Follow-up</span>
+        </button>
+        
+        <button
+          onClick={() => setActiveTab('credits')}
+          className={`flex items-center gap-3 px-4 py-3 rounded-lg text-left transition-colors ${
+            activeTab === 'credits' 
+              ? 'bg-primary text-primary-foreground' 
+              : 'text-white/70 hover:bg-white/10 hover:text-white'
+          }`}
+        >
+          <CreditCard className="w-5 h-5" />
+          <span className="font-medium">Créditos de IA</span>
         </button>
       </div>
 
@@ -231,7 +261,7 @@ export default function AIAgents() {
                 </CollapsibleContent>
               </Collapsible>
             </div>
-          ) : (
+          ) : activeTab === 'followup' ? (
             <div className="flex flex-col items-center justify-center h-64">
               <RotateCcw className="w-16 h-16 text-muted-foreground mb-4" />
               <h2 className="text-xl font-semibold mb-2">Follow-up Automático</h2>
@@ -241,6 +271,8 @@ export default function AIAgents() {
               </p>
               <Badge variant="outline" className="mt-4">Em desenvolvimento</Badge>
             </div>
+          ) : (
+            <AICreditsTab />
           )}
         </ScrollArea>
       </div>
