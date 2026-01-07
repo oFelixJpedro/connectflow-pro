@@ -422,6 +422,76 @@ async function analyzeMediaWithFileAPI(
   }
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// RAG: SEARCH KNOWLEDGE BASE WITH SEMANTIC SEARCH
+// ═══════════════════════════════════════════════════════════════════
+async function generateQueryEmbedding(text: string, apiKey: string): Promise<number[] | null> {
+  try {
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key=${apiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'models/text-embedding-004',
+          content: { parts: [{ text }] }
+        })
+      }
+    );
+
+    if (!response.ok) return null;
+    const result = await response.json();
+    return result.embedding?.values || null;
+  } catch (error) {
+    console.error('❌ Error generating query embedding:', error);
+    return null;
+  }
+}
+
+async function searchAgentKnowledgeBase(
+  supabase: any,
+  agentId: string,
+  queryText: string,
+  apiKey: string,
+  limit: number = 3,
+  minSimilarity: number = 0.65
+): Promise<string[]> {
+  try {
+    console.log('🔍 [RAG] Searching knowledge base for:', queryText.substring(0, 50) + '...');
+    
+    // Generate embedding for the query
+    const embedding = await generateQueryEmbedding(queryText, apiKey);
+    if (!embedding) {
+      console.log('⚠️ [RAG] Failed to generate query embedding');
+      return [];
+    }
+
+    // Search using the database function
+    const { data: results, error } = await supabase.rpc('search_agent_knowledge', {
+      p_agent_id: agentId,
+      p_query_embedding: JSON.stringify(embedding),
+      p_limit: limit,
+      p_min_similarity: minSimilarity
+    });
+
+    if (error) {
+      console.error('❌ [RAG] Search error:', error);
+      return [];
+    }
+
+    if (!results || results.length === 0) {
+      console.log('📭 [RAG] No relevant knowledge found');
+      return [];
+    }
+
+    console.log(`✅ [RAG] Found ${results.length} relevant chunks`);
+    return results.map((r: any) => r.content);
+  } catch (error) {
+    console.error('❌ [RAG] Error in knowledge search:', error);
+    return [];
+  }
+}
+
 serve(async (req) => {
   console.log('\n');
   console.log('╔══════════════════════════════════════════════════════════════════╗');
@@ -1287,6 +1357,37 @@ ${agent.rules_content}
 ${agent.faq_content}
 
 `;
+    }
+
+    // Add knowledge base content (static)
+    if (agent.knowledge_base_content) {
+      systemPrompt += `## 📖 BASE DE CONHECIMENTO
+${agent.knowledge_base_content}
+
+`;
+    }
+
+    // RAG: Search for relevant knowledge from documents
+    const GEMINI_API_KEY_RAG = Deno.env.get('GEMINI_API_KEY');
+    if (GEMINI_API_KEY_RAG && processedMessageContent) {
+      const relevantKnowledge = await searchAgentKnowledgeBase(
+        supabase,
+        agent.id,
+        processedMessageContent,
+        GEMINI_API_KEY_RAG,
+        3,
+        0.65
+      );
+
+      if (relevantKnowledge.length > 0) {
+        systemPrompt += `## 📚 CONHECIMENTO RELEVANTE (extraído de documentos)
+${relevantKnowledge.map((k, i) => `[${i + 1}] ${k}`).join('\n\n')}
+
+Use estas informações para responder ao cliente se forem relevantes para a pergunta.
+
+`;
+        console.log(`📚 [RAG] Added ${relevantKnowledge.length} knowledge chunks to prompt`);
+      }
     }
 
     if (Object.keys(companyInfo).length > 0) {

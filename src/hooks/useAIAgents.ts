@@ -47,7 +47,11 @@ export function useAIAgents() {
         ...agent,
         company_info: agent.company_info || {},
         activation_triggers: agent.activation_triggers || [],
-      })) as AIAgent[];
+        connections: agent.connections?.map((conn: any) => ({
+          ...conn,
+          agent_id: agent.id,
+        })) || [],
+      })) as unknown as AIAgent[];
       
       setAgents(processedAgents);
     } catch (err) {

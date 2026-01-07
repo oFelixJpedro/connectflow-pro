@@ -57,6 +57,18 @@ verify_jwt = true
 [functions.send-whatsapp-document]
 verify_jwt = true
 
+[functions.send-whatsapp-audio-v2]
+verify_jwt = true
+
+[functions.send-whatsapp-image-v2]
+verify_jwt = true
+
+[functions.send-whatsapp-video-v2]
+verify_jwt = true
+
+[functions.send-whatsapp-document-v2]
+verify_jwt = true
+
 [functions.send-whatsapp-reaction]
 verify_jwt = true
 
@@ -83,6 +95,9 @@ verify_jwt = true
 
 [functions.ai-agent-process]
 verify_jwt = false
+
+[functions.ai-agent-knowledge-process]
+verify_jwt = true
 
 [functions.queue-processor]
 verify_jwt = false
@@ -133,4 +148,7 @@ verify_jwt = true
 verify_jwt = false
 
 [functions.supabase-stats]
+verify_jwt = false
+
+[functions.commercial-daily-processor]
 verify_jwt = false

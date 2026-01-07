@@ -33,6 +33,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { AssignButton } from './AssignButton';
+import { BlurredChatOverlay } from './BlurredChatOverlay';
 import { ConversationActions } from './ConversationActions';
 import { MessageInputBlocker, useMessageBlocker } from './MessageInputBlocker';
 import { AudioPlayer } from './AudioPlayer';
@@ -73,6 +74,7 @@ import { MentionPicker, MentionText } from '@/components/mentions';
 import { useMentions, parseMentionsFromText } from '@/hooks/useMentions';
 import { LinkifyText } from '@/components/ui/linkify-text';
 import { useContactCRM } from '@/hooks/useContactCRM';
+import { uploadMediaToStorage, createPendingMessage, dbMessageToFrontend } from '@/lib/mediaUpload';
 
 interface ChatPanelProps {
   conversation: Conversation | null;
@@ -90,6 +92,9 @@ interface ChatPanelProps {
   isLoadingMessages?: boolean;
   isSendingMessage?: boolean;
   isRestricted?: boolean;
+  showBlurOverlay?: boolean;
+  onTakeOverConversation?: () => void;
+  isTakingOver?: boolean;
 }
 
 const statusIcons: Record<string, React.ReactNode> = {
@@ -124,6 +129,9 @@ export function ChatPanel({
   isLoadingMessages = false,
   isSendingMessage = false,
   isRestricted = false,
+  showBlurOverlay = false,
+  onTakeOverConversation,
+  isTakingOver = false,
 }: ChatPanelProps) {
   const { user, userRole, profile } = useAuth();
   const [inputValue, setInputValue] = useState('');
@@ -420,42 +428,63 @@ export function ChatPanel({
   };
 
   const handleSendAudio = async (audioBlob: Blob, duration: number) => {
-    if (!conversation) return;
+    if (!conversation || !profile?.company_id || !user?.id) return;
 
     setIsSendingAudio(true);
     try {
-      // Convert blob to base64
-      const reader = new FileReader();
-      const base64Promise = new Promise<string>((resolve, reject) => {
-        reader.onload = () => resolve(reader.result as string);
-        reader.onerror = reject;
-      });
-      reader.readAsDataURL(audioBlob);
-      const base64Data = await base64Promise;
-
-      console.log('📤 Enviando áudio para Edge Function...');
-
-      const { data, error } = await supabase.functions.invoke('send-whatsapp-audio', {
-        body: {
-          audioData: base64Data,
-          fileName: `audio_${Date.now()}.webm`,
-          mimeType: audioBlob.type || 'audio/webm',
-          duration,
-          conversationId: conversation.id,
-          quotedMessageId: replyingTo?.id,
-        }
-      });
-
-      if (error) throw error;
-
-      if (!data?.success) {
-        throw new Error(data?.error || 'Erro ao enviar áudio');
+      console.log('📤 [Optimistic] Uploading audio to Storage...');
+      
+      // Convert blob to file for upload
+      const fileName = `audio_${Date.now()}.webm`;
+      const audioFile = new File([audioBlob], fileName, { type: audioBlob.type || 'audio/webm' });
+      
+      // 1. Upload directly to Storage
+      const uploadResult = await uploadMediaToStorage(audioFile, profile.company_id, conversation.id);
+      if (!uploadResult.success || !uploadResult.url) {
+        throw new Error(uploadResult.error || 'Upload failed');
       }
 
-      console.log('✅ Áudio enviado com sucesso!');
+      // 2. Create pending message in DB
+      const dbMessage = await createPendingMessage({
+        conversationId: conversation.id,
+        connectionId: conversation.whatsappConnectionId,
+        contactId: conversation.contactId,
+        messageType: 'audio',
+        mediaUrl: uploadResult.url,
+        content: '',
+        metadata: {
+          fileName,
+          fileSize: audioBlob.size,
+          mimeType: audioBlob.type || 'audio/webm',
+          duration,
+          storagePath: uploadResult.storagePath,
+        },
+        quotedMessageId: replyingTo?.id,
+        userId: user.id,
+      });
+
+      // 3. Add to UI immediately
+      const frontendMessage = dbMessageToFrontend(dbMessage);
+      if (onMessagesUpdate) {
+        onMessagesUpdate([...messages, frontendMessage]);
+      }
+
+      console.log('✅ Audio visible in chat, sending to WhatsApp in background...');
+
+      // 4. Clear state
       setIsRecordingAudio(false);
       setReplyingTo(null);
-      onRefresh?.();
+
+      // 5. Send to WhatsApp in background
+      supabase.functions.invoke('send-whatsapp-audio-v2', {
+        body: {
+          messageId: dbMessage.id,
+          mediaUrl: uploadResult.url,
+          contactPhoneNumber: conversation.contact?.phoneNumber || '',
+        }
+      }).then(({ error }) => {
+        if (error) console.error('❌ WhatsApp send failed:', error);
+      });
 
     } catch (error: any) {
       console.error('❌ Erro ao enviar áudio:', error);
@@ -471,35 +500,59 @@ export function ChatPanel({
 
   // Send audio file handler
   const handleSendAudioFile = async (file: File, duration: number) => {
-    if (!conversation) return;
+    if (!conversation || !profile?.company_id || !user?.id) return;
 
     setIsSendingAudio(true);
     try {
-      const reader = new FileReader();
-      const base64Promise = new Promise<string>((resolve, reject) => {
-        reader.onload = () => resolve(reader.result as string);
-        reader.onerror = reject;
-      });
-      reader.readAsDataURL(file);
-      const base64Data = await base64Promise;
+      console.log('📤 [Optimistic] Uploading audio file to Storage...');
+      
+      // 1. Upload directly to Storage
+      const uploadResult = await uploadMediaToStorage(file, profile.company_id, conversation.id);
+      if (!uploadResult.success || !uploadResult.url) {
+        throw new Error(uploadResult.error || 'Upload failed');
+      }
 
-      const { data, error } = await supabase.functions.invoke('send-whatsapp-audio', {
-        body: {
-          audioData: base64Data,
+      // 2. Create pending message in DB
+      const dbMessage = await createPendingMessage({
+        conversationId: conversation.id,
+        connectionId: conversation.whatsappConnectionId,
+        contactId: conversation.contactId,
+        messageType: 'audio',
+        mediaUrl: uploadResult.url,
+        content: '',
+        metadata: {
           fileName: file.name,
+          fileSize: file.size,
           mimeType: file.type,
           duration,
-          conversationId: conversation.id,
-          quotedMessageId: replyingTo?.id,
-        }
+          storagePath: uploadResult.storagePath,
+        },
+        quotedMessageId: replyingTo?.id,
+        userId: user.id,
       });
 
-      if (error) throw error;
-      if (!data?.success) throw new Error(data?.error || 'Erro ao enviar áudio');
+      // 3. Add to UI immediately
+      const frontendMessage = dbMessageToFrontend(dbMessage);
+      if (onMessagesUpdate) {
+        onMessagesUpdate([...messages, frontendMessage]);
+      }
 
+      console.log('✅ Audio file visible in chat, sending to WhatsApp in background...');
+
+      // 4. Clear state
       setAudioFile(null);
       setReplyingTo(null);
-      onRefresh?.();
+
+      // 5. Send to WhatsApp in background
+      supabase.functions.invoke('send-whatsapp-audio-v2', {
+        body: {
+          messageId: dbMessage.id,
+          mediaUrl: uploadResult.url,
+          contactPhoneNumber: conversation.contact?.phoneNumber || '',
+        }
+      }).then(({ error }) => {
+        if (error) console.error('❌ WhatsApp send failed:', error);
+      });
 
     } catch (error: any) {
       console.error('❌ Erro ao enviar áudio:', error);
@@ -519,57 +572,64 @@ export function ChatPanel({
 
   // Send image handler
   const handleSendImage = async (file: File, caption: string) => {
-    if (!conversation) return;
+    if (!conversation || !profile?.company_id || !user?.id) return;
 
     setIsSendingImage(true);
     try {
-      // Convert file to base64
-      const reader = new FileReader();
-      const base64Promise = new Promise<string>((resolve, reject) => {
-        reader.onload = () => resolve(reader.result as string);
-        reader.onerror = reject;
-      });
-      reader.readAsDataURL(file);
-      const base64Data = await base64Promise;
-
-      console.log('📤 Enviando imagem para Edge Function...');
-
-      // Get contact phone from conversation
-      const contactPhone = conversation.contact?.phoneNumber || '';
-
-      const { data, error } = await supabase.functions.invoke('send-whatsapp-image', {
-        body: {
-          imageData: base64Data,
-          fileName: file.name,
-          mimeType: file.type,
-          conversationId: conversation.id,
-          connectionId: conversation.whatsappConnectionId,
-          contactPhoneNumber: contactPhone,
-          caption: caption || undefined,
-          quotedMessageId: replyingTo?.id,
-        }
-      });
-
-      if (error) throw error;
-
-      if (!data?.success) {
-        throw new Error(data?.error || 'Erro ao enviar imagem');
+      console.log('📤 [Optimistic] Uploading image to Storage...');
+      
+      // 1. Upload directly to Storage (fast)
+      const uploadResult = await uploadMediaToStorage(file, profile.company_id, conversation.id);
+      if (!uploadResult.success || !uploadResult.url) {
+        throw new Error(uploadResult.error || 'Upload failed');
       }
 
-      console.log('✅ Imagem enviada com sucesso!');
-      toast({
-        title: 'Imagem enviada',
-        description: 'A imagem foi enviada com sucesso.',
+      // 2. Create pending message in DB
+      const dbMessage = await createPendingMessage({
+        conversationId: conversation.id,
+        connectionId: conversation.whatsappConnectionId,
+        contactId: conversation.contactId,
+        messageType: 'image',
+        mediaUrl: uploadResult.url,
+        content: caption || '',
+        metadata: {
+          fileName: file.name,
+          fileSize: file.size,
+          mimeType: file.type,
+          storagePath: uploadResult.storagePath,
+        },
+        quotedMessageId: replyingTo?.id,
+        userId: user.id,
       });
 
+      // 3. Add to UI immediately (optimistic update)
+      const frontendMessage = dbMessageToFrontend(dbMessage);
+      if (onMessagesUpdate) {
+        onMessagesUpdate([...messages, frontendMessage]);
+      }
+
+      console.log('✅ Image visible in chat, sending to WhatsApp in background...');
+
+      // 4. Close modal and clear state BEFORE sending to WhatsApp
       setImageFile(null);
       setIsImagePreviewOpen(false);
       setReplyingTo(null);
-      onRefresh?.();
+
+      // 5. Send to WhatsApp in background (don't await)
+      supabase.functions.invoke('send-whatsapp-image-v2', {
+        body: {
+          messageId: dbMessage.id,
+          mediaUrl: uploadResult.url,
+          contactPhoneNumber: conversation.contact?.phoneNumber || '',
+          caption: caption || undefined,
+        }
+      }).then(({ error }) => {
+        if (error) console.error('❌ WhatsApp send failed:', error);
+      });
 
     } catch (error: any) {
       console.error('❌ Erro ao enviar imagem:', error);
-      throw error; // Re-throw to be handled by ImagePreviewModal
+      throw error;
     } finally {
       setIsSendingImage(false);
     }
@@ -582,58 +642,65 @@ export function ChatPanel({
 
   // Send video handler
   const handleSendVideo = async (file: File, text: string, duration: number) => {
-    if (!conversation) return;
+    if (!conversation || !profile?.company_id || !user?.id) return;
 
     setIsSendingVideo(true);
     try {
-      // Convert file to base64
-      const reader = new FileReader();
-      const base64Promise = new Promise<string>((resolve, reject) => {
-        reader.onload = () => resolve(reader.result as string);
-        reader.onerror = reject;
-      });
-      reader.readAsDataURL(file);
-      const base64Data = await base64Promise;
-
-      console.log('📤 Enviando vídeo para Edge Function...');
-
-      // Get contact phone from conversation
-      const contactPhone = conversation.contact?.phoneNumber || '';
-
-      const { data, error } = await supabase.functions.invoke('send-whatsapp-video', {
-        body: {
-          videoData: base64Data,
-          fileName: file.name,
-          mimeType: file.type,
-          conversationId: conversation.id,
-          connectionId: conversation.whatsappConnectionId,
-          contactPhoneNumber: contactPhone,
-          text: text || undefined,
-          duration: duration || undefined,
-          quotedMessageId: replyingTo?.id,
-        }
-      });
-
-      if (error) throw error;
-
-      if (!data?.success) {
-        throw new Error(data?.error || 'Erro ao enviar vídeo');
+      console.log('📤 [Optimistic] Uploading video to Storage...');
+      
+      // 1. Upload directly to Storage
+      const uploadResult = await uploadMediaToStorage(file, profile.company_id, conversation.id);
+      if (!uploadResult.success || !uploadResult.url) {
+        throw new Error(uploadResult.error || 'Upload failed');
       }
 
-      console.log('✅ Vídeo enviado com sucesso!');
-      toast({
-        title: 'Vídeo enviado',
-        description: 'O vídeo foi enviado com sucesso.',
+      // 2. Create pending message in DB
+      const dbMessage = await createPendingMessage({
+        conversationId: conversation.id,
+        connectionId: conversation.whatsappConnectionId,
+        contactId: conversation.contactId,
+        messageType: 'video',
+        mediaUrl: uploadResult.url,
+        content: text || '',
+        metadata: {
+          fileName: file.name,
+          fileSize: file.size,
+          mimeType: file.type,
+          duration,
+          storagePath: uploadResult.storagePath,
+        },
+        quotedMessageId: replyingTo?.id,
+        userId: user.id,
       });
 
+      // 3. Add to UI immediately
+      const frontendMessage = dbMessageToFrontend(dbMessage);
+      if (onMessagesUpdate) {
+        onMessagesUpdate([...messages, frontendMessage]);
+      }
+
+      console.log('✅ Video visible in chat, sending to WhatsApp in background...');
+
+      // 4. Clear state
       setVideoFile(null);
       setIsVideoPreviewOpen(false);
       setReplyingTo(null);
-      onRefresh?.();
+
+      // 5. Send to WhatsApp in background
+      supabase.functions.invoke('send-whatsapp-video-v2', {
+        body: {
+          messageId: dbMessage.id,
+          mediaUrl: uploadResult.url,
+          contactPhoneNumber: conversation.contact?.phoneNumber || '',
+          caption: text || undefined,
+        }
+      }).then(({ error }) => {
+        if (error) console.error('❌ WhatsApp send failed:', error);
+      });
 
     } catch (error: any) {
       console.error('❌ Erro ao enviar vídeo:', error);
-      throw error; // Re-throw to be handled by VideoPreviewModal
+      throw error;
     } finally {
       setIsSendingVideo(false);
     }
@@ -646,57 +713,65 @@ export function ChatPanel({
 
   // Send document handler
   const handleSendDocument = async (file: File, text: string) => {
-    if (!conversation) return;
+    if (!conversation || !profile?.company_id || !user?.id) return;
 
     setIsSendingDocument(true);
     try {
-      // Convert file to base64
-      const reader = new FileReader();
-      const base64Promise = new Promise<string>((resolve, reject) => {
-        reader.onload = () => resolve(reader.result as string);
-        reader.onerror = reject;
-      });
-      reader.readAsDataURL(file);
-      const base64Data = await base64Promise;
-
-      console.log('📤 Enviando documento para Edge Function...');
-
-      // Get contact phone from conversation
-      const contactPhone = conversation.contact?.phoneNumber || '';
-
-      const { data, error } = await supabase.functions.invoke('send-whatsapp-document', {
-        body: {
-          documentData: base64Data,
-          fileName: file.name,
-          mimeType: file.type || 'application/octet-stream',
-          conversationId: conversation.id,
-          connectionId: conversation.whatsappConnectionId,
-          contactPhoneNumber: contactPhone,
-          text: text || undefined,
-          quotedMessageId: replyingTo?.id,
-        }
-      });
-
-      if (error) throw error;
-
-      if (!data?.success) {
-        throw new Error(data?.error || 'Erro ao enviar documento');
+      console.log('📤 [Optimistic] Uploading document to Storage...');
+      
+      // 1. Upload directly to Storage
+      const uploadResult = await uploadMediaToStorage(file, profile.company_id, conversation.id);
+      if (!uploadResult.success || !uploadResult.url) {
+        throw new Error(uploadResult.error || 'Upload failed');
       }
 
-      console.log('✅ Documento enviado com sucesso!');
-      toast({
-        title: 'Documento enviado',
-        description: 'O documento foi enviado com sucesso.',
+      // 2. Create pending message in DB
+      const dbMessage = await createPendingMessage({
+        conversationId: conversation.id,
+        connectionId: conversation.whatsappConnectionId,
+        contactId: conversation.contactId,
+        messageType: 'document',
+        mediaUrl: uploadResult.url,
+        content: text || '',
+        metadata: {
+          fileName: file.name,
+          fileSize: file.size,
+          mimeType: file.type || 'application/octet-stream',
+          storagePath: uploadResult.storagePath,
+        },
+        quotedMessageId: replyingTo?.id,
+        userId: user.id,
       });
 
+      // 3. Add to UI immediately
+      const frontendMessage = dbMessageToFrontend(dbMessage);
+      if (onMessagesUpdate) {
+        onMessagesUpdate([...messages, frontendMessage]);
+      }
+
+      console.log('✅ Document visible in chat, sending to WhatsApp in background...');
+
+      // 4. Clear state
       setDocumentFile(null);
       setIsDocumentPreviewOpen(false);
       setReplyingTo(null);
-      onRefresh?.();
+
+      // 5. Send to WhatsApp in background
+      supabase.functions.invoke('send-whatsapp-document-v2', {
+        body: {
+          messageId: dbMessage.id,
+          mediaUrl: uploadResult.url,
+          contactPhoneNumber: conversation.contact?.phoneNumber || '',
+          fileName: file.name,
+          caption: text || undefined,
+        }
+      }).then(({ error }) => {
+        if (error) console.error('❌ WhatsApp send failed:', error);
+      });
 
     } catch (error: any) {
       console.error('❌ Erro ao enviar documento:', error);
-      throw error; // Re-throw to be handled by DocumentPreviewModal
+      throw error;
     } finally {
       setIsSendingDocument(false);
     }
@@ -1410,10 +1485,22 @@ export function ChatPanel({
         className="flex-1 flex flex-col overflow-hidden"
       >
       <div className="flex-1 relative overflow-hidden">
+        {/* Blur overlay for non-assigned conversations */}
+        {showBlurOverlay && onTakeOverConversation && (
+          <BlurredChatOverlay
+            conversation={conversation}
+            onTakeOver={onTakeOverConversation}
+            isLoading={isTakingOver}
+          />
+        )}
+        
         <div 
           ref={scrollContainerRef}
           onScroll={checkScrollPosition}
-          className="h-full overflow-y-auto px-4"
+          className={cn(
+            "h-full overflow-y-auto px-4",
+            showBlurOverlay && "filter blur-md pointer-events-none select-none"
+          )}
         >
           {isLoadingMessages ? (
             <div className="flex items-center justify-center h-full">

@@ -156,6 +156,111 @@ export type Database = {
           },
         ]
       }
+      ai_agent_knowledge_chunks: {
+        Row: {
+          agent_id: string
+          chunk_index: number
+          content: string
+          created_at: string | null
+          document_id: string
+          embedding: string | null
+          id: string
+        }
+        Insert: {
+          agent_id: string
+          chunk_index: number
+          content: string
+          created_at?: string | null
+          document_id: string
+          embedding?: string | null
+          id?: string
+        }
+        Update: {
+          agent_id?: string
+          chunk_index?: number
+          content?: string
+          created_at?: string | null
+          document_id?: string
+          embedding?: string | null
+          id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_agent_knowledge_chunks_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "ai_agents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_agent_knowledge_chunks_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "ai_agent_knowledge_documents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ai_agent_knowledge_documents: {
+        Row: {
+          agent_id: string
+          company_id: string
+          created_at: string | null
+          error_message: string | null
+          extracted_text: string | null
+          file_name: string
+          file_size: number
+          file_type: string
+          id: string
+          status: string | null
+          storage_path: string
+          updated_at: string | null
+        }
+        Insert: {
+          agent_id: string
+          company_id: string
+          created_at?: string | null
+          error_message?: string | null
+          extracted_text?: string | null
+          file_name: string
+          file_size: number
+          file_type: string
+          id?: string
+          status?: string | null
+          storage_path: string
+          updated_at?: string | null
+        }
+        Update: {
+          agent_id?: string
+          company_id?: string
+          created_at?: string | null
+          error_message?: string | null
+          extracted_text?: string | null
+          file_name?: string
+          file_size?: number
+          file_type?: string
+          id?: string
+          status?: string | null
+          storage_path?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_agent_knowledge_documents_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "ai_agents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_agent_knowledge_documents_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ai_agent_logs: {
         Row: {
           action_type: string
@@ -341,6 +446,7 @@ export type Database = {
           faq_content: string | null
           id: string
           is_primary: boolean | null
+          knowledge_base_content: string | null
           language_code: string | null
           message_batch_seconds: number | null
           name: string
@@ -379,6 +485,7 @@ export type Database = {
           faq_content?: string | null
           id?: string
           is_primary?: boolean | null
+          knowledge_base_content?: string | null
           language_code?: string | null
           message_batch_seconds?: number | null
           name: string
@@ -417,6 +524,7 @@ export type Database = {
           faq_content?: string | null
           id?: string
           is_primary?: boolean | null
+          knowledge_base_content?: string | null
           language_code?: string | null
           message_batch_seconds?: number | null
           name?: string
@@ -636,6 +744,167 @@ export type Database = {
             columns: ["generated_by"]
             isOneToOne: false
             referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      commercial_daily_snapshots: {
+        Row: {
+          agents_data: Json | null
+          aggregated_insights: Json | null
+          avg_closing_score: number | null
+          avg_communication_score: number | null
+          avg_humanization_score: number | null
+          avg_objection_handling_score: number | null
+          avg_objectivity_score: number | null
+          avg_overall_score: number | null
+          avg_response_time_score: number | null
+          closed_lost: number | null
+          closed_won: number | null
+          cold_leads: number | null
+          company_id: string
+          contacts_by_state: Json | null
+          conversations_processed_count: number | null
+          created_at: string | null
+          deals_by_state: Json | null
+          evaluated_conversations: number | null
+          hot_leads: number | null
+          id: string
+          messages_analyzed_count: number | null
+          processing_completed_at: string | null
+          processing_error: string | null
+          processing_started_at: string | null
+          snapshot_date: string
+          top_objections: Json | null
+          top_pain_points: Json | null
+          total_conversations: number | null
+          total_messages: number | null
+          updated_at: string | null
+          warm_leads: number | null
+        }
+        Insert: {
+          agents_data?: Json | null
+          aggregated_insights?: Json | null
+          avg_closing_score?: number | null
+          avg_communication_score?: number | null
+          avg_humanization_score?: number | null
+          avg_objection_handling_score?: number | null
+          avg_objectivity_score?: number | null
+          avg_overall_score?: number | null
+          avg_response_time_score?: number | null
+          closed_lost?: number | null
+          closed_won?: number | null
+          cold_leads?: number | null
+          company_id: string
+          contacts_by_state?: Json | null
+          conversations_processed_count?: number | null
+          created_at?: string | null
+          deals_by_state?: Json | null
+          evaluated_conversations?: number | null
+          hot_leads?: number | null
+          id?: string
+          messages_analyzed_count?: number | null
+          processing_completed_at?: string | null
+          processing_error?: string | null
+          processing_started_at?: string | null
+          snapshot_date: string
+          top_objections?: Json | null
+          top_pain_points?: Json | null
+          total_conversations?: number | null
+          total_messages?: number | null
+          updated_at?: string | null
+          warm_leads?: number | null
+        }
+        Update: {
+          agents_data?: Json | null
+          aggregated_insights?: Json | null
+          avg_closing_score?: number | null
+          avg_communication_score?: number | null
+          avg_humanization_score?: number | null
+          avg_objection_handling_score?: number | null
+          avg_objectivity_score?: number | null
+          avg_overall_score?: number | null
+          avg_response_time_score?: number | null
+          closed_lost?: number | null
+          closed_won?: number | null
+          cold_leads?: number | null
+          company_id?: string
+          contacts_by_state?: Json | null
+          conversations_processed_count?: number | null
+          created_at?: string | null
+          deals_by_state?: Json | null
+          evaluated_conversations?: number | null
+          hot_leads?: number | null
+          id?: string
+          messages_analyzed_count?: number | null
+          processing_completed_at?: string | null
+          processing_error?: string | null
+          processing_started_at?: string | null
+          snapshot_date?: string
+          top_objections?: Json | null
+          top_pain_points?: Json | null
+          total_conversations?: number | null
+          total_messages?: number | null
+          updated_at?: string | null
+          warm_leads?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "commercial_daily_snapshots_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      commercial_processed_conversations: {
+        Row: {
+          company_id: string
+          conversation_id: string
+          created_at: string | null
+          evaluation_data: Json | null
+          id: string
+          last_message_count: number | null
+          last_processed_at: string | null
+          metrics_data: Json | null
+          updated_at: string | null
+        }
+        Insert: {
+          company_id: string
+          conversation_id: string
+          created_at?: string | null
+          evaluation_data?: Json | null
+          id?: string
+          last_message_count?: number | null
+          last_processed_at?: string | null
+          metrics_data?: Json | null
+          updated_at?: string | null
+        }
+        Update: {
+          company_id?: string
+          conversation_id?: string
+          created_at?: string | null
+          evaluation_data?: Json | null
+          id?: string
+          last_message_count?: number | null
+          last_processed_at?: string | null
+          metrics_data?: Json | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "commercial_processed_conversations_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "commercial_processed_conversations_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: true
+            referencedRelation: "conversations"
             referencedColumns: ["id"]
           },
         ]
@@ -1577,6 +1846,56 @@ export type Database = {
             columns: ["user_id"]
             isOneToOne: true
             referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      custom_field_definitions: {
+        Row: {
+          active: boolean | null
+          company_id: string
+          created_at: string | null
+          field_key: string
+          field_type: string
+          icon: string | null
+          id: string
+          is_required: boolean | null
+          name: string
+          position: number | null
+          updated_at: string | null
+        }
+        Insert: {
+          active?: boolean | null
+          company_id: string
+          created_at?: string | null
+          field_key: string
+          field_type?: string
+          icon?: string | null
+          id?: string
+          is_required?: boolean | null
+          name: string
+          position?: number | null
+          updated_at?: string | null
+        }
+        Update: {
+          active?: boolean | null
+          company_id?: string
+          created_at?: string | null
+          field_key?: string
+          field_type?: string
+          icon?: string | null
+          id?: string
+          is_required?: boolean | null
+          name?: string
+          position?: number | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "custom_field_definitions_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
             referencedColumns: ["id"]
           },
         ]
@@ -2666,6 +2985,7 @@ export type Database = {
         Row: {
           active: boolean | null
           avatar_url: string | null
+          commercial_analysis_enabled: boolean | null
           company_id: string
           created_at: string | null
           department_id: string | null
@@ -2683,6 +3003,7 @@ export type Database = {
         Insert: {
           active?: boolean | null
           avatar_url?: string | null
+          commercial_analysis_enabled?: boolean | null
           company_id: string
           created_at?: string | null
           department_id?: string | null
@@ -2700,6 +3021,7 @@ export type Database = {
         Update: {
           active?: boolean | null
           avatar_url?: string | null
+          commercial_analysis_enabled?: boolean | null
           company_id?: string
           created_at?: string | null
           department_id?: string | null
@@ -3364,6 +3686,20 @@ export type Database = {
       room_belongs_to_user_company: {
         Args: { room_id: string }
         Returns: boolean
+      }
+      search_agent_knowledge: {
+        Args: {
+          p_agent_id: string
+          p_limit?: number
+          p_min_similarity?: number
+          p_query_embedding: string
+        }
+        Returns: {
+          chunk_id: string
+          content: string
+          document_id: string
+          similarity: number
+        }[]
       }
     }
     Enums: {
