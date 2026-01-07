@@ -85,6 +85,8 @@ export interface SidebarPendingChanges {
   language_code?: string;
   speech_speed?: number;
   audio_temperature?: number;
+  ai_model_type?: 'standard' | 'advanced';
+  audio_model_type?: 'standard' | 'advanced';
 }
 
 interface AgentSidebarProps {
@@ -417,6 +419,34 @@ export function AgentSidebar({
                   </SelectContent>
                 </Select>
               </div>
+
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-1">
+                  <Label className="text-xs">Modelo de IA</Label>
+                  <Tooltip>
+                    <TooltipTrigger>
+                      <Info className="w-3 h-3 text-muted-foreground" />
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p className="text-xs max-w-[200px]">
+                        Padrão: Gemini 2.5 Flash Lite (mais barato). Avançado: Gemini 3 Flash (melhor qualidade).
+                      </p>
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+                <Select 
+                  value={(getValue('ai_model_type') as string) ?? agent.ai_model_type ?? 'advanced'} 
+                  onValueChange={(v) => handleUpdateField('ai_model_type', v as 'standard' | 'advanced')}
+                >
+                  <SelectTrigger className="h-8 text-sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="standard">IA Padrão (R$10/1M)</SelectItem>
+                    <SelectItem value="advanced">IA Avançada (R$30/1M)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </CollapsibleContent>
           </Collapsible>
 
@@ -607,6 +637,23 @@ export function AgentSidebar({
 
               {currentAudioEnabled && (
                 <>
+                  {/* Audio model selector */}
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Modelo de Áudio</Label>
+                    <Select 
+                      value={(getValue('audio_model_type') as string) ?? agent.audio_model_type ?? 'standard'} 
+                      onValueChange={(v) => handleUpdateField('audio_model_type', v as 'standard' | 'advanced')}
+                    >
+                      <SelectTrigger className="h-8 text-sm">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="standard">Áudio Padrão (R$60/1M)</SelectItem>
+                        <SelectItem value="advanced">Áudio Avançado (R$120/1M)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
                   {/* Audio switch */}
                   <div className="flex items-center justify-between py-1">
                     <Label className="text-xs text-muted-foreground">Áudio → Áudio</Label>

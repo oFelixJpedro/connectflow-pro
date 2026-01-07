@@ -3,6 +3,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { transcribeAudio } from "../_shared/media-cache.ts";
 import { logAIUsage } from "../_shared/usage-tracker.ts";
+import { checkCredits, consumeCredits } from "../_shared/supabase-credits.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -44,6 +45,23 @@ serve(async (req) => {
       }
     }
 
+    // 💰 Check credits before transcription
+    if (supabase && companyId) {
+      const creditCheck = await checkCredits(supabase, companyId, 'standard_text', 500);
+      if (!creditCheck.hasCredits) {
+        return new Response(JSON.stringify({ 
+          error: creditCheck.errorMessage,
+          code: 'INSUFFICIENT_CREDITS',
+          creditType: 'standard_text',
+          currentBalance: creditCheck.currentBalance,
+          success: false 
+        }), {
+          status: 402,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+    }
+
     // Use the shared transcribeAudio function with caching support
     const startTime = Date.now();
     const transcription = await transcribeAudio(
@@ -78,6 +96,19 @@ serve(async (req) => {
         },
         true // isAudioInput - audio transcription always uses audio pricing
       );
+      
+      // 💰 Consume credits after successful transcription
+      const totalTokens = estimatedAudioTokens + outputTokens;
+      await consumeCredits(
+        supabase,
+        companyId,
+        'standard_text',
+        totalTokens,
+        'transcribe-audio',
+        estimatedAudioTokens,
+        outputTokens
+      );
+      console.log('💰 Créditos consumidos:', totalTokens);
     }
     
     console.log('Transcription result:', transcription ? `${transcription.substring(0, 100)}...` : '(empty)');

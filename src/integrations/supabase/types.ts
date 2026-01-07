@@ -3782,18 +3782,30 @@ export type Database = {
       cleanup_old_conversation_events: { Args: never; Returns: number }
       cleanup_old_sessions: { Args: never; Returns: number }
       cleanup_old_usage_logs: { Args: never; Returns: number }
-      consume_ai_credits: {
-        Args: {
-          p_company_id: string
-          p_credit_type: string
-          p_function_name?: string
-          p_input_tokens?: number
-          p_metadata?: Json
-          p_output_tokens?: number
-          p_tokens: number
-        }
-        Returns: Json
-      }
+      consume_ai_credits:
+        | {
+            Args: {
+              p_company_id: string
+              p_credit_type: string
+              p_function_name?: string
+              p_input_tokens?: number
+              p_output_tokens?: number
+              p_tokens: number
+            }
+            Returns: Json
+          }
+        | {
+            Args: {
+              p_company_id: string
+              p_credit_type: string
+              p_function_name?: string
+              p_input_tokens?: number
+              p_metadata?: Json
+              p_output_tokens?: number
+              p_tokens: number
+            }
+            Returns: Json
+          }
       create_internal_chat_room: {
         Args: { p_description?: string; p_name?: string; p_type: string }
         Returns: string
