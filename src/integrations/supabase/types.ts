@@ -2248,6 +2248,414 @@ export type Database = {
           },
         ]
       }
+      follow_up_contact_state: {
+        Row: {
+          active_sequence_id: string | null
+          company_id: string
+          contact_id: string
+          created_at: string | null
+          current_step_order: number | null
+          id: string
+          last_contact_reply_at: string | null
+          last_followup_sent_at: string | null
+          opted_out: boolean | null
+          opted_out_at: string | null
+          total_followups_sent: number | null
+          updated_at: string | null
+        }
+        Insert: {
+          active_sequence_id?: string | null
+          company_id: string
+          contact_id: string
+          created_at?: string | null
+          current_step_order?: number | null
+          id?: string
+          last_contact_reply_at?: string | null
+          last_followup_sent_at?: string | null
+          opted_out?: boolean | null
+          opted_out_at?: string | null
+          total_followups_sent?: number | null
+          updated_at?: string | null
+        }
+        Update: {
+          active_sequence_id?: string | null
+          company_id?: string
+          contact_id?: string
+          created_at?: string | null
+          current_step_order?: number | null
+          id?: string
+          last_contact_reply_at?: string | null
+          last_followup_sent_at?: string | null
+          opted_out?: boolean | null
+          opted_out_at?: string | null
+          total_followups_sent?: number | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "follow_up_contact_state_active_sequence_id_fkey"
+            columns: ["active_sequence_id"]
+            isOneToOne: false
+            referencedRelation: "follow_up_sequences"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "follow_up_contact_state_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "follow_up_contact_state_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: true
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      follow_up_knowledge_chunks: {
+        Row: {
+          chunk_index: number
+          content: string
+          created_at: string | null
+          document_id: string
+          embedding: string | null
+          id: string
+          sequence_id: string
+        }
+        Insert: {
+          chunk_index: number
+          content: string
+          created_at?: string | null
+          document_id: string
+          embedding?: string | null
+          id?: string
+          sequence_id: string
+        }
+        Update: {
+          chunk_index?: number
+          content?: string
+          created_at?: string | null
+          document_id?: string
+          embedding?: string | null
+          id?: string
+          sequence_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "follow_up_knowledge_chunks_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "follow_up_knowledge_documents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "follow_up_knowledge_chunks_sequence_id_fkey"
+            columns: ["sequence_id"]
+            isOneToOne: false
+            referencedRelation: "follow_up_sequences"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      follow_up_knowledge_documents: {
+        Row: {
+          company_id: string
+          created_at: string | null
+          error_message: string | null
+          extracted_text: string | null
+          file_name: string
+          file_size: number
+          file_type: string
+          id: string
+          sequence_id: string
+          status: string | null
+          storage_path: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string | null
+          error_message?: string | null
+          extracted_text?: string | null
+          file_name: string
+          file_size: number
+          file_type: string
+          id?: string
+          sequence_id: string
+          status?: string | null
+          storage_path: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string | null
+          error_message?: string | null
+          extracted_text?: string | null
+          file_name?: string
+          file_size?: number
+          file_type?: string
+          id?: string
+          sequence_id?: string
+          status?: string | null
+          storage_path?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "follow_up_knowledge_documents_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "follow_up_knowledge_documents_sequence_id_fkey"
+            columns: ["sequence_id"]
+            isOneToOne: false
+            referencedRelation: "follow_up_sequences"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      follow_up_queue: {
+        Row: {
+          company_id: string
+          contact_id: string
+          conversation_id: string | null
+          created_at: string | null
+          current_step_id: string | null
+          failure_code: string | null
+          failure_reason: string | null
+          id: string
+          processing_time_ms: number | null
+          reference_message_at: string | null
+          scheduled_at: string
+          sent_at: string | null
+          sent_content: string | null
+          sent_media_url: string | null
+          sequence_id: string
+          status: string | null
+          tokens_used: number | null
+          updated_at: string | null
+        }
+        Insert: {
+          company_id: string
+          contact_id: string
+          conversation_id?: string | null
+          created_at?: string | null
+          current_step_id?: string | null
+          failure_code?: string | null
+          failure_reason?: string | null
+          id?: string
+          processing_time_ms?: number | null
+          reference_message_at?: string | null
+          scheduled_at: string
+          sent_at?: string | null
+          sent_content?: string | null
+          sent_media_url?: string | null
+          sequence_id: string
+          status?: string | null
+          tokens_used?: number | null
+          updated_at?: string | null
+        }
+        Update: {
+          company_id?: string
+          contact_id?: string
+          conversation_id?: string | null
+          created_at?: string | null
+          current_step_id?: string | null
+          failure_code?: string | null
+          failure_reason?: string | null
+          id?: string
+          processing_time_ms?: number | null
+          reference_message_at?: string | null
+          scheduled_at?: string
+          sent_at?: string | null
+          sent_content?: string | null
+          sent_media_url?: string | null
+          sequence_id?: string
+          status?: string | null
+          tokens_used?: number | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "follow_up_queue_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "follow_up_queue_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "follow_up_queue_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "follow_up_queue_current_step_id_fkey"
+            columns: ["current_step_id"]
+            isOneToOne: false
+            referencedRelation: "follow_up_sequence_steps"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "follow_up_queue_sequence_id_fkey"
+            columns: ["sequence_id"]
+            isOneToOne: false
+            referencedRelation: "follow_up_sequences"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      follow_up_sequence_steps: {
+        Row: {
+          ai_instruction: string | null
+          created_at: string | null
+          delay_unit: string
+          delay_value: number
+          id: string
+          manual_content: string | null
+          manual_media_type: string | null
+          manual_media_url: string | null
+          sequence_id: string
+          step_order: number
+          stop_if_opened: boolean | null
+          stop_if_replied: boolean | null
+        }
+        Insert: {
+          ai_instruction?: string | null
+          created_at?: string | null
+          delay_unit: string
+          delay_value: number
+          id?: string
+          manual_content?: string | null
+          manual_media_type?: string | null
+          manual_media_url?: string | null
+          sequence_id: string
+          step_order: number
+          stop_if_opened?: boolean | null
+          stop_if_replied?: boolean | null
+        }
+        Update: {
+          ai_instruction?: string | null
+          created_at?: string | null
+          delay_unit?: string
+          delay_value?: number
+          id?: string
+          manual_content?: string | null
+          manual_media_type?: string | null
+          manual_media_url?: string | null
+          sequence_id?: string
+          step_order?: number
+          stop_if_opened?: boolean | null
+          stop_if_replied?: boolean | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "follow_up_sequence_steps_sequence_id_fkey"
+            columns: ["sequence_id"]
+            isOneToOne: false
+            referencedRelation: "follow_up_sequences"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      follow_up_sequences: {
+        Row: {
+          ai_model_type: string | null
+          company_id: string
+          connection_ids: string[] | null
+          created_at: string | null
+          created_by: string | null
+          crm_stage_ids: string[] | null
+          description: string | null
+          follow_up_type: string
+          id: string
+          knowledge_base_content: string | null
+          name: string
+          operating_days: number[] | null
+          operating_end_time: string | null
+          operating_hours_enabled: boolean | null
+          operating_start_time: string | null
+          persona_prompt: string | null
+          priority: number | null
+          rules_content: string | null
+          status: string | null
+          tag_filters: string[] | null
+          updated_at: string | null
+        }
+        Insert: {
+          ai_model_type?: string | null
+          company_id: string
+          connection_ids?: string[] | null
+          created_at?: string | null
+          created_by?: string | null
+          crm_stage_ids?: string[] | null
+          description?: string | null
+          follow_up_type: string
+          id?: string
+          knowledge_base_content?: string | null
+          name: string
+          operating_days?: number[] | null
+          operating_end_time?: string | null
+          operating_hours_enabled?: boolean | null
+          operating_start_time?: string | null
+          persona_prompt?: string | null
+          priority?: number | null
+          rules_content?: string | null
+          status?: string | null
+          tag_filters?: string[] | null
+          updated_at?: string | null
+        }
+        Update: {
+          ai_model_type?: string | null
+          company_id?: string
+          connection_ids?: string[] | null
+          created_at?: string | null
+          created_by?: string | null
+          crm_stage_ids?: string[] | null
+          description?: string | null
+          follow_up_type?: string
+          id?: string
+          knowledge_base_content?: string | null
+          name?: string
+          operating_days?: number[] | null
+          operating_end_time?: string | null
+          operating_hours_enabled?: boolean | null
+          operating_start_time?: string | null
+          persona_prompt?: string | null
+          priority?: number | null
+          rules_content?: string | null
+          status?: string | null
+          tag_filters?: string[] | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "follow_up_sequences_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "follow_up_sequences_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       insights_jobs: {
         Row: {
           company_id: string
