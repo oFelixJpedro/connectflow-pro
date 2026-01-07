@@ -808,6 +808,226 @@ export type Database = {
           },
         ]
       }
+      calendar_event_attendees: {
+        Row: {
+          contact_id: string | null
+          created_at: string
+          email: string | null
+          event_id: string
+          id: string
+          name: string | null
+          profile_id: string | null
+          status: string | null
+        }
+        Insert: {
+          contact_id?: string | null
+          created_at?: string
+          email?: string | null
+          event_id: string
+          id?: string
+          name?: string | null
+          profile_id?: string | null
+          status?: string | null
+        }
+        Update: {
+          contact_id?: string | null
+          created_at?: string
+          email?: string | null
+          event_id?: string
+          id?: string
+          name?: string | null
+          profile_id?: string | null
+          status?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "calendar_event_attendees_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "calendar_event_attendees_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "calendar_events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "calendar_event_attendees_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      calendar_events: {
+        Row: {
+          all_day: boolean | null
+          assigned_to: string | null
+          color: string | null
+          company_id: string
+          contact_id: string | null
+          conversation_id: string | null
+          created_at: string
+          created_by: string
+          description: string | null
+          end_date: string
+          event_type: string | null
+          google_calendar_synced: boolean | null
+          google_event_id: string | null
+          id: string
+          location: string | null
+          metadata: Json | null
+          recurrence_rule: string | null
+          reminder_minutes: number | null
+          start_date: string
+          status: string | null
+          summary: string | null
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          all_day?: boolean | null
+          assigned_to?: string | null
+          color?: string | null
+          company_id: string
+          contact_id?: string | null
+          conversation_id?: string | null
+          created_at?: string
+          created_by: string
+          description?: string | null
+          end_date: string
+          event_type?: string | null
+          google_calendar_synced?: boolean | null
+          google_event_id?: string | null
+          id?: string
+          location?: string | null
+          metadata?: Json | null
+          recurrence_rule?: string | null
+          reminder_minutes?: number | null
+          start_date: string
+          status?: string | null
+          summary?: string | null
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          all_day?: boolean | null
+          assigned_to?: string | null
+          color?: string | null
+          company_id?: string
+          contact_id?: string | null
+          conversation_id?: string | null
+          created_at?: string
+          created_by?: string
+          description?: string | null
+          end_date?: string
+          event_type?: string | null
+          google_calendar_synced?: boolean | null
+          google_event_id?: string | null
+          id?: string
+          location?: string | null
+          metadata?: Json | null
+          recurrence_rule?: string | null
+          reminder_minutes?: number | null
+          start_date?: string
+          status?: string | null
+          summary?: string | null
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "calendar_events_assigned_to_fkey"
+            columns: ["assigned_to"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "calendar_events_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "calendar_events_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "calendar_events_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "calendar_events_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      calendar_google_tokens: {
+        Row: {
+          access_token: string
+          company_id: string
+          connected_by: string
+          created_at: string
+          expires_at: string
+          google_email: string | null
+          id: string
+          refresh_token: string
+          updated_at: string
+        }
+        Insert: {
+          access_token: string
+          company_id: string
+          connected_by: string
+          created_at?: string
+          expires_at: string
+          google_email?: string | null
+          id?: string
+          refresh_token: string
+          updated_at?: string
+        }
+        Update: {
+          access_token?: string
+          company_id?: string
+          connected_by?: string
+          created_at?: string
+          expires_at?: string
+          google_email?: string | null
+          id?: string
+          refresh_token?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "calendar_google_tokens_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: true
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "calendar_google_tokens_connected_by_fkey"
+            columns: ["connected_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       chat_summaries: {
         Row: {
           contact_id: string | null
