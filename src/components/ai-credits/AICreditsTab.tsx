@@ -1,17 +1,20 @@
 import { useState } from 'react';
 import { CreditCard, Info, RefreshCw, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
 import { CreditBalanceCard } from './CreditBalanceCard';
 import { AICreditsInfoModal } from './AICreditsInfoModal';
 import { TransactionHistory } from './TransactionHistory';
+import { AutoRechargeSettings } from './AutoRechargeSettings';
 import { useAICredits } from '@/hooks/useAICredits';
+import { useAuth } from '@/contexts/AuthContext';
 import { AI_CREDIT_TYPES, type CreditType } from '@/types/ai-credits';
 
 export function AICreditsTab() {
   const [showInfoModal, setShowInfoModal] = useState(false);
+  const { profile } = useAuth();
   const { 
     credits, 
     transactions, 
@@ -22,6 +25,8 @@ export function AICreditsTab() {
     formatTokens,
     getPercentage,
   } = useAICredits();
+
+  const companyId = profile?.company_id;
 
   const textCredits: CreditType[] = ['standard_text', 'advanced_text'];
   const audioCredits: CreditType[] = ['standard_audio', 'advanced_audio'];
@@ -133,6 +138,17 @@ export function AICreditsTab() {
           ))}
         </div>
       </div>
+
+      <Separator />
+
+      {/* Auto Recharge Settings */}
+      {companyId && (
+        <AutoRechargeSettings 
+          companyId={companyId} 
+          credits={credits} 
+          onUpdate={loadCredits}
+        />
+      )}
 
       <Separator />
 

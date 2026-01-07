@@ -158,3 +158,6 @@ verify_jwt = true
 
 [functions.check-ai-credits]
 verify_jwt = true
+
+[functions.auto-recharge-credits]
+verify_jwt = false
