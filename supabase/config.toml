@@ -167,3 +167,6 @@ verify_jwt = false
 
 [functions.enqueue-followups]
 verify_jwt = false
+
+[functions.send-notification]
+verify_jwt = true
