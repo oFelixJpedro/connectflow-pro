@@ -40,7 +40,7 @@ export default function AIAgents() {
   const [searchParams] = useSearchParams();
   const { profile, userRole } = useAuth();
   const { primaryAgents, secondaryAgents, isLoading, setAgentStatus, deleteAgent } = useAIAgents();
-  const { credits } = useAICredits();
+  const { credits, isLoading: isLoadingCredits } = useAICredits();
   
   const [activeTab, setActiveTab] = useState<SubMenuTab>('agents');
   const [searchQuery, setSearchQuery] = useState('');
@@ -52,8 +52,8 @@ export default function AIAgents() {
   const [secondaryExpanded, setSecondaryExpanded] = useState(true);
   const [agentToDelete, setAgentToDelete] = useState<AIAgent | null>(null);
   
-  // Check if user has text credits available
-  const hasTextCredits = credits && (credits.standard_text > 0 || credits.advanced_text > 0);
+  // Check if user has text credits available - during loading, assume no credits (safer)
+  const hasTextCredits = !isLoadingCredits && credits && (credits.standard_text > 0 || credits.advanced_text > 0);
   const canCreateAgents = hasTextCredits;
   const canActivateAgents = hasTextCredits;
 
@@ -101,6 +101,13 @@ export default function AIAgents() {
 
   const handleToggleStatus = async (agent: AIAgent, e: React.MouseEvent) => {
     e.stopPropagation();
+    
+    // If trying to ACTIVATE (agent is currently inactive), verify credits first
+    if (agent.status !== 'active' && !canActivateAgents) {
+      toast.error('Adquira créditos de IA para ativar agentes');
+      return;
+    }
+    
     const newStatus = agent.status === 'active' ? 'inactive' : 'active';
     await setAgentStatus(agent.id, newStatus);
   };

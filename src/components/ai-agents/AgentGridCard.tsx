@@ -117,11 +117,14 @@ export function AgentGridCard({
           {switchDisabled ? (
             <Tooltip>
               <TooltipTrigger asChild>
-                <div>
+                <div 
+                  onClick={(e) => e.stopPropagation()}
+                  className="pointer-events-auto"
+                >
                   <Switch
                     checked={isActive}
                     disabled
-                    className="opacity-50 cursor-not-allowed"
+                    className="opacity-50 cursor-not-allowed pointer-events-none"
                   />
                 </div>
               </TooltipTrigger>
