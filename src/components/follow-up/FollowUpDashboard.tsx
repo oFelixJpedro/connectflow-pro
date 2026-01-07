@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -16,10 +16,10 @@ export function FollowUpDashboard() {
   const [startDate, setStartDate] = useState(format(subDays(new Date(), 7), 'yyyy-MM-dd'));
   const [endDate, setEndDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   
-  const dateRange = {
+  const dateRange = useMemo(() => ({
     start: new Date(startDate),
     end: new Date(endDate)
-  };
+  }), [startDate, endDate]);
 
   const {
     metrics,
