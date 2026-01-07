@@ -219,7 +219,14 @@ export function useAIAgents() {
         .update(updateData)
         .eq('id', agentId);
 
-      if (updateError) throw updateError;
+      if (updateError) {
+        // Check if it's an RLS permission error (blocked by credit check)
+        if (updateError.code === '42501' || updateError.message?.includes('row-level security')) {
+          toast.error('Sem créditos para ativar agentes. Adquira créditos de IA.');
+          return false;
+        }
+        throw updateError;
+      }
 
       const statusLabels = {
         active: 'ativado',
@@ -230,9 +237,14 @@ export function useAIAgents() {
       toast.success(`Agente ${statusLabels[status]} com sucesso!`);
       await loadAgents();
       return true;
-    } catch (err) {
+    } catch (err: any) {
       console.error('Erro ao alterar status do agente:', err);
-      toast.error('Erro ao alterar status do agente');
+      // Handle RLS error in catch block as well
+      if (err?.code === '42501' || err?.message?.includes('row-level security')) {
+        toast.error('Sem créditos para ativar agentes. Adquira créditos de IA.');
+      } else {
+        toast.error('Erro ao alterar status do agente');
+      }
       return false;
     }
   }, [loadAgents]);
