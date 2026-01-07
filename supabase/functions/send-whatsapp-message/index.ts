@@ -1,5 +1,4 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
+import { createClient } from "npm:@supabase/supabase-js@2"
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -9,7 +8,7 @@ const corsHeaders = {
 // Get base URL from secrets (REQUIRED - no fallback)
 const UAZAPI_BASE_URL = Deno.env.get('UAZAPI_BASE_URL')?.trim() || ''
 
-serve(async (req) => {
+Deno.serve(async (req: Request) => {
   console.log('\n')
   console.log('╔══════════════════════════════════════════════════════════════════╗')
   console.log('║              📤 SEND WHATSAPP MESSAGE                            ║')

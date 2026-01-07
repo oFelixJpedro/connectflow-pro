@@ -1,5 +1,4 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createClient } from "npm:@supabase/supabase-js@2";
 
 // Get allowed origins from environment or use default
 const getAllowedOrigin = (req: Request): string => {
@@ -84,7 +83,7 @@ function createDeleteCookie(name: string): string {
   return `${name}=; Path=/; Max-Age=0; SameSite=None; Secure; HttpOnly`;
 }
 
-serve(async (req) => {
+Deno.serve(async (req: Request) => {
   const corsHeaders = getCorsHeaders(req);
 
   // Handle CORS preflight requests

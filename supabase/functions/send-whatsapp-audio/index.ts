@@ -1,6 +1,4 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
-import { decode as base64Decode } from "https://deno.land/std@0.168.0/encoding/base64.ts"
+import { createClient } from "npm:@supabase/supabase-js@2"
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -10,7 +8,7 @@ const corsHeaders = {
 // Get base URL from secrets (REQUIRED - no fallback)
 const UAZAPI_BASE_URL = Deno.env.get('UAZAPI_BASE_URL')?.trim() || ''
 
-serve(async (req) => {
+Deno.serve(async (req: Request) => {
   console.log('\n')
   console.log('╔══════════════════════════════════════════════════════════════════╗')
   console.log('║              🎤 SEND WHATSAPP AUDIO                               ║')
@@ -119,7 +117,11 @@ serve(async (req) => {
         ? audioData.split(',')[1] 
         : audioData
       
-      audioBuffer = base64Decode(base64Data)
+      const binaryString = atob(base64Data)
+      audioBuffer = new Uint8Array(binaryString.length)
+      for (let i = 0; i < binaryString.length; i++) {
+        audioBuffer[i] = binaryString.charCodeAt(i)
+      }
       console.log('📊 Tamanho do áudio:', formatBytes(audioBuffer.length))
     } catch (e) {
       console.log('❌ Erro ao decodificar base64:', e)
