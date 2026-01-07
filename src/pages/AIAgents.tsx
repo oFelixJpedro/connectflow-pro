@@ -30,6 +30,7 @@ import { CreateAgentTypeModal } from '@/components/ai-agents/CreateAgentTypeModa
 import { CreateAgentNameModal } from '@/components/ai-agents/CreateAgentNameModal';
 import { AgentTemplatesModal } from '@/components/ai-agents/AgentTemplatesModal';
 import { AICreditsTab } from '@/components/ai-credits';
+import { FollowUpTab } from '@/components/follow-up';
 import { toast } from 'sonner';
 import type { AIAgentType, AIAgent } from '@/types/ai-agents';
 
@@ -300,15 +301,7 @@ export default function AIAgents() {
               </Collapsible>
             </div>
           ) : activeTab === 'followup' ? (
-            <div className="flex flex-col items-center justify-center h-64">
-              <RotateCcw className="w-16 h-16 text-muted-foreground mb-4" />
-              <h2 className="text-xl font-semibold mb-2">Follow-up Automático</h2>
-              <p className="text-muted-foreground text-center max-w-md">
-                Em breve você poderá configurar sequências automáticas de follow-up 
-                para manter contato com seus clientes.
-              </p>
-              <Badge variant="outline" className="mt-4">Em desenvolvimento</Badge>
-            </div>
+            <FollowUpTab />
           ) : (
             <AICreditsTab />
           )}
