@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Bot, Plus, BookTemplate, RotateCcw, Search, CreditCard, Bell } from 'lucide-react';
+import { Bot, Plus, BookTemplate, RotateCcw, Search, CreditCard, Bell, Calendar } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
@@ -32,10 +32,11 @@ import { AgentTemplatesModal } from '@/components/ai-agents/AgentTemplatesModal'
 import { AICreditsTab } from '@/components/ai-credits';
 import { FollowUpTab } from '@/components/follow-up';
 import { NotificationsTab } from '@/components/notifications';
+import { CalendarTab } from '@/components/calendar';
 import { toast } from 'sonner';
 import type { AIAgentType, AIAgent } from '@/types/ai-agents';
 
-type SubMenuTab = 'agents' | 'notifications' | 'followup' | 'credits';
+type SubMenuTab = 'agents' | 'notifications' | 'followup' | 'credits' | 'calendar';
 
 export default function AIAgents() {
   const navigate = useNavigate();
