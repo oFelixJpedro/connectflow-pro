@@ -1,4 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { checkCredits, consumeCredits } from "../_shared/supabase-credits.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -44,7 +46,7 @@ serve(async (req) => {
   }
 
   try {
-    const { text } = await req.json();
+    const { text, companyId } = await req.json();
 
     if (!text || typeof text !== 'string') {
       return new Response(
@@ -60,6 +62,28 @@ serve(async (req) => {
         JSON.stringify({ error: 'API key não configurada' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
+    }
+
+    // 💰 Check credits if companyId provided
+    let supabase = null;
+    if (companyId) {
+      supabase = createClient(
+        Deno.env.get('SUPABASE_URL') ?? '',
+        Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+      );
+      
+      const creditCheck = await checkCredits(supabase, companyId, 'standard_text', 1000);
+      if (!creditCheck.hasCredits) {
+        return new Response(
+          JSON.stringify({ 
+            error: creditCheck.errorMessage,
+            code: 'INSUFFICIENT_CREDITS',
+            creditType: 'standard_text',
+            currentBalance: creditCheck.currentBalance
+          }),
+          { status: 402, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
     }
 
     console.log('📝 Formatting prompt, text length:', text.length);
@@ -100,6 +124,24 @@ serve(async (req) => {
         JSON.stringify({ error: 'Resposta vazia da IA' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
+    }
+
+    // 💰 Consume credits after successful processing
+    if (supabase && companyId) {
+      const inputTokens = Math.ceil((FORMATTING_PROMPT.length + text.length) / 4);
+      const outputTokens = Math.ceil(formattedText.length / 4);
+      const totalTokens = inputTokens + outputTokens;
+      
+      await consumeCredits(
+        supabase,
+        companyId,
+        'standard_text',
+        totalTokens,
+        'format-prompt',
+        inputTokens,
+        outputTokens
+      );
+      console.log('💰 Créditos consumidos:', totalTokens);
     }
 
     console.log('✅ Formatting complete, output length:', formattedText.length);

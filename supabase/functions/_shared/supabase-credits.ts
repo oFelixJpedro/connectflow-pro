@@ -3,7 +3,9 @@
 // Used by AI Edge Functions to check and consume credits
 // =====================================================
 
-import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+// Use 'any' for Supabase client to avoid version conflicts
+// deno-lint-ignore no-explicit-any
+type SupabaseClient = any;
 
 export type CreditType = 'standard_text' | 'advanced_text' | 'standard_audio' | 'advanced_audio';
 
