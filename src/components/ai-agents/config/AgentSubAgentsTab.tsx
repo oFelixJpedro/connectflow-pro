@@ -14,9 +14,11 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { useAIAgents } from '@/hooks/useAIAgents';
+import { useAICredits } from '@/hooks/useAICredits';
 import { SubAgentCard } from '../SubAgentCard';
 import { CreateSubAgentModal } from '../CreateSubAgentModal';
 import { supabase } from '@/integrations/supabase/client';
+import { toast } from 'sonner';
 import type { AIAgent } from '@/types/ai-agents';
 
 interface AgentSubAgentsTabProps {
@@ -27,8 +29,13 @@ interface AgentSubAgentsTabProps {
 export function AgentSubAgentsTab({ agent, onUpdate }: AgentSubAgentsTabProps) {
   const navigate = useNavigate();
   const { agents, setAgentStatus, deleteAgent } = useAIAgents();
+  const { credits, isLoading: isLoadingCredits } = useAICredits();
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [agentToDelete, setAgentToDelete] = useState<AIAgent | null>(null);
+  
+  // Check if user has text credits available - during loading, assume no credits (safer)
+  const hasTextCredits = !isLoadingCredits && credits && (credits.standard_text > 0 || credits.advanced_text > 0);
+  const canActivateAgents = hasTextCredits;
 
   // Memoize onUpdate para evitar loops infinitos
   const stableOnUpdate = useCallback(onUpdate, []);
@@ -62,6 +69,13 @@ export function AgentSubAgentsTab({ agent, onUpdate }: AgentSubAgentsTabProps) {
 
   const handleToggleStatus = async (subAgent: AIAgent) => {
     const newStatus = subAgent.status === 'active' ? 'inactive' : 'active';
+    
+    // If trying to ACTIVATE, verify credits first
+    if (newStatus === 'active' && !canActivateAgents) {
+      toast.error('Adquira créditos de IA para ativar agentes');
+      return;
+    }
+    
     await setAgentStatus(subAgent.id, newStatus);
     onUpdate();
   };
