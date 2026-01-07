@@ -138,7 +138,7 @@ export async function consumeCredits(
   functionName: string,
   inputTokens: number = 0,
   outputTokens: number = 0
-): Promise<CreditConsumeResult> {
+): Promise<CreditConsumeResult & { shouldAutoRecharge?: boolean }> {
   try {
     // Use the consume_ai_credits RPC function
     const { data, error } = await supabase.rpc('consume_ai_credits', {
@@ -160,12 +160,24 @@ export async function consumeCredits(
       };
     }
     
-    console.log(`[Credits] Consumed ${tokensUsed} ${creditType} tokens for ${functionName}`);
+    const shouldAutoRecharge = data?.should_auto_recharge === true;
+    
+    console.log(`[Credits] Consumed ${tokensUsed} ${creditType} tokens for ${functionName}`, {
+      newBalance: data?.balance_after,
+      shouldAutoRecharge
+    });
+    
+    // Trigger auto-recharge if needed (fire and forget)
+    if (shouldAutoRecharge) {
+      console.log(`[Credits] Triggering auto-recharge for ${creditType}`);
+      triggerAutoRecharge(supabase, companyId, creditType);
+    }
     
     return {
       success: true,
       tokensConsumed: tokensUsed,
-      newBalance: data?.new_balance || 0
+      newBalance: data?.balance_after || 0,
+      shouldAutoRecharge
     };
   } catch (error) {
     console.error('[Credits] Exception consuming credits:', error);
@@ -175,6 +187,36 @@ export async function consumeCredits(
       newBalance: 0,
       errorMessage: 'Erro ao consumir créditos'
     };
+  }
+}
+
+/**
+ * Trigger auto-recharge in background (fire and forget)
+ */
+async function triggerAutoRecharge(
+  supabase: SupabaseClient,
+  companyId: string,
+  creditType: CreditType
+): Promise<void> {
+  try {
+    const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
+    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+    
+    // Call the auto-recharge function
+    const response = await fetch(`${supabaseUrl}/functions/v1/auto-recharge-credits`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${supabaseKey}`
+      },
+      body: JSON.stringify({ companyId, creditType })
+    });
+    
+    const result = await response.json();
+    console.log(`[Credits] Auto-recharge result:`, result);
+  } catch (error) {
+    console.error('[Credits] Failed to trigger auto-recharge:', error);
+    // Don't throw - this is a background operation
   }
 }
 
