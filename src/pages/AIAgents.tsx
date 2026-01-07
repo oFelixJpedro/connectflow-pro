@@ -177,6 +177,18 @@ export default function AIAgents() {
         </button>
         
         <button
+          onClick={() => setActiveTab('calendar')}
+          className={`flex items-center gap-3 px-4 py-3 rounded-lg text-left transition-colors ${
+            activeTab === 'calendar' 
+              ? 'bg-primary text-primary-foreground' 
+              : 'text-white/70 hover:bg-white/10 hover:text-white'
+          }`}
+        >
+          <Calendar className="w-5 h-5" />
+          <span className="font-medium">Agenda</span>
+        </button>
+        
+        <button
           onClick={() => setActiveTab('credits')}
           className={`flex items-center gap-3 px-4 py-3 rounded-lg text-left transition-colors ${
             activeTab === 'credits' 
@@ -318,6 +330,8 @@ export default function AIAgents() {
             <NotificationsTab />
           ) : activeTab === 'followup' ? (
             <FollowUpTab />
+          ) : activeTab === 'calendar' ? (
+            <CalendarTab />
           ) : (
             <AICreditsTab />
           )}
