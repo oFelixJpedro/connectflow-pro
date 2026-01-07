@@ -1,6 +1,5 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
-import { Redis } from "https://esm.sh/@upstash/redis@1.28.0"
+import { createClient } from "npm:@supabase/supabase-js@2";
+import { Redis } from "https://esm.sh/@upstash/redis@1.28.0";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -912,7 +911,7 @@ async function processAIAgent(
 // ═══════════════════════════════════════════════════════════════════
 // MAIN HANDLER
 // ═══════════════════════════════════════════════════════════════════
-serve(async (req) => {
+Deno.serve(async (req: Request) => {
   console.log(`🔄 [QUEUE-PROCESSOR] Starting batch processing...`)
   
   if (req.method === 'OPTIONS') {
