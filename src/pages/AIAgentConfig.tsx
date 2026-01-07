@@ -23,6 +23,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useAIAgents } from '@/hooks/useAIAgents';
+import { useAICredits } from '@/hooks/useAICredits';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAgentMedia } from '@/hooks/useAgentMedia';
 import { AgentRulesTab } from '@/components/ai-agents/config/AgentRulesTab';
@@ -41,6 +42,7 @@ export default function AIAgentConfig() {
   const navigate = useNavigate();
   const { userRole } = useAuth();
   const { agents, updateAgent, loadAgents, setAgentStatus, getParentAgent } = useAIAgents();
+  const { credits } = useAICredits();
   const { medias, loadMedias } = useAgentMedia(agentId || null);
   const [agent, setAgent] = useState<AIAgent | null>(null);
   const [activeTab, setActiveTab] = useState('rules');
@@ -394,6 +396,7 @@ export default function AIAgentConfig() {
         onAgentUpdate={loadAgents}
         onPendingChanges={handleSidebarPendingChanges}
         pendingChanges={sidebarChanges}
+        credits={credits}
       />
     </div>
   );

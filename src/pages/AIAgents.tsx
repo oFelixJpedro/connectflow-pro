@@ -18,7 +18,13 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { useAIAgents } from '@/hooks/useAIAgents';
+import { useAICredits } from '@/hooks/useAICredits';
 import { useAuth } from '@/contexts/AuthContext';
 import { CreateAgentTypeModal } from '@/components/ai-agents/CreateAgentTypeModal';
 import { CreateAgentNameModal } from '@/components/ai-agents/CreateAgentNameModal';
@@ -34,6 +40,7 @@ export default function AIAgents() {
   const [searchParams] = useSearchParams();
   const { profile, userRole } = useAuth();
   const { primaryAgents, secondaryAgents, isLoading, setAgentStatus, deleteAgent } = useAIAgents();
+  const { credits } = useAICredits();
   
   const [activeTab, setActiveTab] = useState<SubMenuTab>('agents');
   const [searchQuery, setSearchQuery] = useState('');
@@ -44,6 +51,11 @@ export default function AIAgents() {
   const [primaryExpanded, setPrimaryExpanded] = useState(true);
   const [secondaryExpanded, setSecondaryExpanded] = useState(true);
   const [agentToDelete, setAgentToDelete] = useState<AIAgent | null>(null);
+  
+  // Check if user has text credits available
+  const hasTextCredits = credits && (credits.standard_text > 0 || credits.advanced_text > 0);
+  const canCreateAgents = hasTextCredits;
+  const canActivateAgents = hasTextCredits;
 
   // Handle credit purchase success/cancel from URL params
   useEffect(() => {
@@ -180,14 +192,31 @@ export default function AIAgents() {
               <Button 
                 variant="outline" 
                 onClick={() => setShowTemplatesModal(true)}
+                disabled={!canCreateAgents}
               >
                 <BookTemplate className="w-4 h-4 mr-2" />
                 Modelos
               </Button>
-              <Button onClick={() => setShowTypeModal(true)}>
-                <Plus className="w-4 h-4 mr-2" />
-                Novo Agente
-              </Button>
+              {canCreateAgents ? (
+                <Button onClick={() => setShowTypeModal(true)}>
+                  <Plus className="w-4 h-4 mr-2" />
+                  Novo Agente
+                </Button>
+              ) : (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <div>
+                      <Button disabled className="opacity-50 cursor-not-allowed">
+                        <Plus className="w-4 h-4 mr-2" />
+                        Novo Agente
+                      </Button>
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p className="text-xs">Adquira créditos de IA para criar agentes</p>
+                  </TooltipContent>
+                </Tooltip>
+              )}
             </div>
           )}
         </div>
@@ -223,6 +252,7 @@ export default function AIAgents() {
                           onNavigate={(id) => navigate(`/ai-agents/${id}`)}
                           onToggleStatus={handleToggleStatus}
                           onDelete={handleDeleteClick}
+                          canActivate={canActivateAgents}
                         />
                       ))}
                     </div>
@@ -253,6 +283,7 @@ export default function AIAgents() {
                             onToggleStatus={handleToggleStatus}
                             onDelete={handleDeleteClick}
                             parentAgentName={parentAgent?.name}
+                            canActivate={canActivateAgents}
                           />
                         );
                       })}
