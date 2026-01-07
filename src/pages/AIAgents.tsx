@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Bot, Plus, BookTemplate, RotateCcw, Search, CreditCard } from 'lucide-react';
+import { Bot, Plus, BookTemplate, RotateCcw, Search, CreditCard, Bell } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
@@ -31,10 +31,11 @@ import { CreateAgentNameModal } from '@/components/ai-agents/CreateAgentNameModa
 import { AgentTemplatesModal } from '@/components/ai-agents/AgentTemplatesModal';
 import { AICreditsTab } from '@/components/ai-credits';
 import { FollowUpTab } from '@/components/follow-up';
+import { NotificationsTab } from '@/components/notifications';
 import { toast } from 'sonner';
 import type { AIAgentType, AIAgent } from '@/types/ai-agents';
 
-type SubMenuTab = 'agents' | 'followup' | 'credits';
+type SubMenuTab = 'agents' | 'notifications' | 'followup' | 'credits';
 
 export default function AIAgents() {
   const navigate = useNavigate();
@@ -148,6 +149,18 @@ export default function AIAgents() {
         >
           <Bot className="w-5 h-5" />
           <span className="font-medium">Agentes de Atendimento</span>
+        </button>
+        
+        <button
+          onClick={() => setActiveTab('notifications')}
+          className={`flex items-center gap-3 px-4 py-3 rounded-lg text-left transition-colors ${
+            activeTab === 'notifications' 
+              ? 'bg-primary text-primary-foreground' 
+              : 'text-white/70 hover:bg-white/10 hover:text-white'
+          }`}
+        >
+          <Bell className="w-5 h-5" />
+          <span className="font-medium">Notificações</span>
         </button>
         
         <button
@@ -300,6 +313,8 @@ export default function AIAgents() {
                 </CollapsibleContent>
               </Collapsible>
             </div>
+          ) : activeTab === 'notifications' ? (
+            <NotificationsTab />
           ) : activeTab === 'followup' ? (
             <FollowUpTab />
           ) : (

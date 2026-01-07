@@ -4159,6 +4159,152 @@ export type Database = {
           },
         ]
       }
+      whatsapp_notification_logs: {
+        Row: {
+          company_id: string
+          created_at: string | null
+          error_message: string | null
+          event_data: Json | null
+          id: string
+          message_content: string
+          notification_id: string | null
+          recipient_name: string | null
+          recipient_phone: string
+          sent_at: string | null
+          status: string | null
+        }
+        Insert: {
+          company_id: string
+          created_at?: string | null
+          error_message?: string | null
+          event_data?: Json | null
+          id?: string
+          message_content: string
+          notification_id?: string | null
+          recipient_name?: string | null
+          recipient_phone: string
+          sent_at?: string | null
+          status?: string | null
+        }
+        Update: {
+          company_id?: string
+          created_at?: string | null
+          error_message?: string | null
+          event_data?: Json | null
+          id?: string
+          message_content?: string
+          notification_id?: string | null
+          recipient_name?: string | null
+          recipient_phone?: string
+          sent_at?: string | null
+          status?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "whatsapp_notification_logs_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "whatsapp_notification_logs_notification_id_fkey"
+            columns: ["notification_id"]
+            isOneToOne: false
+            referencedRelation: "whatsapp_notifications"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      whatsapp_notification_recipients: {
+        Row: {
+          created_at: string | null
+          id: string
+          is_active: boolean | null
+          name: string | null
+          notification_id: string
+          phone_number: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          is_active?: boolean | null
+          name?: string | null
+          notification_id: string
+          phone_number: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          is_active?: boolean | null
+          name?: string | null
+          notification_id?: string
+          phone_number?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "whatsapp_notification_recipients_notification_id_fkey"
+            columns: ["notification_id"]
+            isOneToOne: false
+            referencedRelation: "whatsapp_notifications"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      whatsapp_notifications: {
+        Row: {
+          company_id: string
+          connection_id: string
+          created_at: string | null
+          created_by: string | null
+          id: string
+          is_active: boolean | null
+          message_template: string
+          name: string
+          notification_type: string
+          updated_at: string | null
+        }
+        Insert: {
+          company_id: string
+          connection_id: string
+          created_at?: string | null
+          created_by?: string | null
+          id?: string
+          is_active?: boolean | null
+          message_template: string
+          name: string
+          notification_type: string
+          updated_at?: string | null
+        }
+        Update: {
+          company_id?: string
+          connection_id?: string
+          created_at?: string | null
+          created_by?: string | null
+          id?: string
+          is_active?: boolean | null
+          message_template?: string
+          name?: string
+          notification_type?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "whatsapp_notifications_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "whatsapp_notifications_connection_id_fkey"
+            columns: ["connection_id"]
+            isOneToOne: false
+            referencedRelation: "whatsapp_connections"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
