@@ -429,8 +429,10 @@ export type Database = {
         Row: {
           activation_triggers: string[] | null
           agent_type: string
+          ai_model_type: string | null
           audio_always_respond_audio: boolean | null
           audio_enabled: boolean | null
+          audio_model_type: string | null
           audio_respond_with_audio: boolean | null
           audio_temperature: number | null
           company_id: string
@@ -468,8 +470,10 @@ export type Database = {
         Insert: {
           activation_triggers?: string[] | null
           agent_type: string
+          ai_model_type?: string | null
           audio_always_respond_audio?: boolean | null
           audio_enabled?: boolean | null
+          audio_model_type?: string | null
           audio_respond_with_audio?: boolean | null
           audio_temperature?: number | null
           company_id: string
@@ -507,8 +511,10 @@ export type Database = {
         Update: {
           activation_triggers?: string[] | null
           agent_type?: string
+          ai_model_type?: string | null
           audio_always_respond_audio?: boolean | null
           audio_enabled?: boolean | null
+          audio_model_type?: string | null
           audio_respond_with_audio?: boolean | null
           audio_temperature?: number | null
           company_id?: string
@@ -636,6 +642,118 @@ export type Database = {
             columns: ["current_sub_agent_id"]
             isOneToOne: false
             referencedRelation: "ai_agents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ai_credit_transactions: {
+        Row: {
+          amount_paid_cents: number | null
+          company_id: string
+          created_at: string | null
+          credit_type: string
+          function_name: string | null
+          id: string
+          input_tokens: number | null
+          metadata: Json | null
+          output_tokens: number | null
+          stripe_checkout_session_id: string | null
+          stripe_payment_intent_id: string | null
+          tokens_amount: number
+          tokens_balance_after: number
+          transaction_type: string
+        }
+        Insert: {
+          amount_paid_cents?: number | null
+          company_id: string
+          created_at?: string | null
+          credit_type: string
+          function_name?: string | null
+          id?: string
+          input_tokens?: number | null
+          metadata?: Json | null
+          output_tokens?: number | null
+          stripe_checkout_session_id?: string | null
+          stripe_payment_intent_id?: string | null
+          tokens_amount: number
+          tokens_balance_after: number
+          transaction_type: string
+        }
+        Update: {
+          amount_paid_cents?: number | null
+          company_id?: string
+          created_at?: string | null
+          credit_type?: string
+          function_name?: string | null
+          id?: string
+          input_tokens?: number | null
+          metadata?: Json | null
+          output_tokens?: number | null
+          stripe_checkout_session_id?: string | null
+          stripe_payment_intent_id?: string | null
+          tokens_amount?: number
+          tokens_balance_after?: number
+          transaction_type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_credit_transactions_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ai_credits: {
+        Row: {
+          advanced_audio_tokens: number | null
+          advanced_text_tokens: number | null
+          auto_recharge_enabled: boolean | null
+          auto_recharge_threshold: number | null
+          auto_recharge_types: string[] | null
+          company_id: string
+          created_at: string | null
+          id: string
+          standard_audio_tokens: number | null
+          standard_text_tokens: number | null
+          stripe_payment_method_id: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          advanced_audio_tokens?: number | null
+          advanced_text_tokens?: number | null
+          auto_recharge_enabled?: boolean | null
+          auto_recharge_threshold?: number | null
+          auto_recharge_types?: string[] | null
+          company_id: string
+          created_at?: string | null
+          id?: string
+          standard_audio_tokens?: number | null
+          standard_text_tokens?: number | null
+          stripe_payment_method_id?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          advanced_audio_tokens?: number | null
+          advanced_text_tokens?: number | null
+          auto_recharge_enabled?: boolean | null
+          auto_recharge_threshold?: number | null
+          auto_recharge_types?: string[] | null
+          company_id?: string
+          created_at?: string | null
+          id?: string
+          standard_audio_tokens?: number | null
+          standard_text_tokens?: number | null
+          stripe_payment_method_id?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_credits_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: true
+            referencedRelation: "companies"
             referencedColumns: ["id"]
           },
         ]
@@ -3638,15 +3756,44 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      add_ai_credits: {
+        Args: {
+          p_amount_paid_cents?: number
+          p_company_id: string
+          p_credit_type: string
+          p_metadata?: Json
+          p_stripe_checkout_session_id?: string
+          p_stripe_payment_intent_id?: string
+          p_tokens: number
+          p_transaction_type?: string
+        }
+        Returns: Json
+      }
       can_user_access_column: {
         Args: { p_column_id: string }
         Returns: boolean
+      }
+      check_ai_credits: {
+        Args: { p_company_id: string; p_credit_type?: string }
+        Returns: Json
       }
       cleanup_expired_insights_jobs: { Args: never; Returns: number }
       cleanup_expired_media_cache: { Args: never; Returns: number }
       cleanup_old_conversation_events: { Args: never; Returns: number }
       cleanup_old_sessions: { Args: never; Returns: number }
       cleanup_old_usage_logs: { Args: never; Returns: number }
+      consume_ai_credits: {
+        Args: {
+          p_company_id: string
+          p_credit_type: string
+          p_function_name?: string
+          p_input_tokens?: number
+          p_metadata?: Json
+          p_output_tokens?: number
+          p_tokens: number
+        }
+        Returns: Json
+      }
       create_internal_chat_room: {
         Args: { p_description?: string; p_name?: string; p_type: string }
         Returns: string
