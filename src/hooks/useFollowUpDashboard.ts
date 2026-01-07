@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { format, startOfDay, endOfDay, eachDayOfInterval, parseISO } from 'date-fns';
@@ -45,14 +45,18 @@ export function useFollowUpDashboard(dateRange: DateRange) {
   const [failureBreakdown, setFailureBreakdown] = useState<FailureCategory[]>([]);
   const [recentQueue, setRecentQueue] = useState<FollowUpQueueItem[]>([]);
 
+  // Use ref to store dateRange to avoid dependency issues
+  const dateRangeRef = useRef(dateRange);
+  dateRangeRef.current = dateRange;
+
   const fetchDashboardData = useCallback(async () => {
     if (!profile?.company_id) return;
 
     try {
       setIsLoading(true);
 
-      const startDate = startOfDay(dateRange.start).toISOString();
-      const endDate = endOfDay(dateRange.end).toISOString();
+      const startDate = startOfDay(dateRangeRef.current.start).toISOString();
+      const endDate = endOfDay(dateRangeRef.current.end).toISOString();
 
       // Fetch all queue items in date range
       const { data: queueItems, error: queueError } = await supabase
@@ -84,7 +88,7 @@ export function useFollowUpDashboard(dateRange: DateRange) {
       });
 
       // Calculate daily data
-      const days = eachDayOfInterval({ start: dateRange.start, end: dateRange.end });
+      const days = eachDayOfInterval({ start: dateRangeRef.current.start, end: dateRangeRef.current.end });
       const dailyStats = days.map(day => {
         const dayStr = format(day, 'yyyy-MM-dd');
         const dayItems = items.filter(i => i.created_at.startsWith(dayStr));
@@ -155,15 +159,21 @@ export function useFollowUpDashboard(dateRange: DateRange) {
     } finally {
       setIsLoading(false);
     }
-  }, [profile?.company_id, dateRange.start, dateRange.end]);
+  }, [profile?.company_id]);
+
+  // Use primitive values for dateRange to trigger fetch
+  const startDateISO = dateRange.start.toISOString();
+  const endDateISO = dateRange.end.toISOString();
 
   useEffect(() => {
     fetchDashboardData();
-  }, [fetchDashboardData]);
+  }, [fetchDashboardData, startDateISO, endDateISO]);
 
-  // Set up realtime subscription
+  // Set up realtime subscription with debounce
   useEffect(() => {
     if (!profile?.company_id) return;
+
+    let timeoutId: ReturnType<typeof setTimeout>;
 
     const channel = supabase
       .channel('followup-queue-changes')
@@ -176,13 +186,17 @@ export function useFollowUpDashboard(dateRange: DateRange) {
           filter: `company_id=eq.${profile.company_id}`
         },
         () => {
-          // Debounce refresh
-          fetchDashboardData();
+          // Debounce refresh to avoid rapid fetches
+          clearTimeout(timeoutId);
+          timeoutId = setTimeout(() => {
+            fetchDashboardData();
+          }, 1000);
         }
       )
       .subscribe();
 
     return () => {
+      clearTimeout(timeoutId);
       supabase.removeChannel(channel);
     };
   }, [profile?.company_id, fetchDashboardData]);
