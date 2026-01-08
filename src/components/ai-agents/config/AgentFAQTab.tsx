@@ -9,6 +9,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { MarkdownEditor } from '@/components/ui/markdown-editor';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
 import type { AIAgentCompanyInfo } from '@/types/ai-agents';
 
 interface AgentFAQTabProps {
@@ -114,6 +115,7 @@ export function AgentFAQTab({
   const [faqOpen, setFaqOpen] = useState(true);
   const [isFormatting, setIsFormatting] = useState(false);
   const { toast } = useToast();
+  const { profile } = useAuth();
 
   const handleCompanyFieldChange = (key: string, value: string) => {
     onCompanyInfoChange({
@@ -139,10 +141,20 @@ export function AgentFAQTab({
     setIsFormatting(true);
     try {
       const { data, error } = await supabase.functions.invoke('format-prompt', {
-        body: { text: content }
+        body: { text: content, companyId: profile?.company_id }
       });
 
       if (error) throw error;
+
+      // 💰 Handle insufficient credits
+      if (data?.code === 'INSUFFICIENT_CREDITS') {
+        toast({
+          title: "Créditos insuficientes",
+          description: "Recarregue seus créditos de IA para usar esta função.",
+          variant: "destructive",
+        });
+        return;
+      }
 
       if (data?.formattedText) {
         onChange(data.formattedText);

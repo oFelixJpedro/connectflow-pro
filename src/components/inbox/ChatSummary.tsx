@@ -20,6 +20,7 @@ import {
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface ChatSummaryProps {
   conversationId: string;
@@ -35,6 +36,7 @@ export function ChatSummary({ conversationId, contactId }: ChatSummaryProps) {
   const [lastGenerated, setLastGenerated] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const { toast } = useToast();
+  const { profile } = useAuth();
 
   // Load saved summary when conversationId changes
   useEffect(() => {
@@ -77,10 +79,20 @@ export function ChatSummary({ conversationId, contactId }: ChatSummaryProps) {
     setIsLoading(true);
     try {
       const { data, error } = await supabase.functions.invoke('summarize-chat', {
-        body: { conversationId, contactId }
+        body: { conversationId, contactId, companyId: profile?.company_id }
       });
 
       if (error) throw error;
+
+      // 💰 Handle insufficient credits
+      if (data?.code === 'INSUFFICIENT_CREDITS') {
+        toast({
+          title: "Créditos insuficientes",
+          description: "Recarregue seus créditos de IA para usar esta função.",
+          variant: "destructive",
+        });
+        return;
+      }
 
       if (data.error) {
         throw new Error(data.error);
