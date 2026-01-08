@@ -78,16 +78,16 @@ export function CalendarDayView({
 
       {/* Grid de horas */}
       <div 
-        className="flex-1 relative"
+        className="flex-1 relative pt-2"
         onDoubleClick={() => onCreateEvent(currentDate)}
       >
         {/* Linhas das horas */}
         {hours.map((hour, index) => (
-          <div key={index} className="flex h-[60px] border-b border-dashed">
-            <div className="w-16 flex-shrink-0 text-xs text-muted-foreground text-right pr-2 -mt-2">
+          <div key={index} className="flex h-[60px] border-b border-dashed relative">
+            <div className="w-16 flex-shrink-0 text-xs text-muted-foreground text-right pr-2 absolute -top-2">
               {format(hour, 'HH:mm')}
             </div>
-            <div className="flex-1 border-l" />
+            <div className="flex-1 ml-16 border-l" />
           </div>
         ))}
 
