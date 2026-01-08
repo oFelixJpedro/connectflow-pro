@@ -37,6 +37,7 @@ export function useCRMStageMapData(connectionId: string | null, stageId: string 
         .from('whatsapp_connections')
         .select('id, name')
         .eq('company_id', profile.company_id)
+        .eq('active', true)
         .order('name');
 
       if (data) {

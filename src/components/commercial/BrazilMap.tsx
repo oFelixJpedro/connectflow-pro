@@ -134,6 +134,7 @@ export function BrazilMap({ contactsByState, dealsByState }: BrazilMapProps) {
         .from('whatsapp_connections')
         .select('id, name')
         .eq('company_id', profile.company_id)
+        .eq('active', true)
         .order('name');
       
       if (!error && data) {

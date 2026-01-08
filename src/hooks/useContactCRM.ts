@@ -76,6 +76,7 @@ export function useContactCRM(contactId: string | null) {
           .from('whatsapp_connections')
           .select('id, name, phone_number')
           .eq('company_id', company.id)
+          .eq('active', true)
           .eq('status', 'connected');
 
         if (error) throw error;
@@ -96,6 +97,7 @@ export function useContactCRM(contactId: string | null) {
             .from('whatsapp_connections')
             .select('id, name, phone_number')
             .eq('company_id', company.id)
+            .eq('active', true)
             .eq('status', 'connected')
             .in('id', allowedIds);
 
