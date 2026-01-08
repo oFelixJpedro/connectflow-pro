@@ -79,6 +79,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import { AIAgentActions } from './AIAgentActions';
 import { ChatSummary } from './ChatSummary';
 import { ManageCustomFieldsModal } from './ManageCustomFieldsModal';
+import { useAICredits } from '@/hooks/useAICredits';
+
 interface ContactPanelProps {
   conversation: Conversation | null;
   onClose: () => void;
@@ -111,6 +113,8 @@ interface CustomFieldDefinition {
 export function ContactPanel({ conversation, onClose, onContactUpdated, onScrollToMessage }: ContactPanelProps) {
   const { toast } = useToast();
   const { profile } = useAuth();
+  const { hasCredits, isLoading: isLoadingCredits } = useAICredits();
+  const hasTextCredits = !isLoadingCredits && hasCredits('standard_text');
   const [notesOpen, setNotesOpen] = useState(true);
   const [historyOpen, setHistoryOpen] = useState(true);
   const [notes, setNotes] = useState('');
@@ -1000,13 +1004,17 @@ export function ContactPanel({ conversation, onClose, onContactUpdated, onScroll
                     variant="ghost"
                     size="icon"
                     onClick={async () => {
-                      if (isCorrectingNotes) return;
+                      if (isCorrectingNotes || !hasTextCredits) return;
                       setIsCorrectingNotes(true);
                       try {
                         const { data, error } = await supabase.functions.invoke('correct-text', {
-                          body: { text: notes }
+                          body: { text: notes, companyId: profile?.company_id }
                         });
                         if (error) throw error;
+                        if (data?.code === 'INSUFFICIENT_CREDITS') {
+                          toast({ title: 'Créditos insuficientes', variant: 'destructive' });
+                          return;
+                        }
                         if (data?.correctedText) {
                           setNotes(data.correctedText);
                           setTimeout(() => notesTextareaRef.current?.focus(), 100);
@@ -1022,9 +1030,9 @@ export function ContactPanel({ conversation, onClose, onContactUpdated, onScroll
                         setIsCorrectingNotes(false);
                       }
                     }}
-                    className="flex-shrink-0 h-8 w-8"
-                    disabled={isCorrectingNotes}
-                    title="Corrigir texto"
+                    className={`flex-shrink-0 h-8 w-8 ${!hasTextCredits ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    disabled={isCorrectingNotes || !hasTextCredits}
+                    title={hasTextCredits ? 'Corrigir texto' : 'Créditos insuficientes'}
                   >
                     {isCorrectingNotes ? (
                       <Loader2 className="w-4 h-4 animate-spin" />

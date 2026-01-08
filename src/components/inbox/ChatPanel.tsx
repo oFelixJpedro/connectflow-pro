@@ -68,6 +68,7 @@ import { ptBR } from 'date-fns/locale';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
+import { useAICredits } from '@/hooks/useAICredits';
 
 // Import mentions
 import { MentionPicker, MentionText } from '@/components/mentions';
@@ -134,6 +135,8 @@ export function ChatPanel({
   isTakingOver = false,
 }: ChatPanelProps) {
   const { user, userRole, profile } = useAuth();
+  const { hasCredits, isLoading: isLoadingCredits } = useAICredits();
+  const hasTextCredits = !isLoadingCredits && hasCredits('standard_text');
   // Use ref for immediate value storage to prevent re-renders during fast typing
   const inputValueRef = useRef('');
   const [inputValue, setInputValue] = useState('');
@@ -2156,8 +2159,8 @@ export function ChatPanel({
                     variant="ghost"
                     size="icon"
                     onClick={handleCorrectText}
-                    disabled={isCorrectingText || (!canReply && !isInternalNoteMode)}
-                    className="h-9 w-9 flex-shrink-0"
+                    disabled={isCorrectingText || (!canReply && !isInternalNoteMode) || !hasTextCredits}
+                    className={cn("h-9 w-9 flex-shrink-0", !hasTextCredits && "opacity-50")}
                   >
                     {isCorrectingText ? (
                       <Loader2 className="w-4 h-4 animate-spin" />
@@ -2166,7 +2169,9 @@ export function ChatPanel({
                     )}
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent>Corrigir texto com IA</TooltipContent>
+                <TooltipContent>
+                  {!hasTextCredits ? 'Créditos insuficientes' : 'Corrigir texto com IA'}
+                </TooltipContent>
               </Tooltip>
             )}
 
@@ -2204,6 +2209,7 @@ export function ChatPanel({
                   onClick={handleGenerateAIResponse}
                   disabled={isGeneratingResponse || isCorrectingText || isSendingMessage}
                   isLoading={isGeneratingResponse}
+                  noCredits={!hasTextCredits}
                 />
               )}
 

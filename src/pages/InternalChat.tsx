@@ -14,6 +14,7 @@ import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { toast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
+import { useAICredits } from '@/hooks/useAICredits';
 
 // Import media components
 import { AudioPlayer } from '@/components/inbox/AudioPlayer';
@@ -53,6 +54,9 @@ export default function InternalChat() {
     loadTeamMembers,
     loadRooms,
   } = useInternalChat();
+  
+  const { hasCredits, isLoading: isLoadingCredits } = useAICredits();
+  const hasTextCredits = !isLoadingCredits && hasCredits('standard_text');
 
   const [messageInput, setMessageInput] = useState('');
   const [isSending, setIsSending] = useState(false);
@@ -941,7 +945,7 @@ export default function InternalChat() {
                         variant="ghost"
                         size="icon"
                         onClick={async () => {
-                          if (isCorrectingText) return;
+                          if (isCorrectingText || !hasTextCredits) return;
                           setIsCorrectingText(true);
                           try {
                             const { data, error } = await supabase.functions.invoke('correct-text', {
@@ -977,9 +981,9 @@ export default function InternalChat() {
                             setIsCorrectingText(false);
                           }
                         }}
-                        className="flex-shrink-0 text-muted-foreground hover:text-foreground"
-                        disabled={isCorrectingText}
-                        title="Corrigir texto"
+                        className={`flex-shrink-0 ${hasTextCredits ? 'text-muted-foreground hover:text-foreground' : 'text-muted-foreground/50 cursor-not-allowed'}`}
+                        disabled={isCorrectingText || !hasTextCredits}
+                        title={hasTextCredits ? 'Corrigir texto' : 'Créditos insuficientes'}
                       >
                         {isCorrectingText ? (
                           <Loader2 className="w-5 h-5 animate-spin" />
