@@ -31,7 +31,6 @@ import { CalendarListView } from './CalendarListView';
 import { CalendarMiniCalendar } from './CalendarMiniCalendar';
 import { CreateEventModal } from './CreateEventModal';
 import { EventDetailDrawer } from './EventDetailDrawer';
-import { GoogleCalendarConnect } from './GoogleCalendarConnect';
 import type { CalendarViewMode, CalendarEvent } from '@/types/calendar';
 
 export function CalendarTab() {
@@ -188,8 +187,6 @@ export function CalendarTab() {
               </button>
             ))}
           </div>
-
-          <GoogleCalendarConnect />
 
           <Button onClick={() => handleCreateEvent()}>
             <Plus className="w-4 h-4 mr-2" />
