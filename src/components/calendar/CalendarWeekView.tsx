@@ -101,15 +101,15 @@ export function CalendarWeekView({
       </div>
 
       {/* Grid de horas */}
-      <div className="flex flex-1 relative">
+      <div className="flex flex-1 relative pt-2">
         {/* Coluna de horas */}
         <div className="w-16 flex-shrink-0">
           {hours.map((hour, index) => (
             <div
               key={index}
-              className="h-[60px] text-xs text-muted-foreground text-right pr-2 -mt-2"
+              className="h-[60px] text-xs text-muted-foreground text-right pr-2 flex items-start"
             >
-              {format(hour, 'HH:mm')}
+              <span className="w-full -translate-y-2">{format(hour, 'HH:mm')}</span>
             </div>
           ))}
         </div>
