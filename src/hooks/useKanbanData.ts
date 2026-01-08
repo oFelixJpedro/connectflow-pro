@@ -8,6 +8,9 @@ export interface KanbanBoard {
   id: string;
   whatsapp_connection_id: string;
   company_id: string;
+  name: string;
+  is_default: boolean;
+  auto_add_new_contacts?: boolean;
   created_at: string;
 }
 
@@ -112,7 +115,7 @@ interface ConnectionInfo {
   phone_number: string;
 }
 
-export function useKanbanData(connectionId: string | null, isGlobalView: boolean = false) {
+export function useKanbanData(connectionId: string | null, isGlobalView: boolean = false, boardId: string | null = null) {
   const { profile, company, userRole } = useAuth();
   const [board, setBoard] = useState<KanbanBoard | null>(null);
   const [columns, setColumns] = useState<KanbanColumn[]>([]);
@@ -122,6 +125,7 @@ export function useKanbanData(connectionId: string | null, isGlobalView: boolean
   const [allCards, setAllCards] = useState<KanbanCard[]>([]);
   const [connectionMap, setConnectionMap] = useState<Map<string, ConnectionInfo>>(new Map());
   const [loading, setLoading] = useState(true);
+  const [connectionBoards, setConnectionBoards] = useState<KanbanBoard[]>([]);
   const [teamMembers, setTeamMembers] = useState<{ id: string; full_name: string; avatar_url: string | null }[]>([]);
 
   const isAdminOrOwner = userRole?.role === 'owner' || userRole?.role === 'admin';
@@ -226,6 +230,28 @@ export function useKanbanData(connectionId: string | null, isGlobalView: boolean
     }
   }, [company?.id]);
 
+  // Load all boards for a connection
+  const loadConnectionBoards = useCallback(async () => {
+    if (!connectionId || !company?.id) {
+      setConnectionBoards([]);
+      return;
+    }
+
+    try {
+      const { data: boards, error } = await supabase
+        .from('kanban_boards')
+        .select('*')
+        .eq('whatsapp_connection_id', connectionId)
+        .order('is_default', { ascending: false })
+        .order('created_at', { ascending: true });
+
+      if (error) throw error;
+      setConnectionBoards((boards || []) as KanbanBoard[]);
+    } catch (error) {
+      console.error('Error loading connection boards:', error);
+    }
+  }, [connectionId, company?.id]);
+
   // Load or create board for specific connection
   const loadBoard = useCallback(async () => {
     if (!connectionId || !company?.id) {
@@ -239,26 +265,48 @@ export function useKanbanData(connectionId: string | null, isGlobalView: boolean
     setLoading(true);
 
     try {
-      // Check if board exists
-      let { data: existingBoard } = await supabase
-        .from('kanban_boards')
-        .select('*')
-        .eq('whatsapp_connection_id', connectionId)
-        .maybeSingle();
+      // Load all boards for this connection first
+      await loadConnectionBoards();
 
-      if (!existingBoard && isAdminOrOwner) {
-        // Create board with default columns
+      let targetBoard: KanbanBoard | null = null;
+
+      if (boardId) {
+        // Load specific board by ID
+        const { data: specificBoard } = await supabase
+          .from('kanban_boards')
+          .select('*')
+          .eq('id', boardId)
+          .eq('whatsapp_connection_id', connectionId)
+          .maybeSingle();
+        
+        targetBoard = specificBoard as KanbanBoard | null;
+      } else {
+        // Load default board for the connection
+        const { data: defaultBoard } = await supabase
+          .from('kanban_boards')
+          .select('*')
+          .eq('whatsapp_connection_id', connectionId)
+          .eq('is_default', true)
+          .maybeSingle();
+        
+        targetBoard = defaultBoard as KanbanBoard | null;
+      }
+
+      // If no board found, create one (only admins)
+      if (!targetBoard && isAdminOrOwner) {
         const { data: newBoard, error: boardError } = await supabase
           .from('kanban_boards')
           .insert({
             whatsapp_connection_id: connectionId,
             company_id: company.id,
+            name: 'CRM Principal',
+            is_default: true,
           })
           .select()
           .single();
 
         if (boardError) throw boardError;
-        existingBoard = newBoard;
+        targetBoard = newBoard as KanbanBoard;
 
         // Create default columns
         const columnsToInsert = DEFAULT_COLUMNS.map(col => ({
@@ -269,12 +317,15 @@ export function useKanbanData(connectionId: string | null, isGlobalView: boolean
         }));
 
         await supabase.from('kanban_columns').insert(columnsToInsert);
+        
+        // Reload connection boards
+        await loadConnectionBoards();
       }
 
-      if (existingBoard) {
-        setBoard(existingBoard as KanbanBoard);
-        await loadColumns(existingBoard.id);
-        await loadCards(existingBoard.id);
+      if (targetBoard) {
+        setBoard(targetBoard);
+        await loadColumns(targetBoard.id);
+        await loadCards(targetBoard.id);
       }
     } catch (error) {
       console.error('Error loading board:', error);
@@ -282,7 +333,138 @@ export function useKanbanData(connectionId: string | null, isGlobalView: boolean
     } finally {
       setLoading(false);
     }
-  }, [connectionId, company?.id, isAdminOrOwner]);
+  }, [connectionId, company?.id, isAdminOrOwner, boardId, loadConnectionBoards]);
+
+  // Create a new board for the connection
+  const createBoard = async (name: string): Promise<KanbanBoard | null> => {
+    if (!connectionId || !company?.id || !isAdminOrOwner) return null;
+
+    try {
+      const { data: newBoard, error } = await supabase
+        .from('kanban_boards')
+        .insert({
+          whatsapp_connection_id: connectionId,
+          company_id: company.id,
+          name,
+          is_default: false,
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      // Create default columns
+      const columnsToInsert = DEFAULT_COLUMNS.map(col => ({
+        board_id: newBoard.id,
+        name: col.name,
+        color: col.color,
+        position: col.position,
+      }));
+
+      await supabase.from('kanban_columns').insert(columnsToInsert);
+
+      await loadConnectionBoards();
+      toast.success('Board criado com sucesso');
+      return newBoard as KanbanBoard;
+    } catch (error) {
+      console.error('Error creating board:', error);
+      toast.error('Erro ao criar board');
+      return null;
+    }
+  };
+
+  // Update board name
+  const updateBoardName = async (targetBoardId: string, name: string): Promise<boolean> => {
+    if (!isAdminOrOwner) return false;
+
+    try {
+      const { error } = await supabase
+        .from('kanban_boards')
+        .update({ name })
+        .eq('id', targetBoardId);
+
+      if (error) throw error;
+
+      await loadConnectionBoards();
+      if (board?.id === targetBoardId) {
+        setBoard({ ...board, name });
+      }
+      toast.success('Nome do board atualizado');
+      return true;
+    } catch (error) {
+      console.error('Error updating board name:', error);
+      toast.error('Erro ao atualizar nome do board');
+      return false;
+    }
+  };
+
+  // Set board as default
+  const setBoardAsDefault = async (targetBoardId: string): Promise<boolean> => {
+    if (!isAdminOrOwner || !connectionId) return false;
+
+    try {
+      // First, unset any existing default
+      await supabase
+        .from('kanban_boards')
+        .update({ is_default: false })
+        .eq('whatsapp_connection_id', connectionId)
+        .eq('is_default', true);
+
+      // Set new default
+      const { error } = await supabase
+        .from('kanban_boards')
+        .update({ is_default: true })
+        .eq('id', targetBoardId);
+
+      if (error) throw error;
+
+      await loadConnectionBoards();
+      toast.success('Board definido como padrão');
+      return true;
+    } catch (error) {
+      console.error('Error setting board as default:', error);
+      toast.error('Erro ao definir board padrão');
+      return false;
+    }
+  };
+
+  // Delete a board (cannot delete default)
+  const deleteBoard = async (targetBoardId: string): Promise<boolean> => {
+    if (!isAdminOrOwner) return false;
+
+    try {
+      // Check if it's default
+      const boardToDelete = connectionBoards.find(b => b.id === targetBoardId);
+      if (boardToDelete?.is_default) {
+        toast.error('Não é possível excluir o board padrão');
+        return false;
+      }
+
+      // Delete cards, columns, then board
+      const { data: cols } = await supabase
+        .from('kanban_columns')
+        .select('id')
+        .eq('board_id', targetBoardId);
+
+      if (cols?.length) {
+        const colIds = cols.map(c => c.id);
+        await supabase.from('kanban_cards').delete().in('column_id', colIds);
+      }
+
+      await supabase.from('kanban_columns').delete().eq('board_id', targetBoardId);
+      const { error } = await supabase.from('kanban_boards').delete().eq('id', targetBoardId);
+
+      if (error) throw error;
+
+      await loadConnectionBoards();
+      toast.success('Board excluído');
+      return true;
+    } catch (error) {
+      console.error('Error deleting board:', error);
+      toast.error('Erro ao excluir board');
+      return false;
+    }
+  };
 
   // Load columns
   const loadColumns = async (boardId: string) => {
@@ -982,6 +1164,7 @@ export function useKanbanData(connectionId: string | null, isGlobalView: boolean
     allBoards,
     allColumns,
     allCards,
+    connectionBoards,
     connectionMap,
     loading,
     teamMembers,
@@ -1006,5 +1189,10 @@ export function useKanbanData(connectionId: string | null, isGlobalView: boolean
     loadCardAttachments,
     uploadAttachment,
     deleteAttachment,
+    // Board management
+    createBoard,
+    updateBoardName,
+    setBoardAsDefault,
+    deleteBoard,
   };
 }

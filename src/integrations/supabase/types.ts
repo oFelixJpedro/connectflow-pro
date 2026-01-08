@@ -3064,6 +3064,8 @@ export type Database = {
           company_id: string
           created_at: string | null
           id: string
+          is_default: boolean
+          name: string
           updated_at: string | null
           whatsapp_connection_id: string
         }
@@ -3072,6 +3074,8 @@ export type Database = {
           company_id: string
           created_at?: string | null
           id?: string
+          is_default?: boolean
+          name?: string
           updated_at?: string | null
           whatsapp_connection_id: string
         }
@@ -3080,6 +3084,8 @@ export type Database = {
           company_id?: string
           created_at?: string | null
           id?: string
+          is_default?: boolean
+          name?: string
           updated_at?: string | null
           whatsapp_connection_id?: string
         }
@@ -3094,7 +3100,7 @@ export type Database = {
           {
             foreignKeyName: "kanban_boards_whatsapp_connection_id_fkey"
             columns: ["whatsapp_connection_id"]
-            isOneToOne: true
+            isOneToOne: false
             referencedRelation: "whatsapp_connections"
             referencedColumns: ["id"]
           },
