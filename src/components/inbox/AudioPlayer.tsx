@@ -3,6 +3,8 @@ import { Play, Pause, Mic, Download, AlertCircle, FileText, Loader2 } from 'luci
 import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { useAICredits } from '@/hooks/useAICredits';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface AudioPlayerProps {
   src: string;
@@ -50,6 +52,9 @@ export function AudioPlayer({
   onTranscriptionComplete,
 }: AudioPlayerProps) {
   const isAmber = variant === 'amber';
+  const { profile } = useAuth();
+  const { hasCredits, isLoading: isLoadingCredits } = useAICredits();
+  const hasTextCredits = !isLoadingCredits && hasCredits('standard_text');
   const audioRef = useRef<HTMLAudioElement>(null);
   const progressRef = useRef<HTMLDivElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -184,10 +189,17 @@ export function AudioPlayer({
     setIsTranscribing(true);
     try {
       const { data, error } = await supabase.functions.invoke('transcribe-audio', {
-        body: { audioUrl: src }
+        body: { audioUrl: src, companyId: profile?.company_id }
       });
 
       if (error) throw error;
+      
+      // 💰 Handle insufficient credits
+      if (data?.code === 'INSUFFICIENT_CREDITS') {
+        toast.error('Créditos insuficientes. Recarregue para transcrever áudios.');
+        return;
+      }
+      
       if (!data.success) throw new Error(data.error || 'Falha na transcrição');
 
       setTranscription(data.text);
@@ -199,7 +211,7 @@ export function AudioPlayer({
     } finally {
       setIsTranscribing(false);
     }
-  }, [src, isTranscribing, transcription, onTranscriptionComplete]);
+  }, [src, isTranscribing, transcription, onTranscriptionComplete, profile?.company_id]);
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -523,7 +535,8 @@ export function AudioPlayer({
           {!transcription ? (
             <button
               onClick={handleTranscribe}
-              disabled={isTranscribing}
+              disabled={isTranscribing || !hasTextCredits}
+              title={!hasTextCredits ? 'Créditos insuficientes' : 'Transcrever áudio'}
               className={cn(
                 "flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium",
                 "transition-all duration-200",
@@ -538,6 +551,11 @@ export function AudioPlayer({
                 <>
                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
                   <span>Transcrevendo...</span>
+                </>
+              ) : !hasTextCredits ? (
+                <>
+                  <FileText className="w-3.5 h-3.5" />
+                  <span>Sem créditos</span>
                 </>
               ) : (
                 <>

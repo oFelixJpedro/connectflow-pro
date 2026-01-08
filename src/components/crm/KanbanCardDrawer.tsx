@@ -17,6 +17,7 @@ import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 import { ConversationPreviewModal } from './ConversationPreviewModal';
 import type { KanbanCard, KanbanColumn, KanbanCardComment, KanbanCardHistory, KanbanCardAttachment } from '@/hooks/useKanbanData';
+import { useAICredits } from '@/hooks/useAICredits';
 
 interface KanbanCardDrawerProps {
   card: KanbanCard | null;
@@ -60,6 +61,8 @@ export function KanbanCardDrawer({ card, columns, teamMembers, open, onOpenChang
   const [isConversationPreviewOpen, setIsConversationPreviewOpen] = useState(false);
   const [isCorrectingComment, setIsCorrectingComment] = useState(false);
   const commentTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const { hasCredits, isLoading: isLoadingCredits } = useAICredits();
+  const hasTextCredits = !isLoadingCredits && hasCredits('standard_text');
 
   useEffect(() => {
     if (card && open) {
@@ -251,12 +254,19 @@ export function KanbanCardDrawer({ card, columns, teamMembers, open, onOpenChang
                     size="sm"
                     variant="ghost"
                     onClick={async () => {
-                      if (isCorrectingComment) return;
+                      if (isCorrectingComment || !hasTextCredits) return;
                       setIsCorrectingComment(true);
                       try {
                         const { data, error } = await supabase.functions.invoke('correct-text', {
                           body: { text: newComment }
                         });
+                        
+                        // Handle insufficient credits error
+                        if (data?.code === 'INSUFFICIENT_CREDITS') {
+                          toast.error('Créditos insuficientes. Recarregue seus créditos de IA.');
+                          return;
+                        }
+                        
                         if (error) throw error;
                         if (data?.correctedText) {
                           setNewComment(data.correctedText);
@@ -273,7 +283,9 @@ export function KanbanCardDrawer({ card, columns, teamMembers, open, onOpenChang
                         setIsCorrectingComment(false);
                       }
                     }}
-                    disabled={isCorrectingComment}
+                    disabled={isCorrectingComment || !hasTextCredits}
+                    title={hasTextCredits ? 'Corrigir texto' : 'Créditos insuficientes'}
+                    className={!hasTextCredits ? 'opacity-50' : ''}
                   >
                     {isCorrectingComment ? <Loader2 className="w-4 h-4 animate-spin" /> : <Pencil className="w-4 h-4" />}
                   </Button>

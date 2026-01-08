@@ -1716,11 +1716,12 @@ Deno.serve(async (req: Request) => {
       
       contactId = newContact.id
       
-      // Auto-add to CRM if enabled
+      // Auto-add to CRM if enabled (use default board)
       const { data: boardData } = await supabase
         .from('kanban_boards')
         .select('id, auto_add_new_contacts')
         .eq('whatsapp_connection_id', whatsappConnectionId)
+        .eq('is_default', true)
         .maybeSingle()
       
       if (boardData?.auto_add_new_contacts) {

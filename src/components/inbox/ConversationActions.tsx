@@ -98,18 +98,16 @@ export function ConversationActions({
     refresh: refreshCRM,
   } = useContactCRM(conversation.contactId || null);
 
-  // Get available CRM columns for current connection
-  const availableCrmColumns = useMemo(() => {
+  // Get available CRM boards for current connection (multi-board support)
+  const availableCrmBoards = useMemo(() => {
     if (!conversation.whatsappConnectionId || crmBoards.size === 0) return [];
     
-    // Find the board for this connection
-    const board = crmBoards.get(conversation.whatsappConnectionId);
-    
-    return board?.columns || [];
+    // Find ALL boards for this connection
+    return crmBoards.get(conversation.whatsappConnectionId) || [];
   }, [crmBoards, conversation.whatsappConnectionId]);
 
-  // Handler to move contact to a CRM stage
-  const handleMoveToStage = async (columnId: string) => {
+  // Handler to move contact to a CRM stage (updated for multi-board)
+  const handleMoveToStage = async (boardId: string, columnId: string) => {
     if (!conversation.contactId || !conversation.whatsappConnectionId) return;
     
     setLoadingAction('move_stage');
@@ -117,7 +115,9 @@ export function ConversationActions({
       await setCardPosition(
         conversation.contactId,
         conversation.whatsappConnectionId,
-        columnId
+        columnId,
+        'medium',
+        boardId
       );
       toast({
         title: 'Posição atualizada',
@@ -811,23 +811,24 @@ export function ConversationActions({
             </DropdownMenuPortal>
           </DropdownMenuSub>
 
-          {/* Mover no funil CRM */}
+          {/* Mover no funil CRM - Multi-board hierarchy */}
           <DropdownMenuSub>
-            <DropdownMenuSubTrigger disabled={availableCrmColumns.length === 0}>
+            <DropdownMenuSubTrigger disabled={availableCrmBoards.length === 0}>
               <Kanban className="w-4 h-4 mr-2" />
               <span>Mover no funil...</span>
             </DropdownMenuSubTrigger>
             <DropdownMenuPortal>
               <DropdownMenuSubContent className="z-[110]">
-                {availableCrmColumns.length === 0 ? (
+                {availableCrmBoards.length === 0 ? (
                   <DropdownMenuItem disabled>
                     Nenhuma etapa disponível
                   </DropdownMenuItem>
-                ) : (
-                  availableCrmColumns.map((column) => (
+                ) : availableCrmBoards.length === 1 ? (
+                  // Single board - show columns directly
+                  availableCrmBoards[0].columns.map((column) => (
                     <DropdownMenuItem
                       key={column.id}
-                      onClick={() => handleMoveToStage(column.id)}
+                      onClick={() => handleMoveToStage(availableCrmBoards[0].id, column.id)}
                       disabled={
                         column.id === crmPosition?.column_id ||
                         loadingAction === 'move_stage'
@@ -844,6 +845,46 @@ export function ConversationActions({
                         </Badge>
                       )}
                     </DropdownMenuItem>
+                  ))
+                ) : (
+                  // Multiple boards - show hierarchical structure
+                  availableCrmBoards.map((board) => (
+                    <DropdownMenuSub key={board.id}>
+                      <DropdownMenuSubTrigger>
+                        <Kanban className="w-4 h-4 mr-2 text-muted-foreground" />
+                        <span className="flex-1">{board.name}</span>
+                        {board.is_default && (
+                          <Badge variant="outline" className="ml-1 text-xs">
+                            Padrão
+                          </Badge>
+                        )}
+                      </DropdownMenuSubTrigger>
+                      <DropdownMenuPortal>
+                        <DropdownMenuSubContent className="z-[120]">
+                          {board.columns.map((column) => (
+                            <DropdownMenuItem
+                              key={column.id}
+                              onClick={() => handleMoveToStage(board.id, column.id)}
+                              disabled={
+                                column.id === crmPosition?.column_id ||
+                                loadingAction === 'move_stage'
+                              }
+                            >
+                              <span 
+                                className="w-2.5 h-2.5 rounded-full mr-2 flex-shrink-0" 
+                                style={{ backgroundColor: column.color || '#D6E5FF' }}
+                              />
+                              <span className="flex-1">{column.name}</span>
+                              {column.id === crmPosition?.column_id && (
+                                <Badge variant="secondary" className="ml-2 text-xs">
+                                  Atual
+                                </Badge>
+                              )}
+                            </DropdownMenuItem>
+                          ))}
+                        </DropdownMenuSubContent>
+                      </DropdownMenuPortal>
+                    </DropdownMenuSub>
                   ))
                 )}
               </DropdownMenuSubContent>

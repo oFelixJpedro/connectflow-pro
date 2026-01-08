@@ -52,6 +52,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { useAIAgents } from '@/hooks/useAIAgents';
 import { useAuth } from '@/contexts/AuthContext';
+import { useAICredits } from '@/hooks/useAICredits';
 import { useAgentMedia } from '@/hooks/useAgentMedia';
 import { supabase } from '@/integrations/supabase/client';
 import { AI_AGENT_VOICES, AI_AGENT_BATCH_OPTIONS, AI_AGENT_SPLIT_DELAY_OPTIONS } from '@/types/ai-agents';
@@ -135,6 +136,8 @@ export function AgentSidebar({
   const { addConnection, removeConnection } = useAIAgents();
   const { profile } = useAuth();
   const { medias, isLoading: isLoadingMedias, loadMedias, uploadMedia, createTextOrLink, deleteMedia } = useAgentMedia(agent.id);
+  const { hasCredits: hasAICredits, isLoading: isLoadingAICredits } = useAICredits();
+  const hasAudioCredits = !isLoadingAICredits && hasAICredits('standard_audio');
   
   const [basicOpen, setBasicOpen] = useState(true);
   const [triggersOpen, setTriggersOpen] = useState(true);
@@ -719,9 +722,10 @@ export function AgentSidebar({
                   <Button
                     variant="outline"
                     size="sm"
-                    className="w-full h-8 text-xs"
+                    className={`w-full h-8 text-xs ${!hasAudioCredits ? 'opacity-50' : ''}`}
                     onClick={handlePlayVoicePreview}
-                    disabled={isPlayingPreview && !audioElement}
+                    disabled={(isPlayingPreview && !audioElement) || !hasAudioCredits}
+                    title={hasAudioCredits ? 'Ouvir prévia da voz' : 'Créditos de áudio insuficientes'}
                   >
                     {isPlayingPreview ? (
                       audioElement ? (
@@ -735,6 +739,11 @@ export function AgentSidebar({
                           Gerando...
                         </>
                       )
+                    ) : !hasAudioCredits ? (
+                      <>
+                        <Play className="w-3 h-3 mr-1" />
+                        Sem créditos
+                      </>
                     ) : (
                       <>
                         <Play className="w-3 h-3 mr-1" />

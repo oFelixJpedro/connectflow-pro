@@ -14,6 +14,7 @@ import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { toast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
+import { useAICredits } from '@/hooks/useAICredits';
 
 // Import media components
 import { AudioPlayer } from '@/components/inbox/AudioPlayer';
@@ -53,6 +54,9 @@ export default function InternalChat() {
     loadTeamMembers,
     loadRooms,
   } = useInternalChat();
+  
+  const { hasCredits, isLoading: isLoadingCredits } = useAICredits();
+  const hasTextCredits = !isLoadingCredits && hasCredits('standard_text');
 
   const [messageInput, setMessageInput] = useState('');
   const [isSending, setIsSending] = useState(false);
@@ -144,11 +148,32 @@ export default function InternalChat() {
     }
   };
 
+  // Debounce ref for mention detection
+  const mentionDebounceRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Cleanup debounce on unmount
+  useEffect(() => {
+    return () => {
+      if (mentionDebounceRef.current) {
+        clearTimeout(mentionDebounceRef.current);
+      }
+    };
+  }, []);
+
   const handleMessageInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const newValue = e.target.value;
     const cursorPosition = e.target.selectionStart || 0;
+    
+    // Immediate state update (cannot be delayed)
     setMessageInput(newValue);
-    handleMentionInputChange(newValue, cursorPosition);
+    
+    // Debounce mention detection (150ms) to avoid lag during fast typing
+    if (mentionDebounceRef.current) {
+      clearTimeout(mentionDebounceRef.current);
+    }
+    mentionDebounceRef.current = setTimeout(() => {
+      handleMentionInputChange(newValue, cursorPosition);
+    }, 150);
   };
 
   const handleSelectMention = (member: { id: string; fullName: string; avatarUrl: string | null; role: string }) => {
@@ -920,12 +945,26 @@ export default function InternalChat() {
                         variant="ghost"
                         size="icon"
                         onClick={async () => {
-                          if (isCorrectingText) return;
+                          if (isCorrectingText || !hasTextCredits) return;
                           setIsCorrectingText(true);
                           try {
                             const { data, error } = await supabase.functions.invoke('correct-text', {
-                              body: { text: messageInput }
+                              body: { 
+                                text: messageInput,
+                                companyId: profile?.company_id
+                              }
                             });
+                            
+                            // Handle insufficient credits error
+                            if (data?.code === 'INSUFFICIENT_CREDITS') {
+                              toast({ 
+                                title: 'Créditos insuficientes', 
+                                description: 'Recarregue seus créditos de IA.',
+                                variant: 'destructive' 
+                              });
+                              return;
+                            }
+                            
                             if (error) throw error;
                             if (data?.correctedText) {
                               setMessageInput(data.correctedText);
@@ -942,9 +981,9 @@ export default function InternalChat() {
                             setIsCorrectingText(false);
                           }
                         }}
-                        className="flex-shrink-0 text-muted-foreground hover:text-foreground"
-                        disabled={isCorrectingText}
-                        title="Corrigir texto"
+                        className={`flex-shrink-0 ${hasTextCredits ? 'text-muted-foreground hover:text-foreground' : 'text-muted-foreground/50 cursor-not-allowed'}`}
+                        disabled={isCorrectingText || !hasTextCredits}
+                        title={hasTextCredits ? 'Corrigir texto' : 'Créditos insuficientes'}
                       >
                         {isCorrectingText ? (
                           <Loader2 className="w-5 h-5 animate-spin" />

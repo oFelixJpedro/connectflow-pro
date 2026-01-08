@@ -193,6 +193,11 @@ export function useReportsData() {
         return;
       }
 
+      if (data?.code === 'INSUFFICIENT_CREDITS') {
+        toast.error('Créditos de IA insuficientes. Recarregue para gerar relatórios.');
+        return;
+      }
+
       if (data?.error) {
         if (data.already_generated) {
           toast.error('Você já gerou um relatório antecipado esta semana');

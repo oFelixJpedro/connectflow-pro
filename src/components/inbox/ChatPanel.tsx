@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useDeferredValue, useMemo } from 'react';
 import { 
   Send, 
   Check,
@@ -68,6 +68,7 @@ import { ptBR } from 'date-fns/locale';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
+import { useAICredits } from '@/hooks/useAICredits';
 
 // Import mentions
 import { MentionPicker, MentionText } from '@/components/mentions';
@@ -134,6 +135,10 @@ export function ChatPanel({
   isTakingOver = false,
 }: ChatPanelProps) {
   const { user, userRole, profile } = useAuth();
+  const { hasCredits, isLoading: isLoadingCredits } = useAICredits();
+  const hasTextCredits = !isLoadingCredits && hasCredits('standard_text');
+  // Use ref for immediate value storage to prevent re-renders during fast typing
+  const inputValueRef = useRef('');
   const [inputValue, setInputValue] = useState('');
   const [showScrollButton, setShowScrollButton] = useState(false);
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
@@ -262,17 +267,33 @@ export function ChatPanel({
 
   // Correct text with AI handler
   const handleCorrectText = async () => {
-    if (!inputValue.trim() || isCorrectingText) return;
+    // Use ref for current value (more reliable during fast typing)
+    const currentText = inputValueRef.current || inputValue;
+    if (!currentText.trim() || isCorrectingText) return;
     
     setIsCorrectingText(true);
     try {
       const { data, error } = await supabase.functions.invoke('correct-text', {
-        body: { text: inputValue }
+        body: { 
+          text: currentText,
+          companyId: profile?.company_id
+        }
       });
+      
+      // Handle insufficient credits error
+      if (data?.code === 'INSUFFICIENT_CREDITS') {
+        toast({ 
+          title: 'Créditos insuficientes', 
+          description: 'Recarregue seus créditos de IA para usar esta função.',
+          variant: 'destructive' 
+        });
+        return;
+      }
       
       if (error) throw error;
       
       if (data?.correctedText) {
+        inputValueRef.current = data.correctedText;
         setInputValue(data.correctedText);
         // Auto-focus the textarea after correction
         setTimeout(() => {
@@ -1040,6 +1061,7 @@ export function ChatPanel({
         mentionedUserIds
       );
       if (success) {
+        inputValueRef.current = '';
         setInputValue('');
         setReplyingTo(null);
         setNoteAttachment(null);
@@ -1059,6 +1081,7 @@ export function ChatPanel({
       const quotedId = replyingTo?.id;
       
       // Clear input and reply immediately for better UX
+      inputValueRef.current = '';
       setInputValue('');
       setReplyingTo(null);
       // Reset textarea height
@@ -1149,37 +1172,77 @@ export function ChatPanel({
     }
   };
 
-  // Handle input change to detect "/" trigger and "@" mentions
-  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+  // Debounce refs for performance
+  const mentionDebounceRef = useRef<NodeJS.Timeout | null>(null);
+  const resizeRafRef = useRef<number | null>(null);
+  const stateUpdateRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Cleanup debounce and RAF on unmount
+  useEffect(() => {
+    return () => {
+      if (mentionDebounceRef.current) {
+        clearTimeout(mentionDebounceRef.current);
+      }
+      if (resizeRafRef.current) {
+        cancelAnimationFrame(resizeRafRef.current);
+      }
+      if (stateUpdateRef.current) {
+        clearTimeout(stateUpdateRef.current);
+      }
+    };
+  }, []);
+
+  // Handle input change - optimized for fast typing
+  const handleInputChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const value = e.target.value;
     const cursorPosition = e.target.selectionStart || 0;
-    setInputValue(value);
     
-    // Show quick replies when typing "/" at the start or alone
-    if (value.startsWith('/')) {
-      setShowQuickReplies(true);
-    } else {
-      setShowQuickReplies(false);
+    // Store value immediately in ref (no re-render)
+    inputValueRef.current = value;
+    
+    // Debounce state update (16ms = 1 frame) to batch rapid keystrokes
+    if (stateUpdateRef.current) {
+      clearTimeout(stateUpdateRef.current);
+    }
+    stateUpdateRef.current = setTimeout(() => {
+      setInputValue(inputValueRef.current);
+    }, 16);
+    
+    // Only update showQuickReplies if value actually changes
+    const shouldShowQuickReplies = value.startsWith('/');
+    if (shouldShowQuickReplies !== showQuickReplies) {
+      setShowQuickReplies(shouldShowQuickReplies);
     }
     
-    // Handle mention detection for internal notes
+    // Debounce mention detection (150ms) to avoid lag during fast typing
+    if (mentionDebounceRef.current) {
+      clearTimeout(mentionDebounceRef.current);
+    }
     if (isInternalNoteMode) {
-      handleMentionInputChange(value, cursorPosition);
+      mentionDebounceRef.current = setTimeout(() => {
+        handleMentionInputChange(value, cursorPosition);
+      }, 150);
     }
 
-    // Auto-resize textarea based on content
-    if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto';
-      const maxHeight = 200; // ~8 lines, harmonious limit
-      const newHeight = Math.min(textareaRef.current.scrollHeight, maxHeight);
-      textareaRef.current.style.height = `${newHeight}px`;
+    // Auto-resize using requestAnimationFrame to prevent layout thrashing
+    if (resizeRafRef.current) {
+      cancelAnimationFrame(resizeRafRef.current);
     }
-  };
+    resizeRafRef.current = requestAnimationFrame(() => {
+      if (textareaRef.current) {
+        textareaRef.current.style.height = 'auto';
+        const maxHeight = 200;
+        const newHeight = Math.min(textareaRef.current.scrollHeight, maxHeight);
+        textareaRef.current.style.height = `${newHeight}px`;
+      }
+    });
+  }, [showQuickReplies, isInternalNoteMode, handleMentionInputChange]);
 
   // Handle quick reply selection
   const handleQuickReplySelect = async (reply: QuickReply) => {
     console.log('📝 Resposta rápida selecionada:', reply.id, 'Tipo:', reply.media_type);
     setShowQuickReplies(false);
+    inputValueRef.current = '';
     setInputValue('');
     // Reset textarea height
     if (textareaRef.current) {
@@ -2096,8 +2159,8 @@ export function ChatPanel({
                     variant="ghost"
                     size="icon"
                     onClick={handleCorrectText}
-                    disabled={isCorrectingText || (!canReply && !isInternalNoteMode)}
-                    className="h-9 w-9 flex-shrink-0"
+                    disabled={isCorrectingText || (!canReply && !isInternalNoteMode) || !hasTextCredits}
+                    className={cn("h-9 w-9 flex-shrink-0", !hasTextCredits && "opacity-50")}
                   >
                     {isCorrectingText ? (
                       <Loader2 className="w-4 h-4 animate-spin" />
@@ -2106,7 +2169,9 @@ export function ChatPanel({
                     )}
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent>Corrigir texto com IA</TooltipContent>
+                <TooltipContent>
+                  {!hasTextCredits ? 'Créditos insuficientes' : 'Corrigir texto com IA'}
+                </TooltipContent>
               </Tooltip>
             )}
 
@@ -2144,6 +2209,7 @@ export function ChatPanel({
                   onClick={handleGenerateAIResponse}
                   disabled={isGeneratingResponse || isCorrectingText || isSendingMessage}
                   isLoading={isGeneratingResponse}
+                  noCredits={!hasTextCredits}
                 />
               )}
 

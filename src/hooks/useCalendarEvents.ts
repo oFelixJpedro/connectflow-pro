@@ -195,10 +195,16 @@ export function useCalendarEvents() {
   const generateEventSummary = useCallback(async (eventId: string): Promise<string | null> => {
     try {
       const { data, error } = await supabase.functions.invoke('generate-event-summary', {
-        body: { eventId },
+        body: { eventId, companyId: profile?.company_id },
       });
 
       if (error) throw error;
+
+      // 💰 Handle insufficient credits
+      if (data?.code === 'INSUFFICIENT_CREDITS') {
+        toast.error('Créditos insuficientes. Recarregue para gerar resumos.');
+        return null;
+      }
 
       if (data?.summary) {
         // Atualizar evento com o resumo
@@ -212,7 +218,7 @@ export function useCalendarEvents() {
       toast.error('Erro ao gerar resumo do evento');
       return null;
     }
-  }, [updateEvent]);
+  }, [updateEvent, profile?.company_id]);
 
   // Obter eventos de um dia específico
   const getEventsForDay = useCallback((date: Date): CalendarEvent[] => {

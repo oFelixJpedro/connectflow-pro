@@ -8,6 +8,7 @@ import {
 } from '../_shared/gemini-file-api.ts';
 import { getCachedAnalysis, saveCacheAnalysis } from '../_shared/media-cache.ts';
 import { logAIUsage } from '../_shared/usage-tracker.ts';
+import { checkCredits, consumeCredits } from '../_shared/supabase-credits.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -513,6 +514,22 @@ Deno.serve(async (req: Request) => {
     }
     
     const companyId = data.companyId;
+
+    // ═══════════════════════════════════════════════════════════════════
+    // 💳 VERIFICAÇÃO DE CRÉDITOS DE IA
+    // ═══════════════════════════════════════════════════════════════════
+    if (companyId) {
+      const creditCheck = await checkCredits(supabase, companyId, 'standard_text', 5000);
+      if (!creditCheck.hasCredits) {
+        return new Response(JSON.stringify({ 
+          error: creditCheck.errorMessage,
+          code: 'INSUFFICIENT_CREDITS',
+          creditType: 'standard_text',
+          currentBalance: creditCheck.currentBalance,
+          recommendation: null
+        }), { status: 402, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+    }
 
     let batchResults: BatchAnalysisResult[] = [];
     

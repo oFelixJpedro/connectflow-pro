@@ -94,7 +94,7 @@ export function useAgentKnowledge(agentId: string | null) {
       setUploadProgress(70);
 
       // Call edge function to process the document
-      const { error: processError } = await supabase.functions.invoke('ai-agent-knowledge-process', {
+      const { data: processData, error: processError } = await supabase.functions.invoke('ai-agent-knowledge-process', {
         body: {
           documentId: docData.id,
           agentId,
@@ -109,6 +109,11 @@ export function useAgentKnowledge(agentId: string | null) {
         console.error('Error calling process function:', processError);
         // Don't fail the upload, the document is already saved
         // The processing can be retried later
+      }
+
+      // Check for insufficient credits error
+      if (processData?.code === 'INSUFFICIENT_CREDITS') {
+        toast.error('Créditos de IA insuficientes. Recarregue para processar documentos.');
       }
 
       setUploadProgress(100);

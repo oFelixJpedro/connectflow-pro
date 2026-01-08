@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { logAIUsage } from '../_shared/usage-tracker.ts';
+import { checkCredits, consumeCredits } from '../_shared/supabase-credits.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -151,6 +152,15 @@ serve(async (req) => {
       console.log(`\n🏢 [PROCESSOR] Processing company: ${company.name} (${company.id})`);
       
       try {
+        // ═══════════════════════════════════════════════════════════════════
+        // 💳 VERIFICAÇÃO DE CRÉDITOS DE IA
+        // ═══════════════════════════════════════════════════════════════════
+        const creditCheck = await checkCredits(supabase, company.id, 'standard_text', 5000);
+        if (!creditCheck.hasCredits) {
+          console.log(`⚠️ [PROCESSOR] Skipping ${company.name} - insufficient credits`);
+          results.push({ company_id: company.id, company_name: company.name, skipped: true, reason: 'no_credits' });
+          continue;
+        }
         // Step 2: Get users with commercial_analysis_enabled = true for this company
         const { data: enabledAgents, error: agentsError } = await supabase
           .from('profiles')

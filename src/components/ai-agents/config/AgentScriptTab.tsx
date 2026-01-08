@@ -5,7 +5,9 @@ import { Label } from '@/components/ui/label';
 import { MarkdownEditor } from '@/components/ui/markdown-editor';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
 import type { AgentMedia } from '@/hooks/useAgentMedia';
+import { useAICredits } from '@/hooks/useAICredits';
 
 interface AgentScriptTabProps {
   content: string;
@@ -143,6 +145,9 @@ Desejamos sucesso! 🙏"
 export function AgentScriptTab({ content, onChange, agentId, medias = [] }: AgentScriptTabProps) {
   const [isFormatting, setIsFormatting] = useState(false);
   const { toast } = useToast();
+  const { profile } = useAuth();
+  const { hasCredits, isLoading: isLoadingCredits } = useAICredits();
+  const hasTextCredits = !isLoadingCredits && hasCredits('standard_text');
 
   const handleGenerateTemplate = () => {
     onChange(DEFAULT_SCRIPT_TEMPLATE);
@@ -161,10 +166,20 @@ export function AgentScriptTab({ content, onChange, agentId, medias = [] }: Agen
     setIsFormatting(true);
     try {
       const { data, error } = await supabase.functions.invoke('format-prompt', {
-        body: { text: content }
+        body: { text: content, companyId: profile?.company_id }
       });
 
       if (error) throw error;
+
+      // 💰 Handle insufficient credits
+      if (data?.code === 'INSUFFICIENT_CREDITS') {
+        toast({
+          title: "Créditos insuficientes",
+          description: "Recarregue seus créditos de IA para usar esta função.",
+          variant: "destructive",
+        });
+        return;
+      }
 
       if (data?.formattedText) {
         onChange(data.formattedText);
@@ -201,14 +216,16 @@ export function AgentScriptTab({ content, onChange, agentId, medias = [] }: Agen
             variant="outline" 
             size="sm" 
             onClick={handleFormatPrompt}
-            disabled={isFormatting}
+            disabled={isFormatting || !hasTextCredits}
+            title={hasTextCredits ? 'Formatar com IA' : 'Créditos insuficientes'}
+            className={!hasTextCredits ? 'opacity-50' : ''}
           >
             {isFormatting ? (
               <Loader2 className="w-4 h-4 mr-2 animate-spin" />
             ) : (
               <Sparkles className="w-4 h-4 mr-2" />
             )}
-            Formatar
+            {hasTextCredits ? 'Formatar' : 'Sem créditos'}
           </Button>
           <Button variant="outline" size="sm" onClick={handleGenerateTemplate}>
             <Wand2 className="w-4 h-4 mr-2" />
