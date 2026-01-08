@@ -28,11 +28,19 @@ interface Connection {
   name: string;
 }
 
+interface CRMBoard {
+  id: string;
+  name: string;
+  is_default: boolean;
+}
+
 interface CRMStage {
   id: string;
   name: string;
   color: string;
   position: number;
+  boardId: string;
+  boardName: string;
 }
 
 interface CRMStageMapData {
@@ -83,16 +91,20 @@ export function BrazilMap({ contactsByState, dealsByState }: BrazilMapProps) {
   const [filter, setFilter] = useState<MapFilter>('contacts');
   const [menuOpen, setMenuOpen] = useState(false);
   
-  // CRM selection state
+  // CRM selection state (multi-board support)
   const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(null);
   const [selectedConnectionName, setSelectedConnectionName] = useState<string>('');
+  const [selectedBoardId, setSelectedBoardId] = useState<string | null>(null);
+  const [selectedBoardName, setSelectedBoardName] = useState<string>('');
   const [selectedStageId, setSelectedStageId] = useState<string | null>(null);
   const [selectedStageName, setSelectedStageName] = useState<string>('');
   
-  // Cache for connections and stages
+  // Cache for connections, boards, and stages
   const [connections, setConnections] = useState<Connection[]>([]);
+  const [boardsCache, setBoardsCache] = useState<Record<string, CRMBoard[]>>({});
   const [stagesCache, setStagesCache] = useState<Record<string, CRMStage[]>>({});
   const [loadingConnections, setLoadingConnections] = useState(false);
+  const [loadingBoardsFor, setLoadingBoardsFor] = useState<string | null>(null);
   const [loadingStagesFor, setLoadingStagesFor] = useState<string | null>(null);
   
   // Stage map data
@@ -134,37 +146,71 @@ export function BrazilMap({ contactsByState, dealsByState }: BrazilMapProps) {
     }
   };
 
-  const fetchStagesForConnection = async (connectionId: string) => {
+  // Fetch boards for connection (multi-board support)
+  const fetchBoardsForConnection = async (connectionId: string) => {
     // Return cached if available
-    if (stagesCache[connectionId]) return;
+    if (boardsCache[connectionId]) return;
     
-    setLoadingStagesFor(connectionId);
+    setLoadingBoardsFor(connectionId);
     try {
-      // First get the board for this connection
-      const { data: boardData } = await supabase
+      const { data: boardsData } = await supabase
         .from('kanban_boards')
-        .select('id')
+        .select('id, name, is_default')
         .eq('whatsapp_connection_id', connectionId)
-        .single();
+        .order('is_default', { ascending: false })
+        .order('name');
       
-      if (boardData) {
-        const { data: columnsData } = await supabase
-          .from('kanban_columns')
-          .select('id, name, color, position')
-          .eq('board_id', boardData.id)
-          .order('position');
-        
-        if (columnsData) {
-          setStagesCache(prev => ({
-            ...prev,
-            [connectionId]: columnsData,
-          }));
-        }
+      if (boardsData) {
+        setBoardsCache(prev => ({
+          ...prev,
+          [connectionId]: boardsData.map(b => ({
+            id: b.id,
+            name: b.name || 'CRM Principal',
+            is_default: b.is_default || false,
+          })),
+        }));
       } else {
-        // No board, set empty array
-        setStagesCache(prev => ({
+        setBoardsCache(prev => ({
           ...prev,
           [connectionId]: [],
+        }));
+      }
+    } catch (error) {
+      console.error('Error fetching boards:', error);
+    } finally {
+      setLoadingBoardsFor(null);
+    }
+  };
+
+  // Fetch stages for specific board
+  const fetchStagesForBoard = async (boardId: string, boardName: string) => {
+    // Return cached if available
+    if (stagesCache[boardId]) return;
+    
+    setLoadingStagesFor(boardId);
+    try {
+      const { data: columnsData } = await supabase
+        .from('kanban_columns')
+        .select('id, name, color, position')
+        .eq('board_id', boardId)
+        .order('position');
+      
+      if (columnsData) {
+        setStagesCache(prev => ({
+          ...prev,
+          [boardId]: columnsData.map(c => ({
+            id: c.id,
+            name: c.name,
+            color: c.color,
+            position: c.position,
+            boardId: boardId,
+            boardName: boardName,
+          })),
+        }));
+      } else {
+        setStagesCache(prev => ({
+          ...prev,
+          [boardId]: [],
         }));
       }
     } catch (error) {
@@ -215,6 +261,8 @@ export function BrazilMap({ contactsByState, dealsByState }: BrazilMapProps) {
       // Reset CRM selection
       setSelectedConnectionId(null);
       setSelectedConnectionName('');
+      setSelectedBoardId(null);
+      setSelectedBoardName('');
       setSelectedStageId(null);
       setSelectedStageName('');
       setStageData(null);
@@ -222,10 +270,19 @@ export function BrazilMap({ contactsByState, dealsByState }: BrazilMapProps) {
     setMenuOpen(false);
   };
 
-  const handleStageSelect = (connectionId: string, connectionName: string, stageId: string, stageName: string) => {
+  const handleStageSelect = (
+    connectionId: string, 
+    connectionName: string, 
+    boardId: string,
+    boardName: string,
+    stageId: string, 
+    stageName: string
+  ) => {
     setFilter('crm_stage');
     setSelectedConnectionId(connectionId);
     setSelectedConnectionName(connectionName);
+    setSelectedBoardId(boardId);
+    setSelectedBoardName(boardName);
     setSelectedStageId(stageId);
     setSelectedStageName(stageName);
     setMenuOpen(false);
@@ -359,35 +416,102 @@ export function BrazilMap({ contactsByState, dealsByState }: BrazilMapProps) {
                       <DropdownMenuSub key={conn.id}>
                         <DropdownMenuSubTrigger 
                           className="flex items-center gap-2"
-                          onMouseEnter={() => fetchStagesForConnection(conn.id)}
-                          onFocus={() => fetchStagesForConnection(conn.id)}
+                          onMouseEnter={() => fetchBoardsForConnection(conn.id)}
+                          onFocus={() => fetchBoardsForConnection(conn.id)}
                         >
                           <Wifi className="w-4 h-4 text-muted-foreground shrink-0" />
                           <span className="flex-1 truncate">{conn.name}</span>
                         </DropdownMenuSubTrigger>
-                        <DropdownMenuSubContent className="w-[180px]">
-                          {loadingStagesFor === conn.id ? (
+                        <DropdownMenuSubContent className="w-[200px]">
+                          {loadingBoardsFor === conn.id ? (
                             <div className="flex items-center justify-center py-4">
                               <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
                             </div>
-                          ) : !stagesCache[conn.id] || stagesCache[conn.id].length === 0 ? (
+                          ) : !boardsCache[conn.id] || boardsCache[conn.id].length === 0 ? (
                             <div className="px-3 py-4 text-center text-sm text-muted-foreground">
-                              Nenhuma etapa
+                              Nenhum CRM encontrado
                             </div>
+                          ) : boardsCache[conn.id].length === 1 ? (
+                            // Single board - show stages directly
+                            (() => {
+                              const board = boardsCache[conn.id][0];
+                              const boardStages = stagesCache[board.id];
+                              
+                              if (!boardStages) {
+                                // Need to fetch stages
+                                fetchStagesForBoard(board.id, board.name);
+                                return (
+                                  <div className="flex items-center justify-center py-4">
+                                    <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                                  </div>
+                                );
+                              }
+                              
+                              if (boardStages.length === 0) {
+                                return (
+                                  <div className="px-3 py-4 text-center text-sm text-muted-foreground">
+                                    Nenhuma etapa
+                                  </div>
+                                );
+                              }
+                              
+                              return boardStages.map(stage => (
+                                <DropdownMenuItem
+                                  key={stage.id}
+                                  onClick={() => handleStageSelect(conn.id, conn.name, board.id, board.name, stage.id, stage.name)}
+                                  className="flex items-center gap-2"
+                                >
+                                  <div
+                                    className="w-3 h-3 rounded-full flex-shrink-0"
+                                    style={{ backgroundColor: stage.color }}
+                                  />
+                                  <span className="flex-1 truncate">{stage.name}</span>
+                                  {selectedStageId === stage.id && <Check className="h-4 w-4" />}
+                                </DropdownMenuItem>
+                              ));
+                            })()
                           ) : (
-                            stagesCache[conn.id].map(stage => (
-                              <DropdownMenuItem
-                                key={stage.id}
-                                onClick={() => handleStageSelect(conn.id, conn.name, stage.id, stage.name)}
-                                className="flex items-center gap-2"
-                              >
-                                <div
-                                  className="w-3 h-3 rounded-full flex-shrink-0"
-                                  style={{ backgroundColor: stage.color }}
-                                />
-                                <span className="flex-1 truncate">{stage.name}</span>
-                                {selectedStageId === stage.id && <Check className="h-4 w-4" />}
-                              </DropdownMenuItem>
+                            // Multiple boards - show board > stage hierarchy
+                            boardsCache[conn.id].map(board => (
+                              <DropdownMenuSub key={board.id}>
+                                <DropdownMenuSubTrigger 
+                                  className="flex items-center gap-2"
+                                  onMouseEnter={() => fetchStagesForBoard(board.id, board.name)}
+                                  onFocus={() => fetchStagesForBoard(board.id, board.name)}
+                                >
+                                  <Kanban className="w-4 h-4 text-muted-foreground shrink-0" />
+                                  <span className="flex-1 truncate">{board.name}</span>
+                                  {board.is_default && (
+                                    <span className="text-xs text-muted-foreground">⭐</span>
+                                  )}
+                                </DropdownMenuSubTrigger>
+                                <DropdownMenuSubContent className="w-[180px]">
+                                  {loadingStagesFor === board.id ? (
+                                    <div className="flex items-center justify-center py-4">
+                                      <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                                    </div>
+                                  ) : !stagesCache[board.id] || stagesCache[board.id].length === 0 ? (
+                                    <div className="px-3 py-4 text-center text-sm text-muted-foreground">
+                                      Nenhuma etapa
+                                    </div>
+                                  ) : (
+                                    stagesCache[board.id].map(stage => (
+                                      <DropdownMenuItem
+                                        key={stage.id}
+                                        onClick={() => handleStageSelect(conn.id, conn.name, board.id, board.name, stage.id, stage.name)}
+                                        className="flex items-center gap-2"
+                                      >
+                                        <div
+                                          className="w-3 h-3 rounded-full flex-shrink-0"
+                                          style={{ backgroundColor: stage.color }}
+                                        />
+                                        <span className="flex-1 truncate">{stage.name}</span>
+                                        {selectedStageId === stage.id && <Check className="h-4 w-4" />}
+                                      </DropdownMenuItem>
+                                    ))
+                                  )}
+                                </DropdownMenuSubContent>
+                              </DropdownMenuSub>
                             ))
                           )}
                         </DropdownMenuSubContent>
