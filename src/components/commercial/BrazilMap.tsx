@@ -147,6 +147,40 @@ export function BrazilMap({ contactsByState, dealsByState }: BrazilMapProps) {
     }
   };
 
+  // Internal function to fetch stages (used by fetchBoardsForConnection)
+  const fetchStagesForBoardInternal = async (boardId: string, boardName: string) => {
+    if (stagesCache[boardId]) return;
+    
+    try {
+      const { data: columnsData } = await supabase
+        .from('kanban_columns')
+        .select('id, name, color, position')
+        .eq('board_id', boardId)
+        .order('position');
+      
+      if (columnsData) {
+        setStagesCache(prev => ({
+          ...prev,
+          [boardId]: columnsData.map(c => ({
+            id: c.id,
+            name: c.name,
+            color: c.color,
+            position: c.position,
+            boardId: boardId,
+            boardName: boardName,
+          })),
+        }));
+      } else {
+        setStagesCache(prev => ({
+          ...prev,
+          [boardId]: [],
+        }));
+      }
+    } catch (error) {
+      console.error('Error fetching stages:', error);
+    }
+  };
+
   // Fetch boards for connection (multi-board support)
   const fetchBoardsForConnection = async (connectionId: string) => {
     // Return cached if available
@@ -162,14 +196,21 @@ export function BrazilMap({ contactsByState, dealsByState }: BrazilMapProps) {
         .order('name');
       
       if (boardsData) {
+        const boards = boardsData.map(b => ({
+          id: b.id,
+          name: b.name || 'CRM Principal',
+          is_default: b.is_default || false,
+        }));
+        
         setBoardsCache(prev => ({
           ...prev,
-          [connectionId]: boardsData.map(b => ({
-            id: b.id,
-            name: b.name || 'CRM Principal',
-            is_default: b.is_default || false,
-          })),
+          [connectionId]: boards,
         }));
+        
+        // Pre-fetch stages if there's only one board (avoids fetch inside JSX)
+        if (boards.length === 1 && !stagesCache[boards[0].id]) {
+          await fetchStagesForBoardInternal(boards[0].id, boards[0].name);
+        }
       } else {
         setBoardsCache(prev => ({
           ...prev,
@@ -433,14 +474,13 @@ export function BrazilMap({ contactsByState, dealsByState }: BrazilMapProps) {
                               Nenhum CRM encontrado
                             </div>
                           ) : boardsCache[conn.id].length === 1 ? (
-                            // Single board - show stages directly
+                            // Single board - show stages directly (pre-fetched in fetchBoardsForConnection)
                             (() => {
                               const board = boardsCache[conn.id][0];
                               const boardStages = stagesCache[board.id];
                               
+                              // Stages should already be fetched, but show loading if not ready yet
                               if (!boardStages) {
-                                // Need to fetch stages
-                                fetchStagesForBoard(board.id, board.name);
                                 return (
                                   <div className="flex items-center justify-center py-4">
                                     <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
