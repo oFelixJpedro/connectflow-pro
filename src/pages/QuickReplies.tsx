@@ -206,6 +206,7 @@ export default function QuickReplies() {
         .from('whatsapp_connections')
         .select('id, name, phone_number')
         .eq('company_id', profile.company_id)
+        .eq('active', true)
         .eq('status', 'connected');
       setConnections(connData || []);
       

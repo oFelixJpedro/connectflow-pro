@@ -45,6 +45,7 @@ export function ConnectionSelector({ position, onSelect, onClose, onBack, title 
           .from('whatsapp_connections')
           .select('id, name, phone_number')
           .eq('company_id', profile.company_id)
+          .eq('active', true)
           .order('name');
         
         if (error) throw error;
