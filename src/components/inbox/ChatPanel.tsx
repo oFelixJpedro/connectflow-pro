@@ -1173,8 +1173,11 @@ export function ChatPanel({
     // Immediate state update (cannot be delayed)
     setInputValue(value);
     
-    // Quick reply detection (fast, keep synchronous)
-    setShowQuickReplies(value.startsWith('/'));
+    // Only update showQuickReplies if value actually changes (avoid unnecessary re-renders)
+    const shouldShowQuickReplies = value.startsWith('/');
+    if (shouldShowQuickReplies !== showQuickReplies) {
+      setShowQuickReplies(shouldShowQuickReplies);
+    }
     
     // Debounce mention detection (150ms) to avoid lag during fast typing
     if (mentionDebounceRef.current) {

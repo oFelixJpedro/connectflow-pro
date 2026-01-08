@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo, memo } from 'react';
 import { Zap, Search, FolderOpen, Image, Video, Mic, FileText } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -28,7 +28,7 @@ const mediaTypeLabels: Record<QuickReplyMediaType, string> = {
   document: 'Documento',
 };
 
-export function QuickRepliesPicker({
+export const QuickRepliesPicker = memo(function QuickRepliesPicker({
   inputValue,
   onSelect,
   onClose,
@@ -39,18 +39,20 @@ export function QuickRepliesPicker({
   const containerRef = useRef<HTMLDivElement>(null);
   const itemRefs = useRef<(HTMLDivElement | null)[]>([]);
 
-  // Filter replies based on input (after "/")
+  // Filter replies based on input (after "/") - memoized to avoid recalculation
   const searchTerm = inputValue.startsWith('/') ? inputValue.slice(1).toLowerCase() : '';
   
-  const filteredReplies = quickReplies.filter(reply => {
-    if (!searchTerm) return true;
-    
-    const matchesShortcut = reply.shortcut.toLowerCase().includes(searchTerm);
-    const matchesTitle = reply.title.toLowerCase().includes(searchTerm);
-    const matchesMessage = reply.message.toLowerCase().includes(searchTerm);
-    
-    return matchesShortcut || matchesTitle || matchesMessage;
-  });
+  const filteredReplies = useMemo(() => {
+    return quickReplies.filter(reply => {
+      if (!searchTerm) return true;
+      
+      const matchesShortcut = reply.shortcut.toLowerCase().includes(searchTerm);
+      const matchesTitle = reply.title.toLowerCase().includes(searchTerm);
+      const matchesMessage = reply.message.toLowerCase().includes(searchTerm);
+      
+      return matchesShortcut || matchesTitle || matchesMessage;
+    });
+  }, [quickReplies, searchTerm]);
 
   // Reset selection when filtered list changes
   useEffect(() => {
@@ -192,4 +194,4 @@ export function QuickRepliesPicker({
       </div>
     </div>
   );
-}
+});
