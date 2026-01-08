@@ -876,8 +876,6 @@ export type Database = {
           description: string | null
           end_date: string
           event_type: string | null
-          google_calendar_synced: boolean | null
-          google_event_id: string | null
           id: string
           location: string | null
           metadata: Json | null
@@ -901,8 +899,6 @@ export type Database = {
           description?: string | null
           end_date: string
           event_type?: string | null
-          google_calendar_synced?: boolean | null
-          google_event_id?: string | null
           id?: string
           location?: string | null
           metadata?: Json | null
@@ -926,8 +922,6 @@ export type Database = {
           description?: string | null
           end_date?: string
           event_type?: string | null
-          google_calendar_synced?: boolean | null
-          google_event_id?: string | null
           id?: string
           location?: string | null
           metadata?: Json | null
@@ -971,57 +965,6 @@ export type Database = {
           {
             foreignKeyName: "calendar_events_created_by_fkey"
             columns: ["created_by"]
-            isOneToOne: false
-            referencedRelation: "profiles"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      calendar_google_tokens: {
-        Row: {
-          access_token: string
-          company_id: string
-          connected_by: string
-          created_at: string
-          expires_at: string
-          google_email: string | null
-          id: string
-          refresh_token: string
-          updated_at: string
-        }
-        Insert: {
-          access_token: string
-          company_id: string
-          connected_by: string
-          created_at?: string
-          expires_at: string
-          google_email?: string | null
-          id?: string
-          refresh_token: string
-          updated_at?: string
-        }
-        Update: {
-          access_token?: string
-          company_id?: string
-          connected_by?: string
-          created_at?: string
-          expires_at?: string
-          google_email?: string | null
-          id?: string
-          refresh_token?: string
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "calendar_google_tokens_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: true
-            referencedRelation: "companies"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "calendar_google_tokens_connected_by_fkey"
-            columns: ["connected_by"]
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
