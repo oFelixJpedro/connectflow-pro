@@ -37,12 +37,12 @@ export function CalendarWeekView({
     return eachDayOfInterval({ start, end });
   }, [currentDate]);
 
-  // Horas do dia (6h às 22h)
+  // Horas do dia (0h às 23h)
   const hours = useMemo(() => {
     const start = new Date();
-    start.setHours(6, 0, 0, 0);
+    start.setHours(0, 0, 0, 0);
     const end = new Date();
-    end.setHours(22, 0, 0, 0);
+    end.setHours(23, 0, 0, 0);
     return eachHourOfInterval({ start, end });
   }, []);
 
