@@ -1149,31 +1149,55 @@ export function ChatPanel({
     }
   };
 
+  // Debounce ref for mention detection and RAF for resize
+  const mentionDebounceRef = useRef<NodeJS.Timeout | null>(null);
+  const resizeRafRef = useRef<number | null>(null);
+
+  // Cleanup debounce and RAF on unmount
+  useEffect(() => {
+    return () => {
+      if (mentionDebounceRef.current) {
+        clearTimeout(mentionDebounceRef.current);
+      }
+      if (resizeRafRef.current) {
+        cancelAnimationFrame(resizeRafRef.current);
+      }
+    };
+  }, []);
+
   // Handle input change to detect "/" trigger and "@" mentions
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const value = e.target.value;
     const cursorPosition = e.target.selectionStart || 0;
+    
+    // Immediate state update (cannot be delayed)
     setInputValue(value);
     
-    // Show quick replies when typing "/" at the start or alone
-    if (value.startsWith('/')) {
-      setShowQuickReplies(true);
-    } else {
-      setShowQuickReplies(false);
-    }
+    // Quick reply detection (fast, keep synchronous)
+    setShowQuickReplies(value.startsWith('/'));
     
-    // Handle mention detection for internal notes
+    // Debounce mention detection (150ms) to avoid lag during fast typing
+    if (mentionDebounceRef.current) {
+      clearTimeout(mentionDebounceRef.current);
+    }
     if (isInternalNoteMode) {
-      handleMentionInputChange(value, cursorPosition);
+      mentionDebounceRef.current = setTimeout(() => {
+        handleMentionInputChange(value, cursorPosition);
+      }, 150);
     }
 
-    // Auto-resize textarea based on content
-    if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto';
-      const maxHeight = 200; // ~8 lines, harmonious limit
-      const newHeight = Math.min(textareaRef.current.scrollHeight, maxHeight);
-      textareaRef.current.style.height = `${newHeight}px`;
+    // Auto-resize using requestAnimationFrame to prevent layout thrashing
+    if (resizeRafRef.current) {
+      cancelAnimationFrame(resizeRafRef.current);
     }
+    resizeRafRef.current = requestAnimationFrame(() => {
+      if (textareaRef.current) {
+        textareaRef.current.style.height = 'auto';
+        const maxHeight = 200; // ~8 lines, harmonious limit
+        const newHeight = Math.min(textareaRef.current.scrollHeight, maxHeight);
+        textareaRef.current.style.height = `${newHeight}px`;
+      }
+    });
   };
 
   // Handle quick reply selection
