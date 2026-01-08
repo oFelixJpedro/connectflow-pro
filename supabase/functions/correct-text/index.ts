@@ -152,8 +152,8 @@ Deno.serve(async (req: Request) => {
             parts: [{ text: `${SYSTEM_PROMPT}\n\nTexto para corrigir:\n${text}` }]
           }],
           generationConfig: {
-            temperature: 0.2,
-            maxOutputTokens: 2000
+            temperature: 1.0,
+            maxOutputTokens: 8192
           }
         }),
       }

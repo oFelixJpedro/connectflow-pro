@@ -945,8 +945,22 @@ export default function InternalChat() {
                           setIsCorrectingText(true);
                           try {
                             const { data, error } = await supabase.functions.invoke('correct-text', {
-                              body: { text: messageInput }
+                              body: { 
+                                text: messageInput,
+                                companyId: profile?.company_id
+                              }
                             });
+                            
+                            // Handle insufficient credits error
+                            if (data?.code === 'INSUFFICIENT_CREDITS') {
+                              toast({ 
+                                title: 'Créditos insuficientes', 
+                                description: 'Recarregue seus créditos de IA.',
+                                variant: 'destructive' 
+                              });
+                              return;
+                            }
+                            
                             if (error) throw error;
                             if (data?.correctedText) {
                               setMessageInput(data.correctedText);
