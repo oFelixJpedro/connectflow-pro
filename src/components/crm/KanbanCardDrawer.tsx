@@ -257,6 +257,13 @@ export function KanbanCardDrawer({ card, columns, teamMembers, open, onOpenChang
                         const { data, error } = await supabase.functions.invoke('correct-text', {
                           body: { text: newComment }
                         });
+                        
+                        // Handle insufficient credits error
+                        if (data?.code === 'INSUFFICIENT_CREDITS') {
+                          toast.error('Créditos insuficientes. Recarregue seus créditos de IA.');
+                          return;
+                        }
+                        
                         if (error) throw error;
                         if (data?.correctedText) {
                           setNewComment(data.correctedText);

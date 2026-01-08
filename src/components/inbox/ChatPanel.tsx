@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useDeferredValue, useMemo } from 'react';
 import { 
   Send, 
   Check,
@@ -134,6 +134,8 @@ export function ChatPanel({
   isTakingOver = false,
 }: ChatPanelProps) {
   const { user, userRole, profile } = useAuth();
+  // Use ref for immediate value storage to prevent re-renders during fast typing
+  const inputValueRef = useRef('');
   const [inputValue, setInputValue] = useState('');
   const [showScrollButton, setShowScrollButton] = useState(false);
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
@@ -262,17 +264,33 @@ export function ChatPanel({
 
   // Correct text with AI handler
   const handleCorrectText = async () => {
-    if (!inputValue.trim() || isCorrectingText) return;
+    // Use ref for current value (more reliable during fast typing)
+    const currentText = inputValueRef.current || inputValue;
+    if (!currentText.trim() || isCorrectingText) return;
     
     setIsCorrectingText(true);
     try {
       const { data, error } = await supabase.functions.invoke('correct-text', {
-        body: { text: inputValue }
+        body: { 
+          text: currentText,
+          companyId: profile?.company_id
+        }
       });
+      
+      // Handle insufficient credits error
+      if (data?.code === 'INSUFFICIENT_CREDITS') {
+        toast({ 
+          title: 'Créditos insuficientes', 
+          description: 'Recarregue seus créditos de IA para usar esta função.',
+          variant: 'destructive' 
+        });
+        return;
+      }
       
       if (error) throw error;
       
       if (data?.correctedText) {
+        inputValueRef.current = data.correctedText;
         setInputValue(data.correctedText);
         // Auto-focus the textarea after correction
         setTimeout(() => {
@@ -1040,6 +1058,7 @@ export function ChatPanel({
         mentionedUserIds
       );
       if (success) {
+        inputValueRef.current = '';
         setInputValue('');
         setReplyingTo(null);
         setNoteAttachment(null);
@@ -1059,6 +1078,7 @@ export function ChatPanel({
       const quotedId = replyingTo?.id;
       
       // Clear input and reply immediately for better UX
+      inputValueRef.current = '';
       setInputValue('');
       setReplyingTo(null);
       // Reset textarea height
@@ -1149,9 +1169,10 @@ export function ChatPanel({
     }
   };
 
-  // Debounce ref for mention detection and RAF for resize
+  // Debounce refs for performance
   const mentionDebounceRef = useRef<NodeJS.Timeout | null>(null);
   const resizeRafRef = useRef<number | null>(null);
+  const stateUpdateRef = useRef<NodeJS.Timeout | null>(null);
 
   // Cleanup debounce and RAF on unmount
   useEffect(() => {
@@ -1162,18 +1183,29 @@ export function ChatPanel({
       if (resizeRafRef.current) {
         cancelAnimationFrame(resizeRafRef.current);
       }
+      if (stateUpdateRef.current) {
+        clearTimeout(stateUpdateRef.current);
+      }
     };
   }, []);
 
-  // Handle input change to detect "/" trigger and "@" mentions
-  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+  // Handle input change - optimized for fast typing
+  const handleInputChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const value = e.target.value;
     const cursorPosition = e.target.selectionStart || 0;
     
-    // Immediate state update (cannot be delayed)
-    setInputValue(value);
+    // Store value immediately in ref (no re-render)
+    inputValueRef.current = value;
     
-    // Only update showQuickReplies if value actually changes (avoid unnecessary re-renders)
+    // Debounce state update (16ms = 1 frame) to batch rapid keystrokes
+    if (stateUpdateRef.current) {
+      clearTimeout(stateUpdateRef.current);
+    }
+    stateUpdateRef.current = setTimeout(() => {
+      setInputValue(inputValueRef.current);
+    }, 16);
+    
+    // Only update showQuickReplies if value actually changes
     const shouldShowQuickReplies = value.startsWith('/');
     if (shouldShowQuickReplies !== showQuickReplies) {
       setShowQuickReplies(shouldShowQuickReplies);
@@ -1196,17 +1228,18 @@ export function ChatPanel({
     resizeRafRef.current = requestAnimationFrame(() => {
       if (textareaRef.current) {
         textareaRef.current.style.height = 'auto';
-        const maxHeight = 200; // ~8 lines, harmonious limit
+        const maxHeight = 200;
         const newHeight = Math.min(textareaRef.current.scrollHeight, maxHeight);
         textareaRef.current.style.height = `${newHeight}px`;
       }
     });
-  };
+  }, [showQuickReplies, isInternalNoteMode, handleMentionInputChange]);
 
   // Handle quick reply selection
   const handleQuickReplySelect = async (reply: QuickReply) => {
     console.log('📝 Resposta rápida selecionada:', reply.id, 'Tipo:', reply.media_type);
     setShowQuickReplies(false);
+    inputValueRef.current = '';
     setInputValue('');
     // Reset textarea height
     if (textareaRef.current) {
