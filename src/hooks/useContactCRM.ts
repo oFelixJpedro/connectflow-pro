@@ -21,6 +21,8 @@ export interface CRMColumn {
 export interface CRMBoard {
   id: string;
   connection_id: string;
+  name: string;
+  is_default: boolean;
   columns: CRMColumn[];
 }
 
@@ -28,6 +30,7 @@ export interface ContactCRMPosition {
   card_id: string;
   connection_id: string;
   board_id: string;
+  board_name: string;
   column_id: string;
   column_name: string;
   priority: 'low' | 'medium' | 'high' | 'urgent';
@@ -39,12 +42,13 @@ const CRM_POSITION_CHANGED_EVENT = 'crm-position-changed';
 export function useContactCRM(contactId: string | null) {
   const { profile, company, userRole } = useAuth();
   const [connections, setConnections] = useState<CRMConnection[]>([]);
-  const [boards, setBoards] = useState<Map<string, CRMBoard>>(new Map());
+  // Changed: Now stores an ARRAY of boards per connection (multi-board support)
+  const [boards, setBoards] = useState<Map<string, CRMBoard[]>>(new Map());
   const [currentPosition, setCurrentPosition] = useState<ContactCRMPosition | null>(null);
   const [loading, setLoading] = useState(false);
 
   // Refs to avoid stale closures in realtime handler
-  const boardsRef = useRef<Map<string, CRMBoard>>(new Map());
+  const boardsRef = useRef<Map<string, CRMBoard[]>>(new Map());
   const contactIdRef = useRef<string | null>(null);
 
   // Keep refs in sync
@@ -102,28 +106,38 @@ export function useContactCRM(contactId: string | null) {
 
       setConnections(connectionsData);
 
-      // Load boards for each connection
-      const boardsMap = new Map<string, CRMBoard>();
+      // Load ALL boards for each connection (multi-board support)
+      const boardsMap = new Map<string, CRMBoard[]>();
 
       for (const conn of connectionsData || []) {
-        const { data: boardData } = await supabase
+        // Fetch ALL boards for this connection, ordered by is_default (true first) then name
+        const { data: boardsData } = await supabase
           .from('kanban_boards')
-          .select('id')
+          .select('id, name, is_default')
           .eq('whatsapp_connection_id', conn.id)
-          .maybeSingle();
+          .order('is_default', { ascending: false })
+          .order('name');
 
-        if (boardData) {
-          const { data: columnsData } = await supabase
-            .from('kanban_columns')
-            .select('id, board_id, name, color, position')
-            .eq('board_id', boardData.id)
-            .order('position', { ascending: true });
+        if (boardsData && boardsData.length > 0) {
+          const connectionBoards: CRMBoard[] = [];
 
-          boardsMap.set(conn.id, {
-            id: boardData.id,
-            connection_id: conn.id,
-            columns: columnsData || []
-          });
+          for (const boardData of boardsData) {
+            const { data: columnsData } = await supabase
+              .from('kanban_columns')
+              .select('id, board_id, name, color, position')
+              .eq('board_id', boardData.id)
+              .order('position', { ascending: true });
+
+            connectionBoards.push({
+              id: boardData.id,
+              connection_id: conn.id,
+              name: boardData.name || 'CRM Principal',
+              is_default: boardData.is_default || false,
+              columns: columnsData || []
+            });
+          }
+
+          boardsMap.set(conn.id, connectionBoards);
         }
       }
 
@@ -143,7 +157,7 @@ export function useContactCRM(contactId: string | null) {
   // Load current card position for contact
   const loadCurrentPosition = async (
     cId: string, 
-    boardsMap: Map<string, CRMBoard>
+    boardsMap: Map<string, CRMBoard[]>
   ) => {
     try {
       const { data: cardData, error } = await supabase
@@ -158,6 +172,7 @@ export function useContactCRM(contactId: string | null) {
             board_id,
             kanban_boards!inner(
               id,
+              name,
               whatsapp_connection_id
             )
           )
@@ -175,6 +190,7 @@ export function useContactCRM(contactId: string | null) {
           card_id: cardData.id,
           connection_id: board?.whatsapp_connection_id || '',
           board_id: column?.board_id || '',
+          board_name: board?.name || 'CRM Principal',
           column_id: cardData.column_id,
           column_name: column?.name || '',
           priority: cardData.priority as 'low' | 'medium' | 'high' | 'urgent'
@@ -196,11 +212,13 @@ export function useContactCRM(contactId: string | null) {
   };
 
   // Create or move card to a specific column
+  // Updated: Now accepts optional boardId parameter for multi-board support
   const setCardPosition = async (
     cId: string,
     connectionId: string,
     columnId: string,
-    priority: 'low' | 'medium' | 'high' | 'urgent' = 'medium'
+    priority: 'low' | 'medium' | 'high' | 'urgent' = 'medium',
+    boardId?: string
   ): Promise<boolean> => {
     if (!profile?.id) return false;
 
@@ -224,10 +242,10 @@ export function useContactCRM(contactId: string | null) {
         // Add history if column changed
         if (existingCard.column_id !== columnId) {
           const oldColumn = Array.from(boards.values())
-            .flatMap(b => b.columns)
+            .flatMap(boardList => boardList.flatMap(b => b.columns))
             .find(c => c.id === existingCard.column_id);
           const newColumn = Array.from(boards.values())
-            .flatMap(b => b.columns)
+            .flatMap(boardList => boardList.flatMap(b => b.columns))
             .find(c => c.id === columnId);
 
           await supabase.from('kanban_card_history').insert([{
@@ -241,9 +259,19 @@ export function useContactCRM(contactId: string | null) {
 
         toast.success('Posição no CRM atualizada');
       } else {
-        // Create new card
-        const board = boards.get(connectionId);
-        if (!board) {
+        // Create new card - need to determine board
+        const connectionBoards = boards.get(connectionId);
+        
+        // Find the target board
+        let targetBoard: CRMBoard | undefined;
+        if (boardId) {
+          targetBoard = connectionBoards?.find(b => b.id === boardId);
+        } else {
+          // Use default board if no boardId specified
+          targetBoard = connectionBoards?.find(b => b.is_default) || connectionBoards?.[0];
+        }
+
+        if (!targetBoard) {
           // Create board first if doesn't exist and user is admin
           if (isAdminOrOwner) {
             const { data: newBoard, error: boardError } = await supabase
@@ -251,6 +279,8 @@ export function useContactCRM(contactId: string | null) {
               .insert({
                 whatsapp_connection_id: connectionId,
                 company_id: company?.id,
+                name: 'CRM Principal',
+                is_default: true,
               })
               .select()
               .single();
@@ -310,7 +340,7 @@ export function useContactCRM(contactId: string | null) {
 
         // Add history
         const column = Array.from(boards.values())
-          .flatMap(b => b.columns)
+          .flatMap(boardList => boardList.flatMap(b => b.columns))
           .find(c => c.id === columnId);
 
         await supabase.from('kanban_card_history').insert([{
@@ -436,6 +466,17 @@ export function useContactCRM(contactId: string | null) {
     };
   }, [contactId]); // Only depends on contactId, uses refs for boards
 
+  // Helper function to get all boards as flat array
+  const getAllBoards = useCallback((): CRMBoard[] => {
+    return Array.from(boards.values()).flat();
+  }, [boards]);
+
+  // Helper function to get default board for a connection
+  const getDefaultBoard = useCallback((connectionId: string): CRMBoard | undefined => {
+    const connectionBoards = boards.get(connectionId);
+    return connectionBoards?.find(b => b.is_default) || connectionBoards?.[0];
+  }, [boards]);
+
   return {
     connections,
     boards,
@@ -444,5 +485,7 @@ export function useContactCRM(contactId: string | null) {
     setCardPosition,
     removeFromCRM,
     refresh: loadData,
+    getAllBoards,
+    getDefaultBoard,
   };
 }

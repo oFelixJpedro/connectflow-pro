@@ -405,11 +405,12 @@ export function ContactFormModal({
         await removeFromCRM(contactId);
       }
       
-      // Get the first column of the new connection's board
-      const newBoard = boards.get(targetConnectionId);
-      if (newBoard && newBoard.columns.length > 0) {
-        const firstColumn = newBoard.columns[0];
-        await setCardPosition(contactId, targetConnectionId, firstColumn.id, 'medium');
+      // Get the first column of the new connection's default board
+      const connectionBoards = boards.get(targetConnectionId);
+      const defaultBoard = connectionBoards?.find(b => b.is_default) || connectionBoards?.[0];
+      if (defaultBoard && defaultBoard.columns.length > 0) {
+        const firstColumn = defaultBoard.columns[0];
+        await setCardPosition(contactId, targetConnectionId, firstColumn.id, 'medium', defaultBoard.id);
       } else {
         // Try to get board from database if not in cache
         const { data: boardData } = await supabase
@@ -594,8 +595,9 @@ export function ContactFormModal({
     setInitialMessageMedia(null);
   };
 
-  // Get columns for current connection's board
-  const currentBoard = currentConnectionId ? boards.get(currentConnectionId) : null;
+  // Get columns for current connection's default board (multi-board support)
+  const connectionBoards = currentConnectionId ? boards.get(currentConnectionId) : null;
+  const currentBoard = connectionBoards?.find(b => b.is_default) || connectionBoards?.[0];
   const availableColumns = currentBoard?.columns || [];
   
   const currentConnection = allConnections.find(c => c.id === currentConnectionId);
