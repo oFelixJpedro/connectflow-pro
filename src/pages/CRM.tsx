@@ -6,6 +6,7 @@ import { KanbanBoard } from '@/components/crm/KanbanBoard';
 import { CRMFilterSelector } from '@/components/crm/CRMFilterSelector';
 import { AddCardDialog } from '@/components/crm/AddCardDialog';
 import { ManageCRMModal } from '@/components/crm/ManageCRMModal';
+import { BoardSelector } from '@/components/crm/BoardSelector';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { 
@@ -17,7 +18,6 @@ import {
 } from '@/components/ui/select';
 import { Loader2, Kanban, Plus, Wifi, Settings, Search, X } from 'lucide-react';
 import { toast } from 'sonner';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 interface Connection {
   id: string;
@@ -45,6 +45,7 @@ export default function CRM() {
   const [connections, setConnections] = useState<Connection[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(null);
+  const [selectedBoardId, setSelectedBoardId] = useState<string | null>(null);
   const [loadingConnections, setLoadingConnections] = useState(true);
   const [hasCRMAccess, setHasCRMAccess] = useState<boolean | null>(null);
   const [addCardOpen, setAddCardOpen] = useState(false);
@@ -64,13 +65,11 @@ export default function CRM() {
   const [filterTags, setFilterTags] = useState<string[]>([]);
   const isAdminOrOwner = userRole?.role === 'owner' || userRole?.role === 'admin';
 
-  // Connection ID for kanban hook
-  const kanbanConnectionId = selectedConnectionId;
-
   const {
     board,
     columns,
     cards,
+    connectionBoards,
     loading,
     teamMembers,
     isAdminOrOwner: kanbanIsAdmin,
@@ -97,7 +96,18 @@ export default function CRM() {
     allCards,
     allColumns,
     connectionMap,
-  } = useKanbanData(kanbanConnectionId, false);
+    createBoard,
+  } = useKanbanData(selectedConnectionId, false, selectedBoardId);
+
+  // Auto-select default board when connection boards load
+  useEffect(() => {
+    if (connectionBoards.length > 0 && !selectedBoardId) {
+      const defaultBoard = connectionBoards.find(b => b.is_default) || connectionBoards[0];
+      if (defaultBoard) {
+        setSelectedBoardId(defaultBoard.id);
+      }
+    }
+  }, [connectionBoards, selectedBoardId]);
 
   // Load connections with CRM access check and user permissions
   useEffect(() => {
@@ -295,8 +305,14 @@ export default function CRM() {
   // Handle connection change
   const handleConnectionChange = (value: string) => {
     setSelectedConnectionId(value);
+    setSelectedBoardId(null); // Reset board when connection changes
     // Reset department filter when changing connection
     setFilterDepartmentIds([]);
+  };
+
+  // Handle board change
+  const handleBoardChange = (boardId: string) => {
+    setSelectedBoardId(boardId);
   };
 
   // Get cards to display with permission filtering
@@ -381,12 +397,13 @@ export default function CRM() {
   const getContactCountMessage = () => {
     const count = filteredCards.length;
     const total = displayCards.length;
+    const boardName = board?.name || 'Board';
     
     if (hasActiveFilters && count !== total) {
       return `${count} de ${total} cards (filtrados)`;
     }
     
-    return `${count} cards nesta conexão`;
+    return `${count} cards em ${boardName}`;
   };
 
   // Loading state
@@ -442,14 +459,23 @@ export default function CRM() {
                   <div className="flex items-center gap-2">
                     <Wifi className="w-4 h-4 text-green-500" />
                     <span className="truncate">{conn.name}</span>
-                    <span className="text-xs text-muted-foreground hidden md:inline">
-                      ({conn.phone_number})
-                    </span>
                   </div>
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
+
+          {/* Board Selector */}
+          {selectedConnectionId && connectionBoards.length > 0 && (
+            <BoardSelector
+              boards={connectionBoards}
+              selectedBoardId={selectedBoardId}
+              onBoardChange={handleBoardChange}
+              onCreateBoard={createBoard}
+              isAdmin={isAdminOrOwner}
+              disabled={loading}
+            />
+          )}
 
 
           {/* Contact count */}
@@ -496,6 +522,7 @@ export default function CRM() {
         open={manageCRMOpen}
         onOpenChange={setManageCRMOpen}
         connectionId={selectedConnectionId}
+        onBoardsChanged={refresh}
       />
 
       {/* Filters */}
