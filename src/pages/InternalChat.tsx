@@ -144,11 +144,32 @@ export default function InternalChat() {
     }
   };
 
+  // Debounce ref for mention detection
+  const mentionDebounceRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Cleanup debounce on unmount
+  useEffect(() => {
+    return () => {
+      if (mentionDebounceRef.current) {
+        clearTimeout(mentionDebounceRef.current);
+      }
+    };
+  }, []);
+
   const handleMessageInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const newValue = e.target.value;
     const cursorPosition = e.target.selectionStart || 0;
+    
+    // Immediate state update (cannot be delayed)
     setMessageInput(newValue);
-    handleMentionInputChange(newValue, cursorPosition);
+    
+    // Debounce mention detection (150ms) to avoid lag during fast typing
+    if (mentionDebounceRef.current) {
+      clearTimeout(mentionDebounceRef.current);
+    }
+    mentionDebounceRef.current = setTimeout(() => {
+      handleMentionInputChange(newValue, cursorPosition);
+    }, 150);
   };
 
   const handleSelectMention = (member: { id: string; fullName: string; avatarUrl: string | null; role: string }) => {
