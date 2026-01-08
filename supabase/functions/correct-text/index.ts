@@ -1,4 +1,5 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "npm:@supabase/supabase-js@2";
+import { checkCredits, consumeCredits } from "../_shared/supabase-credits.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -93,13 +94,13 @@ Confirme que o texto corrigido:
 
 Retorne APENAS o texto corrigido, sem explicações.`;
 
-serve(async (req) => {
+Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    const { text } = await req.json();
+    const { text, companyId } = await req.json();
 
     if (!text || typeof text !== 'string') {
       return new Response(
@@ -115,6 +116,28 @@ serve(async (req) => {
         JSON.stringify({ error: 'Configuração de API inválida' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
+    }
+
+    // 💰 Check credits if companyId provided
+    let supabase = null;
+    if (companyId) {
+      supabase = createClient(
+        Deno.env.get('SUPABASE_URL') ?? '',
+        Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+      );
+      
+      const creditCheck = await checkCredits(supabase, companyId, 'standard_text', 500);
+      if (!creditCheck.hasCredits) {
+        return new Response(
+          JSON.stringify({ 
+            error: creditCheck.errorMessage,
+            code: 'INSUFFICIENT_CREDITS',
+            creditType: 'standard_text',
+            currentBalance: creditCheck.currentBalance
+          }),
+          { status: 402, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
     }
 
     console.log('📝 Corrigindo texto:', text.substring(0, 100) + (text.length > 100 ? '...' : ''));
@@ -146,7 +169,6 @@ serve(async (req) => {
     }
 
     const data = await response.json();
-    console.log('📦 Resposta Gemini:', JSON.stringify(data, null, 2));
     const correctedText = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
 
     if (!correctedText) {
@@ -155,6 +177,24 @@ serve(async (req) => {
         JSON.stringify({ error: 'Resposta inválida da API' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
+    }
+
+    // 💰 Consume credits after successful processing
+    if (supabase && companyId) {
+      const inputTokens = Math.ceil((SYSTEM_PROMPT.length + text.length) / 4);
+      const outputTokens = Math.ceil(correctedText.length / 4);
+      const totalTokens = inputTokens + outputTokens;
+      
+      await consumeCredits(
+        supabase,
+        companyId,
+        'standard_text',
+        totalTokens,
+        'correct-text',
+        inputTokens,
+        outputTokens
+      );
+      console.log('💰 Créditos consumidos:', totalTokens);
     }
 
     const hasChanges = correctedText !== text;

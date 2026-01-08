@@ -1,6 +1,6 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Bot, Plus, BookTemplate, RotateCcw, Search } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Bot, Plus, BookTemplate, RotateCcw, Search, CreditCard, Bell, Calendar } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
@@ -18,19 +18,32 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { useAIAgents } from '@/hooks/useAIAgents';
+import { useAICredits } from '@/hooks/useAICredits';
 import { useAuth } from '@/contexts/AuthContext';
 import { CreateAgentTypeModal } from '@/components/ai-agents/CreateAgentTypeModal';
 import { CreateAgentNameModal } from '@/components/ai-agents/CreateAgentNameModal';
 import { AgentTemplatesModal } from '@/components/ai-agents/AgentTemplatesModal';
+import { AICreditsTab } from '@/components/ai-credits';
+import { FollowUpTab } from '@/components/follow-up';
+import { NotificationsTab } from '@/components/notifications';
+import { CalendarTab } from '@/components/calendar';
+import { toast } from 'sonner';
 import type { AIAgentType, AIAgent } from '@/types/ai-agents';
 
-type SubMenuTab = 'agents' | 'followup';
+type SubMenuTab = 'agents' | 'notifications' | 'followup' | 'credits' | 'calendar';
 
 export default function AIAgents() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { profile, userRole } = useAuth();
   const { primaryAgents, secondaryAgents, isLoading, setAgentStatus, deleteAgent } = useAIAgents();
+  const { credits, isLoading: isLoadingCredits } = useAICredits();
   
   const [activeTab, setActiveTab] = useState<SubMenuTab>('agents');
   const [searchQuery, setSearchQuery] = useState('');
@@ -41,6 +54,26 @@ export default function AIAgents() {
   const [primaryExpanded, setPrimaryExpanded] = useState(true);
   const [secondaryExpanded, setSecondaryExpanded] = useState(true);
   const [agentToDelete, setAgentToDelete] = useState<AIAgent | null>(null);
+  
+  // Check if user has text credits available - during loading, assume no credits (safer)
+  const hasTextCredits = !isLoadingCredits && credits && (credits.standard_text > 0 || credits.advanced_text > 0);
+  const canCreateAgents = hasTextCredits;
+  const canActivateAgents = hasTextCredits;
+
+  // Handle credit purchase success/cancel from URL params
+  useEffect(() => {
+    const creditsParam = searchParams.get('credits');
+    if (creditsParam === 'success') {
+      toast.success('Recarga de créditos realizada com sucesso!');
+      setActiveTab('credits');
+      // Clear URL params
+      navigate('/ai-agents', { replace: true });
+    } else if (creditsParam === 'cancelled') {
+      toast.info('Compra de créditos cancelada');
+      setActiveTab('credits');
+      navigate('/ai-agents', { replace: true });
+    }
+  }, [searchParams, navigate]);
 
   // Verificar permissão (owner/admin)
   const canManage = userRole?.role === 'owner' || userRole?.role === 'admin';
@@ -71,6 +104,13 @@ export default function AIAgents() {
 
   const handleToggleStatus = async (agent: AIAgent, e: React.MouseEvent) => {
     e.stopPropagation();
+    
+    // If trying to ACTIVATE (agent is currently inactive), verify credits first
+    if (agent.status !== 'active' && !canActivateAgents) {
+      toast.error('Adquira créditos de IA para ativar agentes');
+      return;
+    }
+    
     const newStatus = agent.status === 'active' ? 'inactive' : 'active';
     await setAgentStatus(agent.id, newStatus);
   };
@@ -113,6 +153,18 @@ export default function AIAgents() {
         </button>
         
         <button
+          onClick={() => setActiveTab('notifications')}
+          className={`flex items-center gap-3 px-4 py-3 rounded-lg text-left transition-colors ${
+            activeTab === 'notifications' 
+              ? 'bg-primary text-primary-foreground' 
+              : 'text-white/70 hover:bg-white/10 hover:text-white'
+          }`}
+        >
+          <Bell className="w-5 h-5" />
+          <span className="font-medium">Notificações</span>
+        </button>
+        
+        <button
           onClick={() => setActiveTab('followup')}
           className={`flex items-center gap-3 px-4 py-3 rounded-lg text-left transition-colors ${
             activeTab === 'followup' 
@@ -122,6 +174,30 @@ export default function AIAgents() {
         >
           <RotateCcw className="w-5 h-5" />
           <span className="font-medium">Follow-up</span>
+        </button>
+        
+        <button
+          onClick={() => setActiveTab('calendar')}
+          className={`flex items-center gap-3 px-4 py-3 rounded-lg text-left transition-colors ${
+            activeTab === 'calendar' 
+              ? 'bg-primary text-primary-foreground' 
+              : 'text-white/70 hover:bg-white/10 hover:text-white'
+          }`}
+        >
+          <Calendar className="w-5 h-5" />
+          <span className="font-medium">Agenda</span>
+        </button>
+        
+        <button
+          onClick={() => setActiveTab('credits')}
+          className={`flex items-center gap-3 px-4 py-3 rounded-lg text-left transition-colors ${
+            activeTab === 'credits' 
+              ? 'bg-primary text-primary-foreground' 
+              : 'text-white/70 hover:bg-white/10 hover:text-white'
+          }`}
+        >
+          <CreditCard className="w-5 h-5" />
+          <span className="font-medium">Créditos de IA</span>
         </button>
       </div>
 
@@ -150,14 +226,31 @@ export default function AIAgents() {
               <Button 
                 variant="outline" 
                 onClick={() => setShowTemplatesModal(true)}
+                disabled={!canCreateAgents}
               >
                 <BookTemplate className="w-4 h-4 mr-2" />
                 Modelos
               </Button>
-              <Button onClick={() => setShowTypeModal(true)}>
-                <Plus className="w-4 h-4 mr-2" />
-                Novo Agente
-              </Button>
+              {canCreateAgents ? (
+                <Button onClick={() => setShowTypeModal(true)}>
+                  <Plus className="w-4 h-4 mr-2" />
+                  Novo Agente
+                </Button>
+              ) : (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <div>
+                      <Button disabled className="opacity-50 cursor-not-allowed">
+                        <Plus className="w-4 h-4 mr-2" />
+                        Novo Agente
+                      </Button>
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p className="text-xs">Adquira créditos de IA para criar agentes</p>
+                  </TooltipContent>
+                </Tooltip>
+              )}
             </div>
           )}
         </div>
@@ -193,6 +286,7 @@ export default function AIAgents() {
                           onNavigate={(id) => navigate(`/ai-agents/${id}`)}
                           onToggleStatus={handleToggleStatus}
                           onDelete={handleDeleteClick}
+                          canActivate={canActivateAgents}
                         />
                       ))}
                     </div>
@@ -223,6 +317,7 @@ export default function AIAgents() {
                             onToggleStatus={handleToggleStatus}
                             onDelete={handleDeleteClick}
                             parentAgentName={parentAgent?.name}
+                            canActivate={canActivateAgents}
                           />
                         );
                       })}
@@ -231,16 +326,14 @@ export default function AIAgents() {
                 </CollapsibleContent>
               </Collapsible>
             </div>
+          ) : activeTab === 'notifications' ? (
+            <NotificationsTab />
+          ) : activeTab === 'followup' ? (
+            <FollowUpTab />
+          ) : activeTab === 'calendar' ? (
+            <CalendarTab />
           ) : (
-            <div className="flex flex-col items-center justify-center h-64">
-              <RotateCcw className="w-16 h-16 text-muted-foreground mb-4" />
-              <h2 className="text-xl font-semibold mb-2">Follow-up Automático</h2>
-              <p className="text-muted-foreground text-center max-w-md">
-                Em breve você poderá configurar sequências automáticas de follow-up 
-                para manter contato com seus clientes.
-              </p>
-              <Badge variant="outline" className="mt-4">Em desenvolvimento</Badge>
-            </div>
+            <AICreditsTab />
           )}
         </ScrollArea>
       </div>

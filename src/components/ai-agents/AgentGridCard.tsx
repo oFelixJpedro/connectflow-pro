@@ -2,6 +2,11 @@ import { Bot, Trash2, Phone } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import type { AIAgent } from '@/types/ai-agents';
 
 interface AgentGridCardProps {
@@ -10,6 +15,7 @@ interface AgentGridCardProps {
   onToggleStatus: (agent: AIAgent, e: React.MouseEvent) => void;
   onDelete: (agent: AIAgent, e: React.MouseEvent) => void;
   parentAgentName?: string;
+  canActivate?: boolean;
 }
 
 export function AgentGridCard({
@@ -18,6 +24,7 @@ export function AgentGridCard({
   onToggleStatus,
   onDelete,
   parentAgentName,
+  canActivate = true,
 }: AgentGridCardProps) {
   const getStatusIndicator = (status: string) => {
     switch (status) {
@@ -46,6 +53,10 @@ export function AgentGridCard({
   };
 
   const connectionCount = agent.connections?.length || 0;
+  
+  // Can always deactivate, but can only activate if canActivate is true
+  const isActive = agent.status === 'active';
+  const switchDisabled = !isActive && !canActivate;
 
   return (
     <Card 
@@ -103,10 +114,30 @@ export function AgentGridCard({
 
         {/* Footer - Ações */}
         <div className="flex items-center justify-between mt-3 pt-3 border-t border-border/50">
-          <Switch
-            checked={agent.status === 'active'}
-            onClick={(e) => onToggleStatus(agent, e)}
-          />
+          {switchDisabled ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div 
+                  onClick={(e) => e.stopPropagation()}
+                  className="pointer-events-auto"
+                >
+                  <Switch
+                    checked={isActive}
+                    disabled
+                    className="opacity-50 cursor-not-allowed pointer-events-none"
+                  />
+                </div>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p className="text-xs">Adquira créditos de IA para ativar</p>
+              </TooltipContent>
+            </Tooltip>
+          ) : (
+            <Switch
+              checked={isActive}
+              onClick={(e) => onToggleStatus(agent, e)}
+            />
+          )}
           <button
             onClick={(e) => onDelete(agent, e)}
             className="p-1.5 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors opacity-0 group-hover:opacity-100"

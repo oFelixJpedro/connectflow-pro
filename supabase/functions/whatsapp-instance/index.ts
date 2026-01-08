@@ -1,5 +1,5 @@
 // Updated: 2025-12-09 - Auto webhook config on instance creation
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { createClient } from 'npm:@supabase/supabase-js@2'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',

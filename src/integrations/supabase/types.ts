@@ -429,8 +429,10 @@ export type Database = {
         Row: {
           activation_triggers: string[] | null
           agent_type: string
+          ai_model_type: string | null
           audio_always_respond_audio: boolean | null
           audio_enabled: boolean | null
+          audio_model_type: string | null
           audio_respond_with_audio: boolean | null
           audio_temperature: number | null
           company_id: string
@@ -468,8 +470,10 @@ export type Database = {
         Insert: {
           activation_triggers?: string[] | null
           agent_type: string
+          ai_model_type?: string | null
           audio_always_respond_audio?: boolean | null
           audio_enabled?: boolean | null
+          audio_model_type?: string | null
           audio_respond_with_audio?: boolean | null
           audio_temperature?: number | null
           company_id: string
@@ -507,8 +511,10 @@ export type Database = {
         Update: {
           activation_triggers?: string[] | null
           agent_type?: string
+          ai_model_type?: string | null
           audio_always_respond_audio?: boolean | null
           audio_enabled?: boolean | null
+          audio_model_type?: string | null
           audio_respond_with_audio?: boolean | null
           audio_temperature?: number | null
           company_id?: string
@@ -640,6 +646,118 @@ export type Database = {
           },
         ]
       }
+      ai_credit_transactions: {
+        Row: {
+          amount_paid_cents: number | null
+          company_id: string
+          created_at: string | null
+          credit_type: string
+          function_name: string | null
+          id: string
+          input_tokens: number | null
+          metadata: Json | null
+          output_tokens: number | null
+          stripe_checkout_session_id: string | null
+          stripe_payment_intent_id: string | null
+          tokens_amount: number
+          tokens_balance_after: number
+          transaction_type: string
+        }
+        Insert: {
+          amount_paid_cents?: number | null
+          company_id: string
+          created_at?: string | null
+          credit_type: string
+          function_name?: string | null
+          id?: string
+          input_tokens?: number | null
+          metadata?: Json | null
+          output_tokens?: number | null
+          stripe_checkout_session_id?: string | null
+          stripe_payment_intent_id?: string | null
+          tokens_amount: number
+          tokens_balance_after: number
+          transaction_type: string
+        }
+        Update: {
+          amount_paid_cents?: number | null
+          company_id?: string
+          created_at?: string | null
+          credit_type?: string
+          function_name?: string | null
+          id?: string
+          input_tokens?: number | null
+          metadata?: Json | null
+          output_tokens?: number | null
+          stripe_checkout_session_id?: string | null
+          stripe_payment_intent_id?: string | null
+          tokens_amount?: number
+          tokens_balance_after?: number
+          transaction_type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_credit_transactions_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ai_credits: {
+        Row: {
+          advanced_audio_tokens: number | null
+          advanced_text_tokens: number | null
+          auto_recharge_enabled: boolean | null
+          auto_recharge_threshold: number | null
+          auto_recharge_types: string[] | null
+          company_id: string
+          created_at: string | null
+          id: string
+          standard_audio_tokens: number | null
+          standard_text_tokens: number | null
+          stripe_payment_method_id: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          advanced_audio_tokens?: number | null
+          advanced_text_tokens?: number | null
+          auto_recharge_enabled?: boolean | null
+          auto_recharge_threshold?: number | null
+          auto_recharge_types?: string[] | null
+          company_id: string
+          created_at?: string | null
+          id?: string
+          standard_audio_tokens?: number | null
+          standard_text_tokens?: number | null
+          stripe_payment_method_id?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          advanced_audio_tokens?: number | null
+          advanced_text_tokens?: number | null
+          auto_recharge_enabled?: boolean | null
+          auto_recharge_threshold?: number | null
+          auto_recharge_types?: string[] | null
+          company_id?: string
+          created_at?: string | null
+          id?: string
+          standard_audio_tokens?: number | null
+          standard_text_tokens?: number | null
+          stripe_payment_method_id?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_credits_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: true
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ai_usage_log: {
         Row: {
           company_id: string | null
@@ -686,6 +804,169 @@ export type Database = {
             columns: ["company_id"]
             isOneToOne: false
             referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      calendar_event_attendees: {
+        Row: {
+          contact_id: string | null
+          created_at: string
+          email: string | null
+          event_id: string
+          id: string
+          name: string | null
+          profile_id: string | null
+          status: string | null
+        }
+        Insert: {
+          contact_id?: string | null
+          created_at?: string
+          email?: string | null
+          event_id: string
+          id?: string
+          name?: string | null
+          profile_id?: string | null
+          status?: string | null
+        }
+        Update: {
+          contact_id?: string | null
+          created_at?: string
+          email?: string | null
+          event_id?: string
+          id?: string
+          name?: string | null
+          profile_id?: string | null
+          status?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "calendar_event_attendees_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "calendar_event_attendees_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "calendar_events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "calendar_event_attendees_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      calendar_events: {
+        Row: {
+          all_day: boolean | null
+          assigned_to: string | null
+          color: string | null
+          company_id: string
+          contact_id: string | null
+          conversation_id: string | null
+          created_at: string
+          created_by: string
+          description: string | null
+          end_date: string
+          event_type: string | null
+          id: string
+          location: string | null
+          metadata: Json | null
+          recurrence_rule: string | null
+          reminder_minutes: number | null
+          start_date: string
+          status: string | null
+          summary: string | null
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          all_day?: boolean | null
+          assigned_to?: string | null
+          color?: string | null
+          company_id: string
+          contact_id?: string | null
+          conversation_id?: string | null
+          created_at?: string
+          created_by: string
+          description?: string | null
+          end_date: string
+          event_type?: string | null
+          id?: string
+          location?: string | null
+          metadata?: Json | null
+          recurrence_rule?: string | null
+          reminder_minutes?: number | null
+          start_date: string
+          status?: string | null
+          summary?: string | null
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          all_day?: boolean | null
+          assigned_to?: string | null
+          color?: string | null
+          company_id?: string
+          contact_id?: string | null
+          conversation_id?: string | null
+          created_at?: string
+          created_by?: string
+          description?: string | null
+          end_date?: string
+          event_type?: string | null
+          id?: string
+          location?: string | null
+          metadata?: Json | null
+          recurrence_rule?: string | null
+          reminder_minutes?: number | null
+          start_date?: string
+          status?: string | null
+          summary?: string | null
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "calendar_events_assigned_to_fkey"
+            columns: ["assigned_to"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "calendar_events_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "calendar_events_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "calendar_events_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "calendar_events_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
         ]
@@ -2124,6 +2405,414 @@ export type Database = {
           {
             foreignKeyName: "developer_permission_requests_target_user_id_fkey"
             columns: ["target_user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      follow_up_contact_state: {
+        Row: {
+          active_sequence_id: string | null
+          company_id: string
+          contact_id: string
+          created_at: string | null
+          current_step_order: number | null
+          id: string
+          last_contact_reply_at: string | null
+          last_followup_sent_at: string | null
+          opted_out: boolean | null
+          opted_out_at: string | null
+          total_followups_sent: number | null
+          updated_at: string | null
+        }
+        Insert: {
+          active_sequence_id?: string | null
+          company_id: string
+          contact_id: string
+          created_at?: string | null
+          current_step_order?: number | null
+          id?: string
+          last_contact_reply_at?: string | null
+          last_followup_sent_at?: string | null
+          opted_out?: boolean | null
+          opted_out_at?: string | null
+          total_followups_sent?: number | null
+          updated_at?: string | null
+        }
+        Update: {
+          active_sequence_id?: string | null
+          company_id?: string
+          contact_id?: string
+          created_at?: string | null
+          current_step_order?: number | null
+          id?: string
+          last_contact_reply_at?: string | null
+          last_followup_sent_at?: string | null
+          opted_out?: boolean | null
+          opted_out_at?: string | null
+          total_followups_sent?: number | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "follow_up_contact_state_active_sequence_id_fkey"
+            columns: ["active_sequence_id"]
+            isOneToOne: false
+            referencedRelation: "follow_up_sequences"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "follow_up_contact_state_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "follow_up_contact_state_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: true
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      follow_up_knowledge_chunks: {
+        Row: {
+          chunk_index: number
+          content: string
+          created_at: string | null
+          document_id: string
+          embedding: string | null
+          id: string
+          sequence_id: string
+        }
+        Insert: {
+          chunk_index: number
+          content: string
+          created_at?: string | null
+          document_id: string
+          embedding?: string | null
+          id?: string
+          sequence_id: string
+        }
+        Update: {
+          chunk_index?: number
+          content?: string
+          created_at?: string | null
+          document_id?: string
+          embedding?: string | null
+          id?: string
+          sequence_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "follow_up_knowledge_chunks_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "follow_up_knowledge_documents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "follow_up_knowledge_chunks_sequence_id_fkey"
+            columns: ["sequence_id"]
+            isOneToOne: false
+            referencedRelation: "follow_up_sequences"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      follow_up_knowledge_documents: {
+        Row: {
+          company_id: string
+          created_at: string | null
+          error_message: string | null
+          extracted_text: string | null
+          file_name: string
+          file_size: number
+          file_type: string
+          id: string
+          sequence_id: string
+          status: string | null
+          storage_path: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string | null
+          error_message?: string | null
+          extracted_text?: string | null
+          file_name: string
+          file_size: number
+          file_type: string
+          id?: string
+          sequence_id: string
+          status?: string | null
+          storage_path: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string | null
+          error_message?: string | null
+          extracted_text?: string | null
+          file_name?: string
+          file_size?: number
+          file_type?: string
+          id?: string
+          sequence_id?: string
+          status?: string | null
+          storage_path?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "follow_up_knowledge_documents_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "follow_up_knowledge_documents_sequence_id_fkey"
+            columns: ["sequence_id"]
+            isOneToOne: false
+            referencedRelation: "follow_up_sequences"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      follow_up_queue: {
+        Row: {
+          company_id: string
+          contact_id: string
+          conversation_id: string | null
+          created_at: string | null
+          current_step_id: string | null
+          failure_code: string | null
+          failure_reason: string | null
+          id: string
+          processing_time_ms: number | null
+          reference_message_at: string | null
+          scheduled_at: string
+          sent_at: string | null
+          sent_content: string | null
+          sent_media_url: string | null
+          sequence_id: string
+          status: string | null
+          tokens_used: number | null
+          updated_at: string | null
+        }
+        Insert: {
+          company_id: string
+          contact_id: string
+          conversation_id?: string | null
+          created_at?: string | null
+          current_step_id?: string | null
+          failure_code?: string | null
+          failure_reason?: string | null
+          id?: string
+          processing_time_ms?: number | null
+          reference_message_at?: string | null
+          scheduled_at: string
+          sent_at?: string | null
+          sent_content?: string | null
+          sent_media_url?: string | null
+          sequence_id: string
+          status?: string | null
+          tokens_used?: number | null
+          updated_at?: string | null
+        }
+        Update: {
+          company_id?: string
+          contact_id?: string
+          conversation_id?: string | null
+          created_at?: string | null
+          current_step_id?: string | null
+          failure_code?: string | null
+          failure_reason?: string | null
+          id?: string
+          processing_time_ms?: number | null
+          reference_message_at?: string | null
+          scheduled_at?: string
+          sent_at?: string | null
+          sent_content?: string | null
+          sent_media_url?: string | null
+          sequence_id?: string
+          status?: string | null
+          tokens_used?: number | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "follow_up_queue_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "follow_up_queue_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "follow_up_queue_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "follow_up_queue_current_step_id_fkey"
+            columns: ["current_step_id"]
+            isOneToOne: false
+            referencedRelation: "follow_up_sequence_steps"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "follow_up_queue_sequence_id_fkey"
+            columns: ["sequence_id"]
+            isOneToOne: false
+            referencedRelation: "follow_up_sequences"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      follow_up_sequence_steps: {
+        Row: {
+          ai_instruction: string | null
+          created_at: string | null
+          delay_unit: string
+          delay_value: number
+          id: string
+          manual_content: string | null
+          manual_media_type: string | null
+          manual_media_url: string | null
+          sequence_id: string
+          step_order: number
+          stop_if_opened: boolean | null
+          stop_if_replied: boolean | null
+        }
+        Insert: {
+          ai_instruction?: string | null
+          created_at?: string | null
+          delay_unit: string
+          delay_value: number
+          id?: string
+          manual_content?: string | null
+          manual_media_type?: string | null
+          manual_media_url?: string | null
+          sequence_id: string
+          step_order: number
+          stop_if_opened?: boolean | null
+          stop_if_replied?: boolean | null
+        }
+        Update: {
+          ai_instruction?: string | null
+          created_at?: string | null
+          delay_unit?: string
+          delay_value?: number
+          id?: string
+          manual_content?: string | null
+          manual_media_type?: string | null
+          manual_media_url?: string | null
+          sequence_id?: string
+          step_order?: number
+          stop_if_opened?: boolean | null
+          stop_if_replied?: boolean | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "follow_up_sequence_steps_sequence_id_fkey"
+            columns: ["sequence_id"]
+            isOneToOne: false
+            referencedRelation: "follow_up_sequences"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      follow_up_sequences: {
+        Row: {
+          ai_model_type: string | null
+          company_id: string
+          connection_ids: string[] | null
+          created_at: string | null
+          created_by: string | null
+          crm_stage_ids: string[] | null
+          description: string | null
+          follow_up_type: string
+          id: string
+          knowledge_base_content: string | null
+          name: string
+          operating_days: number[] | null
+          operating_end_time: string | null
+          operating_hours_enabled: boolean | null
+          operating_start_time: string | null
+          persona_prompt: string | null
+          priority: number | null
+          rules_content: string | null
+          status: string | null
+          tag_filters: string[] | null
+          updated_at: string | null
+        }
+        Insert: {
+          ai_model_type?: string | null
+          company_id: string
+          connection_ids?: string[] | null
+          created_at?: string | null
+          created_by?: string | null
+          crm_stage_ids?: string[] | null
+          description?: string | null
+          follow_up_type: string
+          id?: string
+          knowledge_base_content?: string | null
+          name: string
+          operating_days?: number[] | null
+          operating_end_time?: string | null
+          operating_hours_enabled?: boolean | null
+          operating_start_time?: string | null
+          persona_prompt?: string | null
+          priority?: number | null
+          rules_content?: string | null
+          status?: string | null
+          tag_filters?: string[] | null
+          updated_at?: string | null
+        }
+        Update: {
+          ai_model_type?: string | null
+          company_id?: string
+          connection_ids?: string[] | null
+          created_at?: string | null
+          created_by?: string | null
+          crm_stage_ids?: string[] | null
+          description?: string | null
+          follow_up_type?: string
+          id?: string
+          knowledge_base_content?: string | null
+          name?: string
+          operating_days?: number[] | null
+          operating_end_time?: string | null
+          operating_hours_enabled?: boolean | null
+          operating_start_time?: string | null
+          persona_prompt?: string | null
+          priority?: number | null
+          rules_content?: string | null
+          status?: string | null
+          tag_filters?: string[] | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "follow_up_sequences_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "follow_up_sequences_created_by_fkey"
+            columns: ["created_by"]
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
@@ -3633,20 +4322,207 @@ export type Database = {
           },
         ]
       }
+      whatsapp_notification_logs: {
+        Row: {
+          company_id: string
+          created_at: string | null
+          error_message: string | null
+          event_data: Json | null
+          id: string
+          message_content: string
+          notification_id: string | null
+          recipient_name: string | null
+          recipient_phone: string
+          sent_at: string | null
+          status: string | null
+        }
+        Insert: {
+          company_id: string
+          created_at?: string | null
+          error_message?: string | null
+          event_data?: Json | null
+          id?: string
+          message_content: string
+          notification_id?: string | null
+          recipient_name?: string | null
+          recipient_phone: string
+          sent_at?: string | null
+          status?: string | null
+        }
+        Update: {
+          company_id?: string
+          created_at?: string | null
+          error_message?: string | null
+          event_data?: Json | null
+          id?: string
+          message_content?: string
+          notification_id?: string | null
+          recipient_name?: string | null
+          recipient_phone?: string
+          sent_at?: string | null
+          status?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "whatsapp_notification_logs_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "whatsapp_notification_logs_notification_id_fkey"
+            columns: ["notification_id"]
+            isOneToOne: false
+            referencedRelation: "whatsapp_notifications"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      whatsapp_notification_recipients: {
+        Row: {
+          created_at: string | null
+          id: string
+          is_active: boolean | null
+          name: string | null
+          notification_id: string
+          phone_number: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          is_active?: boolean | null
+          name?: string | null
+          notification_id: string
+          phone_number: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          is_active?: boolean | null
+          name?: string | null
+          notification_id?: string
+          phone_number?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "whatsapp_notification_recipients_notification_id_fkey"
+            columns: ["notification_id"]
+            isOneToOne: false
+            referencedRelation: "whatsapp_notifications"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      whatsapp_notifications: {
+        Row: {
+          company_id: string
+          connection_id: string
+          created_at: string | null
+          created_by: string | null
+          id: string
+          is_active: boolean | null
+          message_template: string
+          name: string
+          notification_type: string
+          updated_at: string | null
+        }
+        Insert: {
+          company_id: string
+          connection_id: string
+          created_at?: string | null
+          created_by?: string | null
+          id?: string
+          is_active?: boolean | null
+          message_template: string
+          name: string
+          notification_type: string
+          updated_at?: string | null
+        }
+        Update: {
+          company_id?: string
+          connection_id?: string
+          created_at?: string | null
+          created_by?: string | null
+          id?: string
+          is_active?: boolean | null
+          message_template?: string
+          name?: string
+          notification_type?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "whatsapp_notifications_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "whatsapp_notifications_connection_id_fkey"
+            columns: ["connection_id"]
+            isOneToOne: false
+            referencedRelation: "whatsapp_connections"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
+      add_ai_credits: {
+        Args: {
+          p_amount_paid_cents?: number
+          p_company_id: string
+          p_credit_type: string
+          p_metadata?: Json
+          p_stripe_checkout_session_id?: string
+          p_stripe_payment_intent_id?: string
+          p_tokens: number
+          p_transaction_type?: string
+        }
+        Returns: Json
+      }
       can_user_access_column: {
         Args: { p_column_id: string }
         Returns: boolean
+      }
+      check_ai_credits: {
+        Args: { p_company_id: string; p_credit_type?: string }
+        Returns: Json
       }
       cleanup_expired_insights_jobs: { Args: never; Returns: number }
       cleanup_expired_media_cache: { Args: never; Returns: number }
       cleanup_old_conversation_events: { Args: never; Returns: number }
       cleanup_old_sessions: { Args: never; Returns: number }
       cleanup_old_usage_logs: { Args: never; Returns: number }
+      consume_ai_credits:
+        | {
+            Args: {
+              p_company_id: string
+              p_credit_type: string
+              p_function_name?: string
+              p_input_tokens?: number
+              p_output_tokens?: number
+              p_tokens: number
+            }
+            Returns: Json
+          }
+        | {
+            Args: {
+              p_company_id: string
+              p_credit_type: string
+              p_function_name?: string
+              p_input_tokens?: number
+              p_metadata?: Json
+              p_output_tokens?: number
+              p_tokens: number
+            }
+            Returns: Json
+          }
       create_internal_chat_room: {
         Args: { p_description?: string; p_name?: string; p_type: string }
         Returns: string

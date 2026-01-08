@@ -23,6 +23,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useAIAgents } from '@/hooks/useAIAgents';
+import { useAICredits } from '@/hooks/useAICredits';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAgentMedia } from '@/hooks/useAgentMedia';
 import { AgentRulesTab } from '@/components/ai-agents/config/AgentRulesTab';
@@ -41,11 +42,16 @@ export default function AIAgentConfig() {
   const navigate = useNavigate();
   const { userRole } = useAuth();
   const { agents, updateAgent, loadAgents, setAgentStatus, getParentAgent } = useAIAgents();
+  const { credits, isLoading: isLoadingCredits } = useAICredits();
   const { medias, loadMedias } = useAgentMedia(agentId || null);
   const [agent, setAgent] = useState<AIAgent | null>(null);
   const [activeTab, setActiveTab] = useState('rules');
   const [isSaving, setIsSaving] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
+  
+  // Check if user has text credits available - during loading, assume no credits (safer)
+  const hasTextCredits = !isLoadingCredits && credits && (credits.standard_text > 0 || credits.advanced_text > 0);
+  const canActivateAgents = hasTextCredits;
   
   // Form state
   const [rulesContent, setRulesContent] = useState('');
@@ -130,6 +136,13 @@ export default function AIAgentConfig() {
 
   const handleStatusChange = async (newStatus: string) => {
     if (!agent || !canManage) return;
+    
+    // If trying to ACTIVATE, verify credits first
+    if (newStatus === 'active' && !canActivateAgents) {
+      toast.error('Adquira créditos de IA para ativar agentes');
+      return;
+    }
+    
     await setAgentStatus(agent.id, newStatus as 'active' | 'paused' | 'inactive');
     loadAgents();
   };
@@ -394,6 +407,7 @@ export default function AIAgentConfig() {
         onAgentUpdate={loadAgents}
         onPendingChanges={handleSidebarPendingChanges}
         pendingChanges={sidebarChanges}
+        credits={credits}
       />
     </div>
   );

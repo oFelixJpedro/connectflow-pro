@@ -1,6 +1,4 @@
-import "https://deno.land/x/xhr@0.1.0/mod.ts";
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { createClient } from "npm:@supabase/supabase-js@2";
 import { logAIUsage, extractGeminiUsage } from '../_shared/usage-tracker.ts';
 
 const corsHeaders = {
@@ -730,7 +728,7 @@ IMPORTANTE:
 
 // ============= Main Handler =============
 
-serve(async (req) => {
+Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }

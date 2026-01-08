@@ -1,15 +1,14 @@
-import "https://deno.land/x/xhr@0.1.0/mod.ts";
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+import { createClient } from "npm:@supabase/supabase-js@2";
 import { transcribeAudio } from "../_shared/media-cache.ts";
 import { logAIUsage } from "../_shared/usage-tracker.ts";
+import { checkCredits, consumeCredits } from "../_shared/supabase-credits.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-serve(async (req) => {
+Deno.serve(async (req: Request) => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -41,6 +40,23 @@ serve(async (req) => {
         console.log('Supabase client created for caching');
       } else {
         console.warn('SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY not configured, cache disabled');
+      }
+    }
+
+    // 💰 Check credits before transcription
+    if (supabase && companyId) {
+      const creditCheck = await checkCredits(supabase, companyId, 'standard_text', 500);
+      if (!creditCheck.hasCredits) {
+        return new Response(JSON.stringify({ 
+          error: creditCheck.errorMessage,
+          code: 'INSUFFICIENT_CREDITS',
+          creditType: 'standard_text',
+          currentBalance: creditCheck.currentBalance,
+          success: false 
+        }), {
+          status: 402,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
       }
     }
 
@@ -78,6 +94,19 @@ serve(async (req) => {
         },
         true // isAudioInput - audio transcription always uses audio pricing
       );
+      
+      // 💰 Consume credits after successful transcription
+      const totalTokens = estimatedAudioTokens + outputTokens;
+      await consumeCredits(
+        supabase,
+        companyId,
+        'standard_text',
+        totalTokens,
+        'transcribe-audio',
+        estimatedAudioTokens,
+        outputTokens
+      );
+      console.log('💰 Créditos consumidos:', totalTokens);
     }
     
     console.log('Transcription result:', transcription ? `${transcription.substring(0, 100)}...` : '(empty)');

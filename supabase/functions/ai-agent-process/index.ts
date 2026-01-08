@@ -1,5 +1,4 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createClient } from "npm:@supabase/supabase-js@2";
 import { Redis } from "https://esm.sh/@upstash/redis@1.28.0";
 
 // ═══════════════════════════════════════════════════════════════════
@@ -29,6 +28,13 @@ import {
   GEMINI_PRICING,
   isAudioContent
 } from "../_shared/usage-tracker.ts";
+
+import {
+  checkCredits,
+  consumeCredits,
+  getAgentCreditTypes,
+  type CreditType
+} from "../_shared/supabase-credits.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -492,7 +498,7 @@ async function searchAgentKnowledgeBase(
   }
 }
 
-serve(async (req) => {
+Deno.serve(async (req: Request) => {
   console.log('\n');
   console.log('╔══════════════════════════════════════════════════════════════════╗');
   console.log('║              🤖 AI AGENT PROCESS (OPTIMIZED)                     ║');
@@ -595,7 +601,9 @@ serve(async (req) => {
           audio_always_respond_audio,
           language_code,
           paused_until,
-          temperature
+          temperature,
+          ai_model_type,
+          audio_model_type
         )
       `)
       .eq('connection_id', connectionId)
@@ -649,6 +657,50 @@ serve(async (req) => {
       .single();
     
     const companyId = connData?.company_id || '';
+
+    // 💰 Check AI credits before processing
+    if (companyId) {
+      const { textCreditType, audioCreditType } = getAgentCreditTypes(
+        agent.ai_model_type || 'advanced',
+        agent.audio_model_type || 'standard',
+        agent.audio_enabled || false
+      );
+      
+      console.log('\n┌─────────────────────────────────────────────────────────────────┐');
+      console.log('│ 💰  VERIFICAR CRÉDITOS DE IA                                    │');
+      console.log('└─────────────────────────────────────────────────────────────────┘');
+      console.log('📋 Tipo de crédito texto:', textCreditType);
+      if (audioCreditType) console.log('📋 Tipo de crédito áudio:', audioCreditType);
+      
+      // Check text credits (always required)
+      const textCheck = await checkCredits(supabase, companyId, textCreditType, 5000);
+      if (!textCheck.hasCredits) {
+        console.log('❌ Créditos insuficientes:', textCheck.errorMessage);
+        return new Response(
+          JSON.stringify({ 
+            success: false, 
+            skip: true,
+            error: textCheck.errorMessage,
+            code: 'INSUFFICIENT_CREDITS',
+            creditType: textCreditType,
+            currentBalance: textCheck.currentBalance
+          }),
+          { status: 402, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+      console.log('✅ Créditos de texto disponíveis:', textCheck.currentBalance.toLocaleString());
+      
+      // Check audio credits if audio is enabled
+      if (audioCreditType) {
+        const audioCheck = await checkCredits(supabase, companyId, audioCreditType, 2000);
+        if (!audioCheck.hasCredits) {
+          console.log('⚠️ Créditos de áudio insuficientes, mas continuando sem áudio');
+          // Don't block - just log warning, audio will be skipped
+        } else {
+          console.log('✅ Créditos de áudio disponíveis:', audioCheck.currentBalance.toLocaleString());
+        }
+      }
+    }
 
     // 3️⃣ Check conversation state
     console.log('\n┌─────────────────────────────────────────────────────────────────┐');
@@ -2652,6 +2704,47 @@ ${contextSummary}
         usedUrlContextTool: true
       }
     });
+
+    // 💰 Consume AI credits after successful processing
+    // 💰 Consume AI credits after successful processing
+    // Note: usage variable is defined earlier in the function after Gemini response
+    if (companyId) {
+      const { textCreditType } = getAgentCreditTypes(
+        agent.ai_model_type || 'advanced',
+        agent.audio_model_type || 'standard',
+        false
+      );
+      
+      // Estimate tokens if usage not available (fallback)
+      const estimatedInputTokens = Math.ceil((processedMessageContent?.length || 0) / 4) + 1000;
+      const estimatedOutputTokens = Math.ceil((aiResponse?.length || 0) / 4);
+      const tokensToConsume = estimatedInputTokens + estimatedOutputTokens;
+      
+      if (tokensToConsume > 0) {
+        console.log('\n┌─────────────────────────────────────────────────────────────────┐');
+        console.log('│ 💰  CONSUMIR CRÉDITOS DE IA                                     │');
+        console.log('└─────────────────────────────────────────────────────────────────┘');
+        console.log('📊 Tokens estimados:', tokensToConsume);
+        console.log('📋 Tipo de crédito:', textCreditType);
+        
+        const consumeResult = await consumeCredits(
+          supabase,
+          companyId,
+          textCreditType,
+          tokensToConsume,
+          'ai-agent-process',
+          estimatedInputTokens,
+          estimatedOutputTokens
+        );
+        
+        if (consumeResult.success) {
+          console.log('✅ Créditos consumidos:', tokensToConsume.toLocaleString());
+          console.log('📊 Saldo restante:', consumeResult.newBalance.toLocaleString());
+        } else {
+          console.log('⚠️ Erro ao consumir créditos (não fatal):', consumeResult.errorMessage);
+        }
+      }
+    }
 
     console.log('\n╔══════════════════════════════════════════════════════════════════╗');
     console.log('║              ✅ AI AGENT PROCESS CONCLUÍDO                       ║');

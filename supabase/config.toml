@@ -152,3 +152,24 @@ verify_jwt = false
 
 [functions.commercial-daily-processor]
 verify_jwt = false
+
+[functions.purchase-ai-credits]
+verify_jwt = true
+
+[functions.check-ai-credits]
+verify_jwt = true
+
+[functions.auto-recharge-credits]
+verify_jwt = false
+
+[functions.process-followup-queue]
+verify_jwt = false
+
+[functions.enqueue-followups]
+verify_jwt = false
+
+[functions.send-notification]
+verify_jwt = true
+
+[functions.generate-event-summary]
+verify_jwt = true
