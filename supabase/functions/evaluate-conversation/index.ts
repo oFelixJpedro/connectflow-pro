@@ -1,5 +1,6 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { logAIUsage, extractGeminiUsage } from '../_shared/usage-tracker.ts';
+import { checkCredits, consumeCredits } from '../_shared/supabase-credits.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -268,6 +269,23 @@ Deno.serve(async (req: Request) => {
     const { conversation_id, company_id, evaluate_all } = await req.json();
 
     console.log(`[evaluate-conversation] Starting evaluation`, { conversation_id, company_id, evaluate_all });
+
+    // ═══════════════════════════════════════════════════════════════════
+    // 💳 VERIFICAÇÃO DE CRÉDITOS DE IA
+    // ═══════════════════════════════════════════════════════════════════
+    const targetCompanyId = company_id;
+    if (targetCompanyId) {
+      const creditCheck = await checkCredits(supabase, targetCompanyId, 'standard_text', 5000);
+      if (!creditCheck.hasCredits) {
+        console.log(`[evaluate-conversation] ❌ Insufficient credits for company ${targetCompanyId}`);
+        return new Response(JSON.stringify({ 
+          error: creditCheck.errorMessage,
+          code: 'INSUFFICIENT_CREDITS',
+          creditType: 'standard_text',
+          currentBalance: creditCheck.currentBalance
+        }), { status: 402, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+    }
 
     let conversationsToEvaluate: string[] = [];
 

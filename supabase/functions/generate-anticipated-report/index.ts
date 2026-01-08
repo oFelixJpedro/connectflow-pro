@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+import { checkCredits, consumeCredits } from '../_shared/supabase-credits.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -750,6 +751,19 @@ serve(async (req) => {
 
     console.log(`Generating anticipated report for company ${companyId}`);
     console.log(`Period: ${weekStart.toISOString()} to ${weekEnd.toISOString()}`);
+
+    // ═══════════════════════════════════════════════════════════════════
+    // 💳 VERIFICAÇÃO DE CRÉDITOS DE IA
+    // ═══════════════════════════════════════════════════════════════════
+    const creditCheck = await checkCredits(supabase, companyId, 'standard_text', 10000);
+    if (!creditCheck.hasCredits) {
+      return new Response(JSON.stringify({ 
+        error: creditCheck.errorMessage,
+        code: 'INSUFFICIENT_CREDITS',
+        creditType: 'standard_text',
+        currentBalance: creditCheck.currentBalance
+      }), { status: 402, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
 
     // Check if an anticipated report already exists for this week
     const { data: existingReport } = await supabase

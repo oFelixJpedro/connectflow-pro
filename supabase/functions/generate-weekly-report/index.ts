@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+import { checkCredits, consumeCredits } from '../_shared/supabase-credits.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -217,6 +218,16 @@ serve(async (req) => {
     for (const company of companies || []) {
       try {
         console.log(`Processing company: ${company.name} (${company.id})`);
+
+        // ═══════════════════════════════════════════════════════════════════
+        // 💳 VERIFICAÇÃO DE CRÉDITOS DE IA
+        // ═══════════════════════════════════════════════════════════════════
+        const creditCheck = await checkCredits(supabase, company.id, 'standard_text', 10000);
+        if (!creditCheck.hasCredits) {
+          console.log(`⚠️ Skipping report for ${company.name} - insufficient credits`);
+          results.push({ companyId: company.id, success: false, error: 'insufficient_credits' });
+          continue;
+        }
 
         // Check if report already exists for this week
         const { data: existingReport } = await supabase

@@ -1,5 +1,6 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { logAIUsage, extractGeminiUsage } from '../_shared/usage-tracker.ts';
+import { checkCredits, consumeCredits } from '../_shared/supabase-credits.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -759,6 +760,26 @@ Deno.serve(async (req: Request) => {
     
     const companyId = profile?.company_id;
     console.log(`[generate-filtered-insights] User company_id: ${companyId}`);
+
+    // ═══════════════════════════════════════════════════════════════════
+    // 💳 VERIFICAÇÃO DE CRÉDITOS DE IA
+    // ═══════════════════════════════════════════════════════════════════
+    if (companyId) {
+      const creditCheck = await checkCredits(
+        createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''),
+        companyId, 
+        'standard_text', 
+        5000
+      );
+      if (!creditCheck.hasCredits) {
+        return new Response(JSON.stringify({ 
+          error: creditCheck.errorMessage,
+          code: 'INSUFFICIENT_CREDITS',
+          creditType: 'standard_text',
+          currentBalance: creditCheck.currentBalance
+        }), { status: 402, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+    }
 
     const { conversationsWithMedia, evaluations, criteriaScores, filterDescription } = await req.json() as {
       conversationsWithMedia?: ConversationWithMedia[];
