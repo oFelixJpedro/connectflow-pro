@@ -7,6 +7,7 @@ import {
   analyzeDocumentWithFileAPI
 } from '../_shared/gemini-file-api.ts';
 import { logAIUsage, extractGeminiUsage, isAudioContent } from '../_shared/usage-tracker.ts';
+import { checkCredits, consumeCredits } from '../_shared/supabase-credits.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -150,6 +151,22 @@ Deno.serve(async (req: Request) => {
 
     // Criar cliente Supabase para cache
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+
+    // 💰 Check credits before processing
+    if (companyId) {
+      const creditCheck = await checkCredits(supabase, companyId, 'standard_text', 2000);
+      if (!creditCheck.hasCredits) {
+        return new Response(JSON.stringify({ 
+          error: creditCheck.errorMessage,
+          code: 'INSUFFICIENT_CREDITS',
+          creditType: 'standard_text',
+          currentBalance: creditCheck.currentBalance
+        }), {
+          status: 402,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+    }
 
     // Limit to last 100 messages
     const recentMessages = messages.slice(-100);
@@ -335,6 +352,19 @@ Deno.serve(async (req: Request) => {
         },
         hasAudioAnalyzed
       ).catch(err => console.error('[UsageTracker] Error:', err));
+      
+      // 💰 Consume credits after successful generation
+      const totalTokens = usage.inputTokens + usage.outputTokens;
+      await consumeCredits(
+        supabase,
+        companyId,
+        'standard_text',
+        totalTokens,
+        'generate-ai-response',
+        usage.inputTokens,
+        usage.outputTokens
+      );
+      console.log('💰 Créditos consumidos:', totalTokens);
     }
     
     const generatedResponse = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();

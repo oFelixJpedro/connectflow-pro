@@ -3,6 +3,7 @@ import { Play, Pause, Mic, Download, AlertCircle, FileText, Loader2 } from 'luci
 import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface AudioPlayerProps {
   src: string;
@@ -50,6 +51,7 @@ export function AudioPlayer({
   onTranscriptionComplete,
 }: AudioPlayerProps) {
   const isAmber = variant === 'amber';
+  const { profile } = useAuth();
   const audioRef = useRef<HTMLAudioElement>(null);
   const progressRef = useRef<HTMLDivElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -184,10 +186,17 @@ export function AudioPlayer({
     setIsTranscribing(true);
     try {
       const { data, error } = await supabase.functions.invoke('transcribe-audio', {
-        body: { audioUrl: src }
+        body: { audioUrl: src, companyId: profile?.company_id }
       });
 
       if (error) throw error;
+      
+      // 💰 Handle insufficient credits
+      if (data?.code === 'INSUFFICIENT_CREDITS') {
+        toast.error('Créditos insuficientes. Recarregue para transcrever áudios.');
+        return;
+      }
+      
       if (!data.success) throw new Error(data.error || 'Falha na transcrição');
 
       setTranscription(data.text);
@@ -199,7 +208,7 @@ export function AudioPlayer({
     } finally {
       setIsTranscribing(false);
     }
-  }, [src, isTranscribing, transcription, onTranscriptionComplete]);
+  }, [src, isTranscribing, transcription, onTranscriptionComplete, profile?.company_id]);
 
   useEffect(() => {
     const audio = audioRef.current;

@@ -1,4 +1,5 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { checkCredits, consumeCredits } from '../_shared/supabase-credits.ts';
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -23,7 +24,7 @@ Deno.serve(async (req) => {
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    const { eventId } = await req.json();
+    const { eventId, companyId: requestCompanyId } = await req.json();
 
     if (!eventId) {
       return new Response(JSON.stringify({ error: "eventId is required" }), {
@@ -50,6 +51,25 @@ Deno.serve(async (req) => {
         status: 404,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
+    }
+
+    // Get companyId from request or event
+    const companyId = requestCompanyId || event.company_id;
+
+    // 💰 Check credits before processing
+    if (companyId) {
+      const creditCheck = await checkCredits(supabase, companyId, 'standard_text', 1000);
+      if (!creditCheck.hasCredits) {
+        return new Response(JSON.stringify({ 
+          error: creditCheck.errorMessage,
+          code: 'INSUFFICIENT_CREDITS',
+          creditType: 'standard_text',
+          currentBalance: creditCheck.currentBalance
+        }), {
+          status: 402,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
     }
 
     // If there's a contact, fetch recent conversation history
@@ -156,7 +176,7 @@ Seja conciso, prático e focado em informações acionáveis.`;
 
       // Use Gemini directly
       const geminiResponse = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${GEMINI_API_KEY}`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -164,7 +184,7 @@ Seja conciso, prático e focado em informações acionáveis.`;
             contents: [{ parts: [{ text: prompt }] }],
             generationConfig: {
               temperature: 1.0,
-              maxOutputTokens: 2048,
+              maxOutputTokens: 4096,
             },
           }),
         }
@@ -181,6 +201,22 @@ Seja conciso, prático e focado em informações acionáveis.`;
 
       const geminiData = await geminiResponse.json();
       const summary = geminiData.candidates?.[0]?.content?.parts?.[0]?.text || "";
+
+      // 💰 Consume credits after successful generation
+      if (companyId) {
+        const inputTokens = Math.ceil(prompt.length / 4);
+        const outputTokens = Math.ceil(summary.length / 4);
+        await consumeCredits(
+          supabase,
+          companyId,
+          'standard_text',
+          inputTokens + outputTokens,
+          'generate-event-summary',
+          inputTokens,
+          outputTokens
+        );
+        console.log('💰 Créditos consumidos:', inputTokens + outputTokens);
+      }
 
       // Update event with summary
       await supabase
@@ -220,6 +256,22 @@ Seja conciso, prático e focado em informações acionáveis.`;
 
     const aiData = await aiResponse.json();
     const summary = aiData.choices?.[0]?.message?.content || "";
+
+    // 💰 Consume credits after successful generation
+    if (companyId) {
+      const inputTokens = Math.ceil(prompt.length / 4);
+      const outputTokens = Math.ceil(summary.length / 4);
+      await consumeCredits(
+        supabase,
+        companyId,
+        'standard_text',
+        inputTokens + outputTokens,
+        'generate-event-summary',
+        inputTokens,
+        outputTokens
+      );
+      console.log('💰 Créditos consumidos:', inputTokens + outputTokens);
+    }
 
     // Update event with summary
     await supabase

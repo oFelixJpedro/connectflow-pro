@@ -6,6 +6,7 @@ import {
   transcribeAudioWithFileAPI
 } from '../_shared/gemini-file-api.ts';
 import { logAIUsage, extractGeminiUsage } from '../_shared/usage-tracker.ts';
+import { checkCredits, consumeCredits } from '../_shared/supabase-credits.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -22,7 +23,7 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const { conversationId, contactId } = await req.json();
+    const { conversationId, contactId, companyId: requestCompanyId } = await req.json();
 
     if (!conversationId && !contactId) {
       throw new Error('conversationId ou contactId é obrigatório');
@@ -34,24 +35,39 @@ Deno.serve(async (req: Request) => {
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-    // Buscar company_id da conversa
-    // NOTE: Groups are no longer supported - is_group check removed
-    let companyId: string | null = null;
+    // Use companyId from request or fetch from conversation/contact
+    let companyId: string | null = requestCompanyId || null;
     
-    if (conversationId) {
+    if (!companyId && conversationId) {
       const { data: convData } = await supabase
         .from('conversations')
         .select('company_id')
         .eq('id', conversationId)
         .single();
       companyId = convData?.company_id;
-    } else if (contactId) {
+    } else if (!companyId && contactId) {
       const { data: contactData } = await supabase
         .from('contacts')
         .select('company_id')
         .eq('id', contactId)
         .single();
       companyId = contactData?.company_id;
+    }
+
+    // 💰 Check credits before processing
+    if (companyId) {
+      const creditCheck = await checkCredits(supabase, companyId, 'standard_text', 2000);
+      if (!creditCheck.hasCredits) {
+        return new Response(JSON.stringify({ 
+          error: creditCheck.errorMessage,
+          code: 'INSUFFICIENT_CREDITS',
+          creditType: 'standard_text',
+          currentBalance: creditCheck.currentBalance
+        }), {
+          status: 402,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
     }
 
     // Buscar todas as mensagens com campos de mídia
@@ -308,6 +324,19 @@ Gere o resumo estruturado conforme as instruções.`;
         { messageCount: messages.length, audiosAnalyzed },
         hasAudioAnalyzed
       );
+      
+      // 💰 Consume credits after successful generation
+      const totalTokens = usage.inputTokens + usage.outputTokens;
+      await consumeCredits(
+        supabase,
+        companyId,
+        'standard_text',
+        totalTokens,
+        'summarize-chat',
+        usage.inputTokens,
+        usage.outputTokens
+      );
+      console.log('💰 Créditos consumidos:', totalTokens);
     }
 
     const mediaAnalyzedObj = {
