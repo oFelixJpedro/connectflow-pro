@@ -6,4 +6,3 @@ export { CalendarListView } from './CalendarListView';
 export { CalendarMiniCalendar } from './CalendarMiniCalendar';
 export { CreateEventModal } from './CreateEventModal';
 export { EventDetailDrawer } from './EventDetailDrawer';
-export { GoogleCalendarConnect } from './GoogleCalendarConnect';

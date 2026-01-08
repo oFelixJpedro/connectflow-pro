@@ -20,8 +20,6 @@ export interface CalendarEvent {
   conversation_id?: string;
   assigned_to?: string;
   created_by: string;
-  google_event_id?: string;
-  google_calendar_synced: boolean;
   reminder_minutes: number;
   recurrence_rule?: string;
   metadata: Record<string, unknown>;
