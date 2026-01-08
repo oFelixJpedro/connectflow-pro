@@ -1,4 +1,5 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { checkCredits, consumeCredits } from '../_shared/supabase-credits.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -103,7 +104,7 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const { voiceName, speed = 1.0, languageCode = 'pt-BR', temperature = 0.7 } = await req.json();
+    const { voiceName, speed = 1.0, languageCode = 'pt-BR', temperature = 0.7, companyId } = await req.json();
 
     if (!voiceName) {
       return new Response(
@@ -127,6 +128,21 @@ Deno.serve(async (req: Request) => {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+    // ═══════════════════════════════════════════════════════════════════
+    // 💳 VERIFICAÇÃO DE CRÉDITOS DE ÁUDIO
+    // ═══════════════════════════════════════════════════════════════════
+    if (companyId) {
+      const creditCheck = await checkCredits(supabase, companyId, 'standard_audio', 500);
+      if (!creditCheck.hasCredits) {
+        return new Response(JSON.stringify({ 
+          error: creditCheck.errorMessage,
+          code: 'INSUFFICIENT_CREDITS',
+          creditType: 'standard_audio',
+          currentBalance: creditCheck.currentBalance
+        }), { status: 402, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+    }
 
     // Normalize speed for cache key (0.7, 1.0, or 1.2)
     const normalizedSpeed = speed <= 0.85 ? 0.7 : speed >= 1.1 ? 1.2 : 1.0;

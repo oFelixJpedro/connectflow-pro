@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { checkCredits, consumeCredits } from '../_shared/supabase-credits.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -176,6 +177,32 @@ serve(async (req) => {
 
     if (!geminiApiKey) {
       throw new Error('GEMINI_API_KEY not configured');
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // 💳 VERIFICAÇÃO DE CRÉDITOS DE IA
+    // ═══════════════════════════════════════════════════════════════════
+    if (companyId) {
+      const creditCheck = await checkCredits(supabase, companyId, 'standard_text', 5000);
+      if (!creditCheck.hasCredits) {
+        // Update document status to error
+        await supabase
+          .from('ai_agent_knowledge_documents')
+          .update({
+            status: 'error',
+            error_message: 'Créditos de IA insuficientes. Recarregue para processar documentos.',
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', documentId);
+          
+        return new Response(JSON.stringify({ 
+          success: false,
+          error: creditCheck.errorMessage,
+          code: 'INSUFFICIENT_CREDITS',
+          creditType: 'standard_text',
+          currentBalance: creditCheck.currentBalance
+        }), { status: 402, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
     }
 
     // Download file from storage
